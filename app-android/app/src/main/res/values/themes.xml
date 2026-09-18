@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <style name="Theme.ZCodeRemote" parent="android:Theme.Material.NoActionBar">
+        <item name="android:statusBarColor">#161616</item>
+        <item name="android:windowBackground">#161616</item>
+    </style>
+</resources>

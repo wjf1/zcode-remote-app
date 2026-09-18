@@ -1,0 +1,75 @@
+wireVersion: int = 3
+kind: str = complete
+deliveryKind: str = initial
+logicalFrameId: str = sub-mu49pn7t-5clp19di-1-lf-1
+logicalFrameOrdinal: int = 1
+topic: str = conversation/sess_85338537-8624-46dc-b65a-203cd1706a33
+subscriptionId: str = sub-mu49pn7t-5clp19di-1
+frame: dict(6)
+  topic: str = conversation/sess_85338537-8624-46dc-b65a-203cd1706a33
+  subscriptionId: str = sub-mu49pn7t-5clp19di-1
+  sentAt: int = 1789573258253
+  fromSeq: int = 0
+  toSeq: int = 2691
+  payload: dict(2)
+    kind: str = snapshot
+    snapshot: dict(21)
+      protocolVersion: int = 1
+      sessionId: str = sess_85338537-8624-46dc-b65a-203cd1706a33
+      logEpoch: str = mu49pn7t-5clp19di
+      seq: int = 2691
+      revision: int = 2195
+      control: dict(8)
+        phase: str = completedInterrupted
+        sessionEnded: bool = True
+        canStop: bool = False
+        stopState: str = idle
+        stopTargetKind: str = unknown
+        activeWorks: list(0)
+        lastError: NoneType = None
+        apiRetry: NoneType = None
+      availability: dict(8)
+        fork: dict(1)
+        compact: dict(1)
+        switchModelConfig: dict(1)
+        setFollowupMode: dict(1)
+        queueEdit: dict(1)
+        sendQueuedNow: dict(2)
+        pauseGoal: dict(2)
+        resumeGoal: dict(2)
+      inputRouting: dict(1)
+        mode: str = startNow
+      meta: dict(2)
+        title: str = Zcode远程控制安卓APP方案设计
+        titleSource: str = generated
+      config: dict(6)
+        provider: str = 272c28e1-b8c7-4c5f-9c50-6a8bb24d1d61
+        model: str = deepseek/deepseek-v4.1-flash
+        thought: str = high
+        thoughtLevels: list(2)
+        followupMode: str = queue
+        mode: str = yolo
+      modelTransition: NoneType = None
+      usage: dict(2)
+        contextWindow: dict(4)
+        cumulative: dict(4)
+      queue: dict(2)
+        items: list(0)
+        autoDrain: bool = True
+      pendingInteractions: list(0)
+      pendingCommands: list(0)
+      backgroundWorks: list(0)
+      subagents: dict(4)
+        revision: int = 1
+        childSessionIds: list(3)
+        running: list(0)
+        endedTotal: int = 3
+      goal: NoneType = None
+      plan: dict(2)
+        items: list(7)
+        updatedAt: int = 1789302334894
+      workspaceHookAdmission: NoneType = None
+      rows: dict(3)
+        window: list(60)
+        totalCount: int = 893
+        firstRowId: int = 1

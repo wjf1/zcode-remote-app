@@ -1,0 +1,21 @@
+# 工具链与构建产物（体积大、可重新下载/生成）
+toolchain/
+_tmp/
+**/build/
+**/.gradle/
+**/local.properties
+
+# Python
+__pycache__/
+*.pyc
+
+# 逆向原始素材（体积大，已从 PROTOCOL/FRAME-CODEC 文档中提炼）
+research/*.png
+research/*.js
+research/asar/
+research/qrdec/
+
+# 杂项
+*.log
+.DS_Store
+Thumbs.db

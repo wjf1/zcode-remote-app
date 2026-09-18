@@ -1,0 +1,53 @@
+#!/usr/bin/env bash
+# ZCode Remote 一键构建 / 安装 / 启动（本机自带工具链，无需 Android Studio）
+# 用法:
+#   ./build.sh            构建 APK
+#   ./build.sh install    构建 + 安装到已连接的设备/模拟器 + 启动
+#   ./build.sh log        抓取 App 的中继日志
+set -e
+
+ROOT="F:/AI/Zcode/zcode-remote-app"
+TC="$ROOT/toolchain"
+export JAVA_HOME="$TC/jdk-17.0.20.1+1"
+export ANDROID_HOME="$TC/android-sdk"
+export ANDROID_SDK_ROOT="F:\\AI\\Zcode\\zcode-remote-app\\toolchain\\android-sdk"
+ADB="$TC/platform-tools/adb.exe"
+GRADLE="$TC/gradle-8.7/bin/gradle.bat"
+APK="$ROOT/app-android/app/build/outputs/apk/debug/app-debug.apk"
+
+# 模拟器（无头，AEHD 加速）：
+#   export ANDROID_AVD_HOME="F:\\AI\\Zcode\\zcode-remote-app\\toolchain\\avd"
+#   "$TC/android-sdk/emulator/emulator.exe" -avd test35 -no-window -no-audio -no-boot-anim -gpu swiftshader_indirect -no-snapshot &
+
+cd "$ROOT/app-android"
+
+# 子命令名不是 gradle 任务（AGP 没有裸 install/log 任务），必须剔掉，
+# 否则 gradle 报 "Task not found"、构建静默失败却接着安装上一次的旧 APK。
+TASKS=()
+case "${1:-}" in
+  install|log) ;;
+  "") ;;
+  *) TASKS=("$@") ;;
+esac
+
+LOGF="$ROOT/_tmp/build.log"
+mkdir -p "$ROOT/_tmp"
+"$GRADLE" assembleDebug "${TASKS[@]+"${TASKS[@]}"}" > "$LOGF" 2>&1 || true
+grep -E "BUILD SUCCESSFUL|BUILD FAILED|^e:|error:" "$LOGF" || true
+if ! grep -q "BUILD SUCCESSFUL" "$LOGF"; then
+  echo "构建失败（完整日志: $LOGF），已中止，不会安装旧 APK"
+  exit 1
+fi
+
+case "${1:-}" in
+  install)
+    "$ADB" install -r "$APK"
+    "$ADB" shell pm grant com.zcode.remote android.permission.CAMERA 2>/dev/null || true
+    "$ADB" logcat -c
+    "$ADB" shell am force-stop com.zcode.remote
+    "$ADB" shell am start -n com.zcode.remote/.MainActivity
+    ;;
+  log)
+    "$ADB" logcat -d -s RelayClient
+    ;;
+esac
