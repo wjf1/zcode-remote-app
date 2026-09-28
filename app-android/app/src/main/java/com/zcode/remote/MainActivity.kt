@@ -3,8 +3,13 @@ package com.zcode.remote
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.material3.Surface
+import androidx.compose.ui.Modifier
 import androidx.compose.runtime.*
 import androidx.lifecycle.viewmodel.compose.viewModel
+import com.zcode.remote.relay.ApprovalOption
+import com.zcode.remote.relay.PendingApproval
 import com.zcode.remote.relay.SessionItem
 import com.zcode.remote.ui.screens.ConversationScreen
 import com.zcode.remote.ui.screens.HomeScreen
@@ -15,8 +20,13 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContent {
-            ZCodeTheme {
-                val vm: AppViewModel = viewModel()
+            val vm: AppViewModel = viewModel()
+            ZCodeTheme(forceDark = when (vm.themeMode) {
+                "dark" -> true
+                "light" -> false
+                else -> null
+            }) {
+                Surface(Modifier.fillMaxSize()) {
                 var scanning by remember { mutableStateOf(false) }
                 var opened by remember { mutableStateOf<SessionItem?>(null) }
 
@@ -33,7 +43,7 @@ class MainActivity : ComponentActivity() {
                         approvals = vm.approvals,
                         approvalFeedback = vm.approvalFeedback,
                         earlier = vm.earlier,
-                        onResolve = { a, opt -> vm.resolve(a, opt) },
+                        onResolve = { a: PendingApproval, opt: ApprovalOption -> vm.resolve(a, opt) },
                         onLoadEarlier = { vm.loadEarlier() },
                         onFeedbackSeen = { vm.consumeApprovalFeedback() },
                         onBack = { opened = null },
@@ -45,10 +55,16 @@ class MainActivity : ComponentActivity() {
                         events = vm.events.toList(),
                         bridgeState = vm.bridgeState,
                         rpcEvents = vm.rpcEvents.toList(),
+                        endpointMode = vm.endpointMode,
+                        customRelayUrl = vm.customRelayUrl,
+                        themeMode = vm.themeMode,
+                        onEndpointChange = { m, u -> vm.setEndpoint(m, u) },
+                        onThemeChange = { m -> vm.setTheme(m) },
                         onSessionClick = { s -> vm.openSession(s); opened = s },
                         onDisconnect = { vm.disconnect() },
                         onRescan = { vm.forget(); opened = null; scanning = true },
                     )
+                }
                 }
             }
         }

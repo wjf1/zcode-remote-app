@@ -50,6 +50,11 @@ WSS 建连(?mid=…, Origin: https://zcode.z.ai)
 - **审批应答**：`resolveInteraction` 信封（`clientId` 硬约束、`optionId` 原文透传）；断线时明确提示「没发出去」，不做自动重放（官方 sensitive 命令语义）。
 - debug 构建内置 `DebugApprovalReceiver`（注入假审批验证通知渲染，release 不含此组件）。
 
+## 功能（M3 进行中）
+
+- **协议线路切换**：设置面板四选（自动/主线/备线/自定义），切换即时重连，Origin 同源推导。
+- **主题三模式**：深色 / 跟随系统 / 浅色，设置持久化。
+
 ## 构建与运行（无需 Android Studio）
 
 本机工具链已就绪于 `../toolchain/`（JDK 17 + Gradle 8.7 + Android SDK 35 + platform-tools + emulator）。

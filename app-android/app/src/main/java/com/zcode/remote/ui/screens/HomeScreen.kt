@@ -24,6 +24,11 @@ fun HomeScreen(
     events: List<TaskEvent>,
     bridgeState: RpcChannel.BridgeState,
     rpcEvents: List<String>,
+    endpointMode: String = "auto",
+    customRelayUrl: String = "",
+    themeMode: String = "dark",
+    onEndpointChange: (String, String?) -> Unit = { _, _ -> },
+    onThemeChange: (String) -> Unit = {},
     onSessionClick: (SessionItem) -> Unit,
     onDisconnect: () -> Unit,
     onRescan: () -> Unit,
@@ -33,6 +38,10 @@ fun HomeScreen(
             Text("ZCode Remote", style = MaterialTheme.typography.headlineSmall, modifier = Modifier.weight(1f))
             TextButton(onClick = onRescan) { Text("重新配对") }
         }
+
+        SettingsCard(
+            endpointMode, customRelayUrl, themeMode, onEndpointChange, onThemeChange,
+        )
 
         Card {
             Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
@@ -177,4 +186,83 @@ private fun statusLabel(state: RelayState) = when (state) {
     RelayState.WaitingPeer -> "等待 PC 接入"
     RelayState.Paired -> "已配对"
     is RelayState.Failed -> "连接失败"
+}
+
+
+/** 设置卡：协议线路（M3）+ 主题模式。变更即时生效（线路切换会重连）。 */
+@Composable
+private fun SettingsCard(
+    endpointMode: String,
+    customRelayUrl: String,
+    themeMode: String,
+    onEndpointChange: (String, String?) -> Unit,
+    onThemeChange: (String) -> Unit,
+) {
+    var expanded by remember { mutableStateOf(false) }
+    var editingCustom by remember { mutableStateOf<String?>(null) }
+    Card {
+        Column(Modifier.padding(vertical = 4.dp)) {
+            TextButton(onClick = { expanded = !expanded }, contentPadding = PaddingValues(horizontal = 16.dp)) {
+                Text(if (expanded) "▾ 设置" else "▸ 设置", style = MaterialTheme.typography.titleSmall)
+            }
+            if (expanded) {
+                Column(Modifier.padding(horizontal = 16.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                    Text("协议线路", style = MaterialTheme.typography.labelLarge)
+                    Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                        listOf(
+                            "auto" to "自动", "main" to "主线", "backup" to "备线", "custom" to "自定义",
+                        ).forEach { (mode, label) ->
+                            FilterChip(
+                                selected = endpointMode == mode,
+                                onClick = {
+                                    if (mode == "custom") editingCustom = customRelayUrl
+                                    else onEndpointChange(mode, null)
+                                },
+                                label = { Text(label) },
+                            )
+                        }
+                    }
+                    if (endpointMode == "custom") {
+                        Text(
+                            "自定义中继：${customRelayUrl.ifBlank { "未设置（点「自定义」填 wss:// 地址）" }}",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                    Text("主题", style = MaterialTheme.typography.labelLarge)
+                    Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                        listOf("dark" to "深色", "system" to "跟随系统", "light" to "浅色").forEach { (mode, label) ->
+                            FilterChip(
+                                selected = themeMode == mode,
+                                onClick = { onThemeChange(mode) },
+                                label = { Text(label) },
+                            )
+                        }
+                    }
+                }
+                Spacer(Modifier.height(8.dp))
+            }
+        }
+    }
+    editingCustom?.let { current ->
+        AlertDialog(
+            onDismissRequest = { editingCustom = null },
+            title = { Text("自定义中继地址") },
+            text = {
+                OutlinedTextField(
+                    value = current,
+                    onValueChange = { editingCustom = it },
+                    placeholder = { Text("wss://host/ws") },
+                    singleLine = true,
+                )
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    onEndpointChange("custom", editingCustom)
+                    editingCustom = null
+                }) { Text("保存并重连") }
+            },
+            dismissButton = { TextButton(onClick = { editingCustom = null }) { Text("取消") } },
+        )
+    }
 }

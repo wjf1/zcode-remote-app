@@ -33,6 +33,8 @@ enum class FailureReason { KICKED, AUTH_FAILED, DEVICE_OFFLINE, NETWORK, INTERNA
 class RelayClient(
     private val device: com.zcode.remote.storage.PairedDevice,
     private val appVersion: String = "0.1.0",
+    /** 线路覆盖（设置里强制主线/备线/自建中继）；null=按配对二维码推断。 */
+    private val relayWsUrlOverride: String? = null,
 ) {
     private val client = OkHttpClient.Builder()
         .pingInterval(20, TimeUnit.SECONDS)
@@ -56,11 +58,15 @@ class RelayClient(
         manuallyClosed = false
         _state.value = RelayState.Connecting
         // 官方终端会追加 mid 参数（PROTOCOL.md 3 节）；主机在线时中继强制校验，缺失直接 AUTH_FAILED
-        val url = device.relayWsUrl +
+        val wsUrl = relayWsUrlOverride ?: device.relayWsUrl
+        val url = wsUrl +
             (device.deviceMid?.takeIf { it.isNotBlank() }?.let { "?mid=$it" } ?: "")
+        // 中继校验 Origin 与线路一致性：从 ws 地址推导同源 https 地址（wss://host/ws → https://host）
+        val origin = wsUrl.removePrefix("wss://").removePrefix("ws://").substringBefore('/')
+            .let { host -> if (wsUrl.startsWith("wss://")) "https://$host" else "http://$host" }
         val request = Request.Builder()
             .url(url)
-            .header("Origin", "https://zcode.z.ai")
+            .header("Origin", origin)
             .build()
         socket = client.newWebSocket(request, listener)
     }

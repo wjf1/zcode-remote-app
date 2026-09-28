@@ -1,5 +1,21 @@
 # 变更记录 / Changelog
 
+## v0.2.2-m3a（2026-09-28）
+
+**里程碑：M3 开始 —— 设置能力（线路切换 + 主题）**
+
+### 新增
+- **协议线路切换**（设置面板）：自动（按配对二维码推断）/ 主线 `wss://zcode.z.ai/ws` / 备线 `wss://zcode.chatglm.site/ws` / 自定义中继（配合桌面端 `ZCODE_WEB_REMOTE_CONTROL_RELAY_WS_URL`）；切换即时重连，Origin 按线路同源推导（不再硬编码 z.ai）。
+- **主题三模式**：深色（默认）/ 跟随系统 / 浅色（新增 LightScheme）；根视图铺 `Surface` 背景，浅色下不再露出黑底。
+- `SettingsStore`（SharedPreferences）承载设置项，与凭据存储分离。
+
+### 实测（模拟器）
+- 备线切换：连接 `wss://zcode.chatglm.site/ws`，握手认证 + `pair_status matched` 成功；切回自动恢复主线「已配对」。
+- 主题：浅色全 UI 生效（卡片/背景/文字），chip 选中态正确，设置随重启保持。
+
+### 工程调整
+- Gradle daemon 堆降至 `-Xmx1024m`（与模拟器共存的内存现实约束）。
+
 ## v0.2.1-m2b（2026-09-28）
 
 **里程碑：M2 遗留项收尾 —— 历史翻页与分片重组**

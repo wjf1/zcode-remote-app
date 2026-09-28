@@ -24,6 +24,7 @@ import com.zcode.remote.notify.ApprovalBridge
 import com.zcode.remote.notify.ApprovalNotifier
 import com.zcode.remote.storage.CredentialStore
 import com.zcode.remote.storage.PairedDevice
+import com.zcode.remote.storage.SettingsStore
 import kotlinx.coroutines.launch
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.jsonArray
@@ -36,9 +37,38 @@ import kotlinx.serialization.json.jsonPrimitive
  */
 class AppViewModel(app: Application) : AndroidViewModel(app) {
     private val store = CredentialStore(app)
+    private val settings = SettingsStore(app)
 
     var device by mutableStateOf(store.load())
         private set
+
+    // ---- 设置 ----
+    var endpointMode by mutableStateOf(settings.endpointMode)
+        private set
+    var customRelayUrl by mutableStateOf(settings.customRelayUrl)
+        private set
+    var themeMode by mutableStateOf(settings.themeMode)
+        private set
+
+    /** 设置里的线路覆盖；auto 返回 null（按配对二维码推断）。 */
+    private fun relayOverride(): String? = when (endpointMode) {
+        SettingsStore.ENDPOINT_MAIN -> "wss://zcode.z.ai/ws"
+        SettingsStore.ENDPOINT_BACKUP -> "wss://zcode.chatglm.site/ws"
+        SettingsStore.ENDPOINT_CUSTOM -> customRelayUrl.takeIf { it.startsWith("ws", ignoreCase = true) }
+        else -> null
+    }
+
+    fun setEndpoint(mode: String, customUrl: String? = null) {
+        settings.endpointMode = mode
+        endpointMode = mode
+        customUrl?.let { settings.customRelayUrl = it; customRelayUrl = it }
+        if (device != null) connect()   // 线路变更立即重连生效
+    }
+
+    fun setTheme(mode: String) {
+        settings.themeMode = mode
+        themeMode = mode
+    }
     var relayState by mutableStateOf<RelayState>(RelayState.Idle)
         private set
 
@@ -96,7 +126,7 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         client?.close()
         channel?.reset()
         conversation?.reset()
-        val c = RelayClient(dev)
+        val c = RelayClient(dev, relayWsUrlOverride = relayOverride())
         val ch = RpcChannel(c)
         val conv = ConversationChannel(ch)
         client = c
