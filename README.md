@@ -31,6 +31,10 @@ ZCode 官方远程控制（`zcode.z.ai/remote`）的**原生安卓增强客户�
 | M3 打磨与内测 | 多机管理、线路切换、HyperOS 保活引导、异常兜底 | ⏳ 待开始 |
 | M4+ | VPS 备用 Runner、E2E 高级模式（见方案文档） | 📋 规划中 |
 
+### 接力开发 / Handover
+
+剩余开发计划与交接文档见 [HANDOVER.md](HANDOVER.md)（自包含，面向 AI agent 直接接手）。
+
 ### 安装包 / Releases
 
 签名 APK 从 [GitHub Releases](https://github.com/wjf1/zcode-remote-app/releases) 下载
@@ -83,6 +87,10 @@ A **native Android client** for the official ZCode Remote Control relay (`zcode.
 | M2 approvals & push | Live conversation streaming, permission approvals (in-app + notification shade), dual-source approval intake | ✅ E2E verified (2026-09-28) |
 | M3 polish & beta | Multi-device, endpoint switching, HyperOS keep-alive guide | ⏳ Planned |
 | M4+ | VPS backup runner, E2E advanced mode | 📋 Roadmap |
+
+### Handover
+
+The remaining roadmap and handover notes live in [HANDOVER.md](HANDOVER.md) (self-contained, written for an AI agent to pick up directly).
 
 ### Install / Releases
 
