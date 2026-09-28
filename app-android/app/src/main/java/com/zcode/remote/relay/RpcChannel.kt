@@ -62,6 +62,9 @@ class RpcChannel(private val relay: RelayClient) {
 
     private val pendingResponses = mutableMapOf<Int, (RpcReply) -> Unit>()
 
+    /** 接收分片缓冲：messageSeq -> (fragmentIndex -> 分片字节)。收齐即拼装校验。 */
+    private val fragmentBuffers = HashMap<Int, MutableMap<Int, ByteArray>>()
+
     val bridgeIdentity: JsonObject?
         get() {
             val r = readyPayload ?: return null
@@ -184,15 +187,66 @@ class RpcChannel(private val relay: RelayClient) {
         relay.sendPayload(frame)
     }
 
-    /** 收到 rpc-frame（单分片）→ 解码 → 路由。 */
+    /**
+     * 收到 rpc-frame → 按 fragmentIndex/fragmentCount 重组 → CRC 校验 → 解码 → 路由。
+     *
+     * 单分片（fragmentCount<=1）直通；多分片按 messageSeq 缓冲、收齐后按 index 升序拼接，
+     * checksum/messageBytes 校验通过才解码与 ack（不通过则不 ack，服务端会按 messageSeq 重放）。
+     */
     fun onRpcFrame(payload: JsonObject) {
         val b64 = payload["dataBase64"]?.let { runCatching { it.jsonPrimitive.content }.getOrNull() } ?: return
         val bytes = runCatching { Base64.decode(b64, Base64.NO_WRAP) }.getOrNull() ?: return
         val messageSeq = payload["messageSeq"]?.let {
             runCatching { it.jsonPrimitive.content.toIntOrNull() }.getOrNull()
         }
-        messageSeq?.let { ack(it, (bridge.value as? BridgeState.Ready)?.bridgeSessionId) }
+        val fragIndex = payload["fragmentIndex"]?.let {
+            runCatching { it.jsonPrimitive.content.toIntOrNull() }.getOrNull() } ?: 0
+        val fragCount = payload["fragmentCount"]?.let {
+            runCatching { it.jsonPrimitive.content.toIntOrNull() }.getOrNull() } ?: 1
+        val bridgeSessionId = (bridge.value as? BridgeState.Ready)?.bridgeSessionId
 
+        val complete: ByteArray = if (fragCount <= 1) bytes else {
+            val buf = fragmentBuffers.getOrPut(messageSeq ?: -1) { HashMap() }
+            buf[fragIndex] = bytes
+            if (buf.size < fragCount) {
+                Log.d(TAG, "fragment buffered seq=$messageSeq ${buf.size}/$fragCount")
+                trimFragmentBuffers()
+                return
+            }
+            val joined = ByteArray(buf.entries.sortedBy { it.key }.sumOf { it.value.size })
+            var off = 0
+            for ((_, part) in buf.entries.sortedBy { it.key }) {
+                part.copyInto(joined, off); off += part.size
+            }
+            fragmentBuffers.remove(messageSeq ?: -1)
+            val expectCrc = payload["checksum"]?.let { runCatching { it.jsonObject["value"]?.jsonPrimitive?.content }.getOrNull() }
+            val actualCrc = String.format("%08x", CRC32().apply { update(joined) }.value)
+            if (expectCrc != null && !expectCrc.equals(actualCrc, ignoreCase = true)) {
+                Log.w(TAG, "fragment checksum mismatch seq=$messageSeq expect=$expectCrc actual=$actualCrc")
+                return
+            }
+            val messageBytes = payload["messageBytes"]?.let {
+                runCatching { it.jsonPrimitive.content.toIntOrNull() }.getOrNull() }
+            if (messageBytes != null && messageBytes != joined.size) {
+                Log.w(TAG, "fragment size mismatch seq=$messageSeq expect=$messageBytes actual=${joined.size}")
+                return
+            }
+            joined
+        }
+        messageSeq?.let { ack(it, bridgeSessionId) }
+        handleMessage(complete)
+    }
+
+    /** 分片缓冲上限（防泄漏）：只留最近几条未完成消息的碎片。 */
+    private fun trimFragmentBuffers() {
+        while (fragmentBuffers.size > 8) {
+            val oldest = fragmentBuffers.keys.minOrNull() ?: return
+            fragmentBuffers.remove(oldest)
+        }
+    }
+
+    /** 解码一条完整消息（VQL head + payload）并按类型路由。 */
+    private fun handleMessage(bytes: ByteArray) {
         var type = -1
         var id: Int? = null
         var data: Any? = null
@@ -264,6 +318,7 @@ class RpcChannel(private val relay: RelayClient) {
         nextMessageSeq = 1
         lastAckedMessageSeq = 0
         pendingResponses.clear()
+        fragmentBuffers.clear()
     }
 
     companion object {

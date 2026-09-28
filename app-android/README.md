@@ -81,7 +81,7 @@ export ANDROID_AVD_HOME="F:\\AI\\Zcode\\zcode-remote-app\\toolchain\\avd"
 
 ## 已知限制
 
-- 向上翻页拉更早历史（`conversationRowsRangeV4`）、逻辑帧分片重组未实现（会话超 60 行时只显示尾部窗口）。
+- ~~向上翻页、分片重组~~ 已实现（v0.2.1）：滚到顶部自动 `conversationRowsRangeV4` 前插；rpc-frame 多分片收齐校验后重组。
 - 与官方 Web 版互踢（同 deviceSid 单端在线），使用本 App 时请关闭官方网页端；`tools/probe.py` 探针同理。
 - 会话内部对话流（`rpc-frame` 内层 `v4/conversation/frame` 的二进制解码细节）以实测行为为准，仍有待穷举字段。
 - elicitation（表单类交互）只读不答（应答形态不同，暂不处理）。

@@ -32,7 +32,9 @@ class MainActivity : ComponentActivity() {
                         rows = vm.rows.toList(),
                         approvals = vm.approvals,
                         approvalFeedback = vm.approvalFeedback,
+                        earlier = vm.earlier,
                         onResolve = { a, opt -> vm.resolve(a, opt) },
+                        onLoadEarlier = { vm.loadEarlier() },
                         onFeedbackSeen = { vm.consumeApprovalFeedback() },
                         onBack = { opened = null },
                     )

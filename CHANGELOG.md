@@ -1,5 +1,20 @@
 # 变更记录 / Changelog
 
+## v0.2.1-m2b（2026-09-28）
+
+**里程碑：M2 遗留项收尾 —— 历史翻页与分片重组**
+
+### 新增
+- **历史翻页**：`conversationRowsRangeV4`（`beforeRowId` + `limit=60`），会话页滚到顶部自动拉取；`atLogEpoch` 不匹配整批丢弃；拉回行按 rowId 升序前插（RowStore.prepend），视口锚定原首行不跳变；顶部状态提示（加载更早… / 已到最早 / 上滑加载更早）。
+- **接收侧分片重组**：rpc-frame 多分片按 `messageSeq` 缓冲、收齐按 `fragmentIndex` 升序拼接，CRC32 + messageBytes 双校验通过才解码与 ack（失败不 ack，交给服务端按 seq 重放）；缓冲上限 8 条防泄漏。
+
+### 实测（模拟器，本会话 510 行）
+- 连续翻页 2 页各 +60 行（beforeRowId 451→391），hasMore 正确传递，历史行渲染正常。
+- 全程 190 帧 rpc-frame 全部单分片（fragmentCount=1），直通路径无回归；多分片路径为协议兜底（实环境中暂未出现）。
+
+### 遗留
+- elicitation（表单类交互）只读不答（M3+）。
+
 ## v0.2.0-m2（2026-09-28）
 
 **里程碑：M2 审批与推送 —— 端到端验收通过**

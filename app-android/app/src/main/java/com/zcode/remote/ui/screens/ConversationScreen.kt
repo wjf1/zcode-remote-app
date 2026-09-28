@@ -31,15 +31,40 @@ fun ConversationScreen(
     rows: List<ConversationRow>,
     approvals: List<PendingApproval> = emptyList(),
     approvalFeedback: String? = null,
+    earlier: ConversationChannel.EarlierState = ConversationChannel.EarlierState(),
     onResolve: (PendingApproval, ApprovalOption) -> Unit = { _, _ -> },
+    onLoadEarlier: () -> Unit = {},
     onFeedbackSeen: () -> Unit = {},
     onBack: () -> Unit,
 ) {
     val listState = rememberLazyListState()
 
-    // 新行到达时贴底（流式文本靠 RowStore 原地更新，size 不变时不滚动）
+    // 新行到达时贴底（流式文本靠 RowStore 原地更新，size 不变时不滚动）；
+    // 历史翻页前插时锚定原首行，避免视口跳变。
+    var anchorRowId by remember { mutableStateOf<Int?>(null) }
     LaunchedEffect(rows.size) {
-        if (rows.isNotEmpty()) listState.animateScrollToItem(rows.lastIndex)
+        val anchor = anchorRowId
+        if (anchor != null) {
+            val idx = rows.indexOfFirst { it.rowId == anchor }
+            // LazyColumn 顶部有一个"加载更早"占位项，items 从 index 1 开始
+            if (idx >= 0) listState.scrollToItem(idx + 1)
+            anchorRowId = null
+        } else {
+            if (rows.isNotEmpty()) listState.animateScrollToItem(rows.lastIndex)
+        }
+    }
+
+    // 滚到顶部附近：还有更早历史（或从未拉过）就自动拉一页
+    val loadGate = rememberUpdatedState(Triple(rows.size, earlier.hasMore, earlier.loading to earlier.pulled))
+    LaunchedEffect(listState) {
+        snapshotFlow { listState.firstVisibleItemIndex }.collect { idx ->
+            val (size, hasMore, loadingPulled) = loadGate.value
+            val (loading, pulled) = loadingPulled
+            if (size > 0 && idx <= 2 && !loading && (hasMore || !pulled)) {
+                anchorRowId = rows.firstOrNull()?.rowId
+                onLoadEarlier()
+            }
+        }
     }
 
     Column(Modifier.fillMaxSize().padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -83,6 +108,21 @@ fun ConversationScreen(
             modifier = Modifier.weight(1f),
             verticalArrangement = Arrangement.spacedBy(6.dp),
         ) {
+            if (rows.isNotEmpty()) {
+                item(key = "earlier-head") {
+                    Text(
+                        when {
+                            earlier.loading -> "加载更早…"
+                            earlier.pulled && !earlier.hasMore -> "已到最早"
+                            else -> "上滑加载更早"
+                        },
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
+                        textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+                    )
+                }
+            }
             items(rows, key = { it.rowId }) { row -> RowItem(row) }
         }
     }

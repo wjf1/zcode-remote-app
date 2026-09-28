@@ -63,6 +63,9 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         private set
     var conversationMeta by mutableStateOf(ConversationChannel.ConversationMeta())
         private set
+    /** 向上翻页状态（加载中/hasMore/pulled）。 */
+    var earlier by mutableStateOf(ConversationChannel.EarlierState())
+        private set
 
     // ---- 权限审批 ----
     /** 当前会话的待审批项（会话流 pendingInteractions + 任务事件流两条来源合并）。 */
@@ -182,6 +185,7 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
 
         viewModelScope.launch { conv.status.collect { conversationStatus = it } }
         viewModelScope.launch { conv.meta.collect { conversationMeta = it } }
+        viewModelScope.launch { conv.earlier.collect { earlier = it } }
         viewModelScope.launch {
             conv.interactions.collect { refreshApprovals() }
         }
@@ -261,6 +265,14 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
 
     /** 手动订阅指定会话（UI 点击会话卡片时调用）。 */
     fun openSession(s: SessionItem) = subscribeConversation(s)
+
+    /** 向上拉一页更早历史（会话页滚到顶部时触发）。 */
+    fun loadEarlier() {
+        val conv = conversation ?: return
+        conv.loadEarlier(rowStore) { r ->
+            r.onFailure { Log.w(TAG, "loadEarlier: ${it.message}") }
+        }
+    }
 
     /** 从 bootstrap-response 取当前活动工作区 key。 */
     private fun activeWorkspaceKeyOf(payload: JsonObject): String? {

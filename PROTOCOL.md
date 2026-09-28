@@ -207,7 +207,9 @@ python tools/probe.py sub <会话ID前缀> [帧落盘路径]   # + 完整会话�
 > 真机对应 HyperOS 省电白名单引导（M3）。② **setMode 只对新 turn 生效**：对运行中的 agent
 > turn 切模式不改变其权限上下文（实测两次"验收失败"均由此产生，非协议问题）。
 > **待真实审批端到端验收**：~~桌面端会话默认是 `yolo` 模式~~（已完成，见上）。
-> 尚未完成：向上翻页拉更早历史（`conversationRowsRangeV4`）、逻辑帧分片重组。
+> **2026-09-28 补**：向上翻页（`conversationRowsRangeV4`，atLogEpoch 校验 + 前插）与接收侧
+> 逻辑帧分片重组（按 messageSeq 缓冲、CRC32+messageBytes 双校验）均已实现并实测通过
+> （连续翻页 +60 行×2；190 帧单分片直通无回归）。
 
 1. **可以开工**：握手（HMAC proof）、心跳、状态机、错误恢复、workspace/session RPC 方法面全部齐备，Kotlin 实现无未知阻塞。
 2. 遗留 4 个【待验证】项（PC 侧 meta 字段、心跳间隔分配、maxPhysicalFrameBytes 值、conversation frame 二进制细节 + 审批应答帧）——前三者可用"容错实现 + 运行时日志"兜底；第 4 项在 M1 联调时以真机+一次受控抓包解决（届时再申请装 CA）。

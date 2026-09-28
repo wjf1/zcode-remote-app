@@ -209,6 +209,19 @@ class RowStore(private val out: MutableList<ConversationRow>) {
         out.clear()
     }
 
+    /** 当前窗口最早一行（向上翻页的 beforeRowId）。 */
+    fun firstRowId(): Int? = out.firstOrNull()?.rowId
+
+    /**
+     * 历史翻页前插：把拉回的更早行（按 rowId 升序）插到头部，跳过已有的 rowId。
+     */
+    fun prepend(rows: List<ConversationRow>) {
+        val fresh = rows.filter { it.rowId !in index }.sortedBy { it.rowId }
+        if (fresh.isEmpty()) return
+        out.addAll(0, fresh)
+        reindex()
+    }
+
     /** 快照全量替换（按 rowId 升序）。 */
     fun replaceAll(rows: List<ConversationRow>) {
         index.clear()

@@ -5,6 +5,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import java.util.UUID
@@ -166,6 +167,7 @@ class ConversationChannel(private val rpc: RpcChannel) {
                     title = snap.title ?: _meta.value.title,
                     phase = snap.phase,
                     totalCount = snap.totalCount,
+                    logEpoch = snap.logEpoch ?: _meta.value.logEpoch,
                 )
                 Log.i(TAG, "snapshot: ${snap.rows.size} 行（总 ${snap.totalCount}）" +
                         "待审批=${snap.pendingInteractions.size} delivery=${lf.deliveryKind}")
@@ -202,8 +204,85 @@ class ConversationChannel(private val rpc: RpcChannel) {
         sessionId = null
         subTarget = null
         _interactions.value = emptyList()
+        _earlier.value = EarlierState()
         _status.value = Status.Idle
         _meta.value = ConversationMeta()
+    }
+
+    // ---------- 历史翻页 ----------
+
+    /** 向上翻页状态（UI 据此显示"加载中/没有更早"并避免重复触发）。 */
+    data class EarlierState(
+        val loading: Boolean = false,
+        val hasMore: Boolean = false,
+        /** 是否已至少拉过一页（区分"从未拉过"与"拉完没更多"）。 */
+        val pulled: Boolean = false,
+    )
+
+    private val _earlier = MutableStateFlow(EarlierState())
+    val earlier: StateFlow<EarlierState> = _earlier
+
+    /**
+     * 向上拉一页更早历史（research/CONVERSATION-PROTOCOL.md §6.3）：
+     * `conversationRowsRangeV4({workspacePath, sessionId, beforeRowId, limit})`，
+     * 应答 `{rows, atSeq, atLogEpoch, hasMore}`。**atLogEpoch 必须等于当前快照的
+     * logEpoch**，不等说明日志纪元已变（快照失效），整批丢弃。
+     * 拉回的行按 rowId 升序前插进 [store]。
+     */
+    fun loadEarlier(store: RowStore, onResult: (Result<Int>) -> Unit) {
+        val session = sessionId
+        val target = subTarget
+        val firstRowId = store.firstRowId()
+        if (session == null || target == null || firstRowId == null) {
+            onResult(Result.failure(IllegalStateException("未订阅会话或无历史行")))
+            return
+        }
+        if (_earlier.value.loading) return
+        _earlier.value = _earlier.value.copy(loading = true)
+        val args = HashMap<String, Any>(target)
+        args["sessionId"] = session
+        args["beforeRowId"] = firstRowId
+        args["limit"] = 60
+        Log.i(TAG, "loadEarlier beforeRowId=$firstRowId session=$session")
+        rpc.call(RpcChannel.CHANNEL_AGENT, "conversationRowsRangeV4", listOf(args)) { reply ->
+            when (reply) {
+                is RpcChannel.RpcReply.Err -> {
+                    Log.w(TAG, "loadEarlier error: ${reply.message}")
+                    _earlier.value = EarlierState(loading = false, hasMore = _earlier.value.hasMore, pulled = true)
+                    onResult(Result.failure(IllegalStateException(reply.message)))
+                }
+                is RpcChannel.RpcReply.Ok -> {
+                    val result: JsonObject? = reply.data?.let { el ->
+                        runCatching { el.jsonObject }.getOrNull()
+                    }
+                    val atEpoch: String? = result?.get("atLogEpoch")?.let { e ->
+                        runCatching { e.jsonPrimitive.content }.getOrNull()
+                    }
+                    val curEpoch = _meta.value.logEpoch
+                    val rows: List<ConversationRow> = result?.get("rows")?.let { r ->
+                        runCatching { r.jsonArray }.getOrNull()
+                            ?.mapNotNull { el ->
+                                runCatching { el.jsonObject }.getOrNull()
+                                    ?.let { ConversationRow.from(it) }
+                            }
+                    } ?: emptyList()
+                    if (atEpoch != null && curEpoch != null && atEpoch != curEpoch) {
+                        Log.w(TAG, "loadEarlier logEpoch 不匹配（$atEpoch != $curEpoch），整批丢弃")
+                        _earlier.value = EarlierState(loading = false, hasMore = false, pulled = true)
+                        onResult(Result.failure(IllegalStateException("logEpoch 已变更")))
+                        return@call
+                    }
+                    val hasMore: Boolean = result?.get("hasMore")?.let { e ->
+                        val s = runCatching { e.jsonPrimitive.content }.getOrNull()
+                        s?.toBooleanStrictOrNull() ?: (s == "true")
+                    } ?: false
+                    if (rows.isNotEmpty()) store.prepend(rows)
+                    _earlier.value = EarlierState(loading = false, hasMore = hasMore, pulled = true)
+                    Log.i(TAG, "loadEarlier +${rows.size} 行 hasMore=$hasMore")
+                    onResult(Result.success(rows.size))
+                }
+            }
+        }
     }
 
     /**
