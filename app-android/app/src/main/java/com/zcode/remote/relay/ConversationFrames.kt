@@ -89,6 +89,8 @@ object ConversationFrames {
         val phase: String?,
         val rows: List<ConversationRow>,
         val totalCount: Int?,
+        /** 待审批交互（permission），整组给出。 */
+        val pendingInteractions: List<PendingApproval> = emptyList(),
     )
 
     fun parseSnapshot(payload: JsonObject): Snapshot? {
@@ -105,6 +107,7 @@ object ConversationFrames {
                     ?.mapNotNull { el -> runCatching { ConversationRow.from(el.jsonObject) }.getOrNull() }
             } ?: emptyList(),
             totalCount = rowsObj?.int("totalCount"),
+            pendingInteractions = PendingApproval.parseFrom(snap, snap.str("sessionId")),
         )
     }
 
@@ -113,7 +116,8 @@ object ConversationFrames {
         data class Upsert(val row: ConversationRow) : Delta
         data class RemoveFrom(val fromRowId: Int) : Delta
         data class AppendText(val rowId: Int, val path: String, val append: String) : Delta
-        data object StateUpdated : Delta
+        /** 会话状态补丁；`patch.pendingInteractions` 是**整组替换**（审批请求/消解都走这里）。 */
+        data class StateUpdated(val patch: JsonObject?) : Delta
         data class Unknown(val op: String) : Delta
     }
 
@@ -132,7 +136,7 @@ object ConversationFrames {
                         Delta.AppendText(rowId, o.str("path") ?: "text", append)
                     } else null
                 }
-                "state.updated" -> Delta.StateUpdated
+                "state.updated" -> Delta.StateUpdated(o.obj("patch"))
                 null -> null
                 else -> {
                     Log.i(TAG, "未处理的 delta op=$op")
@@ -160,6 +164,11 @@ data class ConversationRow(
     val inputText: String? = null,
     val outputText: String? = null,
     val createdAt: Long? = null,
+    /**
+     * 原始行对象。审批等结构化字段（选项数组、requestId 等）形态尚未穷举，
+     * 这里保留整包避免二次改数据类——取值见 [com.zcode.remote.relay.PendingApproval]。
+     */
+    val raw: JsonObject? = null,
 ) {
     val isUser: Boolean get() = kind == "userInput"
     val isStreaming: Boolean get() = state == "streaming"
@@ -181,6 +190,7 @@ data class ConversationRow(
                 inputText = str("inputText"),
                 outputText = o["output"]?.let { runCatching { it.jsonObject["text"]?.jsonPrimitive?.content }.getOrNull() },
                 createdAt = o["createdAt"]?.let { runCatching { it.jsonPrimitive.longOrNull }.getOrNull() },
+                raw = o,
             )
         }
     }

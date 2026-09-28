@@ -9,8 +9,10 @@ import androidx.compose.runtime.setValue
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.zcode.remote.relay.BridgeFrames
+import com.zcode.remote.relay.ApprovalOption
 import com.zcode.remote.relay.ConversationChannel
 import com.zcode.remote.relay.ConversationRow
+import com.zcode.remote.relay.PendingApproval
 import com.zcode.remote.relay.RelayClient
 import com.zcode.remote.relay.RelayState
 import com.zcode.remote.relay.RowStore
@@ -18,6 +20,8 @@ import com.zcode.remote.relay.RpcChannel
 import com.zcode.remote.relay.SessionItem
 import com.zcode.remote.relay.TaskEvent
 import com.zcode.remote.relay.parseBootstrapSessions
+import com.zcode.remote.notify.ApprovalBridge
+import com.zcode.remote.notify.ApprovalNotifier
 import com.zcode.remote.storage.CredentialStore
 import com.zcode.remote.storage.PairedDevice
 import kotlinx.coroutines.launch
@@ -58,6 +62,16 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
     var conversationStatus by mutableStateOf<ConversationChannel.Status>(ConversationChannel.Status.Idle)
         private set
     var conversationMeta by mutableStateOf(ConversationChannel.ConversationMeta())
+        private set
+
+    // ---- 权限审批 ----
+    /** 当前会话的待审批项（会话流 pendingInteractions + 任务事件流两条来源合并）。 */
+    var approvals by mutableStateOf<List<PendingApproval>>(emptyList())
+        private set
+    /** 任务事件流（桌面端实证的审批推送路径）来的待审批，按 interactionId 索引。主线程专用。 */
+    private val taskApprovals = LinkedHashMap<String, PendingApproval>()
+    /** 最近一次应答的反馈文案（UI 直接显示，用完置空）。 */
+    var approvalFeedback by mutableStateOf<String?>(null)
         private set
 
     private var client: RelayClient? = null
@@ -123,6 +137,21 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
                     null -> TaskEvent.from(payload)?.let { ev ->
                         events.add(0, ev)
                         if (events.size > 200) events.removeAt(events.lastIndex)
+                        // 审批推送走任务事件流（实测会话帧里没有 pendingInteractions）：
+                        // permission_request 建卡，permission_resolved 按 requestId 撤卡。
+                        when (ev.type) {
+                            "permission_request" ->
+                                PendingApproval.fromTaskEvent(ev.raw, ev.taskId)?.let {
+                                    taskApprovals[it.interactionId] = it
+                                    refreshApprovals()
+                                }
+                            "permission_resolved" ->
+                                ev.raw["requestId"]?.let {
+                                    runCatching { it.jsonPrimitive.content }.getOrNull()
+                                }?.let {
+                                    if (taskApprovals.remove(it) != null) refreshApprovals()
+                                }
+                        }
                     }
                     else -> Unit
                 }
@@ -153,7 +182,63 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
 
         viewModelScope.launch { conv.status.collect { conversationStatus = it } }
         viewModelScope.launch { conv.meta.collect { conversationMeta = it } }
+        viewModelScope.launch {
+            conv.interactions.collect { refreshApprovals() }
+        }
+        // 通知按钮 → AppViewModel 应答（连接只活在这里，所以桥必须在连接建立时挂上）
+        ApprovalBridge.handler = { interactionId, optionId -> resolveById(interactionId, optionId) }
     }
+
+    /**
+     * 合并两条审批来源（会话流 pendingInteractions + 任务事件流）并对齐通知栏：
+     * 新审批弹通知，桌面端已处理/自动决议的自动撤下。
+     */
+    private fun refreshApprovals() {
+        val merged = LinkedHashMap<String, PendingApproval>()
+        conversation?.interactions?.value?.forEach { merged[it.interactionId] = it }
+        taskApprovals.forEach { (k, v) -> merged[k] = v }
+        val next = merged.values.toList()
+        if (next == approvals) return
+        approvals = next
+        Log.i(TAG, "approvals → ${next.size} 条 " +
+                next.joinToString(",") { "${it.toolName ?: "?"}#${it.interactionId.take(18)}" })
+        runCatching { ApprovalNotifier.sync(getApplication(), next) }
+            .onFailure { Log.w(TAG, "通知栏刷新失败", it) }
+    }
+
+    /** 通知栏按钮走这条路径：按 id 找回对象再应答。 */
+    private fun resolveById(interactionId: String, optionId: String) {
+        val a = approvals.firstOrNull { it.interactionId == interactionId }
+        val opt = a?.options?.firstOrNull { it.optionId == optionId }
+        if (a == null || opt == null) {
+            approvalFeedback = "这条审批已经不在待处理列表里了（可能桌面端已处理）"
+            return
+        }
+        resolve(a, opt)
+    }
+
+    /** 应答一次审批。 */
+    fun resolve(approval: PendingApproval, option: ApprovalOption) {
+        val conv = conversation ?: run {
+            approvalFeedback = "连接已断开，未发出"
+            return
+        }
+        conv.resolve(approval, option) { r ->
+            viewModelScope.launch {
+                approvalFeedback = when (r) {
+                    is ConversationChannel.ResolveResult.Accepted -> when (r.status) {
+                        "accepted" -> if (option.isAllow) "已批准" else "已拒绝"
+                        "duplicate" -> "已收到（重复提交，服务端只认第一次）"
+                        else -> "服务端已消解（可能桌面端先处理了）"
+                    }
+                    is ConversationChannel.ResolveResult.Failed -> "发送失败：${r.message}"
+                }
+                Log.i(TAG, "resolve result=$r interaction=${approval.interactionId}")
+            }
+        }
+    }
+
+    fun consumeApprovalFeedback() { approvalFeedback = null }
 
     /**
      * 订阅某会话的流式内容。
@@ -198,6 +283,11 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         client = null
         channel = null
         conversation = null
+        // 连接没了就没人能应答：摘掉桥并撤掉通知，避免用户点了个"假批准"
+        ApprovalBridge.handler = null
+        runCatching { ApprovalNotifier.clearAll(getApplication()) }
+        taskApprovals.clear()
+        approvals = emptyList()
     }
 
     fun forget() {

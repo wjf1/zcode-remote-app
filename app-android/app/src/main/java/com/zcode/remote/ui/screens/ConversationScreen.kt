@@ -13,8 +13,10 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import com.zcode.remote.relay.ApprovalOption
 import com.zcode.remote.relay.ConversationChannel
 import com.zcode.remote.relay.ConversationRow
+import com.zcode.remote.relay.PendingApproval
 
 /**
  * 会话内容页：把会话流（snapshot 尾窗 + 增量）渲染成对话。
@@ -27,6 +29,10 @@ fun ConversationScreen(
     status: ConversationChannel.Status,
     meta: ConversationChannel.ConversationMeta,
     rows: List<ConversationRow>,
+    approvals: List<PendingApproval> = emptyList(),
+    approvalFeedback: String? = null,
+    onResolve: (PendingApproval, ApprovalOption) -> Unit = { _, _ -> },
+    onFeedbackSeen: () -> Unit = {},
     onBack: () -> Unit,
 ) {
     val listState = rememberLazyListState()
@@ -47,6 +53,7 @@ fun ConversationScreen(
                         statusLabel(status),
                         meta.phase?.let { phaseLabel(it) },
                         meta.totalCount?.let { "共 $it 行" },
+                        approvals.size.takeIf { it > 0 }?.let { "待审批 $it" },
                     ).joinToString(" · "),
                     style = MaterialTheme.typography.bodySmall,
                     color = if (status is ConversationChannel.Status.Failed) MaterialTheme.colorScheme.error
@@ -54,6 +61,18 @@ fun ConversationScreen(
                 )
             }
         }
+
+        approvalFeedback?.let { msg ->
+            LaunchedEffect(msg) { onFeedbackSeen() }
+            Text(
+                msg,
+                style = MaterialTheme.typography.labelMedium,
+                color = MaterialTheme.colorScheme.primary,
+            )
+        }
+
+        // 审批条置顶：待审批时正文可能被刷走，不能放在列表里
+        approvals.forEach { ApprovalCard(it, onResolve) }
 
         if (rows.isEmpty()) {
             Text("等待会话内容…", style = MaterialTheme.typography.bodySmall)
@@ -65,6 +84,57 @@ fun ConversationScreen(
             verticalArrangement = Arrangement.spacedBy(6.dp),
         ) {
             items(rows, key = { it.rowId }) { row -> RowItem(row) }
+        }
+    }
+}
+
+/** 一条待审批：工具名 + 摘要 + 详情 + 按 kind 排好序的选项按钮。 */
+@Composable
+private fun ApprovalCard(
+    a: PendingApproval,
+    onResolve: (PendingApproval, ApprovalOption) -> Unit,
+) {
+    Card(
+        shape = RoundedCornerShape(10.dp),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.secondaryContainer),
+    ) {
+        Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+            Text("⚠️ 需要审批 · ${a.toolName ?: "工具调用"}",
+                style = MaterialTheme.typography.titleSmall)
+            a.summary?.let {
+                Text(it, style = MaterialTheme.typography.bodySmall, maxLines = 3,
+                    overflow = TextOverflow.Ellipsis)
+            }
+            a.detail?.let {
+                Text(it.take(600), style = MaterialTheme.typography.bodySmall,
+                    fontFamily = FontFamily.Monospace)
+            }
+            a.autoResolveAt?.let {
+                Text("桌面端 ${(it - System.currentTimeMillis()).coerceAtLeast(0) / 1000}s 后自动决议",
+                    style = MaterialTheme.typography.labelSmall)
+            }
+            if (a.options.isEmpty()) {
+                Text("服务端没给选项，请到桌面端处理", style = MaterialTheme.typography.bodySmall)
+            }
+            a.options.forEach { opt ->
+                Button(
+                    onClick = { onResolve(a, opt) },
+                    modifier = Modifier.fillMaxWidth(),
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = if (opt.isAllow) MaterialTheme.colorScheme.primary
+                        else MaterialTheme.colorScheme.error,
+                    ),
+                ) {
+                    Text(
+                        when {
+                            opt.kind == "allowOnce" -> "允许一次"
+                            opt.kind == "allowAlways" -> "总是允许"
+                            opt.isDeny -> "拒绝"
+                            else -> opt.label.ifBlank { "选项" }
+                        }
+                    )
+                }
+            }
         }
     }
 }

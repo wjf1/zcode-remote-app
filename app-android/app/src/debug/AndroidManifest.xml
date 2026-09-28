@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  仅 debug 构建合并进来。DebugApprovalReceiver 用来在没有真实审批时注入假的 pending，
+  验证通知渲染 / 按钮回调 / 断线时的"没发出去"提示。
+
+  exported=true 是故意的：adb shell（uid=shell）无法把广播发给 exported=false 的组件。
+  release 构建不含此 receiver，因此不存在对外攻击面。
+-->
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <application>
+        <receiver
+            android:name=".debug.DebugApprovalReceiver"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="com.zcode.remote.action.DEBUG_APPROVAL" />
+                <action android:name="com.zcode.remote.action.DEBUG_APPROVAL_CLEAR" />
+            </intent-filter>
+        </receiver>
+    </application>
+</manifest>

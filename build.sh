@@ -43,11 +43,14 @@ case "${1:-}" in
   install)
     "$ADB" install -r "$APK"
     "$ADB" shell pm grant com.zcode.remote android.permission.CAMERA 2>/dev/null || true
+    # Android 13+ 通知是运行时权限，没给的话审批通知栏不会弹
+    "$ADB" shell pm grant com.zcode.remote android.permission.POST_NOTIFICATIONS 2>/dev/null || true
     "$ADB" logcat -c
     "$ADB" shell am force-stop com.zcode.remote
     "$ADB" shell am start -n com.zcode.remote/.MainActivity
     ;;
   log)
-    "$ADB" logcat -d -s RelayClient
+    # ConvChannel = 会话流/审批应答，AppViewModel = 审批状态与 ack 结果
+    "$ADB" logcat -d -s RelayClient RpcChannel ConvChannel AppViewModel
     ;;
 esac

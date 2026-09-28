@@ -30,6 +30,10 @@ class MainActivity : ComponentActivity() {
                         status = vm.conversationStatus,
                         meta = vm.conversationMeta,
                         rows = vm.rows.toList(),
+                        approvals = vm.approvals,
+                        approvalFeedback = vm.approvalFeedback,
+                        onResolve = { a, opt -> vm.resolve(a, opt) },
+                        onFeedbackSeen = { vm.consumeApprovalFeedback() },
                         onBack = { opened = null },
                     )
                     else -> HomeScreen(

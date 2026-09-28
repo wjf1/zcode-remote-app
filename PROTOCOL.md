@@ -148,17 +148,43 @@ python tools/probe.py sub <会话ID前缀> [帧落盘路径]   # + 完整会话�
 事件字段：`{type, workspacePath, taskId, updatedAt, workspaceIdentity, ...}`
 状态映射：`permission_request/elicitation_*` → UI 态 `streaming`；`updated` → `ready`；`error` → `failed`。
 
-### 6.3 权限审批（P0 核心功能，机制已明）
+### 6.3 权限审批（P0 核心功能，2026-09-18 已实现手机端应答；2026-09-28 端到端验收通过）
 
-- 权限请求以事件 `permission_request` 推送（ elicitation 为表单类请求），携带**文本选项**。
-- 选项归类（手机端原文字符串集）：
-  - `allowOnce` ← "allow"、"allow once"、"approve"
-  - `allowAlways` ← "always allow"、"allow always"、"approve always"
-  - `rejectOnce` ← "deny"、"deny once"、"reject"、"reject once"
-  - `rejectAlways` ← "always deny"、"deny always"、"always reject"
-  - 其余 → `custom`
-- 应答 = 回传所选**选项序号**（映射 0/1/…），非布尔。App 可按上面四类渲染成规范的双排按钮 + 自定义输入。
-- 【待验证】审批应答的精确 rpc 帧格式（在 conversation frame 层内）。
+> **2026-09-28 实测补充（本节为准）**：桌面端推给手机端的审批走**两条并存的路**，App 端已双源合并：
+> ① **会话帧路径**：`snapshot.pendingInteractions[]` 与 `state.updated` patch 里的 `pendingInteractions`
+> （整组替换语义）——**实测确认桌面端确实推送**（App 日志 `pendingInteractions → N 条`）；
+> ② **任务事件流路径**（host 源码 `permissionRequestToStreamEvent` 实证）：
+> `{type:"permission_request", taskId, requestId, description: reason||toolName, kind: toolName,
+> title: toolName, options:[{optionId, kind, name?, response?}], raw}`——注意此路径**没有
+> interactionId/payload 包裹**，`requestId` 即应答时的 `interactionId`；选项元素**没有 label**
+> （显示名由 kind 生成：允许/始终允许/拒绝/始终拒绝，custom 用 name）。消解推送
+> `{type:"permission_resolved", requestId}`。
+> 端到端验收记录：锁屏状态下 App 收到审批 → 通知栏「允许一次」自动点击 → `resolveInteraction`
+> → 桌面端回 `Accepted(status=accepted)` → 被批准的 Bash 实际执行。
+
+- 请求的到达方式不是独立 RPC，而是**会话流里的状态**：`snapshot.pendingInteractions[]`
+  与 `deltas` 中 `state.updated.patch.pendingInteractions`（**整组替换**语义，不是逐条增删）。
+  任务事件 `permission_request` 只用于列表页角标，选项详情仍要从会话流取。
+- 一条 pending 的关键字段：`interactionId`、`kind`（`permission` / `elicitation`）、
+  `payload{toolName, toolCallId, summary, detail, options[]}`、`anchorRowId`、
+  `autoResolution.deadlineAt`（桌面端倒计时，到点后手机再答会得到 `noop`）。
+- `options[]` 每项含 `optionId`、`label`、`kind`、`response.decision`。归类：
+  - `allowOnce` / `allowAlways` / `rejectOnce` / `rejectAlways` / `custom`
+- **应答 = `sendConversationCommandV4`，回传 `optionId` 原文，不是序号。**
+  早期文档写的"映射 0/1/… 序号"是错的：官方 UI 的显示顺序是按 `kind` 排序后的位次，
+  与数组下标不一致，按序号回传会答错选项。证据（两条独立链路互相印证）：
+  - 手机端 web bundle `research/index-nOVzQNKW.js` @536751（envelope 工厂）、
+    @546972（`sendCommand`）、@129232（answer 的 zod schema 只认 `{optionId}`）、
+    @2295576（`requestId === interactionId`）、@2300846（`onRespond`）；
+  - PC host `asar/out/host/index.js` @456048（`respondPermission`）。
+- 请求 envelope：`{workspacePath, workspaceIdentity?, envelope:{commandId, clientId, sessionId,
+  type:'resolveInteraction', payload:{interactionId, answer:{optionId}}, issuedAt}}`。
+- 成功判据：ack `status ∈ {accepted, duplicate, noop}`（`duplicate`/`noop` 表示他处已消解，
+  不是失败）。硬约束：`clientId` 必须等于本次连接 `initializeConversationV4` 用的那个，
+  否则 host 抛 `fault.command.clientMismatch`（`host/chunk-BG4MS6RN.js` @54591）。
+- `resolveInteraction` 被官方归类为 sensitive 命令：**断线后不自动重放**，
+  重连要用 `queryConversationCommandsV4` 回查。本 App 的做法是撤下通知并提示用户重新点。
+- 同一会话可能有多条并行 pending（subagent 场景），必须按 `interactionId` 精确匹配。
 
 ## 7. Bot Channel（辅路）
 
@@ -170,8 +196,18 @@ python tools/probe.py sub <会话ID前缀> [帧落盘路径]   # + 完整会话�
 > App 端可订阅会话、拿快照、并按增量实时渲染（实测：标题栏「已订阅 · 运行中 · 共 363 行」，
 > 行按 reasoning / toolCall / assistantText 分类渲染，流式内容实时更新）。
 > 关键结论与踩坑记录见 `research/CONVERSATION-PROTOCOL.md`。
-> 尚未完成：向上翻页拉更早历史（`conversationRowsRangeV4`）、发送指令
-> （`sendConversationCommandV4`）、权限审批应答、逻辑帧分片重组。
+>
+> **2026-09-18 更新**：`sendConversationCommandV4` 的权限审批应答已按 §6.3 实现
+> （会话内卡片 + 通知栏按钮，见 `ConversationChannel.resolve()`），
+> 并在模拟器上通过 debug 注入验证了通知渲染与"连接已断时不假装批准"。
+> **2026-09-28 更新**：**M2 端到端验收通过**——切 build 模式 → 触发工具调用 → 锁屏收到审批推送
+> → 通知栏「允许一次」自动批准 → `resolveInteraction` → 桌面端 `Accepted` → 命令放行执行，全链路闭环。
+> 验收过程中另获两个工程结论：① 模拟器**熄屏触发 Doze 会切断 App 网络**（`SocketException:
+> connection abort`，重连持续失败），测试机需 `adb shell dumpsys deviceidle disable` + 保持充电；
+> 真机对应 HyperOS 省电白名单引导（M3）。② **setMode 只对新 turn 生效**：对运行中的 agent
+> turn 切模式不改变其权限上下文（实测两次"验收失败"均由此产生，非协议问题）。
+> **待真实审批端到端验收**：~~桌面端会话默认是 `yolo` 模式~~（已完成，见上）。
+> 尚未完成：向上翻页拉更早历史（`conversationRowsRangeV4`）、逻辑帧分片重组。
 
 1. **可以开工**：握手（HMAC proof）、心跳、状态机、错误恢复、workspace/session RPC 方法面全部齐备，Kotlin 实现无未知阻塞。
 2. 遗留 4 个【待验证】项（PC 侧 meta 字段、心跳间隔分配、maxPhysicalFrameBytes 值、conversation frame 二进制细节 + 审批应答帧）——前三者可用"容错实现 + 运行时日志"兜底；第 4 项在 M1 联调时以真机+一次受控抓包解决（届时再申请装 CA）。

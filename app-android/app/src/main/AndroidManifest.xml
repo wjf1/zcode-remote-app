@@ -29,5 +29,14 @@
             android:name=".service.ConnectionService"
             android:exported="false"
             android:foregroundServiceType="dataSync" />
+
+        <!-- 审批通知栏按钮的回调（批准/拒绝），必须 exported=false，只收自己发的广播 -->
+        <receiver
+            android:name=".notify.ApprovalReceiver"
+            android:exported="false">
+            <intent-filter>
+                <action android:name="com.zcode.remote.action.RESOLVE_APPROVAL" />
+            </intent-filter>
+        </receiver>
     </application>
 </manifest>
