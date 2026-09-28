@@ -1,6 +1,7 @@
 package com.zcode.remote.ui.screens
 
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material3.*
@@ -14,6 +15,7 @@ import com.zcode.remote.relay.RelayState
 import com.zcode.remote.relay.RpcChannel
 import com.zcode.remote.relay.SessionItem
 import com.zcode.remote.relay.TaskEvent
+import com.zcode.remote.storage.PairedDevice
 
 /** 主屏：连接状态 + PC 信息 + 会话列表（点击订阅）+ RPC 观测面板。 */
 @Composable
@@ -24,23 +26,28 @@ fun HomeScreen(
     events: List<TaskEvent>,
     bridgeState: RpcChannel.BridgeState,
     rpcEvents: List<String>,
+    devices: List<PairedDevice> = emptyList(),
+    activeSid: String? = null,
+    onSwitchDevice: (String) -> Unit = {},
+    onRemoveDevice: (String) -> Unit = {},
     endpointMode: String = "auto",
     customRelayUrl: String = "",
     themeMode: String = "dark",
     onEndpointChange: (String, String?) -> Unit = { _, _ -> },
     onThemeChange: (String) -> Unit = {},
+    onShowGuide: () -> Unit = {},
     onSessionClick: (SessionItem) -> Unit,
     onDisconnect: () -> Unit,
     onRescan: () -> Unit,
 ) {
-    Column(Modifier.fillMaxSize().padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+    Column(Modifier.fillMaxSize().statusBarsPadding().padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Text("ZCode Remote", style = MaterialTheme.typography.headlineSmall, modifier = Modifier.weight(1f))
-            TextButton(onClick = onRescan) { Text("重新配对") }
+            TextButton(onClick = onRescan) { Text("添加设备") }
         }
 
         SettingsCard(
-            endpointMode, customRelayUrl, themeMode, onEndpointChange, onThemeChange,
+            endpointMode, customRelayUrl, themeMode, onEndpointChange, onThemeChange, onShowGuide,
         )
 
         Card {
@@ -56,6 +63,26 @@ fun HomeScreen(
                     Text(statusLabel(state), style = MaterialTheme.typography.bodyMedium)
                 }
                 Text("会话桥：" + bridgeLabel(bridgeState), style = MaterialTheme.typography.bodySmall)
+                // 多机管理（M3）：其余已配对设备，点击切换，可移除
+                val others = devices.filter { it.deviceSid != activeSid }
+                if (others.isNotEmpty()) {
+                    HorizontalDivider(Modifier.padding(vertical = 4.dp))
+                    Text("其他设备", style = MaterialTheme.typography.labelMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    others.forEach { d ->
+                        Row(verticalAlignment = Alignment.CenterVertically,
+                            modifier = Modifier.fillMaxWidth()) {
+                            Column(Modifier.weight(1f)) {
+                                Text(d.deviceName ?: d.deviceSid, style = MaterialTheme.typography.bodySmall,
+                                    maxLines = 1, overflow = TextOverflow.Ellipsis)
+                            }
+                            TextButton(onClick = { onSwitchDevice(d.deviceSid) },
+                                contentPadding = PaddingValues(horizontal = 8.dp)) { Text("切换") }
+                            TextButton(onClick = { onRemoveDevice(d.deviceSid) },
+                                contentPadding = PaddingValues(horizontal = 8.dp)) { Text("移除") }
+                        }
+                    }
+                }
                 if (state is RelayState.Failed) {
                     Text(state.message ?: "", color = MaterialTheme.colorScheme.error,
                         style = MaterialTheme.typography.bodySmall)
@@ -197,6 +224,7 @@ private fun SettingsCard(
     themeMode: String,
     onEndpointChange: (String, String?) -> Unit,
     onThemeChange: (String) -> Unit,
+    onShowGuide: () -> Unit,
 ) {
     var expanded by remember { mutableStateOf(false) }
     var editingCustom by remember { mutableStateOf<String?>(null) }
@@ -228,6 +256,9 @@ private fun SettingsCard(
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
+                    }
+                    TextButton(onClick = onShowGuide, contentPadding = PaddingValues(0.dp)) {
+                        Text("保活引导（小米 / HyperOS）→")
                     }
                     Text("主题", style = MaterialTheme.typography.labelLarge)
                     Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {

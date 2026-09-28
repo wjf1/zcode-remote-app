@@ -12,6 +12,7 @@ import com.zcode.remote.relay.ApprovalOption
 import com.zcode.remote.relay.PendingApproval
 import com.zcode.remote.relay.SessionItem
 import com.zcode.remote.ui.screens.ConversationScreen
+import com.zcode.remote.ui.screens.KeepAliveGuideScreen
 import com.zcode.remote.ui.screens.HomeScreen
 import com.zcode.remote.ui.screens.ScanScreen
 import com.zcode.remote.ui.theme.ZCodeTheme
@@ -29,9 +30,11 @@ class MainActivity : ComponentActivity() {
                 Surface(Modifier.fillMaxSize()) {
                 var scanning by remember { mutableStateOf(false) }
                 var opened by remember { mutableStateOf<SessionItem?>(null) }
+                var showGuide by remember { mutableStateOf(false) }
 
                 val target = opened
                 when {
+                    showGuide -> KeepAliveGuideScreen(onBack = { showGuide = false })
                     vm.device == null || scanning -> ScanScreen(
                         onPaired = { vm.pair(it); scanning = false },
                     )
@@ -55,14 +58,19 @@ class MainActivity : ComponentActivity() {
                         events = vm.events.toList(),
                         bridgeState = vm.bridgeState,
                         rpcEvents = vm.rpcEvents.toList(),
+                        devices = vm.devices,
+                        activeSid = vm.device?.deviceSid,
+                        onSwitchDevice = { vm.switchDevice(it) },
+                        onRemoveDevice = { vm.removeDevice(it) },
                         endpointMode = vm.endpointMode,
                         customRelayUrl = vm.customRelayUrl,
                         themeMode = vm.themeMode,
                         onEndpointChange = { m, u -> vm.setEndpoint(m, u) },
                         onThemeChange = { m -> vm.setTheme(m) },
+                        onShowGuide = { showGuide = true },
                         onSessionClick = { s -> vm.openSession(s); opened = s },
                         onDisconnect = { vm.disconnect() },
-                        onRescan = { vm.forget(); opened = null; scanning = true },
+                        onRescan = { opened = null; scanning = true },   // 添加设备：不清现有凭据
                     )
                 }
                 }

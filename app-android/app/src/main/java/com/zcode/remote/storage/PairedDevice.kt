@@ -20,7 +20,9 @@ data class PairedDevice(
 
 object QrParser {
     fun parse(raw: String): PairedDevice? {
-        val uri = runCatching { Uri.parse(raw) }.getOrNull() ?: return null
+        // hash 是 base64url 前的原文，可能含字面 '+'；Uri.getQueryParameter 会把 '+' 解码成空格，
+        // 先统一转义（官方 URLSearchParams 生成端同样语义），否则含 '+' 的凭据配对必失败
+        val uri = runCatching { Uri.parse(raw.replace("+", "%2B")) }.getOrNull() ?: return null
         val sid = uri.getQueryParameter("sid")?.takeIf { it.isNotBlank() } ?: return null
         val hash = uri.getQueryParameter("hash")?.takeIf { it.isNotBlank() } ?: return null
         return PairedDevice(

@@ -28,7 +28,7 @@ sealed interface RelayState {
     data class Failed(val reason: FailureReason, val message: String?) : RelayState
 }
 
-enum class FailureReason { KICKED, AUTH_FAILED, DEVICE_OFFLINE, NETWORK, INTERNAL }
+enum class FailureReason { KICKED, AUTH_FAILED, DEVICE_OFFLINE, NETWORK, INTERNAL, PROTOCOL_MISMATCH }
 
 class RelayClient(
     private val device: com.zcode.remote.storage.PairedDevice,
@@ -114,9 +114,17 @@ class RelayClient(
                     send(RelayProtocol.authResponse(device.deviceSid, proof))
                 }
                 "auth_ack", "pair_status_ack" -> {
-                    when (RelayProtocol.pairStatusOf(frame)) {
+                    when (val st = RelayProtocol.pairStatusOf(frame)) {
                         "waiting" -> { _state.value = RelayState.WaitingPeer; startHeartbeat() }
                         "matched" -> { reconnectAttempt = 0; _state.value = RelayState.Paired; startHeartbeat() }
+                        // 协议变更兜底（M3）：关键握手帧出现未知结构，别再静默忽略
+                        else -> {
+                            android.util.Log.w(TAG, "unknown pair_status in $frame")
+                            if (frame["type"]?.toString()?.contains("auth_ack") == true) {
+                                fail(FailureReason.PROTOCOL_MISMATCH,
+                                    "握手应答结构未知（pair_status=${st ?: "缺失"}），官方协议可能已升级，请更新 App")
+                            }
+                        }
                     }
                 }
                 "data" -> {

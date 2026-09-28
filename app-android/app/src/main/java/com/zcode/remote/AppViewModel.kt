@@ -22,7 +22,7 @@ import com.zcode.remote.relay.TaskEvent
 import com.zcode.remote.relay.parseBootstrapSessions
 import com.zcode.remote.notify.ApprovalBridge
 import com.zcode.remote.notify.ApprovalNotifier
-import com.zcode.remote.storage.CredentialStore
+import com.zcode.remote.storage.MultiDeviceStore
 import com.zcode.remote.storage.PairedDevice
 import com.zcode.remote.storage.SettingsStore
 import kotlinx.coroutines.launch
@@ -36,10 +36,16 @@ import kotlinx.serialization.json.jsonPrimitive
  * 协议见 PROTOCOL.md 与 research/FRAME-CODEC.md。
  */
 class AppViewModel(app: Application) : AndroidViewModel(app) {
-    private val store = CredentialStore(app)
+    private val multiStore = MultiDeviceStore(app)
     private val settings = SettingsStore(app)
 
-    var device by mutableStateOf(store.load())
+    /** 活跃设备（当前连接的这台）。 */
+    var device by mutableStateOf(multiStore.load().let { s ->
+        s.devices.firstOrNull { it.deviceSid == s.activeSid } ?: s.devices.firstOrNull()
+    })
+        private set
+    /** 已配对的全部设备（M3 多机管理）。 */
+    var devices by mutableStateOf(multiStore.load().devices)
         private set
 
     // ---- 设置 ----
@@ -116,9 +122,30 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     fun pair(newDevice: PairedDevice) {
-        store.save(newDevice)
+        val snap = multiStore.upsertActive(newDevice)
+        devices = snap.devices
         device = newDevice
         connect()
+    }
+
+    /** 切换到另一台已配对设备（断开当前连接，连接新设备）。 */
+    fun switchDevice(sid: String) {
+        if (sid == device?.deviceSid) return
+        val target = devices.firstOrNull { it.deviceSid == sid } ?: return
+        multiStore.setActive(sid)
+        device = target
+        connect()
+    }
+
+    /** 移除一台设备；若移除的是活跃设备则落到下一台（无设备则断开）。 */
+    fun removeDevice(sid: String) {
+        val snap = multiStore.remove(sid)
+        devices = snap.devices
+        if (device?.deviceSid == sid) {
+            device = snap.devices.firstOrNull { it.deviceSid == snap.activeSid }
+                ?: snap.devices.firstOrNull()
+            if (device != null) connect() else disconnect()
+        }
     }
 
     fun connect() {
@@ -334,7 +361,7 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
 
     fun forget() {
         disconnect()
-        store.clear()
+        multiStore.clear()
         device = null
         events.clear()
         sessions.clear()
