@@ -1,5 +1,17 @@
 # 变更记录 / Changelog
 
+## v0.3.0-m3（2026-09-28）· 首个签名 Release
+
+**里程碑：M2 完成 + M3 主体功能——首个可安装的签名发布包**
+
+汇总 v0.2.0-m2 ~ v0.2.3-m3b 全部内容：扫码配对、中继连接、会话列表与流式渲染、
+权限审批（会话内 + 通知栏，双源接收 + resolveInteraction 应答）、历史翻页、分片重组、
+多机管理、线路切换、主题三模式、保活引导、协议变更兜底。
+
+- `versionName 0.3.0-m3` / `versionCode 4`；release APK 由专用 keystore 签名
+  （`app-android/keystore.properties` 本地保存，不入库；PKCS12 约束 key 密码与 store 密码一致）。
+- 下载：GitHub Releases 页 `ZCodeRemote-0.3.0-m3.apk`（minSdk 31 / targetSdk 35）。
+
 ## v0.2.3-m3b（2026-09-28）
 
 **里程碑：M3 第二批 —— 多机管理 + 保活引导 + 协议兜底**

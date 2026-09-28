@@ -19,3 +19,8 @@ research/qrdec/
 *.log
 .DS_Store
 Thumbs.db
+
+# 签名材料（自用发布）
+keystore.properties
+*.keystore
+*.jks
