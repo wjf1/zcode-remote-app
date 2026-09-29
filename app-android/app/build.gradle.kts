@@ -53,7 +53,10 @@ android {
         targetCompatibility = JavaVersion.VERSION_17
     }
     kotlinOptions { jvmTarget = "17" }
-    buildFeatures { compose = true }
+    buildFeatures {
+        compose = true
+        buildConfig = true   // 用 BuildConfig.DEBUG 隔离调试观测面板（HANDOVER 技术债）
+    }
 }
 
 dependencies {

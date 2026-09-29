@@ -34,7 +34,7 @@
        HTTP 头必须带 Origin: https://zcode.z.ai  ← 缺失即 AUTH_FAILED（中继校验来源）
 任一端 → 中继   {"type":"auth_init","role":"device|terminal","device_sid":"<sid>",
                  "meta":{...},"client_ts":<ms>}
-                  role="device"（PC）：meta【待验证】
+                  role="device"（PC）：meta={"platform":process.platform,"version":<appVersion>,"name":<deviceName>}（已定位，见 §4.1）
                   role="terminal"（手机/App）：meta={"platform":"web","version":"web","name":"mobile-browser"}
 中继 → 端       {"type":"auth_challenge","nonce":"<随机串>","server_ts":<秒>}
 端 → 中继       {"type":"auth_response","device_sid":"<sid>","proof":"<见下>","client_ts":<ms>}
@@ -95,7 +95,33 @@ python tools/probe.py sub <会话ID前缀> [帧落盘路径]   # + 完整会话�
 | `INTERNAL` | 已配对过则回到 waiting 等设备回来，否则重连 |
 
 其他关闭/失败类别（PC 端枚举）：`disconnected`、`desktop-bootstrap-timeout`、`connection-recovery-timeout`、`relay-unavailable`、`unsupported-action`、`unexpected-error`。
-断线缓冲：出站队列上限 50 条，溢出整批丢弃，**重连不回放**。帧大小上限存在（`maxPhysicalFrameBytes`，字面量未定位【待验证】）。
+断线缓冲：出站队列上限 50 条，溢出整批丢弃，**重连不回放**。帧大小上限 `maxPhysicalFrameBytes = 1 MiB`
+（已定位，见 §4.1）。
+
+### 4.1 协议常量与心跳（2026-09-29 从 host asar 与官方 web bundle 定位，原【待验证】项已结清）
+
+```js
+// host asar 常量对象 sr / tt
+{ maxPhysicalFrameBytes: 1024*1024,        // 1 MiB（= tt.maxFrameBytes）；dataBase64 长度上限
+  maxMessageBytes: 16*1024*1024,           // 16 MiB，单条消息（重组前）上限
+  maxFragments: 64,                        // fragmentCount 上限（fragmentIndex ≤ 63）
+  assemblyTimeoutMs: 30_000,               // 分片重组超时
+  logicalFrameAssemblyMaxBytes: 16MiB,     // 204 逻辑帧重组上限
+  logicalFrameAssemblyMaxFragments: 1024,
+  logicalFrameAssemblyMaxConcurrent: 32,
+  transportIdMaxChars: <n> }
+// rpc-frame zod 约束：seq/messageSeq 为正整数；fragmentIndex ∈ [0,63] 且 < fragmentCount；
+// messageBytes ≤ 16 MiB；checksum.value 必须匹配 /^[0-9a-f]{8}$/；dataBase64 需规范 base64。
+```
+
+- **PC 端 auth_init meta（已定位）**：`{platform: process.platform, version: <appVersion>, name: <deviceName>}`
+  （`yp` 构造，`role:"device"`）。
+- **心跳间隔（两侧一致）**：`heartbeatIntervalMs ?? 10_000`（默认 10s，带抖动 `heartbeatJitterMs`）；
+  `heartbeatAckTimeoutMs ?? 30_000`（30s 未收到 ack → 判定链路失活并重连）；
+  reconnect 抖动 `≤ min(interval, 2000)ms`。**PC 端**用 `pair_status_query`；**移动端**同帧同间隔。
+- **App 现状**：`RelayClient` 心跳为固定 30s（`Thread.sleep(30_000)`）——间隔长于官方 10s，
+  仍在 30s ack 超时窗口内可用；若要贴近官方行为可将间隔调至 10s（非阻塞项）。
+
 
 ## 5. 内层负载（`data.payload`，`zcode_type` 路由，两侧一致）
 
@@ -256,7 +282,14 @@ python tools/probe.py sub <会话ID前缀> [帧落盘路径]   # + 完整会话�
 > （连续翻页 +60 行×2；190 帧单分片直通无回归）。
 
 1. **可以开工**：握手（HMAC proof）、心跳、状态机、错误恢复、workspace/session RPC 方法面全部齐备，Kotlin 实现无未知阻塞。
-2. 遗留 4 个【待验证】项（PC 侧 meta 字段、心跳间隔分配、maxPhysicalFrameBytes 值、conversation frame 二进制细节 + 审批应答帧）——前三者可用"容错实现 + 运行时日志"兜底；第 4 项在 M1 联调时以真机+一次受控抓包解决（届时再申请装 CA）。
+2. 【待验证】项结清情况（2026-09-29）：
+   - ✅ **PC 侧 meta 字段**：`{platform: process.platform, version: <appVersion>, name: <deviceName>}`（§4.1）。
+   - ✅ **心跳间隔**：两侧默认 `10_000ms`（带抖动），ack 超时 `30_000ms`（§4.1）。
+   - ✅ **maxPhysicalFrameBytes**：`1024*1024`（1 MiB）；`maxMessageBytes` 16 MiB、`maxFragments` 64（§4.1）。
+   - ✅ **审批应答帧**：`sendConversationCommandV4` + `resolveInteraction`（§6.3），已端到端实测。
+   - ✅ **elicitation 表单应答**：同 envelope，answer 按形态构造（§6.5），已端到端实测。
+   - ⏳ **conversation frame 二进制细节**：`v4/conversation/frame` 内部层未穷举（不影响功能，
+     未知 op 已有 Unknown 分支兜底）；如需彻底结清，以一次受控抓包 + host 源码定位。
 3. 互踢风险确认存在（KICKED/session-conflict）：App 在线时官方 Web 版会被踢（反之亦然），M1 按"单端在线"设计，产品上做提示。
 
 ## 9. 版本基线

@@ -11,6 +11,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import com.zcode.remote.BuildConfig
 import com.zcode.remote.relay.RelayState
 import com.zcode.remote.relay.RpcChannel
 import com.zcode.remote.relay.SessionItem
@@ -40,6 +41,9 @@ fun HomeScreen(
     onDisconnect: () -> Unit,
     onRescan: () -> Unit,
 ) {
+    // 移除设备需二次确认（凭据删除不可逆）
+    var pendingRemove by remember { mutableStateOf<String?>(null) }
+
     Column(Modifier.fillMaxSize().statusBarsPadding().padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Text("ZCode Remote", style = MaterialTheme.typography.headlineSmall, modifier = Modifier.weight(1f))
@@ -78,7 +82,7 @@ fun HomeScreen(
                             }
                             TextButton(onClick = { onSwitchDevice(d.deviceSid) },
                                 contentPadding = PaddingValues(horizontal = 8.dp)) { Text("切换") }
-                            TextButton(onClick = { onRemoveDevice(d.deviceSid) },
+                            TextButton(onClick = { pendingRemove = d.deviceSid },
                                 contentPadding = PaddingValues(horizontal = 8.dp)) { Text("移除") }
                         }
                     }
@@ -112,14 +116,36 @@ fun HomeScreen(
         LazyColumn(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             items(sessions) { s -> SessionCard(s) { onSessionClick(s) } }
             if (rpcEvents.isNotEmpty()) {
-                item { Text("RPC 事件（${rpcEvents.size}）", style = MaterialTheme.typography.titleSmall) }
-                items(rpcEvents) { raw -> RpcEventCard(raw) }
+                // 调试观测面板：仅 debug 构建显示（HANDOVER 技术债，release 不含）
+                if (BuildConfig.DEBUG) {
+                    item { Text("RPC 事件（${rpcEvents.size}）", style = MaterialTheme.typography.titleSmall) }
+                    items(rpcEvents) { raw -> RpcEventCard(raw) }
+                }
             }
             if (events.isNotEmpty()) {
                 item { Text("任务事件", style = MaterialTheme.typography.titleSmall) }
                 items(events) { ev -> EventCard(ev) }
             }
         }
+    }
+
+    // 移除设备二次确认：删除的是加密凭据，不可逆
+    pendingRemove?.let { sid ->
+        val name = devices.firstOrNull { it.deviceSid == sid }?.deviceName ?: sid.take(12)
+        AlertDialog(
+            onDismissRequest = { pendingRemove = null },
+            title = { Text("移除设备") },
+            text = { Text("将删除「$name」的配对凭据，之后需重新扫码才能连接。确定移除？") },
+            confirmButton = {
+                TextButton(onClick = {
+                    onRemoveDevice(sid)
+                    pendingRemove = null
+                }) { Text("移除", color = MaterialTheme.colorScheme.error) }
+            },
+            dismissButton = {
+                TextButton(onClick = { pendingRemove = null }) { Text("取消") }
+            },
+        )
     }
 }
 
