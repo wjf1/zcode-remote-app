@@ -84,15 +84,16 @@ python tools/_e2e_tap_approve.py                           # 验收自动化：�
 
 ## 6. 剩余任务（P0 → P2，含验收标准）
 
-### P0-1 会话页「发送消息 + 停止按钮」（MVP P0 缺口，最优先）
+### P0-1 会话页「发送消息 + 停止按钮」（✅ 2026-09-29 完成，协议层端到端验收通过）
 
-- **目标**：`ConversationScreen` 底部加输入栏（TextField + 发送）与「停止」按钮（会话 running 时显示）。方案文档 §六.1 的 MVP 缺口，官方 Web 版对标功能。
-- **实现要点**：
-  - 发送走 `sendPrompt`（§5.3），发完本地 append 一行 userInput（或等服务端 row 推送回显）。
-  - 停止：`zcode-agent` 通道 camelCase `stop`（对应协议 `session/stop`，**方法名与参数未实证**——先在 `tools/probe.py` 加试调确认，参数结构查 `_tmp/host-index-live.js` 搜 `sessionStop` 的调用点，或直接试 `{workspacePath, sessionId}`）。
-  - 输入栏注意避开键盘遮挡（`imePadding()`）与审批条并存。
-- **验收**：模拟器上从 App 发一条消息 → 桌面端会话收到并执行；会话运行中点停止 → 桌面端中断（`control.phase` 变化）。
-- **预估**：0.5~1 天。
+- **已完成**：`ConversationScreen` 底部输入栏（TextField + 发送，走 `sendPrompt`）与
+  「停止」按钮（`control.canStop` 时显示，envelope `type:'stop'`，官方 web 同款）。
+  协议实证与端到端实测记录见 PROTOCOL.md §6.4；验收工具 `tools/_p01_async.py`。
+- **实测**：桌面端在线时四项全 PASS——sendPrompt 201 `accepted:true` → turn running 且
+  `canStop=true` → stop ack `status=accepted` → 桌面端 `completedInterrupted`、canStop 清零。
+- **遗留**：App UI 层模拟器验收未做——本机兆芯 CPU 无模拟器硬件加速（qemu 静默退出），
+  待 Intel/AMD 机器或 P0-2 真机补验；构建环境见 CHANGELOG「未发布」段
+  （toolchain 丢失已回退系统路径，release keystore 需恢复）。
 
 ### P0-2 真机验收（需小米 15 Pro 到手）
 

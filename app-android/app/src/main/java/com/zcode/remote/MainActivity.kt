@@ -46,9 +46,17 @@ class MainActivity : ComponentActivity() {
                         approvals = vm.approvals,
                         approvalFeedback = vm.approvalFeedback,
                         earlier = vm.earlier,
+                        prompt = vm.promptDraft,
+                        sending = vm.sending,
+                        canStop = vm.conversationMeta.canStop == true,
+                        stopState = vm.conversationMeta.stopState,
+                        commandFeedback = vm.commandFeedback,
                         onResolve = { a: PendingApproval, opt: ApprovalOption -> vm.resolve(a, opt) },
                         onLoadEarlier = { vm.loadEarlier() },
                         onFeedbackSeen = { vm.consumeApprovalFeedback() },
+                        onPromptChange = { vm.updatePromptDraft(it) },
+                        onSend = { vm.sendPrompt() },
+                        onStop = { vm.stopSession() },
                         onBack = { opened = null },
                     )
                     else -> HomeScreen(

@@ -8,11 +8,24 @@ set -e
 
 ROOT="F:/AI/Zcode/zcode-remote-app"
 TC="$ROOT/toolchain"
-export JAVA_HOME="$TC/jdk-17.0.20.1+1"
-export ANDROID_HOME="$TC/android-sdk"
-export ANDROID_SDK_ROOT="F:\\AI\\Zcode\\zcode-remote-app\\toolchain\\android-sdk"
+
+# 工具链优先用仓库内 toolchain/（原开发环境）；缺失（换机/重新克隆）时回退到系统安装。
+if [ -d "$TC/jdk-17.0.20.1+1" ]; then
+  export JAVA_HOME="$TC/jdk-17.0.20.1+1"
+else
+  export JAVA_HOME="${JAVA_HOME:-F:/AndroidTools/jdk/jdk-17.0.20.1+1}"
+fi
+if [ -d "$TC/android-sdk" ]; then
+  export ANDROID_HOME="$TC/android-sdk"
+  export ANDROID_SDK_ROOT="F:\\AI\\Zcode\\zcode-remote-app\\toolchain\\android-sdk"
+else
+  export ANDROID_HOME="${ANDROID_HOME:-F:/AndroidTools/Sdk}"
+  export ANDROID_SDK_ROOT="${ANDROID_SDK_ROOT:-F:\\AndroidTools\\Sdk}"
+fi
 ADB="$TC/platform-tools/adb.exe"
+[ -x "$ADB" ] || ADB="$ANDROID_HOME/platform-tools/adb.exe"
 GRADLE="$TC/gradle-8.7/bin/gradle.bat"
+[ -f "$GRADLE" ] || GRADLE="F:/AndroidTools/gradle-8.11.1/bin/gradle.bat"
 APK="$ROOT/app-android/app/build/outputs/apk/debug/app-debug.apk"
 
 # 模拟器（无头，AEHD 加速）：

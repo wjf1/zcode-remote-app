@@ -301,6 +301,66 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
 
     fun consumeApprovalFeedback() { approvalFeedback = null }
 
+    // ---- 发送消息 / 停止（P0-1）----
+
+    /** 会话页输入栏草稿（跨重组保持，发送成功才清空）。 */
+    var promptDraft by mutableStateOf("")
+        private set
+    var sending by mutableStateOf(false)
+        private set
+    /** 发送/停止的操作反馈（与审批反馈同一展示位，几秒后自动清除）。 */
+    var commandFeedback by mutableStateOf<String?>(null)
+        private set
+
+    private var feedbackJob: kotlinx.coroutines.Job? = null
+
+    private fun flash(msg: String) {
+        commandFeedback = msg
+        feedbackJob?.cancel()
+        feedbackJob = viewModelScope.launch {
+            kotlinx.coroutines.delay(4000)
+            commandFeedback = null
+        }
+    }
+
+    fun updatePromptDraft(v: String) { promptDraft = v }
+
+    /** 发送输入栏消息：成功后服务端把 userInput 行推回会话流（无需本地 append）。 */
+    fun sendPrompt() {
+        val content = promptDraft.trim()
+        if (content.isEmpty() || sending) return
+        val conv = conversation ?: run { flash("连接已断开，未发送"); return }
+        sending = true
+        conv.sendPrompt(content) { r ->
+            viewModelScope.launch {
+                sending = false
+                r.fold(
+                    onSuccess = {
+                        promptDraft = ""
+                        Log.i(TAG, "sendPrompt ok session=$subscribedSessionId")
+                    },
+                    onFailure = { flash("发送失败：${it.message}") },
+                )
+            }
+        }
+    }
+
+    /** 停止当前运行（envelope `stop` 命令，官方 web 同款）。 */
+    fun stopSession() {
+        val conv = conversation ?: run { flash("连接已断开，未发送"); return }
+        conv.stop { r ->
+            viewModelScope.launch {
+                flash(
+                    when (r) {
+                        is ConversationChannel.ResolveResult.Accepted -> "已请求停止"
+                        is ConversationChannel.ResolveResult.Failed -> "停止失败：${r.message}"
+                    }
+                )
+                Log.i(TAG, "stop result=$r")
+            }
+        }
+    }
+
     /**
      * 订阅某会话的流式内容。
      *

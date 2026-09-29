@@ -47,6 +47,10 @@ class ConversationChannel(private val rpc: RpcChannel) {
         val totalCount: Int? = null,
         val connectionId: String? = null,
         val logEpoch: String? = null,
+        /** 服务端算好的可停标志（快照/增量 control.canStop），停止按钮的显示条件。 */
+        val canStop: Boolean? = null,
+        /** idle | stoppable | stopping（stopping 时按钮显示"停止中"并禁用）。 */
+        val stopState: String? = null,
     )
 
     private val clientId = "android-${UUID.randomUUID()}"
@@ -56,6 +60,9 @@ class ConversationChannel(private val rpc: RpcChannel) {
 
     /** 订阅目标（workspacePath/Identity）——发命令时要原样带上，服务端按它路由。 */
     private var subTarget: Map<String, Any>? = null
+
+    /** 最近一次 control 里的前台执行 id，stop 命令作为 expectedForegroundExecutionId 带上（防误停）。 */
+    private var foregroundExecutionId: String? = null
 
     /** 订阅指定会话，并把行写入 [store]。 */
     fun subscribe(workspacePath: String, workspaceIdentity: String?, session: String, store: RowStore) {
@@ -163,14 +170,19 @@ class ConversationChannel(private val rpc: RpcChannel) {
                 val snap = ConversationFrames.parseSnapshot(frame.payload) ?: return
                 store.replaceAll(snap.rows)
                 _interactions.value = snap.pendingInteractions
+                val control = snap.control
+                control?.foregroundExecutionId?.let { foregroundExecutionId = it }
                 _meta.value = _meta.value.copy(
                     title = snap.title ?: _meta.value.title,
                     phase = snap.phase,
                     totalCount = snap.totalCount,
                     logEpoch = snap.logEpoch ?: _meta.value.logEpoch,
+                    canStop = control?.canStop ?: _meta.value.canStop,
+                    stopState = control?.stopState ?: _meta.value.stopState,
                 )
                 Log.i(TAG, "snapshot: ${snap.rows.size} 行（总 ${snap.totalCount}）" +
-                        "待审批=${snap.pendingInteractions.size} delivery=${lf.deliveryKind}")
+                        "待审批=${snap.pendingInteractions.size} delivery=${lf.deliveryKind}" +
+                        " canStop=${control?.canStop} stopState=${control?.stopState}")
             }
             "deltas" -> {
                 val deltas = ConversationFrames.parseDeltas(frame.payload)
@@ -186,6 +198,18 @@ class ConversationChannel(private val rpc: RpcChannel) {
                                 _interactions.value = next
                                 Log.i(TAG, "pendingInteractions → ${next.size} 条 " +
                                         next.joinToString(",") { "${it.toolName ?: "?"}#${it.interactionId.take(18)}" })
+                            }
+                            // control 增量：canStop/phase/stopState 运行中会变（停止按钮随之出现/消失）
+                            p["control"].asObj()?.let { c ->
+                                ConversationFrames.parseControl(c)?.let { ctl ->
+                                    ctl.foregroundExecutionId?.let { foregroundExecutionId = it }
+                                    _meta.value = _meta.value.copy(
+                                        phase = ctl.phase ?: _meta.value.phase,
+                                        canStop = ctl.canStop ?: _meta.value.canStop,
+                                        stopState = ctl.stopState ?: _meta.value.stopState,
+                                    )
+                                    Log.i(TAG, "control 更新 phase=${ctl.phase} canStop=${ctl.canStop} stopState=${ctl.stopState}")
+                                }
                             }
                         }
                         is ConversationFrames.Delta.Unknown ->
@@ -203,6 +227,7 @@ class ConversationChannel(private val rpc: RpcChannel) {
         subscriptionId = null
         sessionId = null
         subTarget = null
+        foregroundExecutionId = null
         _interactions.value = emptyList()
         _earlier.value = EarlierState()
         _status.value = Status.Idle
@@ -354,6 +379,75 @@ class ConversationChannel(private val rpc: RpcChannel) {
             status in SUCCESS_STATUSES -> ResolveResult.Accepted(status, reason)
             else -> ResolveResult.Failed(reason ?: status.ifBlank { "unknown" },
                 message ?: "服务端未接受（status=$status）")
+        }
+    }
+
+    /**
+     * 发送用户消息（HANDOVER §5.3 实测路径）：`zcode-agent` 通道 `sendPrompt`，
+     * args = `{workspacePath, sessionId, inputId, content}`。
+     * 消息进入会话队列（autoDrain），当前 turn 结束后自动开新 turn 执行；
+     * 成功后 userInput 行会由服务端推回会话流，无需本地 append。
+     */
+    fun sendPrompt(content: String, onResult: (Result<Unit>) -> Unit) {
+        val session = sessionId
+        val target = subTarget
+        if (session == null || target == null) {
+            onResult(Result.failure(IllegalStateException("未订阅会话，无法发送")))
+            return
+        }
+        if (content.isBlank()) {
+            onResult(Result.failure(IllegalStateException("消息内容为空")))
+            return
+        }
+        val args = HashMap<String, Any>(target)
+        args["sessionId"] = session
+        args["inputId"] = "inp-${UUID.randomUUID()}"
+        args["content"] = content
+        Log.i(TAG, "sendPrompt session=$session chars=${content.length}")
+        rpc.call(RpcChannel.CHANNEL_AGENT, "sendPrompt", listOf(args)) { reply ->
+            onResult(
+                when (reply) {
+                    is RpcChannel.RpcReply.Err -> Result.failure(IllegalStateException(reply.message))
+                    is RpcChannel.RpcReply.Ok -> Result.success(Unit)
+                }
+            )
+        }
+    }
+
+    /**
+     * 停止当前运行（官方 web 版同款命令，host asar 实证）：
+     * `sendConversationCommandV4` envelope `type:'stop'`，
+     * payload `{expectedForegroundExecutionId?}`——control.activeWorks 里
+     * 有前台执行 id 就带上（官方行为），否则发空 payload。
+     * ack 判据与 resolveInteraction 相同（status accepted/duplicate/noop）。
+     */
+    fun stop(onResult: (ResolveResult) -> Unit) {
+        val session = sessionId
+        val target = subTarget
+        if (session == null || target == null) {
+            onResult(ResolveResult.Failed("no-session", "未订阅该会话，无法停止"))
+            return
+        }
+        val args = HashMap<String, Any>(target)
+        args["envelope"] = mapOf(
+            "commandId" to "cmd-${UUID.randomUUID()}",
+            "clientId" to clientId,
+            "sessionId" to session,
+            "type" to "stop",
+            "payload" to (foregroundExecutionId
+                ?.let { mapOf("expectedForegroundExecutionId" to it) }
+                ?: emptyMap()),
+            "issuedAt" to System.currentTimeMillis(),
+        )
+        Log.i(TAG, "stop session=$session fg=${foregroundExecutionId ?: "-"}")
+        rpc.call(RpcChannel.CHANNEL_AGENT, "sendConversationCommandV4", listOf(args)) { reply ->
+            onResult(
+                when (reply) {
+                    is RpcChannel.RpcReply.Err ->
+                        ResolveResult.Failed("rpc-error", reply.message)
+                    is RpcChannel.RpcReply.Ok -> parseCommandAck(reply.data)
+                }
+            )
         }
     }
 

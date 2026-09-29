@@ -23,6 +23,8 @@ import com.zcode.remote.relay.PendingApproval
  * 会话内容页：把会话流（snapshot 尾窗 + 增量）渲染成对话。
  *
  * 行没有统一 role，按 kind 区分：userInput / assistantText / reasoning / toolCall / turnHeader。
+ * 底部输入栏：有草稿时显示「发送」（sendPrompt），空草稿且服务端报 canStop 时显示「停止」
+ * （官方 web 版同款互斥逻辑）。
  */
 @Composable
 fun ConversationScreen(
@@ -33,9 +35,17 @@ fun ConversationScreen(
     approvals: List<PendingApproval> = emptyList(),
     approvalFeedback: String? = null,
     earlier: ConversationChannel.EarlierState = ConversationChannel.EarlierState(),
+    prompt: String = "",
+    sending: Boolean = false,
+    canStop: Boolean = false,
+    stopState: String? = null,
+    commandFeedback: String? = null,
     onResolve: (PendingApproval, ApprovalOption) -> Unit = { _, _ -> },
     onLoadEarlier: () -> Unit = {},
     onFeedbackSeen: () -> Unit = {},
+    onPromptChange: (String) -> Unit = {},
+    onSend: () -> Unit = {},
+    onStop: () -> Unit = {},
     onBack: () -> Unit,
 ) {
     val listState = rememberLazyListState()
@@ -68,7 +78,15 @@ fun ConversationScreen(
         }
     }
 
-    Column(Modifier.fillMaxSize().statusBarsPadding().padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+    Column(
+        Modifier.fillMaxSize()
+            .statusBarsPadding()
+            // 底部输入栏要避开手势条与键盘（targetSdk 35 强制 edge-to-edge，insets 正常分发）
+            .navigationBarsPadding()
+            .imePadding()
+            .padding(12.dp),
+        verticalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             TextButton(onClick = onBack) { Text("← 返回") }
             Column(Modifier.weight(1f)) {
@@ -90,6 +108,14 @@ fun ConversationScreen(
 
         approvalFeedback?.let { msg ->
             LaunchedEffect(msg) { onFeedbackSeen() }
+            Text(
+                msg,
+                style = MaterialTheme.typography.labelMedium,
+                color = MaterialTheme.colorScheme.primary,
+            )
+        }
+
+        commandFeedback?.let { msg ->
             Text(
                 msg,
                 style = MaterialTheme.typography.labelMedium,
@@ -125,6 +151,61 @@ fun ConversationScreen(
                 }
             }
             items(rows, key = { it.rowId }) { row -> RowItem(row) }
+        }
+
+        // 底部输入栏：与审批条并存（审批条在顶部）；官方 web 版逻辑——
+        // 有草稿显示「发送」，空草稿且 canStop 显示「停止」。
+        InputBar(
+            prompt = prompt,
+            sending = sending,
+            canStop = canStop,
+            stopping = stopState == "stopping",
+            onPromptChange = onPromptChange,
+            onSend = onSend,
+            onStop = onStop,
+        )
+    }
+}
+
+@Composable
+private fun InputBar(
+    prompt: String,
+    sending: Boolean,
+    canStop: Boolean,
+    stopping: Boolean,
+    onPromptChange: (String) -> Unit,
+    onSend: () -> Unit,
+    onStop: () -> Unit,
+) {
+    Row(verticalAlignment = Alignment.Bottom, modifier = Modifier.fillMaxWidth()) {
+        OutlinedTextField(
+            value = prompt,
+            onValueChange = onPromptChange,
+            modifier = Modifier.weight(1f),
+            placeholder = { Text("发送消息到桌面端…") },
+            maxLines = 4,
+            shape = RoundedCornerShape(20.dp),
+        )
+        Spacer(Modifier.width(8.dp))
+        if (prompt.isNotBlank()) {
+            Button(
+                onClick = onSend,
+                enabled = !sending,
+            ) {
+                Text(if (sending) "发送中…" else "发送")
+            }
+        } else if (canStop) {
+            Button(
+                onClick = onStop,
+                enabled = !stopping,
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = MaterialTheme.colorScheme.error,
+                ),
+            ) {
+                Text(if (stopping) "停止中…" else "停止")
+            }
+        } else {
+            Button(onClick = {}, enabled = false) { Text("发送") }
         }
     }
 }

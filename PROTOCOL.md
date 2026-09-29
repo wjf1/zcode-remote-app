@@ -186,6 +186,28 @@ python tools/probe.py sub <会话ID前缀> [帧落盘路径]   # + 完整会话�
   重连要用 `queryConversationCommandsV4` 回查。本 App 的做法是撤下通知并提示用户重新点。
 - 同一会话可能有多条并行 pending（subagent 场景），必须按 `interactionId` 精确匹配。
 
+### 6.4 发送与停止（P0-1，2026-09-29 实证 + 端到端实测）
+
+- **发送**：`zcode-agent` 通道 `sendPrompt`，args=`{workspacePath, sessionId, inputId, content}`，
+  201 应答 `{sessionId, accepted:true, stateRevision}`。消息进会话队列（autoDrain），
+  userInput 行由服务端推回会话流（客户端无需本地 append）。M2 已实测，P0-1 复用。
+- **停止是 envelope 命令，不是裸 RPC**（host asar 官方 web 版实证）：
+  官方调用 `br('stop', payload, sessionId)`，即 `sendConversationCommandV4` envelope
+  `{commandId, clientId, sessionId, type:'stop', payload, issuedAt}`；
+  payload zod schema = `stop:{expectedForegroundExecutionId: string.min(1).optional()}`——
+  `control.activeWorks[]` 里有 `foregroundExecutionId` 就带上（防误停），否则发空 `{}`。
+  注意 `sessionStop:"session/stop"` 是 host→CLI 内部层枚举，与远程通道方法无关（§6.1 同类）。
+  ack 与 resolveInteraction 同判据：`{status:"accepted", revisionAtDecision}`。
+- **停止按钮显示条件**：快照/`state.updated` patch 的 `control.canStop`（服务端算好下发），
+  `control.stopState ∈ {idle, stoppable, stopping}` 可用于「停止中…」态。
+- **端到端实测记录**（tools/_p01_async.py，桌面端在线）：sendPrompt 201 `accepted:true` →
+  turn 开始，增量推 `control: {phase:"running", canStop:true, stopState:"stoppable"}` →
+  stop ack `status:"accepted"` → 相位 `running → completedInterrupted`、`canStop:false`。
+  四项 PASS，帧证据 `_tmp/p01_frames_*.json`。
+- 桌面端「移动端远程控制」面板打开期间 device 在线（waiting→有 terminal 连接即 matched）；
+  关闭面板或 terminal 断开后回到 waiting。`webRemoteControlLastEnabledContext`（setting.json）
+  是桌面端启动时自动恢复远程控制的持久化上下文。
+
 ## 7. Bot Channel（辅路）
 
 微信（`ilinkai.weixin.qq.com` 轮询）/飞书/Lark/Telegram；命令集 `status/new/workspace/model/mode/thoughtLevel/reply`；任务流 `createTask → prompt_sent → sendPrompt → completed/error`。与远程控制共用任务模型——M4 的 VPS Runner 可复用此任务 API 形态。

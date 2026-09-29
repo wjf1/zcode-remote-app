@@ -40,7 +40,11 @@ android {
     buildTypes {
         release {
             isMinifyEnabled = false
-            signingConfig = signingConfigs.getByName("release")
+            // keystore.properties 缺失时不挂 release 签名（配置期 getByName 会抛异常，
+            // 连 assembleDebug 都过不去）；发布前必须恢复正式 keystore。
+            if (keystoreProps.isNotEmpty()) {
+                signingConfig = signingConfigs.getByName("release")
+            }
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
         }
     }

@@ -1,5 +1,47 @@
 # 变更记录 / Changelog
 
+## 未发布（P0-1 会话页发送 + 停止）
+
+**里程碑：P0-1 完成 —— 会话页输入栏（sendPrompt）+ 运行中停止（stop envelope）**
+
+### 新增
+- **会话页底部输入栏**：TextField + 发送按钮（草稿跨重组保存在 ViewModel，发送成功才清空；
+  发送走 `zcode-agent` 通道 `sendPrompt`，args=`{workspacePath, sessionId, inputId, content}`，
+  成功后 userInput 行由服务端推回会话流，不做本地 append）；`imePadding`+`navigationBarsPadding`
+  避开键盘与手势条（targetSdk 35 强制 edge-to-edge，insets 正常分发）。
+- **停止按钮**：显示条件为快照/增量 `control.canStop`（官方 web 同款互斥逻辑——输入框有草稿
+  显示发送，空草稿且 canStop 显示停止；`stopState=="stopping"` 显示「停止中…」并禁用）。
+  命令 = `sendConversationCommandV4` envelope `type:'stop'`，payload 按官方行为带上
+  `control.activeWorks` 里的 `foregroundExecutionId`（无则空 payload）；ack 判据与审批一致
+  （status accepted/duplicate/noop）。
+- **control 状态解析**：`ConversationFrames.parseControl`（phase/canStop/stopState/
+  foregroundExecutionId），快照与 `state.updated` patch 双路更新到 `ConversationMeta`。
+- **操作反馈条**：发送/停止结果经 `commandFeedback` 在会话页显示（4s 自动清除）。
+- `tools/_p01_async.py`：P0-1 协议层端到端验收脚本（asyncio + websockets 库版探针）。
+
+### 构建环境
+- `app/build.gradle.kts`：release 签名条件化——keystore.properties 缺失时不再在配置期抛异常
+  （原先连 assembleDebug 都过不去）。⚠️ 正式 keystore 随原 toolchain 丢失，发布前必须恢复。
+- `build.sh`：仓库内 toolchain/ 缺失（换机/重新克隆）时自动回退系统路径
+  （F:/AndroidTools 的 JDK17/SDK/Gradle 8.11.1）。
+
+### 协议实证（写入 PROTOCOL.md §6.4）
+- **stop 是 envelope 命令而非裸 RPC**：host asar 官方 web 版 `br('stop', {expectedForegroundExecutionId?}, sessionId)`，
+  payload zod schema `stop:{expectedForegroundExecutionId: string.min(1).optional()}`；
+  `sessionStop:"session/stop"` 只是 host→CLI 内部层枚举，与远程通道无关。
+- 端到端实测（桌面端在线，probe 身份）：sendPrompt 201 `accepted:true` → turn running 且
+  `control.canStop=true/stopState=stoppable` → stop ack `status=accepted` → 桌面端相位
+  `running → completedInterrupted`、canStop 清零。四项全 PASS，帧落盘 `_tmp/p01_frames_*.json`。
+- 桌面端远程控制面板打开期间 device 在线（等待连接即 matched 可达）；`webRemoteControlLastEnabledContext`
+  是桌面端启动恢复远程控制的持久化上下文。
+
+### 已知环境限制
+- 本机（兆芯 KX-7000 / UNICOMPute）无 Android 模拟器硬件加速：emulator 的 qemu 在该 CPU
+  静默退出（需 Intel/AMD），且 sdkmanager 大文件下载固定断连（33% 处）——系统镜像改由
+  腾讯镜像 curl 断点续传获取。App UI 层模拟器验收待 Intel/AMD 机器或 P0-2 真机补验；
+  协议层与 App 实现同参数同路径，已由探针实测闭环。
+
+
 ## v0.3.0-m3（2026-09-28）· 首个签名 Release
 
 **里程碑：M2 完成 + M3 主体功能——首个可安装的签名发布包**

@@ -2,6 +2,7 @@ package com.zcode.remote.relay
 
 import android.util.Log
 import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.booleanOrNull
 import kotlinx.serialization.json.intOrNull
 import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
@@ -28,6 +29,9 @@ object ConversationFrames {
 
     private fun JsonObject.obj(k: String): JsonObject? =
         this[k]?.let { runCatching { it.jsonObject }.getOrNull() }
+
+    private fun JsonObject.bool(k: String): Boolean? =
+        this[k]?.let { runCatching { it.jsonPrimitive.booleanOrNull }.getOrNull() }
 
     /** 逻辑帧信封（204 的 data），kind=complete 时 [frame] 非空。 */
     data class LogicalFrame(
@@ -91,23 +95,52 @@ object ConversationFrames {
         val totalCount: Int?,
         /** 待审批交互（permission），整组给出。 */
         val pendingInteractions: List<PendingApproval> = emptyList(),
+        /** control 块（运行/停止状态由服务端算好下发）。 */
+        val control: Control? = null,
     )
+
+    /**
+     * control 块：官方 schema `canStop: boolean / stopState: idle|stoppable|stopping /
+     * activeWorks[]`（host asar zod 实证）。停止按钮的显示条件就是 `canStop`；
+     * `foregroundExecutionId` 是 activeWorks 里的前台执行 id，stop 命令带上可防误停。
+     */
+    data class Control(
+        val phase: String?,
+        val canStop: Boolean?,
+        val stopState: String?,
+        val foregroundExecutionId: String?,
+    )
+
+    fun parseControl(o: JsonObject?): Control? {
+        if (o == null) return null
+        return Control(
+            phase = o.str("phase"),
+            canStop = o.bool("canStop"),
+            stopState = o.str("stopState"),
+            foregroundExecutionId = o["activeWorks"]?.let { runCatching { it.jsonArray }.getOrNull() }
+                ?.firstNotNullOfOrNull { el ->
+                    runCatching { el.jsonObject["foregroundExecutionId"]?.jsonPrimitive?.content }.getOrNull()
+                },
+        )
+    }
 
     fun parseSnapshot(payload: JsonObject): Snapshot? {
         val snap = payload.obj("snapshot") ?: return null
         val rowsObj = snap.obj("rows")
+        val control = parseControl(snap.obj("control"))
         return Snapshot(
             sessionId = snap.str("sessionId"),
             logEpoch = snap.str("logEpoch"),
             seq = snap.long("seq"),
             title = snap.obj("meta")?.str("title"),
-            phase = snap.obj("control")?.str("phase"),
+            phase = control?.phase,
             rows = rowsObj?.get("window")?.let { w ->
                 runCatching { w.jsonArray }.getOrNull()
                     ?.mapNotNull { el -> runCatching { ConversationRow.from(el.jsonObject) }.getOrNull() }
             } ?: emptyList(),
             totalCount = rowsObj?.int("totalCount"),
             pendingInteractions = PendingApproval.parseFrom(snap, snap.str("sessionId")),
+            control = control,
         )
     }
 
