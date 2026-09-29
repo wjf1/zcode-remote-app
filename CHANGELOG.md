@@ -1,9 +1,26 @@
 # 变更记录 / Changelog
 
-## 未发布（P0-1 发送/停止 + P1-1 表单应答）
+## 未发布（P0-1 发送/停止 + P1-1 表单应答 + P1-2 多会话看板）
 
 **里程碑：P0-1 完成 —— 会话页输入栏（sendPrompt）+ 运行中停止（stop envelope）；
-P1-1 完成 —— elicitation 表单类交互应答（AskUserQuestion / 计划批准 / 确认框）**
+P1-1 完成 —— elicitation 表单类交互应答（AskUserQuestion / 计划批准 / 确认框）；
+P1-2 完成 —— 多会话并行看板 + 控制权切换提示**
+
+### 新增（P1-2 多会话看板与控制权提示）
+- **会话待办角标**：`AppViewModel.sessionPending`（taskId → 待处理条数，来源＝任务事件流
+  覆盖所有会话；当前订阅会话以会话流数据覆盖），HomeScreen 会话卡片显示「⏳ 待处理 N」，
+  有未处理交互的卡片用 errorContainer 醒目底色。
+- **当前会话指示**：订阅中的会话标「当前」（secondaryContainer 高亮）；桌面端正打开的会话标
+  「PC 在看」（来自 `workspace-list` 的 `activeTaskId`）。
+- **控制权切换提示**：被官方 Web 版/另一终端接管（`KICKED`）时首页顶部显示醒目横幅
+  「控制权已在别处接管」并说明处理方式。
+- **视图状态上报**：`BridgeFrames.mobileViewStateUpdate()`（PC schema
+  `{zcode_type:"mobile-view-state-update", viewState:{activeWorkspaceKey?, activeTaskId?, updatedAt}}`），
+  接管成功（Paired）与会话切换时上报，PC 端据此知道手机在看哪个工作区/会话。
+- 协议侧另定位到会话级 `pendingInteractionSummary{permissionCount, userInputCount}`（在
+  conversation 的 `sessions-index/<workspaceId>` overlay 里），可作为后续更精准的服务端权威角标来源。
+
+
 
 ### 新增（P1-1 表单应答）
 - **PendingElicitation 模型**（Interactions.kt）：会话帧 `pendingInteractions` 里 kind=="userInput"

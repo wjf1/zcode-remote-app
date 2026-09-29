@@ -4,6 +4,7 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -12,6 +13,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.zcode.remote.BuildConfig
+import com.zcode.remote.relay.FailureReason
 import com.zcode.remote.relay.RelayState
 import com.zcode.remote.relay.RpcChannel
 import com.zcode.remote.relay.SessionItem
@@ -29,6 +31,12 @@ fun HomeScreen(
     rpcEvents: List<String>,
     devices: List<PairedDevice> = emptyList(),
     activeSid: String? = null,
+    /** 每个会话的待处理条数（P1-2 多会话看板）。 */
+    sessionPending: Map<String, Int> = emptyMap(),
+    /** 当前 App 订阅中的会话（高亮）。 */
+    subscribedSessionId: String? = null,
+    /** 桌面端正打开的会话（PC 端视图状态提示）。 */
+    desktopActiveTaskId: String? = null,
     onSwitchDevice: (String) -> Unit = {},
     onRemoveDevice: (String) -> Unit = {},
     endpointMode: String = "auto",
@@ -48,6 +56,19 @@ fun HomeScreen(
         Row(verticalAlignment = Alignment.CenterVertically) {
             Text("ZCode Remote", style = MaterialTheme.typography.headlineSmall, modifier = Modifier.weight(1f))
             TextButton(onClick = onRescan) { Text("添加设备") }
+        }
+
+        // 控制权切换提示（P1-2）：被官方 Web 版/另一台终端接管时醒目提示
+        if (state is RelayState.Failed && state.reason == FailureReason.KICKED) {
+            Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.errorContainer)) {
+                Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                    Text("⚠️ 控制权已在别处接管", style = MaterialTheme.typography.titleSmall)
+                    Text(
+                        "同一账号同一时刻只允许一个终端在线。若要在此设备继续，请点下方「断开」后重新连接。",
+                        style = MaterialTheme.typography.bodySmall,
+                    )
+                }
+            }
         }
 
         SettingsCard(
@@ -114,7 +135,14 @@ fun HomeScreen(
         }
 
         LazyColumn(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            items(sessions) { s -> SessionCard(s) { onSessionClick(s) } }
+            items(sessions) { s ->
+                SessionCard(
+                    s = s,
+                    pending = sessionPending[s.taskId] ?: 0,
+                    isActive = s.taskId == subscribedSessionId,
+                    desktopActive = s.taskId == desktopActiveTaskId,
+                ) { onSessionClick(s) }
+            }
             if (rpcEvents.isNotEmpty()) {
                 // 调试观测面板：仅 debug 构建显示（HANDOVER 技术债，release 不含）
                 if (BuildConfig.DEBUG) {
@@ -165,30 +193,61 @@ private fun bridgeLabel(b: RpcChannel.BridgeState) = when (b) {
 }
 
 @Composable
-private fun SessionCard(s: SessionItem, onClick: () -> Unit) {
+private fun SessionCard(
+    s: SessionItem,
+    pending: Int,
+    isActive: Boolean,
+    desktopActive: Boolean,
+    onClick: () -> Unit,
+) {
     Card(
         onClick = onClick,
-        colors = if (s.isRunning) CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)
-        else CardDefaults.cardColors(),
+        colors = when {
+            // 有未处理交互 → 醒目；当前订阅中 → 高亮；运行中 → 弱高亮
+            pending > 0 -> CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.errorContainer)
+            isActive -> CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.secondaryContainer)
+            s.isRunning -> CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)
+            else -> CardDefaults.cardColors()
+        },
     ) {
         Row(Modifier.padding(12.dp), verticalAlignment = Alignment.Top) {
             StatusDot(
                 when {
-                    s.needsApproval -> RelayState.Failed(com.zcode.remote.relay.FailureReason.INTERNAL, null)
+                    pending > 0 || s.needsApproval -> RelayState.Failed(com.zcode.remote.relay.FailureReason.INTERNAL, null)
                     s.isRunning -> RelayState.Paired
                     else -> RelayState.Idle
                 }
             )
             Spacer(Modifier.width(10.dp))
             Column(Modifier.weight(1f)) {
-                Text(s.title, style = MaterialTheme.typography.titleSmall, maxLines = 2,
-                    overflow = TextOverflow.Ellipsis)
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text(s.title, style = MaterialTheme.typography.titleSmall, maxLines = 2,
+                        overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
+                    if (isActive) {
+                        Spacer(Modifier.width(6.dp))
+                        Surface(
+                            color = MaterialTheme.colorScheme.secondary,
+                            shape = RoundedCornerShape(6.dp),
+                        ) { Text("当前", style = MaterialTheme.typography.labelSmall,
+                            modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)) }
+                    }
+                    if (desktopActive && !isActive) {
+                        Spacer(Modifier.width(6.dp))
+                        Text("PC 在看", style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
+                }
                 Spacer(Modifier.height(2.dp))
                 Text(
                     listOfNotNull(s.workspaceLabel ?: s.workspacePath, s.provider, statusText(s.displayStatus))
                         .joinToString(" · "),
                     style = MaterialTheme.typography.bodySmall, maxLines = 1, overflow = TextOverflow.Ellipsis,
                 )
+                if (pending > 0) {
+                    Spacer(Modifier.height(4.dp))
+                    Text("⏳ 待处理 $pending", style = MaterialTheme.typography.labelMedium,
+                        color = MaterialTheme.colorScheme.error)
+                }
             }
         }
     }

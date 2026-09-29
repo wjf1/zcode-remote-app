@@ -124,6 +124,17 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         private set
     private val taskElicitations = LinkedHashMap<String, PendingElicitation>()
 
+    // ---- 多会话看板（P1-2）----
+    /**
+     * 每个会话的待处理条数（taskId → 审批 + 表单）。来源＝任务事件流（覆盖所有会话，
+     * 不限于当前订阅的那个），订阅中的会话以会话流数据优先（更实时）。
+     */
+    var sessionPending by mutableStateOf<Map<String, Int>>(emptyMap())
+        private set
+    /** 桌面端当前活动会话（workspace-list 的 activeTaskId，用于「PC 正在看哪个」提示）。 */
+    var desktopActiveTaskId by mutableStateOf<String?>(null)
+        private set
+
     private var client: RelayClient? = null
     private var channel: RpcChannel? = null
     private var conversation: ConversationChannel? = null
@@ -178,6 +189,8 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
                 if (st is RelayState.Paired) {
                     ch.reset()
                     c.sendPayload(BridgeFrames.bootstrapRequest("boot-${System.currentTimeMillis()}"))
+                    // 接管后立即上报视图状态（P1-2）：PC 端知道手机在看哪个工作区/会话
+                    reportViewState()
                 }
             }
         }
@@ -291,6 +304,7 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
                 next.joinToString(",") { "${it.toolName ?: "?"}#${it.interactionId.take(18)}" })
         runCatching { ApprovalNotifier.sync(getApplication(), next) }
             .onFailure { Log.w(TAG, "通知栏刷新失败", it) }
+        recomputeSessionPending()
     }
 
     /** 合并表单交互双来源（会话帧 userInput 条目 + 任务事件流），interactionId 去重。 */
@@ -303,6 +317,31 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         elicitations = next
         Log.i(TAG, "elicitations → ${next.size} 条 " +
                 next.joinToString(",") { "${it.toolName ?: "?"}#${it.interactionId.take(18)}" })
+        recomputeSessionPending()
+    }
+
+    /**
+     * 多会话看板（P1-2）：汇总每个会话的待处理条数。
+     * 来源＝任务事件流（含所有会话的 permission_request/elicitation_request，带 taskId）；
+     * 当前订阅的会话改用会话流数据覆盖（更实时、且含会话帧路径的条目）。
+     */
+    private fun recomputeSessionPending() {
+        val counts = HashMap<String, Int>()
+        taskApprovals.values.forEach { a -> a.sessionId?.let { counts[it] = (counts[it] ?: 0) + 1 } }
+        taskElicitations.values.forEach { e -> e.sessionId?.let { counts[it] = (counts[it] ?: 0) + 1 } }
+        subscribedSessionId?.let { sid ->
+            val n = approvals.size + elicitations.size
+            if (n > 0) counts[sid] = n else counts.remove(sid)
+        }
+        if (counts != sessionPending) sessionPending = counts
+    }
+
+    /** 上报手机端视图状态（P1-2）：PC 据此在界面上指出"手机正在看这个会话"。 */
+    private fun reportViewState() {
+        val c = client ?: return
+        val payload = BridgeFrames.mobileViewStateUpdate(activeWorkspaceKey, subscribedSessionId)
+        c.sendPayload(payload)
+        Log.i(TAG, "view-state → ws=$activeWorkspaceKey task=${subscribedSessionId?.take(20)}")
     }
 
     /** 通知栏按钮走这条路径：按 id 找回对象再应答。 */
@@ -487,7 +526,10 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     /** 手动订阅指定会话（UI 点击会话卡片时调用）。 */
-    fun openSession(s: SessionItem) = subscribeConversation(s)
+    fun openSession(s: SessionItem) {
+        subscribeConversation(s)
+        reportViewState()   // P1-2：切换会话即上报，PC 端可提示"手机正在看这个会话"
+    }
 
     /** 向上拉一页更早历史（会话页滚到顶部时触发）。 */
     fun loadEarlier() {

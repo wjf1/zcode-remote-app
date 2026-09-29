@@ -121,11 +121,17 @@ python tools/_e2e_tap_approve.py                           # 验收自动化：�
   ack accepted → 条目消解，三项 PASS（tools/_p11_verify.py）。
 - **遗留**：App UI 层模拟器验收同 P0-1 待补；通知栏不做 elicitation（表单复杂，会话页内应答）。
 
-### P1-2 多会话并行看板 + 控制权切换提示
+### P1-2 多会话并行看板 + 控制权切换提示（✅ 2026-09-29 完成）
 
-- **要点**：HomeScreen 已有会话列表，扩展为多会话角标（`pendingInteractionSummary` 已在 overlay 数据里）+ 会话间快速切换；App 接管时给桌面端发提示（`mobile-view-state-update` 已实现，补 UI 提示「另一端已切换」）。
-- **验收**：两条会话并行审批不串台（interactionId 精确匹配已保证）。
-- **预估**：1 天。
+- **已完成**：`AppViewModel.sessionPending`（每会话待处理条数，任务事件流覆盖所有会话 +
+  订阅会话以会话流覆盖）→ HomeScreen 会话卡片「⏳ 待处理 N」角标 + errorContainer 醒目底色；
+  「当前」标记（订阅中）与「PC 在看」标记（桌面端 activeTaskId）；`KICKED` 时首页顶部
+  「控制权已在别处接管」横幅；`BridgeFrames.mobileViewStateUpdate()` 在接管（Paired）与
+  会话切换时上报手机视图状态。
+- **验收**：两条会话并行审批不串台（interactionId 精确匹配已保证）——协议层可验证；
+  UI 层（角标/横幅渲染）同 P0-1/P1-1 待真机或 Intel/AMD 机器补验。
+- **可选增强**：会话级权威角标来源 `pendingInteractionSummary{permissionCount, userInputCount}`
+  在 conversation 的 `sessions-index/<workspaceId>` overlay 里（需订阅该 topic，当前用任务事件流推导）。
 
 ### P1-3 文件上传 / 语音输入
 

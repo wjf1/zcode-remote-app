@@ -18,6 +18,22 @@ object BridgeFrames {
         put("requestId", requestId)
     }
 
+    /**
+     * 手机端视图状态上报（P1-2 控制权提示，PROTOCOL.md §5）。
+     * PC 端 schema：`{zcode_type:"mobile-view-state-update",
+     * viewState:{activeWorkspaceKey?, activeTaskId?, updatedAt}, deviceInfo?}`
+     * ——PC 据此知道手机当前在看哪个工作区/会话（`Jo(h, viewState, deviceInfo)`）。
+     */
+    fun mobileViewStateUpdate(activeWorkspaceKey: String?, activeTaskId: String?): JsonObject =
+        buildJsonObject {
+            put("zcode_type", "mobile-view-state-update")
+            put("viewState", buildJsonObject {
+                activeWorkspaceKey?.takeIf { it.isNotBlank() }?.let { put("activeWorkspaceKey", it) }
+                activeTaskId?.takeIf { it.isNotBlank() }?.let { put("activeTaskId", it) }
+                put("updatedAt", System.currentTimeMillis())
+            })
+        }
+
     fun zcodeTypeOf(payload: JsonObject): String? =
         payload["zcode_type"]?.let { runCatching { it.jsonPrimitive.content }.getOrNull() }
 
