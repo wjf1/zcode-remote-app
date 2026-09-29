@@ -10,9 +10,17 @@
 
 **ZCode Remote**：ZCode 官方远程控制（`wss://zcode.z.ai/ws` 中继）的原生安卓增强客户端，Kotlin + Jetpack Compose。目标机型小米 15 Pro（HyperOS 2 / Android 15），纯自用暂不分发。
 
-- 协议已完整逆向并实测（M0），App 的配对/会话/审批/多机/设置全部打通并在模拟器（Pixel 7 / API 35 / AVD `test35`）验证（M1 ✅ M2 ✅，M3 主体完成）。
+- 协议已完整逆向并实测（M0），App 的配对/会话/审批/多机/设置全部打通并验证（M1 ✅ M2 ✅ M3 主体完成）。
 - 已发布签名 Release：[v0.3.0-m3](https://github.com/wjf1/zcode-remote-app/releases/tag/v0.3.0-m3)（私有仓库 `wjf1/zcode-remote-app`，`gh` CLI 已登录账号 wjf1）。
-- **已知外部事件**：桌面端 rotate 凭据后旧 sid 失效；模拟器网络随宿主直连链路波动（冷启动可修）。App 侧均已适配。
+- **2026-09-29 增量（本轮）**：P0-1 发送/停止 ✅、P1-1 表单应答 ✅、P1-2 多会话看板 ✅、
+  P1-4 协议常量结清 ✅、技术债清理 ✅——均已构建通过并推送（提交见 `git log`）。
+- ⚠️ **两条重要现状**（接手先读）：
+  1. **开发机已换**：原 `toolchain/`（Android SDK/AVD/**release 签名 keystore**）随 gitignore 未入库且本机无备份。
+     - 构建已可用系统路径（`F:/AndroidTools` 的 JDK17/SDK platform-35+36/build-tools/Gradle 8.11.1）重建，`build.sh` 已支持自动回退；
+     - **release keystore 丢失 → 发布新 APK 前必须恢复**，否则已装 v0.3.0-m3 的设备无法覆盖升级（只能重造 keystore + 卸载重装）。
+  2. **本机无法跑模拟器**：CPU 是兆芯 KX-7000（无 Intel/AMD 虚拟化扩展），emulator 的 qemu 静默退出；
+     ZCode 自带 android-emulator 插件底层同为该 qemu，同样不可用。**App UI 层验收一律待真机或 Intel/AMD 机器**。
+- **已知外部事件**：桌面端 rotate 凭据后旧 sid 失效；桌面端「移动端远程控制」面板关闭/超时后 `pair_status` 回到 `waiting`（面板打开期间才 matched）。App 侧均已适配。
 
 ## 2. 必读文档索引（按此顺序读）
 
@@ -83,6 +91,34 @@ python tools/_e2e_tap_approve.py                           # 验收自动化：�
 9. **中继错误码语义**：`KICKED`=会话冲突（终态提示）；`AUTH_FAILED/WRONG_PARAM`=配对失效（终态）；`DEVICE_OFFLINE`=等待重连。`auth_ack` 结构未知时报 `PROTOCOL_MISMATCH`（协议升级兜底，已实现）。
 
 ## 6. 剩余任务（P0 → P2，含验收标准）
+
+### 6.0 剩余工作总览（截至 2026-09-29，接手先看这张表）
+
+**已完成（勿重做）**：M0 协议逆向、M1 App 骨架+配对+会话列表、M2 会话流+审批端到端、
+M3 主体（多机/主题/线路/保活引导/历史翻页/分片重组）、**P0-1 发送+停止**、**P1-1 表单应答**、
+**P1-2 多会话看板**、**P1-4 协议常量结清**、技术债 3 项（移除确认弹窗/debug 面板隔离/日志降级）。
+
+**未完成项（全部）**：
+
+| 编号 | 任务 | 状态 | 阻塞 / 前置 | 预估 |
+|---|---|---|---|---|
+| **X-1** | **恢复 release 签名 keystore** | ⛔ **阻塞发布** | 原 toolchain 丢失且无备份；需找回备份或重造（重造后老用户须卸载重装） | 0.5h |
+| **X-2** | **App UI 层验收**（P0-1 输入栏/停止、P1-1 表单卡、P1-2 角标与横幅） | ⏳ 待硬件 | 本机兆芯 CPU 起不了模拟器；需 Intel/AMD 机器或真机 | 0.5d |
+| X-3 | README 双语同步本轮功能（P0-1/P1-1/P1-2） | ⬜ 未开始 | 无（仓库规范要求） | 0.5h |
+| **P0-2** | 真机验收（小米 15 Pro 日常可用） | ⏳ 待设备 | 需小米 15 Pro 到手 | 0.5d + 3d 观察 |
+| **P1-3** | 文件上传 / 语音输入 | ⬜ 未开始 | 无 | 2~3d |
+| **P2-1** | M4 VPS 备用 Runner（正式交付项） | ⬜ 未开始 | 需采购 VPS（¥10~40/月） | 1.5w |
+| **P2-2** | M5 高级模式（自建 bridge + NaCl E2E + 自建中继） | ⬜ 未开始 | 无 | 2~3w |
+| P2-3 | 其他 P2：文件/diff/Git 浏览、Wear OS 快捷审批、桌面 Widget、可选小米推送 | ⬜ 未开始 | 无 | 按需 |
+| D-1 | 会话流 `v4/conversation/frame` 二进制细节穷举 | ⬜ 未开始 | 需一次受控抓包（装 CA）；不影响当前功能 | 0.5d |
+| D-2 | 「earlier-head」占位项在 0 行会话的显示边界 | ⬜ 未开始 | 无（现已有 `rows.isNotEmpty()` 守卫，需实测确认） | 0.5h |
+| D-3 | elicitation 通知栏快捷应答（当前仅会话页内应答） | ⬜ 可选 | 无 | 0.5d |
+| E-1 | 会话级**权威**角标（订阅 `sessions-index/<workspaceId>` topic 取 `pendingInteractionSummary`） | ⬜ 可选增强 | 无（当前用任务事件流推导，够用） | 0.5d |
+
+> 优先级建议：**X-1（发布前置）→ X-2/P0-2（验收补齐，都在打通真机后一并做）→ X-3（文档合规）
+> → P1-3（高频能力）→ P2-1 → P2-2**。D/E 类可穿插在等待硬件时做。
+
+---
 
 ### P0-1 会话页「发送消息 + 停止按钮」（✅ 2026-09-29 完成，协议层端到端验收通过）
 
@@ -163,10 +199,23 @@ python tools/_e2e_tap_approve.py                           # 验收自动化：�
 
 ### 技术债（随手清）
 
-- `ConversationScreen` 移除设备/危险操作加确认弹窗；「earlier-head」占位项在 0 行会话的显示边界。
-- 会话流 `v4/conversation/frame` 二进制细节字段未穷举（不影响当前功能，遇到未知 op 已有 Unknown 分支兜底）。
-- `HomeScreen` 的 rpcEvents 调试面板（M2 观测用）内测前可移到 debug 构建。
-- logcat 日志量大（每个 delta 一条 Info），内测前把 `AppViewModel: rpc event` 降为 Log.d。
+**2026-09-29 已清**：
+- ✅ ~~`ConversationScreen` 移除设备/危险操作加确认弹窗~~ → HomeScreen「移除设备」已加二次确认弹窗。
+- ✅ ~~`HomeScreen` 的 rpcEvents 调试面板移到 debug 构建~~ → 已用 `BuildConfig.DEBUG` 隔离（`buildConfig=true`）。
+- ✅ ~~logcat 日志量大（每个 delta 一条 Info）~~ → `AppViewModel: rpc event` 已降为 `Log.d`。
+
+**仍待处理**：
+- 「earlier-head」占位项在 0 行会话的显示边界（现已有 `rows.isNotEmpty()` 守卫，需实测确认）。
+- 会话流 `v4/conversation/frame` 二进制细节字段未穷举（不影响当前功能，未知 op 已有 Unknown 分支兜底）。
+
+### P1-4 协议【待验证】项补全（✅ 2026-09-29 完成）
+
+- 已从 host asar 与官方 web bundle 定位并回写 PROTOCOL.md §4.1：`maxPhysicalFrameBytes = 1 MiB`、
+  `maxMessageBytes = 16 MiB`、`maxFragments = 64`、重组超时 30s、PC 端 auth meta 实参、两侧心跳
+  默认 10s / ack 超时 30s。PROTOCOL.md §8 的【待验证】清单已逐项结清（仅剩 conversation frame
+  二进制细节，见 D-1）。
+
+### P2-1 M4：VPS 备用 Runner（正式交付项，已用户确认排期）
 
 ## 7. 工作流程约定（每个任务都走这个循环）
 
