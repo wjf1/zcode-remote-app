@@ -1,5 +1,10 @@
 package com.zcode.remote.ui.screens
 
+import android.content.Context
+import android.net.Uri
+import android.provider.OpenableColumns
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.lazy.LazyColumn
@@ -11,6 +16,7 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -19,6 +25,7 @@ import com.zcode.remote.relay.ConversationChannel
 import com.zcode.remote.relay.ConversationRow
 import com.zcode.remote.relay.PendingApproval
 import com.zcode.remote.relay.PendingElicitation
+import java.io.ByteArrayOutputStream
 
 /**
  * 会话内容页：把会话流（snapshot 尾窗 + 增量）渲染成对话。
@@ -42,6 +49,9 @@ fun ConversationScreen(
     canStop: Boolean = false,
     stopState: String? = null,
     commandFeedback: String? = null,
+    attachments: List<ConversationChannel.AttachmentRef> = emptyList(),
+    attachUploadName: String? = null,
+    attachUploadPercent: Int = 0,
     onResolve: (PendingApproval, ApprovalOption) -> Unit = { _, _ -> },
     onElicitationAccept: (PendingElicitation, Map<Int, List<String>>) -> Unit = { _, _ -> },
     onElicitationDecline: (PendingElicitation) -> Unit = {},
@@ -51,9 +61,14 @@ fun ConversationScreen(
     onPromptChange: (String) -> Unit = {},
     onSend: () -> Unit = {},
     onStop: () -> Unit = {},
+    onAttachmentPicked: (name: String, mime: String, data: ByteArray) -> Unit = { _, _, _ -> },
+    onRemoveAttachment: (ConversationChannel.AttachmentRef) -> Unit = {},
     onBack: () -> Unit,
 ) {
     val listState = rememberLazyListState()
+    // 「加载更早」占位项只在 rows 非空时占列表第 0 位，所以行 i 的列表下标是 i + headerCount。
+    // 之前的贴底滚动漏算这一位，会停在倒数第二行（D-2）。
+    val headerCount = if (rows.isEmpty()) 0 else 1
 
     // 新行到达时贴底（流式文本靠 RowStore 原地更新，size 不变时不滚动）；
     // 历史翻页前插时锚定原首行，避免视口跳变。
@@ -62,11 +77,10 @@ fun ConversationScreen(
         val anchor = anchorRowId
         if (anchor != null) {
             val idx = rows.indexOfFirst { it.rowId == anchor }
-            // LazyColumn 顶部有一个"加载更早"占位项，items 从 index 1 开始
-            if (idx >= 0) listState.scrollToItem(idx + 1)
+            if (idx >= 0) listState.scrollToItem(idx + headerCount)
             anchorRowId = null
         } else {
-            if (rows.isNotEmpty()) listState.animateScrollToItem(rows.lastIndex)
+            if (rows.isNotEmpty()) listState.animateScrollToItem(rows.lastIndex + headerCount)
         }
     }
 
@@ -168,6 +182,25 @@ fun ConversationScreen(
             items(rows, key = { it.rowId }) { row -> RowItem(row) }
         }
 
+        // 附件条（P1-3）：已上传 chip + 上传进度 + 选择文件
+        val context = LocalContext.current
+        val filePicker = rememberLauncherForActivityResult(
+            ActivityResultContracts.OpenDocument()
+        ) { uri: Uri? ->
+            uri?.let {
+                readAttachment(context, it)?.let { (name, mime, data) ->
+                    onAttachmentPicked(name, mime, data)
+                }
+            }
+        }
+        AttachmentBar(
+            attachments = attachments,
+            uploadName = attachUploadName,
+            uploadPercent = attachUploadPercent,
+            onPick = { filePicker.launch(arrayOf("*/*")) },
+            onRemove = onRemoveAttachment,
+        )
+
         // 底部输入栏：与审批条并存（审批条在顶部）；官方 web 版逻辑——
         // 有草稿显示「发送」，空草稿且 canStop 显示「停止」。
         InputBar(
@@ -175,11 +208,97 @@ fun ConversationScreen(
             sending = sending,
             canStop = canStop,
             stopping = stopState == "stopping",
+            canSend = prompt.isNotBlank() || attachments.isNotEmpty(),
             onPromptChange = onPromptChange,
             onSend = onSend,
             onStop = onStop,
+            onPick = { filePicker.launch(arrayOf("*/*")) },
         )
     }
+}
+
+/** 大小上限与 ConversationChannel 保持一致（host attachmentMaxBytes = 20MiB）。 */
+private const val MAX_ATTACHMENT_BYTES = 20 * 1024 * 1024
+
+/**
+ * 从 content:// 读取附件的名字、MIME 与字节。超过上限 / 读不到时返回 null。
+ * 注意：整块读进内存（上限 20MiB），大文件后续可改成分片流式读。
+ */
+private fun readAttachment(context: Context, uri: Uri): Triple<String, String, ByteArray>? {
+    var name = "attachment"
+    var size = -1L
+    runCatching {
+        context.contentResolver.query(uri, null, null, null, null)?.use { c ->
+            val nameIdx = c.getColumnIndex(OpenableColumns.DISPLAY_NAME)
+            val sizeIdx = c.getColumnIndex(OpenableColumns.SIZE)
+            if (c.moveToFirst()) {
+                if (nameIdx >= 0) c.getString(nameIdx)?.let { name = it }
+                if (sizeIdx >= 0 && !c.isNull(sizeIdx)) size = c.getLong(sizeIdx)
+            }
+        }
+    }
+    if (size > MAX_ATTACHMENT_BYTES) return null
+    val mime = context.contentResolver.getType(uri) ?: "application/octet-stream"
+    val data = runCatching {
+        context.contentResolver.openInputStream(uri)?.use { input ->
+            val out = ByteArrayOutputStream()
+            val buf = ByteArray(64 * 1024)
+            var total = 0
+            while (true) {
+                val n = input.read(buf)
+                if (n <= 0) break
+                total += n
+                if (total > MAX_ATTACHMENT_BYTES) return null
+                out.write(buf, 0, n)
+            }
+            out.toByteArray()
+        }
+    }.getOrNull() ?: return null
+    return Triple(name, mime, data)
+}
+
+/** 附件条：无附件且未上传时不占位。 */
+@Composable
+private fun AttachmentBar(
+    attachments: List<ConversationChannel.AttachmentRef>,
+    uploadName: String?,
+    uploadPercent: Int,
+    onPick: () -> Unit,
+    onRemove: (ConversationChannel.AttachmentRef) -> Unit,
+) {
+    if (attachments.isEmpty() && uploadName == null) return
+    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+        uploadName?.let { name ->
+            Row(verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text("⏳ $name 上传中 $uploadPercent%",
+                    style = MaterialTheme.typography.labelSmall,
+                    modifier = Modifier.weight(1f), maxLines = 1, overflow = TextOverflow.Ellipsis)
+                LinearProgressIndicator(
+                    progress = { uploadPercent / 100f },
+                    modifier = Modifier.width(80.dp),
+                )
+            }
+        }
+        attachments.forEach { a ->
+            Row(verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text("📎 ${a.fileName}", style = MaterialTheme.typography.labelMedium,
+                    modifier = Modifier.weight(1f), maxLines = 1, overflow = TextOverflow.Ellipsis)
+                Text(humanBytes(a.bytes), style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant)
+                TextButton(onClick = { onRemove(a) }, contentPadding = PaddingValues(0.dp)) {
+                    Text("移除", style = MaterialTheme.typography.labelSmall)
+                }
+            }
+        }
+    }
+}
+
+private fun humanBytes(n: Long): String = when {
+    n < 1024 -> "${n}B"
+    n < 1024 * 1024 -> "%.1fKB".format(n / 1024.0)
+    else -> "%.1fMB".format(n / 1024.0 / 1024.0)
 }
 
 @Composable
@@ -188,11 +307,16 @@ private fun InputBar(
     sending: Boolean,
     canStop: Boolean,
     stopping: Boolean,
+    canSend: Boolean,
     onPromptChange: (String) -> Unit,
     onSend: () -> Unit,
     onStop: () -> Unit,
+    onPick: () -> Unit,
 ) {
     Row(verticalAlignment = Alignment.Bottom, modifier = Modifier.fillMaxWidth()) {
+        TextButton(onClick = onPick, contentPadding = PaddingValues(horizontal = 8.dp)) {
+            Text("📎", style = MaterialTheme.typography.titleMedium)
+        }
         OutlinedTextField(
             value = prompt,
             onValueChange = onPromptChange,
@@ -202,7 +326,7 @@ private fun InputBar(
             shape = RoundedCornerShape(20.dp),
         )
         Spacer(Modifier.width(8.dp))
-        if (prompt.isNotBlank()) {
+        if (canSend) {
             Button(
                 onClick = onSend,
                 enabled = !sending,

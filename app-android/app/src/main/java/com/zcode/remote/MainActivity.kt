@@ -52,6 +52,9 @@ class MainActivity : ComponentActivity() {
                         canStop = vm.conversationMeta.canStop == true,
                         stopState = vm.conversationMeta.stopState,
                         commandFeedback = vm.commandFeedback,
+                        attachments = vm.attachments.toList(),
+                        attachUploadName = vm.attachUpload?.name,
+                        attachUploadPercent = vm.attachUpload?.percent ?: 0,
                         onResolve = { a: PendingApproval, opt: ApprovalOption -> vm.resolve(a, opt) },
                         onElicitationAccept = { el, answers -> vm.answerElicitation(el, answers) },
                         onElicitationDecline = { vm.declineElicitation(it) },
@@ -61,6 +64,8 @@ class MainActivity : ComponentActivity() {
                         onPromptChange = { vm.updatePromptDraft(it) },
                         onSend = { vm.sendPrompt() },
                         onStop = { vm.stopSession() },
+                        onAttachmentPicked = { name, mime, data -> vm.addAttachment(name, mime, data) },
+                        onRemoveAttachment = { vm.removeAttachment(it) },
                         onBack = { opened = null },
                     )
                     else -> HomeScreen(

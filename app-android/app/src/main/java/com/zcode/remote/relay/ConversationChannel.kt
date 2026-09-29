@@ -1,5 +1,6 @@
 package com.zcode.remote.relay
 
+import android.util.Base64
 import android.util.Log
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -441,17 +442,25 @@ class ConversationChannel(private val rpc: RpcChannel) {
     /**
      * 发送用户消息（HANDOVER §5.3 实测路径）：`zcode-agent` 通道 `sendPrompt`，
      * args = `{workspacePath, sessionId, inputId, content}`。
-     * 消息进入会话队列（autoDrain），当前 turn 结束后自动开新 turn 执行；
+     * 消息进入会话队列（autoDrain），当前 turn 结束后自动新 turn 执行；
      * 成功后 userInput 行会由服务端推回会话流，无需本地 append。
+     *
+     * [attachments] 非空时带上 `attachments` 数组（元素 = [AttachmentRef.toWire]）。
+     * host 侧 `createRemotePromptAttachmentSessionService`（asar/out/host/index.js）会包装
+     * `sendPrompt` 并调 `materializePromptAttachments`；已上传的 ref 无 localPath，原样透传。
      */
-    fun sendPrompt(content: String, onResult: (Result<Unit>) -> Unit) {
+    fun sendPrompt(
+        content: String,
+        attachments: List<AttachmentRef> = emptyList(),
+        onResult: (Result<Unit>) -> Unit,
+    ) {
         val session = sessionId
         val target = subTarget
         if (session == null || target == null) {
             onResult(Result.failure(IllegalStateException("未订阅会话，无法发送")))
             return
         }
-        if (content.isBlank()) {
+        if (content.isBlank() && attachments.isEmpty()) {
             onResult(Result.failure(IllegalStateException("消息内容为空")))
             return
         }
@@ -459,7 +468,8 @@ class ConversationChannel(private val rpc: RpcChannel) {
         args["sessionId"] = session
         args["inputId"] = "inp-${UUID.randomUUID()}"
         args["content"] = content
-        Log.i(TAG, "sendPrompt session=$session chars=${content.length}")
+        if (attachments.isNotEmpty()) args["attachments"] = attachments.map { it.toWire() }
+        Log.i(TAG, "sendPrompt session=$session chars=${content.length} attachments=${attachments.size}")
         rpc.call(RpcChannel.CHANNEL_AGENT, "sendPrompt", listOf(args)) { reply ->
             onResult(
                 when (reply) {
@@ -469,6 +479,139 @@ class ConversationChannel(private val rpc: RpcChannel) {
             )
         }
     }
+
+    // ---------- 附件上传（P1-3，协议实证见 PROTOCOL.md §6.6）----------
+
+    /**
+     * 上传一个附件到该会话（官方 web `TTe` 同构的四步流程）：
+     *   attachmentBeginV4 → attachmentChunkV4 × N → attachmentCommitV4
+     * 失败时 fire-and-forget 打一发 attachmentAbortV4 回收服务端暂存。
+     *
+     * - chunk 大小 = [CHUNK_BYTES]（与官方客户端一致 384KiB；host 上限 512KiB）
+     * - checksum = `"sha256:" + sha256(data).hex`（小写）
+     * - 全程不需要 connectionId（host 从 workspace/session 上下文解析；实机验证）
+     */
+    fun uploadAttachment(
+        fileName: String,
+        mime: String,
+        data: ByteArray,
+        onProgress: ((uploaded: Long, total: Long) -> Unit)? = null,
+        onResult: (Result<AttachmentRef>) -> Unit,
+    ) {
+        val session = sessionId
+        val target = subTarget
+        if (session == null || target == null) {
+            onResult(Result.failure(IllegalStateException("未订阅会话，无法上传附件")))
+            return
+        }
+        if (data.isEmpty()) {
+            onResult(Result.failure(IllegalArgumentException("附件内容为空")))
+            return
+        }
+        if (data.size > MAX_ATTACHMENT_BYTES) {
+            onResult(Result.failure(IllegalArgumentException("附件超过 20MiB 上限")))
+            return
+        }
+        val totalChunks = (data.size + CHUNK_BYTES - 1) / CHUNK_BYTES
+        if (totalChunks > MAX_CHUNKS) {
+            onResult(Result.failure(IllegalArgumentException("附件分片数超过上限")))
+            return
+        }
+        val total = data.size.toLong()
+        val base = HashMap<String, Any>(target)
+        base["sessionId"] = session
+        base["uploadId"] = "upload-${UUID.randomUUID()}"
+
+        fun abort() {
+            rpc.call(RpcChannel.CHANNEL_AGENT, "attachmentAbortV4", listOf(HashMap(base))) {
+                Log.i(TAG, "attachmentAbort sent uploadId=${base["uploadId"]}")
+            }
+        }
+
+        fun fail(message: String) {
+            Log.w(TAG, "uploadAttachment 失败：$message")
+            abort()
+            onResult(Result.failure(IllegalStateException(message)))
+        }
+
+        // 注意：Kotlin 局部函数只能引用「已声明」的同层函数，故按依赖顺序声明。
+        fun commit() {
+            rpc.call(RpcChannel.CHANNEL_AGENT, "attachmentCommitV4", listOf(HashMap(base))) { reply ->
+                when (reply) {
+                    is RpcChannel.RpcReply.Err -> fail("提交附件失败：${reply.message}")
+                    is RpcChannel.RpcReply.Ok -> {
+                        val ref = reply.data.asObj()?.get("ref").asStr()
+                        if (ref.isNullOrBlank()) fail("提交附件未返回 ref：${reply.data}")
+                        else {
+                            Log.i(TAG, "附件已提交 ref=$ref file=$fileName bytes=${data.size}")
+                            onResult(Result.success(AttachmentRef(ref, fileName, mime, total)))
+                        }
+                    }
+                }
+            }
+        }
+
+        fun uploadChunks(from: Int) {
+            var index = from
+            fun next() {
+                if (index >= totalChunks) { commit(); return }
+                val off = index * CHUNK_BYTES
+                val end = minOf(off + CHUNK_BYTES, data.size)
+                val args = HashMap(base)
+                args["chunkIndex"] = index
+                args["dataBase64"] = Base64.encodeToString(data.copyOfRange(off, end), Base64.NO_WRAP)
+                val sent = index
+                rpc.call(RpcChannel.CHANNEL_AGENT, "attachmentChunkV4", listOf(args)) { reply ->
+                    when (reply) {
+                        is RpcChannel.RpcReply.Err -> fail("分片 $sent 上传失败：${reply.message}")
+                        is RpcChannel.RpcReply.Ok -> {
+                            val ack = reply.data.asObj()?.get("nextChunkIndex").asInt()
+                            if (ack != sent + 1) {
+                                fail("服务端分片进度异常（期望 ${sent + 1}，收到 $ack）")
+                                return@call
+                            }
+                            index = sent + 1
+                            onProgress?.invoke(minOf(index.toLong() * CHUNK_BYTES, total), total)
+                            next()
+                        }
+                    }
+                }
+            }
+            next()
+        }
+
+        val beginArgs = HashMap(base)
+        beginArgs["fileName"] = fileName
+        beginArgs["mime"] = mime
+        beginArgs["totalBytes"] = data.size
+        beginArgs["totalChunks"] = totalChunks
+        beginArgs["checksum"] = "sha256:" + sha256Hex(data)
+        Log.i(TAG, "attachmentBegin file=$fileName mime=$mime bytes=${data.size} chunks=$totalChunks")
+        rpc.call(RpcChannel.CHANNEL_AGENT, "attachmentBeginV4", listOf(beginArgs)) { reply ->
+            when (reply) {
+                is RpcChannel.RpcReply.Err -> onResult(
+                    Result.failure(IllegalStateException("附件上传初始化失败：${reply.message}")))
+                is RpcChannel.RpcReply.Ok -> {
+                    val o = reply.data.asObj()
+                    val ref = o?.get("ref").asStr()
+                    // 幂等：服务端可能对该 uploadId 已有 committed 内容（重试场景）
+                    if (o?.get("state").asStr() == "committed" && !ref.isNullOrBlank()) {
+                        onResult(Result.success(AttachmentRef(ref, fileName, mime, total)))
+                        return@call
+                    }
+                    val next = o?.get("nextChunkIndex").asInt() ?: 0
+                    if (next > totalChunks) { fail("服务端返回了非法进度 $next"); return@call }
+                    uploadChunks(next)
+                }
+            }
+        }
+    }
+
+    private fun sha256Hex(data: ByteArray): String =
+        java.security.MessageDigest.getInstance("SHA-256").digest(data)
+            .joinToString("") { "%02x".format(it) }
+
+
 
     /**
      * 停止当前运行（官方 web 版同款命令，host asar 实证）：
@@ -513,6 +656,28 @@ class ConversationChannel(private val rpc: RpcChannel) {
     private fun JsonElement?.asStr(): String? =
         this?.let { runCatching { it.jsonPrimitive.content }.getOrNull() }
 
+    private fun JsonElement?.asInt(): Int? =
+        this?.let { runCatching { it.jsonPrimitive.content.toIntOrNull() }.getOrNull() }
+
+    /**
+     * 已上传附件的引用（sendPrompt `attachments` 数组元素）。
+     * 字段与官方 web 的 `attachmentRef` 一致（`{ref, fileName, mime, bytes}`，
+     * 见 research/index-nOVzQNKW.js），host 侧对无 localPath 的元素原样透传。
+     */
+    data class AttachmentRef(
+        val ref: String,
+        val fileName: String,
+        val mime: String,
+        val bytes: Long,
+    ) {
+        fun toWire(): Map<String, Any> = mapOf(
+            "ref" to ref,
+            "fileName" to fileName,
+            "mime" to mime,
+            "bytes" to bytes,
+        )
+    }
+
     /** 审批应答结果。 */
     sealed interface ResolveResult {
         /** status: accepted / duplicate / noop（后两枚说明已被桌面端或重复请求消解）。 */
@@ -523,6 +688,13 @@ class ConversationChannel(private val rpc: RpcChannel) {
     companion object {
         private const val TAG = "ConvChannel"
         private const val APP_VERSION = "1.0.0"
+
+        /** 附件分片大小：与官方 web 客户端一致（host 上限 attachmentChunkMaxBytes=512KiB）。 */
+        private const val CHUNK_BYTES = 384 * 1024
+
+        /** host 常量 attachmentMaxBytes = 20MiB、attachmentUploadMaxChunks = 64。 */
+        private const val MAX_ATTACHMENT_BYTES = 20 * 1024 * 1024
+        private const val MAX_CHUNKS = 64
 
         /** 服务端命令 ack 中算成功三种状态（duplicate/noop 表示已被他处消解）。 */
         private val SUCCESS_STATUSES = setOf("accepted", "duplicate", "noop")

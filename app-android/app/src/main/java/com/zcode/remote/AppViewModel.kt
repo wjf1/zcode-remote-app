@@ -23,6 +23,8 @@ import com.zcode.remote.relay.TaskEvent
 import com.zcode.remote.relay.parseBootstrapSessions
 import com.zcode.remote.notify.ApprovalBridge
 import com.zcode.remote.notify.ApprovalNotifier
+import com.zcode.remote.notify.ElicitationBridge
+import com.zcode.remote.notify.ElicitationNotifier
 import com.zcode.remote.storage.MultiDeviceStore
 import com.zcode.remote.storage.PairedDevice
 import com.zcode.remote.storage.SettingsStore
@@ -287,6 +289,9 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         }
         // 通知按钮 → AppViewModel 应答（连接只活在这里，所以桥必须在连接建立时挂上）
         ApprovalBridge.handler = { interactionId, optionId -> resolveById(interactionId, optionId) }
+        ElicitationBridge.handler = { interactionId, answerJson ->
+            resolveElicitationById(interactionId, answerJson)
+        }
     }
 
     /**
@@ -317,6 +322,8 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         elicitations = next
         Log.i(TAG, "elicitations → ${next.size} 条 " +
                 next.joinToString(",") { "${it.toolName ?: "?"}#${it.interactionId.take(18)}" })
+        runCatching { ElicitationNotifier.sync(getApplication(), next) }
+            .onFailure { Log.w(TAG, "表单通知栏刷新失败", it) }
         recomputeSessionPending()
     }
 
@@ -405,21 +412,69 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
     /** 发送输入栏消息：成功后服务端把 userInput 行推回会话流（无需本地 append）。 */
     fun sendPrompt() {
         val content = promptDraft.trim()
-        if (content.isEmpty() || sending) return
+        val atts = attachments.toList()
+        if ((content.isEmpty() && atts.isEmpty()) || sending) return
         val conv = conversation ?: run { flash("连接已断开，未发送"); return }
         sending = true
-        conv.sendPrompt(content) { r ->
+        conv.sendPrompt(content, atts) { r ->
             viewModelScope.launch {
                 sending = false
                 r.fold(
                     onSuccess = {
                         promptDraft = ""
-                        Log.i(TAG, "sendPrompt ok session=$subscribedSessionId")
+                        attachments.clear()
+                        Log.i(TAG, "sendPrompt ok session=$subscribedSessionId atts=${atts.size}")
                     },
                     onFailure = { flash("发送失败：${it.message}") },
                 )
             }
         }
+    }
+
+    // ---- 附件上传（P1-3，协议见 PROTOCOL.md §6.6）----
+
+    /** 已上传完成、随下一条消息发出去的附件。 */
+    val attachments = mutableStateListOf<ConversationChannel.AttachmentRef>()
+
+    /** 上传中的附件（UI 显示进度；同一时刻只允许一个）。 */
+    var attachUpload by mutableStateOf<AttachUpload?>(null)
+        private set
+
+    data class AttachUpload(val name: String, val uploaded: Long, val total: Long) {
+        val percent: Int get() = if (total <= 0) 0 else ((uploaded * 100) / total).toInt()
+    }
+
+    /**
+     * 上传一个附件。走 conversation 通道的四步流程（begin/chunk/commit），
+     * 成功后加入 [attachments]，UI 显示 chip，发送时随 sendPrompt 带走。
+     */
+    fun addAttachment(fileName: String, mime: String, data: ByteArray) {
+        val conv = conversation ?: run { flash("连接已断开，无法上传"); return }
+        if (attachUpload != null) { flash("还有附件在上传中"); return }
+        attachUpload = AttachUpload(fileName, 0, data.size.toLong())
+        conv.uploadAttachment(fileName, mime, data,
+            onProgress = { up, total -> attachUpload = AttachUpload(fileName, up, total) },
+        ) { r ->
+            viewModelScope.launch {
+                attachUpload = null
+                r.fold(
+                    onSuccess = {
+                        attachments.add(it)
+                        flash("已添加附件 ${it.fileName}")
+                    },
+                    onFailure = { flash("附件上传失败：${it.message}") },
+                )
+            }
+        }
+    }
+
+    fun removeAttachment(ref: ConversationChannel.AttachmentRef) {
+        attachments.remove(ref)
+    }
+
+    private fun clearAttachments() {
+        attachments.clear()
+        attachUpload = null
     }
 
     /** 停止当前运行（envelope `stop` 命令，官方 web 同款）。 */
@@ -495,6 +550,20 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
+    /**
+     * 通知栏快捷应答（D-3）：携带预构造好的 answer JSON 直接提交。
+     * 返回 false = 当前无连接（由 receiver 显示"没发出去"）。
+     */
+    private fun resolveElicitationById(interactionId: String, answerJson: String): Boolean {
+        val conv = conversation ?: return false
+        val el = elicitations.firstOrNull { it.interactionId == interactionId } ?: return false
+        val answer = runCatching {
+            kotlinx.serialization.json.Json.parseToJsonElement(answerJson).jsonObject
+        }.getOrNull() ?: return false
+        conv.resolveElicitation(el, answer) { r -> flashResolve(r, "已提交") }
+        return true
+    }
+
     private fun flashResolve(r: ConversationChannel.ResolveResult, okText: String) {
         viewModelScope.launch {
             flash(
@@ -516,6 +585,7 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         val conv = conversation ?: return
         val ws = s.workspacePath ?: activeWorkspaceKey ?: return
         subscribedSessionId = s.taskId
+        clearAttachments()   // 附件与会话绑定，切会话即清空
         Log.i(TAG, "subscribe conversation session=${s.taskId} ws=$ws")
         conv.subscribe(
             workspacePath = ws,
@@ -562,9 +632,16 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         conversation = null
         // 连接没了就没人能应答：摘掉桥并撤掉通知，避免用户点了个"假批准"
         ApprovalBridge.handler = null
+        ElicitationBridge.handler = null
         runCatching { ApprovalNotifier.clearAll(getApplication()) }
+        runCatching { ElicitationNotifier.clearAll(getApplication()) }
         taskApprovals.clear()
+        taskElicitations.clear()
         approvals = emptyList()
+        elicitations = emptyList()
+        sessionPending = emptyMap()
+        clearAttachments()
+        promptDraft = ""
     }
 
     fun forget() {

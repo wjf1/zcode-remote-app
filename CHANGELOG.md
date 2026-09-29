@@ -1,5 +1,50 @@
 # 变更记录 / Changelog
 
+## 未发布（2026-09-29 二轮：X-1 keystore 核验 + D-2/D-3 + P1-3 附件上传）
+
+### 关键结论：release 签名 keystore 并未丢失（X-1 结清）
+HANDOVER 里「开发机已换、release keystore 丢失」的说法**对本机不成立**：
+- `toolchain/keys/zcode-remote.keystore` 与 `app-android/keystore.properties` 均在，keytool 可正常加载；
+- 其证书 SHA-256 指纹
+  `1D:46:E9:E8:67:48:A2:B1:98:46:6F:FA:C2:B5:8F:9F:F4:BD:BD:37:FB:68:C3:5E:1A:50:4C:65:ED:24:BE:55`
+  与**已发布的 v0.3.0-m3 release APK 完全一致**（比对证据：v0.3.0-m3 的 APK 尾部
+  APK Signing Block 解析出的 v2 证书指纹，脚本 `tools/_apk_cert_fp.py`）；
+- 本机 `assembleRelease` 通过，产物签名指纹一致 → **后续发布可直接覆盖升级，不必重造 keystore**。
+- 顺带修正：本机 `toolchain/`（jdk17 + gradle 8.7 + android-sdk platform-35/build-tools-35）
+  完整，`build.sh` 走仓库内工具链即可，`F:/AndroidTools` 回退路径实际不存在。
+
+### 修复（D-2 会话页贴底索引偏移）
+- `ConversationScreen` 的贴底滚动 `animateScrollToItem(rows.lastIndex)` 未计入列表第 0 位的
+  「加载更早」占位项，实际停在**倒数第二行**；改为显式 `headerCount`（有行则 1）计算下标，
+  锚定滚动（`idx + headerCount`）同步修正。`rows` 为空时占位项与滚动均被跳过。
+
+### 新增（D-3 elicitation 通知栏快捷应答）
+- `notify/ElicitationNotifier.kt`：表单类交互（AskUserQuestion / 计划批准）的**通知栏快捷应答**，
+  与审批通知分列两套（独立通道 `elicitations`、独立 ID 区间 300000+，互不 cancel）。
+- 只为「一个按钮能表达完整答案」的形态给动作：plan_approval → 批准计划/拒绝；
+  单题单选且选项 ≤3 → 每选项一个按钮；其余（多题/多选/需自由文本）只给「打开 App 处理」。
+- 答案 JSON 由通知动作直接携带，`ElicitationReceiver` → `ElicitationBridge` →
+  `AppViewModel.resolveElicitationById` 复用同一条 resolveInteraction 管道；无连接时明确提示未发出。
+
+### 新增（P1-3 附件上传：协议实证 + 客户端 + UI）
+- **协议实证**（tools/_p13_probe.py，实机）：四件套 `attachmentBeginV4/ChunkV4/CommitV4/AbortV4`
+  打通，单分片与 900KiB 多分片均成功，commit 返回 `ref = zcode-artifact://…`；
+  结论回写 PROTOCOL.md §6.6（含 host 常量 20MiB / 512KiB / 64 片、官方 384KiB 分片、
+  `sha256:` 校验和、**begin 不需要 connectionId**）。
+- **Kotlin 客户端**：`ConversationChannel.uploadAttachment`（begin→chunk 循环→commit，
+  失败自动 abort；进度回调；`state=="committed"` 幂等复用 ref）+ `AttachmentRef`。
+- **发消息携带附件**：`ConversationChannel.sendPrompt` 增加可选 `attachments`
+  （元素 `{ref, fileName, mime, bytes}`，与官方 web `attachmentRef` 同形）。
+- **UI**：会话页 📎 按钮 → SAF 文件选择器（`OpenDocument`）→ 上传进度条 → 已上传 chip（可移除）；
+  「发送」按钮改为 `有草稿或已有附件` 即可用。
+- ⚠️ **待验证**：发送侧「附件随 sendPrompt 到桌面端会话」尚未做一次真实发送的端到端验收；
+  UI 层整体（D-3/P1-3）同前几轮，待真机或 Intel/AMD 机器补验（本机兆芯 CPU 起不了模拟器）。
+
+### 文档
+- `README.md` 中英双语同步：功能一览补发送/停止、表单应答、多会话看板；里程碑表 M3/M3+ 状态更新。
+
+---
+
 ## 未发布（P0-1 发送/停止 + P1-1 表单应答 + P1-2 多会话看板）
 
 **里程碑：P0-1 完成 —— 会话页输入栏（sendPrompt）+ 运行中停止（stop envelope）；

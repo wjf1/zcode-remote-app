@@ -38,5 +38,14 @@
                 <action android:name="com.zcode.remote.action.RESOLVE_APPROVAL" />
             </intent-filter>
         </receiver>
+
+        <!-- 表单交互（elicitation）通知栏快捷应答的回调，同样 exported=false -->
+        <receiver
+            android:name=".notify.ElicitationReceiver"
+            android:exported="false">
+            <intent-filter>
+                <action android:name="com.zcode.remote.action.RESOLVE_ELICITATION" />
+            </intent-filter>
+        </receiver>
     </application>
 </manifest>

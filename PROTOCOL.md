@@ -256,6 +256,34 @@ python tools/probe.py sub <会话ID前缀> [帧落盘路径]   # + 完整会话�
   ack `status:"accepted"` → 条目从 pendingInteractions 消解。三项 PASS。
 - 桌面端 pending 条目带 `autoResolution.deadlineAt`（约 5 分钟倒计时），超时后应答得 noop。
 
+### 6.6 附件上传（P1-3，2026-09-29 实机四件套 + 多分片验证）
+
+- **四件套 RPC**（`zcode-agent` 通道；host `chunk-RWMCBKS2.js` 的 `attachmentBeginV4/ChunkV4/CommitV4/AbortV4`）：
+  - `attachmentBeginV4`: args = `{workspacePath[, workspaceIdentity], sessionId, uploadId, fileName, mime,
+    totalBytes, totalChunks, checksum}` → 201 `{uploadId, state, nextChunkIndex}`。
+    **不需要 connectionId**（host 从 workspace/session 上下文解析连接，实机确认）。
+    `state=="committed"` 时直接返回 `ref`（幂等，重试安全）。
+  - `attachmentChunkV4`: args = 同上 + `{chunkIndex, dataBase64}` → 201 `{uploadId, nextChunkIndex}`，
+    **必须 `nextChunkIndex == 已发 index + 1`**，否则 `fault.attachment.invalidServerProgress`。
+  - `attachmentCommitV4`: args = `{workspacePath[, workspaceIdentity], sessionId, uploadId}` →
+    201 `{ref}`，`ref = zcode-artifact://<sessionId>/<artifactId>`。
+  - `attachmentAbortV4`: 同 commit 参数，失败时回滚服务端暂存。
+- **常量**（host asar `chunk-RWMCBKS2.js` 定位）：`attachmentMaxBytes = 20MiB`、
+  `attachmentChunkMaxBytes = 512KiB`、`attachmentUploadMaxChunks = 64`、
+  `attachmentUploadTtlMs = 5min`、`attachmentUnreferencedTtlMs = 24h`。
+  官方 web 客户端分片用 **384KiB**（`_b = 384*1024`，留 base64 膨胀余量），App 同值。
+- **编码**：`checksum = "sha256:" + SHA256(fileBytes).hex()`（小写）；`dataBase64` 为标准 base64；
+  `uploadId = "upload-" + uuid`。
+- **发送携带**：`sendPrompt` 增加可选 `attachments: [{ref, fileName, mime, bytes}]` 数组
+  （官方 web `attachmentRef` 同形；host `createRemotePromptAttachmentSessionService` 包装
+  `sendPrompt` 并调 `materializePromptAttachments`，已上传的 ref 无 localPath 故原样透传）。
+  ⚠️ **element 形状来自官方 web bundle 源码**（`research/index-nOVzQNKW.js`），
+  上传侧已实机验证，**发送侧尚未做一次真实发送 → 桌面端收到附件** 的端到端验收（待真机）。
+- **端到端实测**（tools/_p13_probe.py，桌面端在线，2026-09-29）：
+  ① 单分片小文件 `begin(staging,0) → chunk(1) → commit → ref` 全通；
+  ② 多分片 900KiB → 3 片（393216+393216+135168）逐片 `nextChunkIndex` 递增正确 → commit → ref。
+  「begin 不传 connectionId」可直接成功。
+
 ## 7. Bot Channel（辅路）
 
 微信（`ilinkai.weixin.qq.com` 轮询）/飞书/Lark/Telegram；命令集 `status/new/workspace/model/mode/thoughtLevel/reply`；任务流 `createTask → prompt_sent → sendPrompt → completed/error`。与远程控制共用任务模型——M4 的 VPS Runner 可复用此任务 API 形态。
