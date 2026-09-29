@@ -13,6 +13,7 @@ import com.zcode.remote.relay.ApprovalOption
 import com.zcode.remote.relay.ConversationChannel
 import com.zcode.remote.relay.ConversationRow
 import com.zcode.remote.relay.PendingApproval
+import com.zcode.remote.relay.PendingElicitation
 import com.zcode.remote.relay.RelayClient
 import com.zcode.remote.relay.RelayState
 import com.zcode.remote.relay.RowStore
@@ -27,9 +28,13 @@ import com.zcode.remote.storage.PairedDevice
 import com.zcode.remote.storage.SettingsStore
 import kotlinx.coroutines.launch
 import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.buildJsonArray
+import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
+import kotlinx.serialization.json.put
 
 /**
  * 应用状态中枢：配对 → 中继连接 → bootstrap（会话列表）→ 开桥 → RPC 会话流。
@@ -112,6 +117,12 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
     /** 最近一次应答的反馈文案（UI 直接显示，用完置空）。 */
     var approvalFeedback by mutableStateOf<String?>(null)
         private set
+
+    // ---- 表单交互（elicitation，P1-1）----
+    /** 当前会话的待应答表单（会话帧 userInput 条目 + 任务事件流 elicitation_request 合并）。 */
+    var elicitations by mutableStateOf<List<PendingElicitation>>(emptyList())
+        private set
+    private val taskElicitations = LinkedHashMap<String, PendingElicitation>()
 
     private var client: RelayClient? = null
     private var channel: RpcChannel? = null
@@ -211,6 +222,17 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
                                 }?.let {
                                     if (taskApprovals.remove(it) != null) refreshApprovals()
                                 }
+                            "elicitation_request" ->
+                                PendingElicitation.fromTaskEvent(ev.raw, ev.taskId)?.let {
+                                    taskElicitations[it.interactionId] = it
+                                    refreshElicitations()
+                                }
+                            "elicitation_resolved" ->
+                                ev.raw["requestId"]?.let {
+                                    runCatching { it.jsonPrimitive.content }.getOrNull()
+                                }?.let {
+                                    if (taskElicitations.remove(it) != null) refreshElicitations()
+                                }
                         }
                     }
                     else -> Unit
@@ -234,7 +256,8 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
                 // 会话帧优先交给会话层解析
                 conv.onEvent(ev, rowStore)
                 val text = ev.data.toString()
-                Log.i(TAG, "rpc event id=${ev.id}: ${text.take(800)}")
+                // 每个 delta 一条，量大（HANDOVER 技术债）：降为 debug 级，不刷 info 日志
+                Log.d(TAG, "rpc event id=${ev.id}: ${text.take(400)}")
                 rpcEvents.add(0, text.take(4000))
                 if (rpcEvents.size > 50) rpcEvents.removeAt(rpcEvents.lastIndex)
             }
@@ -245,6 +268,9 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         viewModelScope.launch { conv.earlier.collect { earlier = it } }
         viewModelScope.launch {
             conv.interactions.collect { refreshApprovals() }
+        }
+        viewModelScope.launch {
+            conv.elicitations.collect { refreshElicitations() }
         }
         // 通知按钮 → AppViewModel 应答（连接只活在这里，所以桥必须在连接建立时挂上）
         ApprovalBridge.handler = { interactionId, optionId -> resolveById(interactionId, optionId) }
@@ -265,6 +291,18 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
                 next.joinToString(",") { "${it.toolName ?: "?"}#${it.interactionId.take(18)}" })
         runCatching { ApprovalNotifier.sync(getApplication(), next) }
             .onFailure { Log.w(TAG, "通知栏刷新失败", it) }
+    }
+
+    /** 合并表单交互双来源（会话帧 userInput 条目 + 任务事件流），interactionId 去重。 */
+    private fun refreshElicitations() {
+        val merged = LinkedHashMap<String, PendingElicitation>()
+        conversation?.elicitations?.value?.forEach { merged[it.interactionId] = it }
+        taskElicitations.forEach { (k, v) -> merged.putIfAbsent(k, v) }
+        val next = merged.values.toList()
+        if (next == elicitations) return
+        elicitations = next
+        Log.i(TAG, "elicitations → ${next.size} 条 " +
+                next.joinToString(",") { "${it.toolName ?: "?"}#${it.interactionId.take(18)}" })
     }
 
     /** 通知栏按钮走这条路径：按 id 找回对象再应答。 */
@@ -358,6 +396,74 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
                 )
                 Log.i(TAG, "stop result=$r")
             }
+        }
+    }
+
+    // ---- 表单交互应答（P1-1，构造规则见 PROTOCOL.md §6.5）----
+
+    /**
+     * 提交表单答案：[answers] 为 题号 → 该题答案值列表（含自定义文本）。
+     * 官方 web rut 构造：单题 content.answer、多题 content.answer_N，
+     * 同时附 answers:{问题文本: "合并答案"} 便于桌面端日志可读。
+     */
+    fun answerElicitation(el: PendingElicitation, answers: Map<Int, List<String>>) {
+        val conv = conversation ?: run { flash("连接已断开，未发送"); return }
+        val content = buildJsonObject {
+            val readable = LinkedHashMap<String, String>()
+            answers.forEach { (idx, values) ->
+                if (values.isEmpty()) return@forEach
+                val q = el.questions.getOrNull(idx)
+                val jsonValues = buildJsonArray { values.forEach { add(JsonPrimitive(it)) } }
+                if (el.questions.size == 1) {
+                    put("answer", if (q?.multiSelect == true) jsonValues else JsonPrimitive(values.first()))
+                } else {
+                    put("answer_$idx", if (q?.multiSelect == true) jsonValues else JsonPrimitive(values.first()))
+                }
+                q?.let { readable[it.question] = values.joinToString(", ") }
+            }
+            if (readable.isNotEmpty()) {
+                put("answers", buildJsonObject { readable.forEach { (k, v) -> put(k, JsonPrimitive(v)) } })
+            }
+        }
+        val answer = buildJsonObject {
+            put("action", "accept")
+            put("content", content)
+        }
+        conv.resolveElicitation(el, answer) { r -> flashResolve(r, "已提交") }
+    }
+
+    /** 拒绝表单/计划。 */
+    fun declineElicitation(el: PendingElicitation) {
+        val conv = conversation ?: run { flash("连接已断开，未发送"); return }
+        conv.resolveElicitation(el, buildJsonObject { put("action", "decline") }) { r ->
+            flashResolve(r, "已拒绝")
+        }
+    }
+
+    /** 计划批准（plan_approval）。 */
+    fun approveElicitationPlan(el: PendingElicitation) {
+        val conv = conversation ?: run { flash("连接已断开，未发送"); return }
+        conv.resolveElicitation(el, buildJsonObject { put("action", "accept") }) { r ->
+            flashResolve(r, "已批准计划")
+        }
+    }
+
+    /** 自由文本应答（无 questions 的 userInput 条目，freeText=true）。 */
+    fun answerElicitationFreeText(el: PendingElicitation, text: String) {
+        val conv = conversation ?: run { flash("连接已断开，未发送"); return }
+        conv.resolveElicitation(el, buildJsonObject { put("freeText", text) }) { r ->
+            flashResolve(r, "已提交")
+        }
+    }
+
+    private fun flashResolve(r: ConversationChannel.ResolveResult, okText: String) {
+        viewModelScope.launch {
+            flash(
+                when (r) {
+                    is ConversationChannel.ResolveResult.Accepted -> okText
+                    is ConversationChannel.ResolveResult.Failed -> "应答失败：${r.message}"
+                }
+            )
         }
     }
 

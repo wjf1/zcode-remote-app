@@ -1,10 +1,31 @@
 # 变更记录 / Changelog
 
-## 未发布（P0-1 会话页发送 + 停止）
+## 未发布（P0-1 发送/停止 + P1-1 表单应答）
 
-**里程碑：P0-1 完成 —— 会话页输入栏（sendPrompt）+ 运行中停止（stop envelope）**
+**里程碑：P0-1 完成 —— 会话页输入栏（sendPrompt）+ 运行中停止（stop envelope）；
+P1-1 完成 —— elicitation 表单类交互应答（AskUserQuestion / 计划批准 / 确认框）**
 
-### 新增
+### 新增（P1-1 表单应答）
+- **PendingElicitation 模型**（Interactions.kt）：会话帧 `pendingInteractions` 里 kind=="userInput"
+  条目与任务事件流 `elicitation_request` 双源解析（questions/plan/freeText/autoResolution）。
+- **应答**：与审批共用 `resolveInteraction` envelope（`sendResolveInteraction` 公共出口），
+  answer 按官方 web 形态构造——表单 `{action:"accept", content:{answer/answer_N/answers}}`、
+  拒绝 `{action:"decline"}`、计划批准 `{action:"accept"}`、自由文本 `{freeText}`。
+- **会话页 ElicitationCard**：计划批准（plan 文本+批准/拒绝）、逐题选项（单选即选、多选可累加、
+  自定义文本并入）、freeText 输入框、待审倒计时。
+- **双源合并**：`AppViewModel.elicitations`（会话帧整组替换 + 任务事件流 elicitation_request/
+  elicitation_resolved，interactionId 去重，会话帧优先）。
+- **技术债**：`AppViewModel: rpc event` 日志 Info → Debug（HANDOVER 技术债清单）。
+- `tools/_p11_probe.py`（真实帧观测）、`tools/_p11_verify.py`（端到端验收）。
+
+### 协议实证（写入 PROTOCOL.md §6.5）
+- pendingInteractions 表单条目 kind 是 **"userInput"**（不是 "elicitation"）；host answer zod
+  `{optionId?, freeText?, action?(accept/decline/cancel), content?(Record)}`；官方 web v4
+  `onRespond → {action, content}`（表单 content 由 rut 构造 answer/answer_N/answers）。
+- **端到端实测**：AskUserQuestion 真实触发 → userInput 条目观察 →
+  `{action:"accept", content:{answer:"A=提交验收报告"}}` → ack accepted → 条目消解。三项 PASS。
+
+### 新增（P0-1 发送/停止）
 - **会话页底部输入栏**：TextField + 发送按钮（草稿跨重组保存在 ViewModel，发送成功才清空；
   发送走 `zcode-agent` 通道 `sendPrompt`，args=`{workspacePath, sessionId, inputId, content}`，
   成功后 userInput 行由服务端推回会话流，不做本地 append）；`imePadding`+`navigationBarsPadding`

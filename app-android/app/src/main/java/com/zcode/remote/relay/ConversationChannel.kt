@@ -5,9 +5,11 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
+import kotlinx.serialization.json.put
 import java.util.UUID
 
 /**
@@ -40,6 +42,10 @@ class ConversationChannel(private val rpc: RpcChannel) {
     /** 当前会话的待审批项（服务端整组给出，手机侧不额外累积）。 */
     private val _interactions = MutableStateFlow<List<PendingApproval>>(emptyList())
     val interactions: StateFlow<List<PendingApproval>> = _interactions
+
+    /** 当前会话的待应答表单交互（pendingInteractions 里 kind=="userInput"，整组替换）。 */
+    private val _elicitations = MutableStateFlow<List<PendingElicitation>>(emptyList())
+    val elicitations: StateFlow<List<PendingElicitation>> = _elicitations
 
     data class ConversationMeta(
         val title: String? = null,
@@ -170,6 +176,7 @@ class ConversationChannel(private val rpc: RpcChannel) {
                 val snap = ConversationFrames.parseSnapshot(frame.payload) ?: return
                 store.replaceAll(snap.rows)
                 _interactions.value = snap.pendingInteractions
+                _elicitations.value = snap.elicitations
                 val control = snap.control
                 control?.foregroundExecutionId?.let { foregroundExecutionId = it }
                 _meta.value = _meta.value.copy(
@@ -198,6 +205,16 @@ class ConversationChannel(private val rpc: RpcChannel) {
                                 _interactions.value = next
                                 Log.i(TAG, "pendingInteractions → ${next.size} 条 " +
                                         next.joinToString(",") { "${it.toolName ?: "?"}#${it.interactionId.take(18)}" })
+                            }
+                            // elicitations 同组替换；仅当 patch 带该键时才更新（缺失=不涉及）
+                            p["pendingInteractions"]?.let {
+                                val nextE = PendingElicitation.parseArray(
+                                    runCatching { it.jsonArray }.getOrNull(), sessionId)
+                                if (nextE != _elicitations.value) {
+                                    _elicitations.value = nextE
+                                    Log.i(TAG, "elicitations → ${nextE.size} 条 " +
+                                            nextE.joinToString(",") { "${it.toolName ?: "?"}#${it.interactionId.take(18)}" })
+                                }
                             }
                             // control 增量：canStop/phase/stopState 运行中会变（停止按钮随之出现/消失）
                             p["control"].asObj()?.let { c ->
@@ -229,6 +246,7 @@ class ConversationChannel(private val rpc: RpcChannel) {
         subTarget = null
         foregroundExecutionId = null
         _interactions.value = emptyList()
+        _elicitations.value = emptyList()
         _earlier.value = EarlierState()
         _status.value = Status.Idle
         _meta.value = ConversationMeta()
@@ -341,20 +359,58 @@ class ConversationChannel(private val rpc: RpcChannel) {
             return
         }
 
+        Log.i(TAG, "resolve interaction=${approval.interactionId} option=${option.optionId}" +
+                " kind=${option.kind} label=${option.label}")
+        sendResolveInteraction(session, target,
+            buildJsonObject {
+                put("interactionId", approval.interactionId)
+                put("answer", buildJsonObject { put("optionId", option.optionId) })
+            }, onResult)
+    }
+
+    /**
+     * 应答一次表单交互（elicitation，kind=="userInput"，官方 web 同构）。
+     *
+     * answer 由调用方按形态构造（PROTOCOL.md §6.5）：
+     *   带 questions 的表单 → `{action:"accept", content:{answer: 值}}`（多题 answer_0/1…）；
+     *   拒绝 → `{action:"decline"}`；无 questions 的确认/文本 → `{optionId}` / `{freeText}`。
+     * 与审批共用 resolveInteraction 管道与 ack 判据（sensitive，不做断线重放）。
+     */
+    fun resolveElicitation(
+        el: PendingElicitation,
+        answer: JsonObject,
+        onResult: (ResolveResult) -> Unit,
+    ) {
+        val session = sessionId ?: el.sessionId
+        val target = subTarget
+        if (session == null || target == null) {
+            onResult(ResolveResult.Failed("no-session", "未订阅该会话，无法应答"))
+            return
+        }
+        Log.i(TAG, "resolveElicitation interaction=${el.interactionId} answer=$answer")
+        sendResolveInteraction(session, target,
+            buildJsonObject {
+                put("interactionId", el.interactionId)
+                put("answer", answer)
+            }, onResult)
+    }
+
+    /** resolveInteraction envelope 的公共出口（审批与表单同管道，clientId 硬约束同源）。 */
+    private fun sendResolveInteraction(
+        session: String,
+        target: Map<String, Any>,
+        payload: JsonObject,
+        onResult: (ResolveResult) -> Unit,
+    ) {
         val args = HashMap<String, Any>(target)
         args["envelope"] = mapOf(
             "commandId" to "cmd-${UUID.randomUUID()}",
             "clientId" to clientId,
             "sessionId" to session,
             "type" to "resolveInteraction",
-            "payload" to mapOf(
-                "interactionId" to approval.interactionId,
-                "answer" to mapOf("optionId" to option.optionId),
-            ),
+            "payload" to payload,
             "issuedAt" to System.currentTimeMillis(),
         )
-        Log.i(TAG, "resolve interaction=${approval.interactionId} option=${option.optionId}" +
-                " kind=${option.kind} label=${option.label}")
         rpc.call(RpcChannel.CHANNEL_AGENT, "sendConversationCommandV4", listOf(args)) { reply ->
             onResult(
                 when (reply) {

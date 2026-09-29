@@ -18,6 +18,7 @@ import com.zcode.remote.relay.ApprovalOption
 import com.zcode.remote.relay.ConversationChannel
 import com.zcode.remote.relay.ConversationRow
 import com.zcode.remote.relay.PendingApproval
+import com.zcode.remote.relay.PendingElicitation
 
 /**
  * 会话内容页：把会话流（snapshot 尾窗 + 增量）渲染成对话。
@@ -33,6 +34,7 @@ fun ConversationScreen(
     meta: ConversationChannel.ConversationMeta,
     rows: List<ConversationRow>,
     approvals: List<PendingApproval> = emptyList(),
+    elicitations: List<PendingElicitation> = emptyList(),
     approvalFeedback: String? = null,
     earlier: ConversationChannel.EarlierState = ConversationChannel.EarlierState(),
     prompt: String = "",
@@ -41,6 +43,9 @@ fun ConversationScreen(
     stopState: String? = null,
     commandFeedback: String? = null,
     onResolve: (PendingApproval, ApprovalOption) -> Unit = { _, _ -> },
+    onElicitationAccept: (PendingElicitation, Map<Int, List<String>>) -> Unit = { _, _ -> },
+    onElicitationDecline: (PendingElicitation) -> Unit = {},
+    onElicitationFreeText: (PendingElicitation, String) -> Unit = { _, _ -> },
     onLoadEarlier: () -> Unit = {},
     onFeedbackSeen: () -> Unit = {},
     onPromptChange: (String) -> Unit = {},
@@ -126,6 +131,16 @@ fun ConversationScreen(
         // 审批条置顶：待审批时正文可能被刷走，不能放在列表里
         approvals.forEach { ApprovalCard(it, onResolve) }
 
+        // 表单交互卡片（AskUserQuestion / 计划批准 / 确认框），与审批条并列
+        elicitations.forEach { el ->
+            ElicitationCard(
+                el = el,
+                onAccept = { answers -> onElicitationAccept(el, answers) },
+                onDecline = { onElicitationDecline(el) },
+                onFreeText = { text -> onElicitationFreeText(el, text) },
+            )
+        }
+
         if (rows.isEmpty()) {
             Text("等待会话内容…", style = MaterialTheme.typography.bodySmall)
         }
@@ -206,6 +221,143 @@ private fun InputBar(
             }
         } else {
             Button(onClick = {}, enabled = false) { Text("发送") }
+        }
+    }
+}
+
+/**
+ * 一条待应答表单交互（elicitation）：
+ * plan_approval → 计划文本 + 批准/拒绝；questions → 逐题选项（多选可多选）+ 提交；
+ * freeText → 文本框。构造规则见 PROTOCOL.md §6.5。
+ */
+@Composable
+private fun ElicitationCard(
+    el: PendingElicitation,
+    onAccept: (Map<Int, List<String>>) -> Unit,
+    onDecline: () -> Unit,
+    onFreeText: (String) -> Unit,
+) {
+    // 每题已选值（多选可累加；单选点即替换），空 map 表示未作答
+    val selected = remember(el.interactionId) { mutableStateMapOf<Int, MutableList<String>>() }
+    val freeTextDraft = remember(el.interactionId) { mutableStateOf("") }
+
+    Card(
+        shape = RoundedCornerShape(10.dp),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.tertiaryContainer),
+    ) {
+        Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+            Text(
+                listOfNotNull(
+                    when {
+                        el.isPlanApproval -> "📋 计划待批准"
+                        el.questions.isNotEmpty() -> "❓ ${el.toolName ?: "表单"} · 需要你的回答"
+                        else -> "❓ ${el.toolName ?: "确认"}"
+                    },
+                    el.questions.firstOrNull()?.header?.takeIf { it.isNotBlank() },
+                ).joinToString(" · "),
+                style = MaterialTheme.typography.titleSmall,
+            )
+
+            el.plan?.let {
+                Text(it.take(2500), style = MaterialTheme.typography.bodySmall,
+                    fontFamily = FontFamily.Monospace, maxLines = 14, overflow = TextOverflow.Ellipsis)
+            }
+
+            if (el.isPlanApproval) {
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Button(onClick = { onAccept(emptyMap()) },
+                        colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary)) {
+                        Text("批准计划")
+                    }
+                    Button(onClick = onDecline,
+                        colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error)) {
+                        Text("拒绝")
+                    }
+                }
+                return@Column
+            }
+
+            el.questions.forEachIndexed { qIdx, q ->
+                Text(q.question.ifBlank { q.header ?: "" },
+                    style = MaterialTheme.typography.bodyMedium)
+                q.options.forEach { opt ->
+                    val chosen = opt.value in (selected[qIdx] ?: emptyList())
+                    OutlinedButton(
+                        onClick = {
+                            val cur = selected.getOrPut(qIdx) { mutableListOf() }
+                            if (q.multiSelect) {
+                                if (chosen) cur.remove(opt.value) else cur.add(opt.value)
+                                selected[qIdx] = cur
+                            } else {
+                                selected[qIdx] = mutableListOf(opt.value)
+                            }
+                        },
+                        modifier = Modifier.fillMaxWidth(),
+                        colors = if (chosen) ButtonDefaults.outlinedButtonColors(
+                            containerColor = MaterialTheme.colorScheme.secondaryContainer)
+                        else ButtonDefaults.outlinedButtonColors(),
+                    ) {
+                        Column(Modifier.fillMaxWidth()) {
+                            Text(opt.label, style = MaterialTheme.typography.bodyMedium)
+                            opt.description?.let {
+                                Text(it, style = MaterialTheme.typography.labelSmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            }
+                        }
+                    }
+                }
+                if (el.freeText) {
+                    OutlinedTextField(
+                        value = freeTextDraft.value,
+                        onValueChange = { freeTextDraft.value = it },
+                        modifier = Modifier.fillMaxWidth(),
+                        placeholder = { Text("或输入自定义答案…") },
+                        maxLines = 3,
+                    )
+                }
+            }
+
+            if (el.questions.isEmpty() && el.freeText) {
+                // 无 questions 的纯文本应答（官方走 {freeText}）
+                OutlinedTextField(
+                    value = freeTextDraft.value,
+                    onValueChange = { freeTextDraft.value = it },
+                    modifier = Modifier.fillMaxWidth(),
+                    placeholder = { Text("输入回答…") },
+                    maxLines = 3,
+                )
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Button(onClick = { onFreeText(freeTextDraft.value.trim()) },
+                        enabled = freeTextDraft.value.isNotBlank()) { Text("提交") }
+                    Button(onClick = onDecline,
+                        colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error)) {
+                        Text("拒绝")
+                    }
+                }
+                return@Column
+            }
+
+            if (el.questions.isNotEmpty()) {
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Button(
+                        onClick = {
+                            val answers = selected.mapValues { (_, list) -> list.toList() }
+                                .toMutableMap()
+                            // 自由文本并入第一题（追加为额外答案）
+                            if (el.freeText && freeTextDraft.value.isNotBlank()) {
+                                val cur = answers.getOrPut(0) { emptyList() }
+                                answers[0] = cur + freeTextDraft.value.trim()
+                            }
+                            onAccept(answers.filter { it.value.isNotEmpty() })
+                        },
+                        enabled = selected.isNotEmpty() || freeTextDraft.value.isNotBlank(),
+                    ) { Text("提交回答") }
+                    Button(onClick = onDecline,
+                        colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error)) {
+                        Text("拒绝")
+                    }
+                }
+            }
         }
     }
 }

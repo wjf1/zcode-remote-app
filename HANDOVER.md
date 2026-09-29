@@ -107,12 +107,19 @@ python tools/_e2e_tap_approve.py                           # 验收自动化：�
 - **验收**：锁屏状态下审批→批准全链路成功；连续 3 天日常使用无失联。
 - **预估**：0.5 天（+3 天观察）。
 
-### P1-1 elicitation（表单类交互）应答
+### P1-1 elicitation（表单类交互）应答（✅ 2026-09-29 完成，协议层端到端验收通过）
 
-- **现状**：`PendingApproval.from()` 里 `kind != "permission"` 直接跳过，elicitation 只读不答。
-- **要点**：应答走 `elicitation.respond` 形态（host 源码 `userInputRequestToElicitationStreamEvent` / `MU`：`{type:"elicitation_response", requestId, action: accept|decline, content?}`——事件是 elicitation_request，字段含 questions/options/schema）。在 `Interactions.kt` 增加 `Elicitation` 模型与 UI（表单/确认框）。
-- **验收**：桌面端触发 AskUserQuestion（plan_approval 或 question），App 端可答且桌面端收到。
-- **预估**：1~2 天。
+- **已完成**：`Interactions.kt` 新增 `PendingElicitation` 模型（pendingInteractions kind=="userInput"
+  条目 + 任务事件流 elicitation_request 双源解析）；`ConversationChannel` 增加 `elicitations` 流与
+  `resolveElicitation`（与审批共用 resolveInteraction 管道，answer 按 §6.5 形态构造）；
+  `AppViewModel` 合并双源 + 语义化应答 API（accept 含 content 表单 / decline / freeText / 计划批准）；
+  `ConversationScreen` 新增 `ElicitationCard`（计划批准、逐题选项+多选、自由文本、拒绝）。
+- **协议实证**：host answer zod `{optionId?, freeText?, action?, content?}`；官方 web v4
+  `onRespond → {action, content}`（表单 content 由 rut 构造 answer/answer_N/answers）；真实帧
+  确认 pendingInteractions kind=="userInput" 条目全字段。详见 PROTOCOL.md §6.5。
+- **实测**：AskUserQuestion 真实触发 → 条目观察 → `{action:'accept', content:{answer:…}}` →
+  ack accepted → 条目消解，三项 PASS（tools/_p11_verify.py）。
+- **遗留**：App UI 层模拟器验收同 P0-1 待补；通知栏不做 elicitation（表单复杂，会话页内应答）。
 
 ### P1-2 多会话并行看板 + 控制权切换提示
 

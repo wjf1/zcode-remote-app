@@ -95,6 +95,8 @@ object ConversationFrames {
         val totalCount: Int?,
         /** 待审批交互（permission），整组给出。 */
         val pendingInteractions: List<PendingApproval> = emptyList(),
+        /** 待应答表单交互（pendingInteractions 里 kind=="userInput" 的条目）。 */
+        val elicitations: List<PendingElicitation> = emptyList(),
         /** control 块（运行/停止状态由服务端算好下发）。 */
         val control: Control? = null,
     )
@@ -140,6 +142,9 @@ object ConversationFrames {
             } ?: emptyList(),
             totalCount = rowsObj?.int("totalCount"),
             pendingInteractions = PendingApproval.parseFrom(snap, snap.str("sessionId")),
+            elicitations = PendingElicitation.parseArray(
+                runCatching { snap["pendingInteractions"]?.jsonArray }.getOrNull(),
+                snap.str("sessionId")),
             control = control,
         )
     }

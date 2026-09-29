@@ -208,6 +208,28 @@ python tools/probe.py sub <会话ID前缀> [帧落盘路径]   # + 完整会话�
   关闭面板或 terminal 断开后回到 waiting。`webRemoteControlLastEnabledContext`（setting.json）
   是桌面端启动时自动恢复远程控制的持久化上下文。
 
+### 6.5 表单交互 elicitation（P1-1，2026-09-29 实证 + 端到端实测）
+
+- **请求的两条到达路径**（与审批 §6.3 完全对称）：
+  ① 会话帧 `pendingInteractions[]` 里 kind 为 **"userInput"** 的条目（不是 "elicitation"）：
+  `{interactionId, kind:"userInput", anchorRowId, autoResolution{deadlineAt}, payload:{
+  prompt, freeText, toolName, toolCallId, traceId, input, schema{toolName, interaction?, plan?},
+  questions:[{question, header, options:[{value,label,description}], multiSelect}]}}`（真实帧实测）；
+  ② 任务事件流 `elicitation_request`（host `userInputRequestToElicitationStreamEvent`）：
+  `{taskId, requestId, message, header, options[{value,label,description}], multiSelect?, questions?, schema?}`。
+- **应答 = 同一个 `resolveInteraction` envelope**（与审批同管道），answer 键按形态选择
+  （host answer zod：`{optionId?, freeText?, action?(accept/decline/cancel), content?(Record<string,unknown>)}`；
+  官方 web v4 `onRespond → T(interactionId, {action:n, ...content})`）：
+  - 带 questions 的表单（AskUserQuestion/plan_approval）：`{action:"accept", content:{answer: 首选值}}`
+    （单题）/ `{content:{answer_0:…, answer_1:…, answers:{问题文本:"合并答案"}}}`（多题，官方 rut 构造）；
+    拒绝 → `{action:"decline"}`；plan_approval 批准即 `{action:"accept"}`（无 content）。
+  - 无 questions 的确认/文本条目：点选项 → `{optionId}`；自由文本 → `{freeText}`。
+- **端到端实测**（tools/_p11_verify.py，桌面端在线）：AskUserQuestion 真实触发 →
+  pendingInteractions 出现 userInput 条目（perm_…，questions 3 选项）→
+  resolveInteraction `{action:"accept", content:{answer:"A=提交验收报告"}}` →
+  ack `status:"accepted"` → 条目从 pendingInteractions 消解。三项 PASS。
+- 桌面端 pending 条目带 `autoResolution.deadlineAt`（约 5 分钟倒计时），超时后应答得 noop。
+
 ## 7. Bot Channel（辅路）
 
 微信（`ilinkai.weixin.qq.com` 轮询）/飞书/Lark/Telegram；命令集 `status/new/workspace/model/mode/thoughtLevel/reply`；任务流 `createTask → prompt_sent → sendPrompt → completed/error`。与远程控制共用任务模型——M4 的 VPS Runner 可复用此任务 API 形态。

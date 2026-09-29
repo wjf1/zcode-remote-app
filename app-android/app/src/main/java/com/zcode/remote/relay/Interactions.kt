@@ -160,3 +160,164 @@ data class PendingApproval(
             parseArray(runCatching { obj?.get("pendingInteractions")?.jsonArray }.getOrNull(), sessionId)
     }
 }
+
+/**
+ * 待应答的表单类交互（elicitation，P1-1）。
+ *
+ * 协议依据（2026-09-29 host asar + 官方 web bundle + 真实帧三重实证，详见 PROTOCOL.md §6.5）：
+ *   - 会话帧 `pendingInteractions[]` 里 kind 为 **"userInput"** 的条目（不是 "elicitation"），
+ *     `payload.questions[] = {question, header, options:[{value,label,description}], multiSelect}`，
+ *     `payload.freeText` 表示允许自由文本；plan 场景 `schema.interaction=="plan_approval"`。
+ *   - 应答 = 同一个 `resolveInteraction` envelope，answer 键按形态选择：
+ *     带 questions 的表单 → `{action:"accept", content:{answer: 值}}`（单题）/ `{content:{answer_0:…, answers:{问题:答案}}}`（多题）；
+ *     拒绝 → `{action:"decline"}`；普通确认/文本（无 questions）→ `{optionId}` / `{freeText}`。
+ *     （官方 web：onRespond → `T(interactionId, {action:n, ...content})`；content 构造函数 rut。）
+ */
+data class ElicitationOption(
+    val value: String,
+    val label: String,
+    val description: String?,
+)
+
+data class ElicitationQuestion(
+    val question: String,
+    val header: String?,
+    val options: List<ElicitationOption>,
+    val multiSelect: Boolean,
+)
+
+data class PendingElicitation(
+    val interactionId: String,
+    val toolName: String?,
+    /** 桌面端给的摘要（如 "Tool AskUserQuestion requires user interaction"），仅兜底显示。 */
+    val prompt: String?,
+    val questions: List<ElicitationQuestion>,
+    val freeText: Boolean,
+    /** plan_approval 场景的计划文本（schema.interaction=="plan_approval"）。 */
+    val plan: String?,
+    val autoResolveAt: Long?,
+    val sessionId: String?,
+) {
+    val isPlanApproval: Boolean get() = plan != null
+
+    companion object {
+        /** 从一条 pendingInteraction（kind=="userInput"）构造；其他 kind 返回 null。 */
+        fun from(o: JsonObject, sessionId: String? = null): PendingElicitation? {
+            fun JsonElement?.asStr(): String? =
+                this?.let { runCatching { it.jsonPrimitive.content }.getOrNull() }
+
+            val interactionId = o["interactionId"].asStr() ?: return null
+            val kind = o["kind"].asStr()
+            if (kind != "userInput") return null
+            val payload = runCatching { o["payload"]?.jsonObject }.getOrNull() ?: return null
+
+            val questions = runCatching { payload["questions"]?.jsonArray }.getOrNull()
+                ?.mapNotNull { el ->
+                    val q = runCatching { el.jsonObject }.getOrNull() ?: return@mapNotNull null
+                    val opts = runCatching { q["options"]?.jsonArray }.getOrNull()
+                        ?.mapNotNull { oe ->
+                            val ob = runCatching { oe.jsonObject }.getOrNull() ?: return@mapNotNull null
+                            ElicitationOption(
+                                value = ob["value"].asStr() ?: ob["label"].asStr() ?: return@mapNotNull null,
+                                label = ob["label"].asStr() ?: ob["value"].asStr() ?: "",
+                                description = ob["description"].asStr(),
+                            )
+                        } ?: emptyList()
+                    if (opts.isEmpty()) return@mapNotNull null
+                    ElicitationQuestion(
+                        question = q["question"].asStr() ?: "",
+                        header = q["header"].asStr(),
+                        options = opts,
+                        multiSelect = q["multiSelect"].asStr() == "true",
+                    )
+                } ?: emptyList()
+
+            val schema = runCatching { payload["schema"]?.jsonObject }.getOrNull()
+            val plan = schema?.get("plan").asStr()?.takeIf { it.isNotBlank() }
+
+            if (questions.isEmpty() && plan == null && payload["freeText"].asStr() != "true") return null
+
+            return PendingElicitation(
+                interactionId = interactionId,
+                toolName = payload["toolName"].asStr(),
+                prompt = payload["prompt"].asStr(),
+                questions = questions,
+                freeText = payload["freeText"].asStr() == "true",
+                plan = plan,
+                autoResolveAt = runCatching {
+                    o["autoResolution"]?.jsonObject?.get("deadlineAt")?.jsonPrimitive?.content?.toLongOrNull()
+                }.getOrNull(),
+                sessionId = sessionId,
+            )
+        }
+
+        /**
+         * 从任务事件流构造（host `userInputRequestToElicitationStreamEvent` 实证）：
+         * `{type:"elicitation_request", taskId, requestId, message, header,
+         *   options:[{value,label,description}], multiSelect?, questions?, schema?}`。
+         */
+        fun fromTaskEvent(o: JsonObject, sessionId: String? = null): PendingElicitation? {
+            fun JsonElement?.asStr(): String? =
+                this?.let { runCatching { it.jsonPrimitive.content }.getOrNull() }
+
+            val requestId = o["requestId"].asStr() ?: return null
+            val questions = runCatching { o["questions"]?.jsonArray }.getOrNull()
+                ?.mapNotNull { el ->
+                    val q = runCatching { el.jsonObject }.getOrNull() ?: return@mapNotNull null
+                    val opts = runCatching { q["options"]?.jsonArray }.getOrNull()
+                        ?.mapNotNull { oe ->
+                            val ob = runCatching { oe.jsonObject }.getOrNull() ?: return@mapNotNull null
+                            ElicitationOption(
+                                value = ob["value"].asStr() ?: ob["label"].asStr() ?: return@mapNotNull null,
+                                label = ob["label"].asStr() ?: ob["value"].asStr() ?: "",
+                                description = ob["description"].asStr(),
+                            )
+                        } ?: emptyList()
+                    if (opts.isEmpty()) return@mapNotNull null
+                    ElicitationQuestion(
+                        question = q["question"].asStr() ?: "",
+                        header = q["header"].asStr(),
+                        options = opts,
+                        multiSelect = q["multiSelect"].asStr() == "true",
+                    )
+                } ?: emptyList()
+
+            val schema = runCatching { o["schema"]?.jsonObject }.getOrNull()
+            val plan = schema?.get("plan").asStr()?.takeIf { it.isNotBlank() }
+            val options = runCatching { o["options"]?.jsonArray }.getOrNull()
+                ?.mapNotNull { oe ->
+                    val ob = runCatching { oe.jsonObject }.getOrNull() ?: return@mapNotNull null
+                    val v = ob["value"].asStr() ?: return@mapNotNull null
+                    ElicitationOption(value = v, label = ob["label"].asStr() ?: v, description = ob["description"].asStr())
+                } ?: emptyList()
+            val mergedQuestions = if (questions.isNotEmpty()) questions
+            else {
+                val single = ElicitationQuestion(
+                    question = o["message"].asStr() ?: "",
+                    header = o["header"].asStr(),
+                    options = options,
+                    multiSelect = o["multiSelect"].asStr() == "true",
+                )
+                listOfNotNull(single.takeIf { it.options.isNotEmpty() || plan != null })
+            }
+
+            if (mergedQuestions.isEmpty() && plan == null) return null
+            return PendingElicitation(
+                interactionId = requestId,
+                toolName = schema?.get("toolName").asStr(),
+                prompt = o["message"].asStr(),
+                questions = mergedQuestions,
+                freeText = false,
+                plan = plan,
+                autoResolveAt = null,
+                sessionId = sessionId,
+            )
+        }
+
+        /** 解析整组 pendingInteractions 里的 userInput 条目。 */
+        fun parseArray(arr: JsonArray?, sessionId: String? = null): List<PendingElicitation> =
+            arr?.mapNotNull { el ->
+                runCatching { from(el.jsonObject, sessionId) }.getOrNull()
+            } ?: emptyList()
+    }
+}
