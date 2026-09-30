@@ -1,5 +1,22 @@
 # 变更记录 / Changelog
 
+## v0.4.0-beta5（2026-09-30）· 相机扫码全面重构与修复
+
+**里程碑：重构 ScanScreen，修复二维码扫描完全无效问题**
+
+### 修复（相机扫码识别完全无效）
+- **根因分析**：
+  1. **图像物理朝向未校准**：手机竖屏手持时，后置摄像头传感器硬件安装方向为横向（`rotationDegrees = 90` 或 `270`）。原实现直接将未旋转的 Raw Y 平面输入 ZXing，画面呈 90 度倒置状态；`PlanarYUVLuminanceSource` 不支持旋转，ZXing 无法解析高密度屏幕二维码。
+  2. **缺少屏幕摩尔纹兜底**：原实现仅使用 `HybridBinarizer`，未开启 `TRY_HARDER`，面对 PC 液晶屏幕反光和像素网格条纹时极易漏检；`decodeWithState` 抛异常后未在 finally 块中复位 `MultiFormatReader.reset()`，导致解析器内部状态污染。
+  3. **分析器目标分辨率缺失**：CameraX 默认选择低分辨率，导致 152 字符高密度二维码（QR Code Version 7~8）中的关键矩阵点模糊不清。
+- **重构与优化**（`ui/screens/ScanScreen.kt`）：
+  - **像素级顺时针旋转校准**：提取 Y 灰度平面并去除 rowStride padding 后，依据 `proxy.imageInfo.rotationDegrees` 进行轻量级顺时针旋转变换（0/90/180/270），送入 ZXing 的始终为物理正向画面。
+  - **双重二值化器兜底与 Hint 增强**：添加 `TRY_HARDER` 与 `UTF-8` 编码提示；优先 `HybridBinarizer`，失败时立即回退 `GlobalHistogramBinarizer`，在 finally 块中始终强制调用 `reader.reset()`。
+  - **高分辨率配置**：使用 `ResolutionSelector` 钉住 1280x720 目标分辨率，确保复杂密集二维码的边缘清晰。
+  - **交互与对焦**：支持点击取景框任意区域对焦/测光（CAF + 触摸对焦）；叠加高亮绿色对焦辅助框线；加入 `AtomicBoolean` 防重复触发。
+
+- `versionName 0.4.0-beta5` / `versionCode 9`；签名与 v0.3.0-m3 同指纹，可直接覆盖安装。
+
 ## v0.4.0-beta4（2026-09-30）· 互踢死循环修复
 
 **里程碑：App 不再参与终端抢占循环，被踢后停在横幅等用户手动恢复**
