@@ -42,6 +42,26 @@
   首页骨架（设备卡/搜索框/断开）、错误态文案（连接失败/配对失效）渲染正常。
   **当前卡点：桌面端「移动端远程控制」面板未开 → auth AUTH_FAILED（probe 复现一致，
   已知 pair_status 语义，非 App 缺陷）；面板开启后继续会话流/审批/通知/锁屏验收。**
+- **2026-09-30 真机验收（用户扫码配对后，中继链路全通）**：
+  - **PASS**：扫码配对（相机路径，用户人工完成）→ 桥就绪；首页会话列表（24 会话、状态行
+    「Zcode · glm · 已完成」、「当前」标记）；多机管理卡（其他设备/切换/移除）；设置面板；
+    会话页会话流渲染（历史 turn 思考过程/工具行/详情）；输入栏 + 发送按钮 + 📎 附件按钮；
+    **停止按钮**（turn running 时 canStop=true 显示，实测 ConvChannel 日志
+    `control 更新 phase=running canStop=true stopState=stoppable`）。
+  - **PASS（端到端）**：手机 UI 发送消息（sendText envelope，turn 激活 running）；手机附件全链路：
+    📎 → 小米 SAF（com.android.fileexplorer）选 Download/attach-test.txt → chip 显示 → 发送 →
+    **桌面端宿主日志实测 `attachmentBeginV4/ChunkV4/CommitV4` 全 OK**（21:31:34）。
+  - **语音输入结论（HANDOVER 遗留项 2 的答案）**：小米 15 Pro 国行系统裁剪
+    `com.google.android.googlequicksearchbox`（enabled=0，未提供可用 RecognitionService），
+    小爱不实现系统 RecognitionService → `SpeechRecognizer.isRecognitionAvailable=false` →
+    **按钮按设计不渲染，降级路径正确**。若需启用可安装提供 RecognitionService 的引擎。
+  - **自动化限制**：微信输入法（com.tencent.wetype）把 `input text` 与 keyevent 逐键注入都转成
+    拼音联想，UI 自动化输入中文/英文均失真（消息「还from怕还而且么」仍成功发送，端到端不受影响）；
+    会话搜索过滤、主题切换人工补验即可。
+  - **probe 侧观察**：手机配对成功后 probe auth 从 AUTH_FAILED 变为通过，但 auth_ack 返回的
+    device_sid（d_UZTW…）与 setting.json/配对链接的 sid（d_Utf…）不同且 pair_status=waiting →
+    probe 的 bootstrap 开桥卡住，setmode.py list/set 暂不可用（不阻塞验收：模式切换改由桌面端 UI 完成）。
+    **待办**：弄清双 sid 差异来源（疑 credentials.json 9-28 旧 hash 与服务端注册的 device_sid 映射）。
 - ⚠️ **两条重要现状**（接手先读）：
   1. **release keystore 并未丢失（X-1 已结清，可直接发布）**：`toolchain/keys/zcode-remote.keystore`
      与 `app-android/keystore.properties` 都在本机，其证书 SHA-256 指纹
