@@ -62,6 +62,18 @@
     device_sid（d_UZTW…）与 setting.json/配对链接的 sid（d_Utf…）不同且 pair_status=waiting →
     probe 的 bootstrap 开桥卡住，setmode.py list/set 暂不可用（不阻塞验收：模式切换改由桌面端 UI 完成）。
     **待办**：弄清双 sid 差异来源（疑 credentials.json 9-28 旧 hash 与服务端注册的 device_sid 映射）。
+- **2026-09-30 真机验收发现的问题与结论（三）**：
+  - **App bug（待修，P2）**：**发送无超时兜底**——桥断开瞬间点发送，`sendText` RPC 挂死桥上
+    等不到 ack，App「发送中」状态永久卡住（2026-09-30 21:5x 实测复现，App 重启才恢复）。
+    修法建议：sendText/sendPrompt 加 RPC 超时（如 15s）→ 失败 flash + sending 复位；重连后丢弃挂起请求。
+  - **真机键盘不弹（环境问题，非 App 缺陷）**：两层原因叠加——① 小米手环 9 蓝牙 HID 键盘
+    （`Xiaomi Smart Band 9`，`Classes: KEYBOARD|EXTERNAL`）被系统识别为外接键盘抑制软键盘；
+    ② 断开后 IME 状态机卡死（`mInputShown=true` 残留）+ 小米 AI 键盘（`com.xiaomi.type`，依赖
+    `com.xiaomi.aicr:cognitionService`）接管 startInput 不渲染。切搜狗 + ime reset 后恢复。
+    App 侧 `InsetsController show(ime())` 请求全程正确。
+  - **审批链路 UI 验收受阻**：桌面端会话模式两次切换未生效（工具调用仍直执行，无审批推送）；
+    改用 DebugApprovalReceiver 注入完成 App 侧审批 UI 验收（通知/卡片/角标），真实端到端放行
+    待模式切换成功后补验（协议层已由 P0-1 `tools/_p01_async.py` 四项 PASS 覆盖）。
 - ⚠️ **两条重要现状**（接手先读）：
   1. **release keystore 并未丢失（X-1 已结清，可直接发布）**：`toolchain/keys/zcode-remote.keystore`
      与 `app-android/keystore.properties` 都在本机，其证书 SHA-256 指纹
