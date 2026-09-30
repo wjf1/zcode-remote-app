@@ -74,6 +74,22 @@
   - **审批链路 UI 验收受阻**：桌面端会话模式两次切换未生效（工具调用仍直执行，无审批推送）；
     改用 DebugApprovalReceiver 注入完成 App 侧审批 UI 验收（通知/卡片/角标），真实端到端放行
     待模式切换成功后补验（协议层已由 P0-1 `tools/_p01_async.py` 四项 PASS 覆盖）。
+- **2026-09-30 真机验收收官（四）——审批端到端 PASS + 表单卡结论**：
+  - **审批端到端 PASS（真机全链路，非注入）**：桌面端 Build 模式实际已生效（前两轮「切换未生效」
+    为误判——当时 turn 正在运行，权限上下文按 §5.4 只对新 turn 生效）。真机日志实证完整链路：
+    `pendingInteractions → 1 条 Bash#perm_…`（桌面端推送）→ 手机通知「需要审批」→ 用户点
+    「Allow once」→ `resolve interaction=… option=allowOnce` → **`resolve result=Accepted`** →
+    `pendingInteractions → 0 条`（消解）——两条真实审批（perm_494dc84d / perm_e24566ac）均如此。
+  - **体验发现（非阻断）**：① 桌面端权限确认框与手机端审批卡并存（双通道），用户易困惑；
+    ② 审批消解有 ~3s 延迟，用户感知「点了没反应」（server_ts 7316→7319 实证）；
+    ③ 通知按钮在 HyperOS 默认折叠，需展开通知才可见（用户实操可找到）。
+  - **表单卡（AskUserQuestion）结论**：桌面端 GUI 在前台时，AskUserQuestion 走**本地弹框应答**，
+    **不作为 userInput 条目推手机**（真机日志 `elicitations → 0 条` 全程未出现条目；手机端
+    「看到的表单卡」实为会话流中的问答渲染，非交互卡）。App 表单卡管道本身已由 P1-1
+    （_p11_verify.py 构造 userInput 条目→accept）协议实证。**待确认项**：桌面端交互转发的
+    触发条件（疑与桌面端 GUI 是否前台/面板状态有关）——记录到 PROTOCOL.md §8 待验证。
+  - **debug 注入通道复验 PASS**：DebugApprovalReceiver 注入双假审批 → 通知栏双通知并行展示
+    （Bash/WebFetch 文案正确）→ 点通知体正确跳转 App 会话页 → DEBUG_APPROVAL_CLEAR 正常清除。
 - ⚠️ **两条重要现状**（接手先读）：
   1. **release keystore 并未丢失（X-1 已结清，可直接发布）**：`toolchain/keys/zcode-remote.keystore`
      与 `app-android/keystore.properties` 都在本机，其证书 SHA-256 指纹
