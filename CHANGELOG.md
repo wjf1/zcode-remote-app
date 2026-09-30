@@ -1,5 +1,23 @@
 # 变更记录 / Changelog
 
+## 未发布（2026-09-30 六轮：附件流式化 + 会话搜索）
+
+### 优化（P1-3 附件分片流式读，技术债清偿）
+- **内存峰值 20MiB → 一倍分片（384KiB）+ 64KiB hash 缓冲**：选附件不再整块读进内存——
+  UI 层 `readAttachment` → `inspectAttachment`（只取 name/mime/size，query 报不出大小时
+  流式计数）；`ConversationChannel.uploadAttachment` 签名 `data: ByteArray` →
+  `openStream: () -> InputStream + totalBytes`，内部第一遍流式算 sha256 → begin →
+  单次开流顺序读满分片逐片传（续传 skip 前部）；`AppViewModel.addAttachment` 持 uri，
+  上传时经 contentResolver 开流。
+- **行为变化**：选中后文件被移动/删除 → 上传时报「无法打开所选文件」（原先选中即读，
+  后续改文件不影响上传）；20MiB 超限提示从静默忽略改为 flash 明示。
+
+### 新增（P2-3 首页会话搜索）
+- 首页「会话」区搜索框（P2-3 池外小项）：按标题/工作区路径过滤，忽略大小写，关键字跨
+  重组保留（`AppViewModel.sessionQuery`）；无匹配时显示「没有匹配」提示；「N 运行中 / M」
+  计数随过滤更新。
+- 构建 BUILD SUCCESSFUL（两轮：先修 `var` 自动 setter 与手写 setter 的 JVM 签名冲突）。
+
 ## 未发布（2026-09-30 五轮：P2-3 桌面 Widget）
 
 ### 新增（桌面 Widget：待处理角标）

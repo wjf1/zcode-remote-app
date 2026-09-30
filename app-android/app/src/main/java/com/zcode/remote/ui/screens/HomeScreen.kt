@@ -33,6 +33,9 @@ fun HomeScreen(
     activeSid: String? = null,
     /** 每个会话的待处理条数（P1-2 多会话看板）。 */
     sessionPending: Map<String, Int> = emptyMap(),
+    /** 会话搜索关键字（P2-3），由 ViewModel 持有跨重组保留。 */
+    query: String = "",
+    onQueryChange: (String) -> Unit = {},
     /** 当前 App 订阅中的会话（高亮）。 */
     subscribedSessionId: String? = null,
     /** 桌面端正打开的会话（PC 端视图状态提示）。 */
@@ -117,11 +120,28 @@ fun HomeScreen(
 
         Row(verticalAlignment = Alignment.CenterVertically) {
             Text("会话", style = MaterialTheme.typography.titleMedium, modifier = Modifier.weight(1f))
-            if (sessions.isNotEmpty()) {
-                Text("${sessions.count { it.isRunning }} 运行中 / ${sessions.size}",
+            val visible = visibleSessions(sessions, query)
+            if (visible.isNotEmpty()) {
+                Text("${visible.count { it.isRunning }} 运行中 / ${visible.size}",
                     style = MaterialTheme.typography.bodySmall)
             }
         }
+
+        // 会话搜索（P2-3）：按标题/工作区过滤，忽略大小写
+        OutlinedTextField(
+            value = query,
+            onValueChange = onQueryChange,
+            modifier = Modifier.fillMaxWidth(),
+            placeholder = { Text("搜索会话…") },
+            singleLine = true,
+            trailingIcon = {
+                if (query.isNotEmpty()) {
+                    TextButton(onClick = { onQueryChange("") },
+                        contentPadding = PaddingValues(horizontal = 8.dp)) { Text("✕") }
+                }
+            },
+            shape = RoundedCornerShape(20.dp),
+        )
 
         if (sessions.isEmpty()) {
             Text(
@@ -134,8 +154,12 @@ fun HomeScreen(
             )
         }
 
+        val filtered = visibleSessions(sessions, query)
         LazyColumn(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            items(sessions) { s ->
+            if (sessions.isNotEmpty() && filtered.isEmpty()) {
+                item { Text("没有匹配「$query」的会话", style = MaterialTheme.typography.bodySmall) }
+            }
+            items(filtered) { s ->
                 SessionCard(
                     s = s,
                     pending = sessionPending[s.taskId] ?: 0,
@@ -190,6 +214,16 @@ private fun bridgeLabel(b: RpcChannel.BridgeState) = when (b) {
     is RpcChannel.BridgeState.Opening -> "开桥中…"
     is RpcChannel.BridgeState.Ready -> "已就绪"
     is RpcChannel.BridgeState.Failed -> "失败"
+}
+
+/** 会话过滤（P2-3）：关键字命中标题或工作区路径（忽略大小写），空关键字 = 全部。 */
+private fun visibleSessions(sessions: List<SessionItem>, query: String): List<SessionItem> {
+    val q = query.trim()
+    if (q.isEmpty()) return sessions
+    return sessions.filter {
+        it.title.contains(q, ignoreCase = true) ||
+            (it.workspacePath ?: "").contains(q, ignoreCase = true)
+    }
 }
 
 @Composable

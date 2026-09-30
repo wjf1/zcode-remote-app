@@ -64,7 +64,7 @@ class MainActivity : ComponentActivity() {
                         onPromptChange = { vm.updatePromptDraft(it) },
                         onSend = { vm.sendPrompt() },
                         onStop = { vm.stopSession() },
-                        onAttachmentPicked = { name, mime, data -> vm.addAttachment(name, mime, data) },
+                        onAttachmentPicked = { uri, name, mime, size -> vm.addAttachment(uri, name, mime, size) },
                         onRemoveAttachment = { vm.removeAttachment(it) },
                         onBack = { opened = null },
                     )
@@ -78,6 +78,8 @@ class MainActivity : ComponentActivity() {
                         devices = vm.devices,
                         activeSid = vm.device?.deviceSid,
                         sessionPending = vm.sessionPending,
+                        query = vm.sessionQuery,
+                        onQueryChange = { vm.updateSessionQuery(it) },
                         subscribedSessionId = vm.subscribedSessionId,
                         desktopActiveTaskId = vm.desktopActiveTaskId,
                         onSwitchDevice = { vm.switchDevice(it) },

@@ -27,7 +27,6 @@ import com.zcode.remote.relay.PendingApproval
 import com.zcode.remote.relay.PendingElicitation
 import com.zcode.remote.ui.voice.VoiceInputButton
 import kotlinx.coroutines.delay
-import java.io.ByteArrayOutputStream
 
 /**
  * 会话内容页：把会话流（snapshot 尾窗 + 增量）渲染成对话。
@@ -63,7 +62,7 @@ fun ConversationScreen(
     onPromptChange: (String) -> Unit = {},
     onSend: () -> Unit = {},
     onStop: () -> Unit = {},
-    onAttachmentPicked: (name: String, mime: String, data: ByteArray) -> Unit = { _, _, _ -> },
+    onAttachmentPicked: (uri: android.net.Uri, name: String, mime: String, size: Long) -> Unit = { _, _, _, _ -> },
     onRemoveAttachment: (ConversationChannel.AttachmentRef) -> Unit = {},
     onBack: () -> Unit,
 ) {
@@ -189,9 +188,9 @@ fun ConversationScreen(
         val filePicker = rememberLauncherForActivityResult(
             ActivityResultContracts.OpenDocument()
         ) { uri: Uri? ->
-            uri?.let {
-                readAttachment(context, it)?.let { (name, mime, data) ->
-                    onAttachmentPicked(name, mime, data)
+            uri?.let { u ->
+                inspectAttachment(context, u)?.let { (name, mime, size) ->
+                    onAttachmentPicked(u, name, mime, size)
                 }
             }
         }
@@ -219,14 +218,14 @@ fun ConversationScreen(
     }
 }
 
-/** 大小上限与 ConversationChannel 保持一致（host attachmentMaxBytes = 20MiB）。 */
-private const val MAX_ATTACHMENT_BYTES = 20 * 1024 * 1024
+/** 大小上限校验在 ViewModel（ConversationChannel.MAX_ATTACHMENT_BYTES），UI 只取元数据。 */
 
 /**
- * 从 content:// 读取附件的名字、MIME 与字节。超过上限 / 读不到时返回 null。
- * 注意：整块读进内存（上限 20MiB），大文件后续可改成分片流式读。
+ * 从 content:// 读取附件的名字、MIME 与大小（P2-3 流式改造：**不读内容进内存**——
+ * 上传由 ViewModel 持 uri 分片流式读，内存峰值从 20MiB 降到一倍分片 384KiB）。
+ * 读不到时返回 null。
  */
-private fun readAttachment(context: Context, uri: Uri): Triple<String, String, ByteArray>? {
+private fun inspectAttachment(context: Context, uri: Uri): Triple<String, String, Long>? {
     var name = "attachment"
     var size = -1L
     runCatching {
@@ -239,24 +238,24 @@ private fun readAttachment(context: Context, uri: Uri): Triple<String, String, B
             }
         }
     }
-    if (size > MAX_ATTACHMENT_BYTES) return null
     val mime = context.contentResolver.getType(uri) ?: "application/octet-stream"
-    val data = runCatching {
-        context.contentResolver.openInputStream(uri)?.use { input ->
-            val out = ByteArrayOutputStream()
-            val buf = ByteArray(64 * 1024)
-            var total = 0
-            while (true) {
-                val n = input.read(buf)
-                if (n <= 0) break
-                total += n
-                if (total > MAX_ATTACHMENT_BYTES) return null
-                out.write(buf, 0, n)
+    if (size < 0) {
+        // query 报不出大小时读一遍流计数（流式，不进内存）
+        size = runCatching {
+            context.contentResolver.openInputStream(uri)?.use { input ->
+                var total = 0L
+                val buf = ByteArray(64 * 1024)
+                while (true) {
+                    val n = input.read(buf)
+                    if (n <= 0) break
+                    total += n
+                }
+                total
             }
-            out.toByteArray()
-        }
-    }.getOrNull() ?: return null
-    return Triple(name, mime, data)
+        }.getOrNull() ?: -1L
+        if (size < 0) return null
+    }
+    return Triple(name, mime, size)
 }
 
 /** 附件条：无附件且未上传时不占位。 */

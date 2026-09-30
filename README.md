@@ -11,7 +11,7 @@ ZCode 官方远程控制（`zcode.z.ai/remote`）的**原生安卓增强客户�
 ### 功能一览
 
 - **扫码配对**：扫描桌面端二维码即完成配对，凭据经 AES-256-GCM + Android Keystore 加密存储；支持手动粘贴链接兜底；支持多台设备管理（切换 / 移除）。
-- **会话列表与流式对话**：工作区分组的会话卡片（运行状态高亮），点开会话可实时查看流式输出（思考过程 / 工具调用 / 正文），滚到顶部自动翻页加载更早历史。
+- **会话列表与流式对话**：工作区分组的会话卡片（运行状态高亮），点开会话可实时查看流式输出（思考过程 / 工具调用 / 正文），滚到顶部自动翻页加载更早历史，支持按标题 / 工作区搜索过滤。
 - **发送消息与停止**：会话页底部输入栏直接向桌面端发消息（入会话队列，当前 turn 结束后自动执行）；会话运行中显示「停止」按钮，一键中断。
 - **权限审批（核心差异点）**：桌面端请求权限时，锁屏状态下收到高优先级通知，**通知栏直接批准/拒绝**（允许一次 / 总是允许 / 拒绝），并显示桌面端自动决议倒计时。
 - **表单类交互应答**：`AskUserQuestion` / 计划批准（plan_approval）/ 确认框等 elicitation 在 App 内直接作答——单选、多选、自由文本、拒绝。
@@ -81,7 +81,7 @@ A **native Android client** for the official ZCode Remote Control relay (`zcode.
 ### Features
 
 - **QR pairing**: scan the desktop QR code and you're paired; credentials are stored with AES-256-GCM + Android Keystore, with manual link paste as fallback and multi-device management (switch / remove).
-- **Sessions & live streaming**: session cards grouped by workspace with status highlight; tap in to watch streaming output (reasoning / tool calls / assistant text) in real time, with automatic pagination when you scroll to the top.
+- **Sessions & live streaming**: session cards grouped by workspace with status highlight; tap in to watch streaming output (reasoning / tool calls / assistant text) in real time, with automatic pagination when you scroll to the top and search/filter by title or workspace.
 - **Send & stop**: a composer at the bottom of the conversation sends prompts straight to the desktop (queued and executed after the current turn); while a session is running a **Stop** button interrupts it.
 - **Permission approvals (key differentiator)**: when the desktop agent requests permission, a high-priority notification arrives even on the lock screen — **approve/deny right from the notification shade** (Allow once / Always allow / Deny), with the desktop auto-resolution countdown shown.
 - **Form-style interactions**: `AskUserQuestion`, plan approvals (`plan_approval`) and confirmation prompts are answered right in the app — single choice, multi-select, free text, or decline.

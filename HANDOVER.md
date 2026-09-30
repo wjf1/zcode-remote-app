@@ -209,8 +209,9 @@ M3 主体（多机/主题/线路/保活引导/历史翻页/分片重组）、**P
 - **遗留**：
   1. UI 交互验收（🎤 按压反馈 / 附件 chip / 语音状态条）待真机或 Intel/AMD 机器（并入 X-2）。
   2. 真机验证设备端识别引擎可用性（小米 15 Pro 为小爱语音引擎）。
-  3. 大文件当前整块读进内存（上限 20MiB），后续可改分片流式读；附件读取上限与 host 一致
-     （`ConversationScreen.MAX_ATTACHMENT_BYTES` 需与 `ConversationChannel` 同步）。
+  3. ~~大文件整块读进内存~~ → **已流式化（2026-09-30）**：`uploadAttachment` 改
+     `openStream + totalBytes` 签名，两遍流（sha256 → 分片），内存峰值一倍分片；
+     选中后文件被移删会在上传时报错（行为变化见 CHANGELOG 六轮）。
 
 ### P1-4 协议【待验证】项补全（PROTOCOL.md §8 列表）
 

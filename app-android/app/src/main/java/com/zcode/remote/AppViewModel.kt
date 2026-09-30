@@ -139,6 +139,12 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
     var desktopActiveTaskId by mutableStateOf<String?>(null)
         private set
 
+    /** 首页会话搜索关键字（P2-3：按标题/工作区过滤，忽略大小写）。 */
+    var sessionQuery by mutableStateOf("")
+        private set
+
+    fun updateSessionQuery(q: String) { sessionQuery = q }
+
     private var client: RelayClient? = null
     private var channel: RpcChannel? = null
     private var conversation: ConversationChannel? = null
@@ -484,12 +490,23 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
     /**
      * 上传一个附件。走 conversation 通道的四步流程（begin/chunk/commit），
      * 成功后加入 [attachments]，UI 显示 chip，发送时随 sendPrompt 带走。
+     * P2-3 流式改造：只持 uri，内容经 openStream 分片读（内存峰值一倍分片），
+     * 不再整文件读进内存；选中后文件被移动/删除会在上传时报错提示。
      */
-    fun addAttachment(fileName: String, mime: String, data: ByteArray) {
+    fun addAttachment(uri: android.net.Uri, fileName: String, mime: String, size: Long) {
         val conv = conversation ?: run { flash("连接已断开，无法上传"); return }
         if (attachUpload != null) { flash("还有附件在上传中"); return }
-        attachUpload = AttachUpload(fileName, 0, data.size.toLong())
-        conv.uploadAttachment(fileName, mime, data,
+        if (size > ConversationChannel.MAX_ATTACHMENT_BYTES) {
+            flash("附件超过 20MiB 上限")
+            return
+        }
+        attachUpload = AttachUpload(fileName, 0, size)
+        val app = getApplication<android.app.Application>()
+        conv.uploadAttachment(fileName, mime, size,
+            openStream = {
+                app.contentResolver.openInputStream(uri)
+                    ?: throw IllegalStateException("无法打开所选文件（可能已被移动或删除）")
+            },
             onProgress = { up, total -> attachUpload = AttachUpload(fileName, up, total) },
         ) { r ->
             viewModelScope.launch {

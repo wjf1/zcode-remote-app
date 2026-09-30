@@ -502,10 +502,24 @@ class ConversationChannel(private val rpc: RpcChannel) {
      * - checksum = `"sha256:" + sha256(data).hex`（小写）
      * - 全程不需要 connectionId（host 从 workspace/session 上下文解析；实机验证）
      */
+    /**
+     * 上传一个附件（官方 web `TTe` 同构的四步流程）：
+     *   attachmentBeginV4 → attachmentChunkV4 × N → attachmentCommitV4
+     * 失败时 fire-and-forget 打一发 attachmentAbortV4 回收服务端暂存。
+     *
+     * - chunk 大小 = [CHUNK_BYTES]（与官方客户端一致 384KiB；host 上限 512KiB）
+     * - checksum = `"sha256:" + sha256(bytes).hex`（小写）
+     * - 全程不需要 connectionId（host 从 workspace/session 上下文解析；实机验证）
+     *
+     * P2-3 流式改造：内容经 [openStream] 分片读取（可重入，SAF uri 可重复开流），
+     * 内存峰值 = 一倍分片 + 64KiB hash 缓冲，不再整文件读进内存。
+     * 流程 = 第一遍流式算 sha256 → begin → 单次开流顺序读满分片逐片上传。
+     */
     fun uploadAttachment(
         fileName: String,
         mime: String,
-        data: ByteArray,
+        totalBytes: Long,
+        openStream: () -> java.io.InputStream,
         onProgress: ((uploaded: Long, total: Long) -> Unit)? = null,
         onResult: (Result<AttachmentRef>) -> Unit,
     ) {
@@ -515,20 +529,20 @@ class ConversationChannel(private val rpc: RpcChannel) {
             onResult(Result.failure(IllegalStateException("未订阅会话，无法上传附件")))
             return
         }
-        if (data.isEmpty()) {
+        if (totalBytes <= 0L) {
             onResult(Result.failure(IllegalArgumentException("附件内容为空")))
             return
         }
-        if (data.size > MAX_ATTACHMENT_BYTES) {
+        if (totalBytes > MAX_ATTACHMENT_BYTES) {
             onResult(Result.failure(IllegalArgumentException("附件超过 20MiB 上限")))
             return
         }
-        val totalChunks = (data.size + CHUNK_BYTES - 1) / CHUNK_BYTES
+        val totalChunks = ((totalBytes + CHUNK_BYTES - 1) / CHUNK_BYTES).toInt()
         if (totalChunks > MAX_CHUNKS) {
             onResult(Result.failure(IllegalArgumentException("附件分片数超过上限")))
             return
         }
-        val total = data.size.toLong()
+        val total = totalBytes
         val base = HashMap<String, Any>(target)
         base["sessionId"] = session
         base["uploadId"] = "upload-${UUID.randomUUID()}"
@@ -545,6 +559,23 @@ class ConversationChannel(private val rpc: RpcChannel) {
             onResult(Result.failure(IllegalStateException(message)))
         }
 
+        // 第一遍：流式计算整文件 sha256（begin 的 args 需要 checksum 先行）
+        val digest = runCatching {
+            val md = java.security.MessageDigest.getInstance("SHA-256")
+            openStream().use { input ->
+                val buf = ByteArray(64 * 1024)
+                while (true) {
+                    val n = input.read(buf)
+                    if (n <= 0) break
+                    md.update(buf, 0, n)
+                }
+            }
+            md.digest().joinToString("") { "%02x".format(it) }
+        }.getOrElse {
+            onResult(Result.failure(IllegalStateException("读取附件失败：${it.message}")))
+            return
+        }
+
         // 注意：Kotlin 局部函数只能引用「已声明」的同层函数，故按依赖顺序声明。
         fun commit() {
             rpc.call(RpcChannel.CHANNEL_AGENT, "attachmentCommitV4", listOf(HashMap(base))) { reply ->
@@ -554,7 +585,7 @@ class ConversationChannel(private val rpc: RpcChannel) {
                         val ref = reply.data.asObj()?.get("ref").asStr()
                         if (ref.isNullOrBlank()) fail("提交附件未返回 ref：${reply.data}")
                         else {
-                            Log.i(TAG, "附件已提交 ref=$ref file=$fileName bytes=${data.size}")
+                            Log.i(TAG, "附件已提交 ref=$ref file=$fileName bytes=$total")
                             onResult(Result.success(AttachmentRef(ref, fileName, mime, total)))
                         }
                     }
@@ -563,14 +594,43 @@ class ConversationChannel(private val rpc: RpcChannel) {
         }
 
         fun uploadChunks(from: Int) {
+            // 单次开流顺序读满分片（续传 from>0 时 skip 前部，仅重试场景出现）
             var index = from
+            var input: java.io.InputStream? = null
+            val buf = ByteArray(CHUNK_BYTES)
+            fun closeQuietly() { runCatching { input?.close() } }
             fun next() {
-                if (index >= totalChunks) { commit(); return }
-                val off = index * CHUNK_BYTES
-                val end = minOf(off + CHUNK_BYTES, data.size)
+                if (index >= totalChunks) { closeQuietly(); commit(); return }
+                if (input == null) {
+                    input = try {
+                        openStream().also { s ->
+                            var toSkip = index.toLong() * CHUNK_BYTES
+                            while (toSkip > 0) {
+                                val n = s.skip(toSkip)
+                                if (n <= 0) break
+                                toSkip -= n
+                            }
+                        }
+                    } catch (e: Exception) {
+                        fail("读取附件失败：${e.message}"); return
+                    }
+                }
+                var filled = 0
+                while (filled < CHUNK_BYTES) {
+                    val n = try {
+                        input!!.read(buf, filled, CHUNK_BYTES - filled)
+                    } catch (e: Exception) {
+                        closeQuietly(); fail("读取附件分片失败：${e.message}"); return
+                    }
+                    if (n <= 0) break
+                    filled += n
+                }
+                if (filled == 0) {
+                    closeQuietly(); fail("附件内容比声明大小短"); return
+                }
                 val args = HashMap(base)
                 args["chunkIndex"] = index
-                args["dataBase64"] = Base64.encodeToString(data.copyOfRange(off, end), Base64.NO_WRAP)
+                args["dataBase64"] = Base64.encodeToString(buf.copyOf(filled), Base64.NO_WRAP)
                 val sent = index
                 rpc.call(RpcChannel.CHANNEL_AGENT, "attachmentChunkV4", listOf(args)) { reply ->
                     when (reply) {
@@ -594,10 +654,10 @@ class ConversationChannel(private val rpc: RpcChannel) {
         val beginArgs = HashMap(base)
         beginArgs["fileName"] = fileName
         beginArgs["mime"] = mime
-        beginArgs["totalBytes"] = data.size
+        beginArgs["totalBytes"] = totalBytes
         beginArgs["totalChunks"] = totalChunks
-        beginArgs["checksum"] = "sha256:" + sha256Hex(data)
-        Log.i(TAG, "attachmentBegin file=$fileName mime=$mime bytes=${data.size} chunks=$totalChunks")
+        beginArgs["checksum"] = "sha256:" + digest
+        Log.i(TAG, "attachmentBegin file=$fileName mime=$mime bytes=$total chunks=$totalChunks")
         rpc.call(RpcChannel.CHANNEL_AGENT, "attachmentBeginV4", listOf(beginArgs)) { reply ->
             when (reply) {
                 is RpcChannel.RpcReply.Err -> onResult(
@@ -618,9 +678,6 @@ class ConversationChannel(private val rpc: RpcChannel) {
         }
     }
 
-    private fun sha256Hex(data: ByteArray): String =
-        java.security.MessageDigest.getInstance("SHA-256").digest(data)
-            .joinToString("") { "%02x".format(it) }
 
 
 
@@ -704,7 +761,8 @@ class ConversationChannel(private val rpc: RpcChannel) {
         private const val CHUNK_BYTES = 384 * 1024
 
         /** host 常量 attachmentMaxBytes = 20MiB、attachmentUploadMaxChunks = 64。 */
-        private const val MAX_ATTACHMENT_BYTES = 20 * 1024 * 1024
+        /** 与 host 常量 attachmentMaxBytes 一致（UI 选附件时同值校验）。 */
+        internal const val MAX_ATTACHMENT_BYTES = 20 * 1024 * 1024
         private const val MAX_CHUNKS = 64
 
         /** 服务端命令 ack 中算成功三种状态（duplicate/noop 表示已被他处消解）。 */
