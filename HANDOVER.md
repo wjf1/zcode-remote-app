@@ -14,7 +14,8 @@
 - 已发布签名 Release（私有仓库 `wjf1/zcode-remote-app`，`gh` CLI 已登录账号 wjf1）：
   [v0.3.0-m3](https://github.com/wjf1/zcode-remote-app/releases/tag/v0.3.0-m3)（首个签名 Release）→
   [v0.4.0-beta1](https://github.com/wjf1/zcode-remote-app/releases/tag/v0.4.0-beta1)（发版收官内测）→
-  [v0.4.0-beta2](https://github.com/wjf1/zcode-remote-app/releases/tag/v0.4.0-beta2)（**当前**，真机验收问题修复）。
+  [v0.4.0-beta2](https://github.com/wjf1/zcode-remote-app/releases/tag/v0.4.0-beta2)（真机验收问题修复）→
+  [v0.4.0-beta3](https://github.com/wjf1/zcode-remote-app/releases/tag/v0.4.0-beta3)（**当前**，16KB 页对齐修复，versionCode 7）。
 - **2026-09-29 增量（本轮）**：P0-1 发送/停止 ✅、P1-1 表单应答 ✅、P1-2 多会话看板 ✅、
   P1-4 协议常量结清 ✅、技术债清理 ✅——均已构建通过并推送（提交见 `git log`）。
 - **2026-09-29 二轮**：**X-1 keystore 结清**（实测与发布 APK 同指纹，见下）、
@@ -170,8 +171,8 @@ ADB -s <serial> shell am broadcast -n com.zcode.remote/.debug.DebugApprovalRecei
 | 保活引导页 / debug 注入 receiver / 前台服务 | ✅ | `ui/screens/KeepAliveGuideScreen.kt` `app/src/debug/` `service/ConnectionService.kt` |
 
 版本序列：`v0.2.0-m2` → `v0.2.1-m2b` → `v0.2.2-m3a` → `v0.2.3-m3b` → `v0.3.0-m3` →
-`v0.4.0-beta1`（发版收官内测）→ **`v0.4.0-beta2`（当前，versionName 0.4.0-beta2 / versionCode 6，
-真机验收问题修复）**。
+`v0.4.0-beta1`（发版收官内测）→ `v0.4.0-beta2`（真机验收问题修复）→ **`v0.4.0-beta3`（当前，versionName 0.4.0-beta3 /
+versionCode 7，16KB 页对齐修复）**。
 
 ## 5. 关键技术结论（浓缩坑清单，动手前必读）
 
