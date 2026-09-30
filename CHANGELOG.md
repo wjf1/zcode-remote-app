@@ -1,5 +1,33 @@
 # 变更记录 / Changelog
 
+## v0.4.0-beta2（2026-09-30）· 真机验收问题修复
+
+**里程碑：修复真机验收（2026-09-30）发现的两处 App 缺陷**
+
+### 修复（P2：发送永久卡死——真机实测复现）
+- **根因**：桥断开后 `RpcChannel` 的 `_bridge` 仍停留在 `Ready`（陈旧状态，WS 关闭时无人复位），
+  此时发送的 `sendConversationCommandV4` 被投进已死的连接、永远等不到 ack；而
+  `pendingResponses` 只在 `reset()` 里被静默清空（且 `reset()` 无调用方），调用方回调永不触发
+  → App「发送中」状态永久卡住，只能重启（真机 21:5x 实测复现）。
+- **修复**（`relay/RpcChannel.kt`）：
+  1. `call()` 新增 `timeoutMs` 参数，主线程 `Handler.postDelayed` 兜底，超时以
+     `RpcReply.Err("timeout after Nms")` 收场；
+  2. `pendingResponses` 改 `ConcurrentHashMap`（WS 线程收响应、主线程跑超时，两侧竞争 remove）；
+  3. 新增 `failPending(reason)`：**桥重建（`bridge-ready`）时**把旧桥上的挂起请求逐个以错误收场
+     （新桥 ack 序列空间全新，旧请求永远不可能有应答）；`reset()` 同样走 `failPending`；
+  4. 成功/错误应答路径补 `cancelTimeout`，避免超时任务残留。
+- **调用侧**（`relay/ConversationChannel.kt`）：发送（`sendText`）、审批/表单应答
+  （`resolveInteraction`）、停止（`stop`）三处命令统一传 `SEND_ACK_TIMEOUT_MS = 15s`。
+- **真机验证 PASS**（2026-09-30 22:5x，飞行模式断网复现）：日志实证
+  `sendText session=… chars=2` → `rpc timeout id=12 method=sendConversationCommandV4 after=15000ms`
+  → UI 自动复位（`sending=false`，输入栏恢复）；修复前此处永久卡死。
+
+### 优化（失败提示可见性）
+- 失败类 flash 提示（`发送失败` / `应答失败` / `连接已断开`）停留 **8s**（原 4s 在真机上易被错过，
+  验收时用户反馈「未出现发送失败」实为提示一闪而过）；成功类提示保持 4s 免打扰。
+
+- `versionName 0.4.0-beta2` / `versionCode 6`；签名与 v0.3.0-m3 同指纹，可覆盖升级。
+
 ## v0.4.0-beta1（2026-09-30）· 发版收官内测（beta）
 
 **里程碑：远程控制全功能内测包——发送/表单/多会话/附件/语音/权威角标/Widget 全齐，待真机日常验收后转正式**

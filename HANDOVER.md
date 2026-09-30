@@ -63,9 +63,13 @@
     probe 的 bootstrap 开桥卡住，setmode.py list/set 暂不可用（不阻塞验收：模式切换改由桌面端 UI 完成）。
     **待办**：弄清双 sid 差异来源（疑 credentials.json 9-28 旧 hash 与服务端注册的 device_sid 映射）。
 - **2026-09-30 真机验收发现的问题与结论（三）**：
-  - **App bug（待修，P2）**：**发送无超时兜底**——桥断开瞬间点发送，`sendText` RPC 挂死桥上
-    等不到 ack，App「发送中」状态永久卡住（2026-09-30 21:5x 实测复现，App 重启才恢复）。
-    修法建议：sendText/sendPrompt 加 RPC 超时（如 15s）→ 失败 flash + sending 复位；重连后丢弃挂起请求。
+  - **App bug（✅ 已于 v0.4.0-beta2 修复）**：**发送无超时兜底**——桥断开瞬间点发送，
+    `sendText` RPC 挂死桥上等不到 ack，App「发送中」状态永久卡住（2026-09-30 21:5x 实测复现，
+    App 重启才恢复）。**修复**：`RpcChannel.call()` 加 `timeoutMs`（主线程 Handler 兜底）+
+    `failPending()`（桥重建/`reset()` 时把旧桥挂起请求全部以错误收场，`pendingResponses` 改
+    `ConcurrentHashMap`）；发送/应答/停止三处命令统一 15s 超时。**真机验证 PASS**：
+    飞行模式断网 → `rpc timeout id=12 method=sendConversationCommandV4 after=15000ms` → UI 自动复位。
+    附带把失败类 flash 提示从 4s 延长到 8s（用户反馈「未出现发送失败」实为提示一闪而过）。
   - **真机键盘不弹（环境问题，非 App 缺陷）**：两层原因叠加——① 小米手环 9 蓝牙 HID 键盘
     （`Xiaomi Smart Band 9`，`Classes: KEYBOARD|EXTERNAL`）被系统识别为外接键盘抑制软键盘；
     ② 断开后 IME 状态机卡死（`mInputShown=true` 残留）+ 小米 AI 键盘（`com.xiaomi.type`，依赖

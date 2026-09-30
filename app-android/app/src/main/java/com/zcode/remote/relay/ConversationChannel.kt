@@ -412,7 +412,8 @@ class ConversationChannel(private val rpc: RpcChannel) {
             "payload" to payload,
             "issuedAt" to System.currentTimeMillis(),
         )
-        rpc.call(RpcChannel.CHANNEL_AGENT, "sendConversationCommandV4", listOf(args)) { reply ->
+        rpc.call(RpcChannel.CHANNEL_AGENT, "sendConversationCommandV4", listOf(args),
+            timeoutMs = SEND_ACK_TIMEOUT_MS) { reply ->
             onResult(
                 when (reply) {
                     is RpcChannel.RpcReply.Err ->
@@ -478,7 +479,8 @@ class ConversationChannel(private val rpc: RpcChannel) {
             "issuedAt" to System.currentTimeMillis(),
         )
         Log.i(TAG, "sendText session=$session chars=${content.length} attachments=${attachments.size}")
-        rpc.call(RpcChannel.CHANNEL_AGENT, "sendConversationCommandV4", listOf(args)) { reply ->
+        rpc.call(RpcChannel.CHANNEL_AGENT, "sendConversationCommandV4", listOf(args),
+            timeoutMs = SEND_ACK_TIMEOUT_MS) { reply ->
             onResult(
                 when (reply) {
                     is RpcChannel.RpcReply.Err -> Result.failure(IllegalStateException(reply.message))
@@ -707,7 +709,8 @@ class ConversationChannel(private val rpc: RpcChannel) {
             "issuedAt" to System.currentTimeMillis(),
         )
         Log.i(TAG, "stop session=$session fg=${foregroundExecutionId ?: "-"}")
-        rpc.call(RpcChannel.CHANNEL_AGENT, "sendConversationCommandV4", listOf(args)) { reply ->
+        rpc.call(RpcChannel.CHANNEL_AGENT, "sendConversationCommandV4", listOf(args),
+            timeoutMs = SEND_ACK_TIMEOUT_MS) { reply ->
             onResult(
                 when (reply) {
                     is RpcChannel.RpcReply.Err ->
@@ -759,6 +762,13 @@ class ConversationChannel(private val rpc: RpcChannel) {
 
         /** 附件分片大小：与官方 web 客户端一致（host 上限 attachmentChunkMaxBytes=512KiB）。 */
         private const val CHUNK_BYTES = 384 * 1024
+
+        /**
+         * 发送/应答/停止类 envelope RPC 的 ack 超时。服务端正常应答在秒级；
+         * 桥半死（断线瞬间）永远等不到 ack，必须兜底让调用方复位 UI 状态
+         * （真机验收发现「发送中」永久卡死，2026-09-30）。
+         */
+        private const val SEND_ACK_TIMEOUT_MS = 15_000L
 
         /** host 常量 attachmentMaxBytes = 20MiB、attachmentUploadMaxChunks = 64。 */
         /** 与 host 常量 attachmentMaxBytes 一致（UI 选附件时同值校验）。 */

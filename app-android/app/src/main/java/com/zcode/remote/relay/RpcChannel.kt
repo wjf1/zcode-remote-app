@@ -1,5 +1,7 @@
 package com.zcode.remote.relay
 
+import android.os.Handler
+import android.os.Looper
 import android.util.Base64
 import android.util.Log
 import kotlinx.coroutines.channels.BufferOverflow
@@ -14,6 +16,7 @@ import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.put
 import java.util.UUID
+import java.util.concurrent.ConcurrentHashMap
 import java.util.zip.CRC32
 
 /**
@@ -60,7 +63,31 @@ class RpcChannel(private val relay: RelayClient) {
     private var nextMessageSeq = 1
     private var lastAckedMessageSeq = 0
 
-    private val pendingResponses = mutableMapOf<Int, (RpcReply) -> Unit>()
+    // WS 线程收响应、主线程调度超时，两侧都会 remove——必须并发安全。
+    private val pendingResponses = ConcurrentHashMap<Int, (RpcReply) -> Unit>()
+
+    /** 需要超时兜底的请求 id -> 超时任务（call 侧传入 timeoutMs 时登记）。 */
+    private val timeoutTasks = ConcurrentHashMap<Int, Runnable>()
+    private val mainHandler = Handler(Looper.getMainLooper())
+
+    /**
+     * 桥重建 / 通道复位时，旧桥上的挂起请求永远等不到应答（新桥 ack 序列空间不同），
+     * 必须逐个以错误收场，调用方（发送/审批/表单）才能复位 UI 状态。
+     * 修的就是真机验收发现的「发送中」永久卡死（2026-09-30，HANDOVER §6.0）。
+     */
+    private fun failPending(reason: String) {
+        val stale = pendingResponses.keys.toList()
+        for (id in stale) {
+            val cb = pendingResponses.remove(id) ?: continue
+            cancelTimeout(id)
+            Log.w(TAG, "failPending id=$id reason=$reason")
+            runCatching { cb(RpcReply.Err(reason, null)) }
+        }
+    }
+
+    private fun cancelTimeout(id: Int) {
+        timeoutTasks.remove(id)?.let { mainHandler.removeCallbacks(it) }
+    }
 
     /** 接收分片缓冲：messageSeq -> (fragmentIndex -> 分片字节)。收齐即拼装校验。 */
     private val fragmentBuffers = HashMap<Int, MutableMap<Int, ByteArray>>()
@@ -99,7 +126,11 @@ class RpcChannel(private val relay: RelayClient) {
                     runCatching { it.jsonPrimitive.content.toIntOrNull() }.getOrNull() }
                 recoveryId = payload["recoveryId"]?.let { runCatching { it.jsonPrimitive.content }.getOrNull() }
                 Log.i(TAG, "bridge-ready sid=$sid gen=$bridgeGeneration payload=${payload.toString().take(500)}")
-                if (sid != null) _bridge.value = BridgeState.Ready(sid)
+                if (sid != null) {
+                    // 新桥 ack 序列空间全新：旧桥挂起请求立即失败收场，防止调用方状态卡死
+                    failPending("bridge re-established")
+                    _bridge.value = BridgeState.Ready(sid)
+                }
             }
             "workspace-bridge-error", "bridge-degraded" -> {
                 Log.w(TAG, "bridge error: ${payload.toString().take(300)}")
@@ -119,6 +150,7 @@ class RpcChannel(private val relay: RelayClient) {
         channelName: String,
         method: String,
         args: List<Any?> = emptyList(),
+        timeoutMs: Long? = null,
         onResponse: ((RpcReply) -> Unit)? = null,
     ): Int? {
         val bridge = _bridge.value
@@ -128,7 +160,20 @@ class RpcChannel(private val relay: RelayClient) {
             return null
         }
         val id = nextRequestId++
-        if (onResponse != null) pendingResponses[id] = onResponse
+        if (onResponse != null) {
+            pendingResponses[id] = onResponse
+            if (timeoutMs != null && timeoutMs > 0) {
+                // 超时兜底：服务端不回/桥半死时，调用方不能永久挂起。
+                // remove 原子性保证与 WS 线程的应答分发不会双触发。
+                val task = Runnable {
+                    val cb = pendingResponses.remove(id) ?: return@Runnable
+                    Log.w(TAG, "rpc timeout id=$id method=$method after=${timeoutMs}ms")
+                    cb(RpcReply.Err("timeout after ${timeoutMs}ms", null))
+                }
+                timeoutTasks[id] = task
+                mainHandler.postDelayed(task, timeoutMs)
+            }
+        }
         val msg = Vql.serialize(listOf(TYPE_PROMISE, id, channelName, method), args)
         Log.i(TAG, "rpc call channel=$channelName method=$method id=$id bytes=${msg.size}")
         sendMessage(msg, bridge.bridgeSessionId)
@@ -269,6 +314,7 @@ class RpcChannel(private val relay: RelayClient) {
         when (type) {
             TYPE_SUCCESS -> {
                 val cb = id?.let { pendingResponses.remove(it) }
+                id?.let { cancelTimeout(it) }
                 cb?.invoke(RpcReply.Ok(toJsonElement(data)))
             }
             TYPE_ERROR, TYPE_ERROR_OBJ -> {
@@ -277,6 +323,7 @@ class RpcChannel(private val relay: RelayClient) {
                     ?: el.toString().take(300)
                 Log.w(TAG, "rpc error id=$id: $msg")
                 val cb = id?.let { pendingResponses.remove(it) }
+                id?.let { cancelTimeout(it) }
                 cb?.invoke(RpcReply.Err(msg, el))
             }
             TYPE_EVENT_FIRE -> _events.tryEmit(RpcEvent(id, toJsonElement(data)))
@@ -317,7 +364,7 @@ class RpcChannel(private val relay: RelayClient) {
         nextPhysicalSeq = 1
         nextMessageSeq = 1
         lastAckedMessageSeq = 0
-        pendingResponses.clear()
+        failPending("channel reset")
         fragmentBuffers.clear()
     }
 

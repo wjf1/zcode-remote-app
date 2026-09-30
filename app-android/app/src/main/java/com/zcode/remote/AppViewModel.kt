@@ -444,8 +444,11 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
     private fun flash(msg: String) {
         commandFeedback = msg
         feedbackJob?.cancel()
+        // 失败类提示留 8s（4s 真机上易被错过，2026-09-30 验收发现）；成功提示仍 4s 免打扰
+        val ms = if (msg.startsWith("发送失败") || msg.startsWith("应答失败") ||
+            msg.startsWith("连接已断开")) 8_000L else 4_000L
         feedbackJob = viewModelScope.launch {
-            kotlinx.coroutines.delay(4000)
+            kotlinx.coroutines.delay(ms)
             commandFeedback = null
         }
     }
