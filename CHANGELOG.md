@@ -13,8 +13,10 @@
 - **`AppViewModel.recomputeSessionPending` 升级**：服务端权威计数优先（覆盖全部会话、
   消解即清零、不怕事件流漏帧）；任务事件流推导降级为回退（只补权威索引缺失的会话）；
   当前订阅会话仍以会话流明细覆盖（明细 0 时信权威）。
-- **端到端探针** `tools/_e1_verify.py` 就绪（订阅 → AskUserQuestion 触发 → 观察 userInputCount
-  0→1 → 消解 → 观察 1→0）；⚠️ 桌面端远程控制面板超时关闭（pair_status 持续 waiting），待面板在线补跑。
+- **端到端实测** `tools/_e1_verify.py` 面板在线补跑（2026-09-30）：订阅 ack
+  `six-…/mode=snapshot` + snapshot 到达 → sendText 触发 AskUserQuestion → 权威角标
+  `{permissionCount:0, userInputCount:1}` → resolveInteraction accepted → 字段回落消失。
+  三项 PASS + 无待处理时字段缺省（optional，App 按 0/0）确认。E-1 闭环 ✅。
 - 构建 BUILD SUCCESSFUL。
 
 ## 未发布（2026-09-30 三轮：P1-3 附件发送侧实证修复 + 语音输入）

@@ -302,9 +302,11 @@ python tools/probe.py sub <会话ID前缀> [帧落盘路径]   # + 完整会话�
 - **App 实现**：`relay/SessionsIndexChannel.kt`——开桥后按当前工作区订阅一次（会话切换不重订），
   snapshot 全量替换 / upserted 单条更新 / removed 删除，`summaries: StateFlow<Map<sessionId, PendingSummary>>`；
   `AppViewModel.recomputeSessionPending` 以权威值优先、事件流推导补缺（HANDOVER §E-1）。
-- **端到端探针**：`tools/_e1_verify.py`（订阅 → sendText 触发 AskUserQuestion → 观察
-  userInputCount 0→1 → resolveInteraction 消解 → 观察 1→0）。⚠️ 待桌面端远程控制面板在线时补跑
-  （2026-09-30 面板超时 waiting，探针就绪未跑）。
+- **端到端实测**（tools/_e1_verify.py，桌面端在线，2026-09-30）：
+  ① 订阅 ack `{subscriptionId:"six-…", mode:"snapshot"}` + snapshot 到达；② 无待处理交互时
+  目标会话条目**无** `pendingInteractionSummary` 字段（optional 缺省，App 按 0/0 处理）；
+  ③ sendText 触发 AskUserQuestion 后权威角标变为 `{permissionCount:0, userInputCount:1}`；
+  ④ resolveInteraction ack accepted 后字段回落消失。三项 PASS + 一项正常缺省，E-1 闭环。
 - **端到端实测**（tools/_p13_probe.py，桌面端在线，2026-09-29）：
   ① 单分片小文件 `begin(staging,0) → chunk(1) → commit → ref` 全通；
   ② 多分片 900KiB → 3 片（393216+393216+135168）逐片 `nextChunkIndex` 递增正确 → commit → ref。
