@@ -30,6 +30,18 @@
 - **⚠️ 2026-09-30 范围决策（用户拍板）**：**M4（P2-1）/M5（P2-2）移出开发计划**，
   VPS 不再采购——剩余工作仅 X-2/P0-2 真机验收与发版收官；方案文档中 M4/M5 章节仅作历史参考。
   另：按需池已完成桌面 Widget、附件流式化、会话搜索（详见 CHANGELOG 五/六轮）。
+- **2026-09-30 五轮：v0.4.0-beta1 发版完成**（commit 1dde59e，tag + GitHub Release 附签名 APK，
+  见 releases/tag/v0.4.0-beta1）。版本号 0.4.0-beta1/versionCode 5（M4/M5 已取消，弃用 mN 后缀）；
+  签名与 v0.3.0-m3 同指纹，可覆盖升级（`tools/_apk_cert_fp.py` 核验）。CHANGELOG 七轮未发布段
+  归版、README 双语 APK 文件名同步。
+- **2026-09-30 真机验收进行中（X-2/P0-2）**：小米 15 Pro（haotian，serial 9f6241b4）已到位并授权调试。
+  release APK HyperOS「USB 安装」确认弹窗需手机端人工点一次（首次安装被拒 INSTALL_FAILED_USER_RESTRICTED，
+  重试 + 手机确认即 Success）。debug 变体新增 **DebugPairReceiver**（`app/src/debug/`，
+  广播 `com.zcode.remote.action.DEBUG_PAIR` 注入 sid/hash/mid/name，免扫码/免 input text——
+  粘贴路径 input text 会被中文 IME 打乱字符）。已验：App 启动、设置面板（协议线路/主题/保活入口）、
+  首页骨架（设备卡/搜索框/断开）、错误态文案（连接失败/配对失效）渲染正常。
+  **当前卡点：桌面端「移动端远程控制」面板未开 → auth AUTH_FAILED（probe 复现一致，
+  已知 pair_status 语义，非 App 缺陷）；面板开启后继续会话流/审批/通知/锁屏验收。**
 - ⚠️ **两条重要现状**（接手先读）：
   1. **release keystore 并未丢失（X-1 已结清，可直接发布）**：`toolchain/keys/zcode-remote.keystore`
      与 `app-android/keystore.properties` 都在本机，其证书 SHA-256 指纹
@@ -127,9 +139,9 @@ M3 主体（多机/主题/线路/保活引导/历史翻页/分片重组）、**P
 | 编号 | 任务 | 状态 | 阻塞 / 前置 | 预估 |
 |---|---|---|---|---|
 | **X-1** | **恢复 release 签名 keystore** | ✅ **已结清** | 本机 keystore 与 v0.3.0-m3 发布 APK 同指纹（`tools/_apk_cert_fp.py`），发布链路可用 | — |
-| **X-2** | **App UI 层验收**（P0-1 输入栏/停止、P1-1 表单卡、P1-2 角标与横幅、D-3 通知、P1-3 附件条） | ⏳ 待硬件 | 本机兆芯 CPU 起不了模拟器；需 Intel/AMD 机器或真机 | 0.5d |
+| **X-2** | **App UI 层验收**（P0-1 输入栏/停止、P1-1 表单卡、P1-2 角标与横幅、D-3 通知、P1-3 附件条） | 🚧 **进行中**（2026-09-30 真机到位，设置页/首页骨架/错误态已验 PASS；会话流类待桌面端面板开启） | 小米 15 Pro 已连；中继验收需桌面端面板在线 | 0.5d |
 | X-3 | README 双语同步本轮功能 | ✅ 已完成 | — | — |
-| **P0-2** | 真机验收（小米 15 Pro 日常可用） | ⏳ 待设备 | 需小米 15 Pro 到手 | 0.5d + 3d 观察 |
+| **P0-2** | 真机验收（小米 15 Pro 日常可用） | 🚧 **进行中**（USB 安装确认、覆盖升级路径已验；auth 待面板开启） | 桌面端面板在线 + 人工配合（锁屏/杀后台场景） | 0.5d + 3d 观察 |
 | **P1-3** | 文件上传 / 语音输入 | ✅ 附件全链路完成（发送侧 sendText envelope 实测六项 PASS，2026-09-30）；✅ 语音输入主体完成（SpeechRecognizer→草稿，构建通过）；UI 交互待真机（并入 X-2） | 真机验收 | — |
 | **P2-1** | ~~M4 VPS 备用 Runner~~ | ❌ **已取消**（2026-09-30 用户决策：M4/M5 移出开发计划，VPS 不再采购；下方小节保留作历史参考） | — | — |
 | **P2-2** | ~~M5 高级模式（自建 bridge + NaCl E2E + 自建中继）~~ | ❌ **已取消**（同上） | — | — |
