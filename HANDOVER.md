@@ -11,7 +11,10 @@
 **ZCode Remote**：ZCode 官方远程控制（`wss://zcode.z.ai/ws` 中继）的原生安卓增强客户端，Kotlin + Jetpack Compose。目标机型小米 15 Pro（HyperOS 2 / Android 15），纯自用暂不分发。
 
 - 协议已完整逆向并实测（M0），App 的配对/会话/审批/多机/设置全部打通并验证（M1 ✅ M2 ✅ M3 主体完成）。
-- 已发布签名 Release：[v0.3.0-m3](https://github.com/wjf1/zcode-remote-app/releases/tag/v0.3.0-m3)（私有仓库 `wjf1/zcode-remote-app`，`gh` CLI 已登录账号 wjf1）。
+- 已发布签名 Release（私有仓库 `wjf1/zcode-remote-app`，`gh` CLI 已登录账号 wjf1）：
+  [v0.3.0-m3](https://github.com/wjf1/zcode-remote-app/releases/tag/v0.3.0-m3)（首个签名 Release）→
+  [v0.4.0-beta1](https://github.com/wjf1/zcode-remote-app/releases/tag/v0.4.0-beta1)（发版收官内测）→
+  [v0.4.0-beta2](https://github.com/wjf1/zcode-remote-app/releases/tag/v0.4.0-beta2)（**当前**，真机验收问题修复）。
 - **2026-09-29 增量（本轮）**：P0-1 发送/停止 ✅、P1-1 表单应答 ✅、P1-2 多会话看板 ✅、
   P1-4 协议常量结清 ✅、技术债清理 ✅——均已构建通过并推送（提交见 `git log`）。
 - **2026-09-29 二轮**：**X-1 keystore 结清**（实测与发布 APK 同指纹，见下）、
@@ -30,6 +33,8 @@
 - **⚠️ 2026-09-30 范围决策（用户拍板）**：**M4（P2-1）/M5（P2-2）移出开发计划**，
   VPS 不再采购——剩余工作仅 X-2/P0-2 真机验收与发版收官；方案文档中 M4/M5 章节仅作历史参考。
   另：按需池已完成桌面 Widget、附件流式化、会话搜索（详见 CHANGELOG 五/六轮）。
+- **2026-09-30 六轮：v0.4.0-beta2 —— 真机验收问题修复**（见 §6.0 与 CHANGELOG）：修复真机验收发现的
+  唯一 App 缺陷「发送/应答/停止 RPC 无超时兜底 → 状态永久卡死」；失败提示 4s→8s。
 - **2026-09-30 五轮：v0.4.0-beta1 发版完成**（commit 1dde59e，tag + GitHub Release 附签名 APK，
   见 releases/tag/v0.4.0-beta1）。版本号 0.4.0-beta1/versionCode 5（M4/M5 已取消，弃用 mN 后缀）；
   签名与 v0.3.0-m3 同指纹，可覆盖升级（`tools/_apk_cert_fp.py` 核验）。CHANGELOG 七轮未发布段
@@ -141,6 +146,10 @@ ZCODE_MID=$(python -c "import json;print(json.load(open(r'C:/Users/admin/.zcode/
 python tools/setmode.py list|set <taskId前缀> build|yolo   # 切会话权限模式（验收审批用）
 python tools/_e2e_send.py                                  # 以手机端身份发排队消息
 python tools/_e2e_tap_approve.py                           # 验收自动化：等通知→点「允许一次」→回读证据
+
+# 真机验收（debug 包）：注入配对凭据，免扫码 / 免 adb input text 被 IME 打乱
+ADB -s <serial> shell am broadcast -n com.zcode.remote/.debug.DebugPairReceiver   -a com.zcode.remote.action.DEBUG_PAIR --es sid <sid> --es hash <hash> --es mid <mid> --es name <名>
+ADB -s <serial> shell am broadcast -n com.zcode.remote/.debug.DebugApprovalReceiver   -a com.zcode.remote.action.DEBUG_APPROVAL          # 注入两条假审批，验通知卡片渲染
 ```
 
 - **签名**：`toolchain/keys/zcode-remote.keystore` + `app-android/keystore.properties`（密码在此，**不入库、勿丢失**；PKCS12 约束 key 密码=store 密码）。
@@ -160,7 +169,9 @@ python tools/_e2e_tap_approve.py                           # 验收自动化：�
 | 线路切换（主线/备线/自定义，Origin 同源推导）+ 主题三模式 | ✅ 实测 | `storage/SettingsStore.kt` `ui/theme/Theme.kt` `HomeScreen.kt` |
 | 保活引导页 / debug 注入 receiver / 前台服务 | ✅ | `ui/screens/KeepAliveGuideScreen.kt` `app/src/debug/` `service/ConnectionService.kt` |
 
-版本序列：`v0.2.0-m2` → `v0.2.1-m2b` → `v0.2.2-m3a` → `v0.2.3-m3b` → **`v0.3.0-m3`（当前，versionName 0.3.0-m3 / versionCode 4）**。
+版本序列：`v0.2.0-m2` → `v0.2.1-m2b` → `v0.2.2-m3a` → `v0.2.3-m3b` → `v0.3.0-m3` →
+`v0.4.0-beta1`（发版收官内测）→ **`v0.4.0-beta2`（当前，versionName 0.4.0-beta2 / versionCode 6，
+真机验收问题修复）**。
 
 ## 5. 关键技术结论（浓缩坑清单，动手前必读）
 
@@ -180,32 +191,35 @@ python tools/_e2e_tap_approve.py                           # 验收自动化：�
 
 ## 6. 剩余任务（P0 → P2，含验收标准）
 
-### 6.0 剩余工作总览（截至 2026-09-29，接手先看这张表）
+### 6.0 剩余工作总览（截至 2026-09-30 v0.4.0-beta2，接手先看这张表）
 
 **已完成（勿重做）**：M0 协议逆向、M1 App 骨架+配对+会话列表、M2 会话流+审批端到端、
-M3 主体（多机/主题/线路/保活引导/历史翻页/分片重组）、**P0-1 发送+停止**、**P1-1 表单应答**、
-**P1-2 多会话看板**、**P1-4 协议常量结清**、技术债 3 项（移除确认弹窗/debug 面板隔离/日志降级）。
+M3 主体（多机/主题/线路/保活引导/历史翻页/分片重组）、P0-1 发送+停止、P1-1 表单应答、
+P1-2 多会话看板、P1-4 协议常量结清、P1-3 附件+语音、E-1 权威角标、P2-3 桌面 Widget、
+技术债 3 项；**v0.4.0-beta2 修复发送超时兜底**（真机验收唯一 App 缺陷）。
 
-**未完成项（全部）**：
+**真机验收结果（2026-09-30，小米 15 Pro）**：核心项全部 PASS —— 扫码配对、桥接与重连、
+会话列表/多机/设置、会话流渲染、发送消息端到端、附件全链路（桌面端 Begin/Chunk/Commit 实证）、
+停止按钮、**审批端到端**（真实审批→手机通知→Allow once→accepted→消解，两条实证）、语音按钮降级。
 
-| 编号 | 任务 | 状态 | 阻塞 / 前置 | 预估 |
-|---|---|---|---|---|
-| **X-1** | **恢复 release 签名 keystore** | ✅ **已结清** | 本机 keystore 与 v0.3.0-m3 发布 APK 同指纹（`tools/_apk_cert_fp.py`），发布链路可用 | — |
-| **X-2** | **App UI 层验收**（P0-1 输入栏/停止、P1-1 表单卡、P1-2 角标与横幅、D-3 通知、P1-3 附件条） | 🚧 **进行中**（2026-09-30 真机到位，设置页/首页骨架/错误态已验 PASS；会话流类待桌面端面板开启） | 小米 15 Pro 已连；中继验收需桌面端面板在线 | 0.5d |
-| X-3 | README 双语同步本轮功能 | ✅ 已完成 | — | — |
-| **P0-2** | 真机验收（小米 15 Pro 日常可用） | 🚧 **进行中**（USB 安装确认、覆盖升级路径已验；auth 待面板开启） | 桌面端面板在线 + 人工配合（锁屏/杀后台场景） | 0.5d + 3d 观察 |
-| **P1-3** | 文件上传 / 语音输入 | ✅ 附件全链路完成（发送侧 sendText envelope 实测六项 PASS，2026-09-30）；✅ 语音输入主体完成（SpeechRecognizer→草稿，构建通过）；UI 交互待真机（并入 X-2） | 真机验收 | — |
-| **P2-1** | ~~M4 VPS 备用 Runner~~ | ❌ **已取消**（2026-09-30 用户决策：M4/M5 移出开发计划，VPS 不再采购；下方小节保留作历史参考） | — | — |
-| **P2-2** | ~~M5 高级模式（自建 bridge + NaCl E2E + 自建中继）~~ | ❌ **已取消**（同上） | — | — |
-| P2-3 | 其他 P2：文件/diff/Git 浏览、Wear OS 快捷审批、桌面 Widget、可选小米推送 | 🚧 **桌面 Widget ✅ 完成**（RemoteViews 零依赖，App 内推送更新，2026-09-30，渲染待真机）；其余未开始。注：文件浏览经 bundle 核实**无中继协议支持**（workspace-file 仅桌面端本地 MIME），且 M4/M5 已取消——**文件浏览在官方协议下无落点，就此搁置**；小米推送需开发者账号；Wear OS 可开发但验收卡硬件 | 按需 |
-| D-1 | 会话流 `v4/conversation/frame` 二进制细节穷举 | ⬜ 未开始 | 需一次受控抓包（装 CA）；不影响当前功能 | 0.5d |
-| D-2 | 「earlier-head」占位项与贴底索引偏移 | ✅ 已完成 | 贴底滚动漏算占位项（停在倒数第二行），已修 | — |
-| D-3 | elicitation 通知栏快捷应答 | ✅ 已完成 | plan 批准/拒绝、单题单选选项按钮；复杂表单引导进 App | — |
-| E-1 | 会话级**权威**角标（订阅 `sessions-index/<workspaceId>` topic 取 `pendingInteractionSummary`） | ✅ 2026-09-30 完成（`SessionsIndexChannel` + 权威优先合并；端到端实测：触发 userInputCount 0→1、消解回落，PROTOCOL.md §6.7） | — | — |
+**唯一剩余待办（无开发阻塞项）**：
 
-> 优先级建议：**X-2/P0-2（验收补齐，打通真机后一并做）→ 发新版内测 APK 收官**。
-> D 类已清空；P1-3 全链路、E-1、桌面 Widget 均完成（2026-09-30）；
-> **M4/M5 已取消（2026-09-30 用户决策）**，剩余全部为硬件依赖验收。
+| 项 | 内容 | 状态 |
+|---|---|---|
+| **P0-2** | 日常使用观察（3 天）：锁屏通知可达性、HyperOS 杀后台 30min 后审批可达 | ⏳ 待观察（无代码工作） |
+| O-1 | 锁屏通知建议手动确认「设置→通知→锁屏通知」已开 | ⏳ 用户侧 |
+| O-2 | 桌面 Widget 拖到桌面看渲染；会话搜索/主题切换肉眼确认 | ⏳ 用户侧 |
+| D-1 | 会话流 `v4/conversation/frame` 二进制细节穷举（不影响功能，未知 op 有 Unknown 兜底） | ⬜ 按需，需受控抓包 |
+| P2-3 余项 | Wear OS 快捷审批（验收卡硬件）、小米推送（需开发者账号） | 按需/搁置 |
+
+**可选增强（非阻塞，按需启动）**：
+- 审批「双通道并存 + 消解 ~3s 延迟」体验优化 —— 桌面端行为侧，App 可做的是**乐观消解**
+  （点批准后本地先移除卡片，收到 `permission_resolved` 再校准），成本低、感知明显。
+- 发送失败后自动保留草稿并提示重发（当前超时失败保留 `promptDraft`，行为已合理）。
+- 表单卡（AskUserQuestion）转发条件探查（PROTOCOL.md §8 待验证项）。
+
+> **M4/M5 已取消（2026-09-30 用户决策）**，文件浏览在官方协议下无落点就此搁置；
+> 剩余全部为「日常观察」与「按需增强」，**无开发阻塞项**，可随时转正式版。
 
 ---
 
