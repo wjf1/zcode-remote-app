@@ -1,8 +1,23 @@
 # 变更记录 / Changelog
 
-## 未发布（2026-09-30 七轮：计划范围调整——M4/M5 取消）
+## v0.4.0-beta1（2026-09-30）· 发版收官内测（beta）
 
-### 决策（用户拍板：M4/M5 移出开发计划）
+**里程碑：远程控制全功能内测包——发送/表单/多会话/附件/语音/权威角标/Widget 全齐，待真机日常验收后转正式**
+
+汇总 2026-09-29 ~ 09-30 七轮增量：P0-1 发送与停止、P1-1 表单应答、P1-2 多会话看板、
+P1-3 附件全链路与语音输入、P1-4 协议常量结清、D-2 贴底修复、D-3 通知快捷应答、
+E-1 权威角标、P2-3 桌面 Widget 与会话搜索、附件流式化、X-1 keystore 结清；
+以及范围决策：M4/M5 移出开发计划。各轮详情见下方分节。
+
+- `versionName 0.4.0-beta1` / `versionCode 5`；签名 keystore 与 v0.3.0-m3 同指纹
+  （SHA-256 `1D:46:E9:…:24:BE:55`，`tools/_apk_cert_fp.py` 核验），已装设备可直接覆盖升级。
+- 下载：GitHub Releases 页 `ZCodeRemote-0.4.0-beta1.apk`（minSdk 31 / targetSdk 35）。
+- 待补：X-2 UI 层真机验收（输入栏/表单卡/角标横幅/通知/附件条/语音/Widget）与
+  P0-2 小米 15 Pro 日常使用观察（2026-09-30 真机已到位，验收进行中）。
+
+### 2026-09-30 七轮：计划范围调整——M4/M5 取消
+
+#### 决策（用户拍板：M4/M5 移出开发计划）
 - **M4（P2-1）VPS 备用 Runner** 与 **M5（P2-2）高级模式（自建 bridge + NaCl E2E + 自建中继）**
   不再开发，VPS 不再采购。原因：单人自用场景下，PC 关机场景的实用收益与 E2E 安全收益
   不值得「VPS 持续成本（¥10–40/月）+ bridge 常驻维护 + 双协议维护」的代价。
@@ -12,9 +27,9 @@
 - **调整后剩余工作**：仅 X-2（App UI 层验收）/P0-2（小米 15 Pro 真机验收）——待硬件/设备，
   完成后发新版内测 APK 即收官。
 
-## 未发布（2026-09-30 六轮：附件流式化 + 会话搜索）
+### （2026-09-30 六轮：附件流式化 + 会话搜索）
 
-### 优化（P1-3 附件分片流式读，技术债清偿）
+#### 优化（P1-3 附件分片流式读，技术债清偿）
 - **内存峰值 20MiB → 一倍分片（384KiB）+ 64KiB hash 缓冲**：选附件不再整块读进内存——
   UI 层 `readAttachment` → `inspectAttachment`（只取 name/mime/size，query 报不出大小时
   流式计数）；`ConversationChannel.uploadAttachment` 签名 `data: ByteArray` →
@@ -24,15 +39,15 @@
 - **行为变化**：选中后文件被移动/删除 → 上传时报「无法打开所选文件」（原先选中即读，
   后续改文件不影响上传）；20MiB 超限提示从静默忽略改为 flash 明示。
 
-### 新增（P2-3 首页会话搜索）
+#### 新增（P2-3 首页会话搜索）
 - 首页「会话」区搜索框（P2-3 池外小项）：按标题/工作区路径过滤，忽略大小写，关键字跨
   重组保留（`AppViewModel.sessionQuery`）；无匹配时显示「没有匹配」提示；「N 运行中 / M」
   计数随过滤更新。
 - 构建 BUILD SUCCESSFUL（两轮：先修 `var` 自动 setter 与手写 setter 的 JVM 签名冲突）。
 
-## 未发布（2026-09-30 五轮：P2-3 桌面 Widget）
+### （2026-09-30 五轮：P2-3 桌面 Widget）
 
-### 新增（桌面 Widget：待处理角标）
+#### 新增（桌面 Widget：待处理角标）
 - **`widget/PendingWidgetProvider.kt`**（RemoteViews，零新依赖）：桌面卡片显示待处理总数
   （审批 + 表单交互，E-1 权威角标汇总值）——已连接无待处理显示「运行正常」、有积压显示
   「N 项待处理 · 点按处理」、断线显示「未连接」；点按即打开 App。
@@ -44,9 +59,9 @@
   不含会话内容/凭据。
 - 构建 BUILD SUCCESSFUL；渲染样式待真机查看（X-2 一并）。
 
-## 未发布（2026-09-30 四轮：E-1 会话权威角标）
+### （2026-09-30 四轮：E-1 会话权威角标）
 
-### 新增（E-1 sessions-index 权威角标）
+#### 新增（E-1 sessions-index 权威角标）
 - **协议实证（bundle 源码定位，research/index-web.js）**：topic `sessions-index/<workspaceId>`，
   独立 RPC `subscribeSessionsIndexV4`（args `{workspacePath, runtimePolicy:'existing-only'}`）+
   listen `onDynamicSessionsIndexFrame`；snapshot `sessions[]`（键 `sessionId`）含
@@ -63,9 +78,9 @@
   三项 PASS + 无待处理时字段缺省（optional，App 按 0/0）确认。E-1 闭环 ✅。
 - 构建 BUILD SUCCESSFUL。
 
-## 未发布（2026-09-30 三轮：P1-3 附件发送侧实证修复 + 语音输入）
+### （2026-09-30 三轮：P1-3 附件发送侧实证修复 + 语音输入）
 
-### 关键发现：sendPrompt RPC 会静默丢弃附件（发送侧修复）
+#### 关键发现：sendPrompt RPC 会静默丢弃附件（发送侧修复）
 - **现象**（tools/_p13_send_verify.py 对照实测）：`sendPrompt` RPC args 带 `attachments`
   → 201 accepted、消息入流，但桌面端模型明确回答「没有收到任何附件」，userInput 行无
   attachments 字段——`sendPrompt` args schema 只有 `{workspacePath, sessionId, inputId, content}`，
@@ -79,7 +94,7 @@
   不变；ack 判据 status ∈ accepted/duplicate/noop 复用 parseCommandAck）。纯文本与带附件
   同路径，与官方 web 完全同构。
 
-### 新增（P1-3 语音输入）
+#### 新增（P1-3 语音输入）
 - **`ui/voice/VoiceInput.kt`**：系统 `SpeechRecognizer` 转文字（官方 web 无语音功能——
   bundle 里的 speech chunk 只是 lucide 图标，属 App 自研；零协议改动，发送仍是文本）。
   点击开始聆听（再次点击提前出结果），partial 实时上屏，最终文本追加进输入草稿；
@@ -88,16 +103,16 @@
 - **Manifest**：`RECORD_AUDIO` 权限 + `queries` 声明 `android.speech.RecognitionService`
   （Android 11+ package visibility）；`microphone` uses-feature `required=false`。
 
-### 构建
+#### 构建
 - 两轮 `./build.sh`（语音输入初版 / sendText 修复后）均 BUILD SUCCESSFUL。
 
-### 遗留
+#### 遗留
 - App UI 层验收（语音按钮交互 / 附件 chip / 输入栏布局）仍待真机或 Intel/AMD 机器（X-2 一并）。
 - 语音识别引擎依赖设备端 RecognitionService（小米 15 Pro 为小爱语音引擎），真机需验一次。
 
-## 未发布（2026-09-29 二轮：X-1 keystore 核验 + D-2/D-3 + P1-3 附件上传）
+### （2026-09-29 二轮：X-1 keystore 核验 + D-2/D-3 + P1-3 附件上传）
 
-### 关键结论：release 签名 keystore 并未丢失（X-1 结清）
+#### 关键结论：release 签名 keystore 并未丢失（X-1 结清）
 HANDOVER 里「开发机已换、release keystore 丢失」的说法**对本机不成立**：
 - `toolchain/keys/zcode-remote.keystore` 与 `app-android/keystore.properties` 均在，keytool 可正常加载；
 - 其证书 SHA-256 指纹
@@ -108,12 +123,12 @@ HANDOVER 里「开发机已换、release keystore 丢失」的说法**对本机�
 - 顺带修正：本机 `toolchain/`（jdk17 + gradle 8.7 + android-sdk platform-35/build-tools-35）
   完整，`build.sh` 走仓库内工具链即可，`F:/AndroidTools` 回退路径实际不存在。
 
-### 修复（D-2 会话页贴底索引偏移）
+#### 修复（D-2 会话页贴底索引偏移）
 - `ConversationScreen` 的贴底滚动 `animateScrollToItem(rows.lastIndex)` 未计入列表第 0 位的
   「加载更早」占位项，实际停在**倒数第二行**；改为显式 `headerCount`（有行则 1）计算下标，
   锚定滚动（`idx + headerCount`）同步修正。`rows` 为空时占位项与滚动均被跳过。
 
-### 新增（D-3 elicitation 通知栏快捷应答）
+#### 新增（D-3 elicitation 通知栏快捷应答）
 - `notify/ElicitationNotifier.kt`：表单类交互（AskUserQuestion / 计划批准）的**通知栏快捷应答**，
   与审批通知分列两套（独立通道 `elicitations`、独立 ID 区间 300000+，互不 cancel）。
 - 只为「一个按钮能表达完整答案」的形态给动作：plan_approval → 批准计划/拒绝；
@@ -121,7 +136,7 @@ HANDOVER 里「开发机已换、release keystore 丢失」的说法**对本机�
 - 答案 JSON 由通知动作直接携带，`ElicitationReceiver` → `ElicitationBridge` →
   `AppViewModel.resolveElicitationById` 复用同一条 resolveInteraction 管道；无连接时明确提示未发出。
 
-### 新增（P1-3 附件上传：协议实证 + 客户端 + UI）
+#### 新增（P1-3 附件上传：协议实证 + 客户端 + UI）
 - **协议实证**（tools/_p13_probe.py，实机）：四件套 `attachmentBeginV4/ChunkV4/CommitV4/AbortV4`
   打通，单分片与 900KiB 多分片均成功，commit 返回 `ref = zcode-artifact://…`；
   结论回写 PROTOCOL.md §6.6（含 host 常量 20MiB / 512KiB / 64 片、官方 384KiB 分片、
@@ -135,18 +150,18 @@ HANDOVER 里「开发机已换、release keystore 丢失」的说法**对本机�
 - ⚠️ **待验证**：发送侧「附件随 sendPrompt 到桌面端会话」尚未做一次真实发送的端到端验收；
   UI 层整体（D-3/P1-3）同前几轮，待真机或 Intel/AMD 机器补验（本机兆芯 CPU 起不了模拟器）。
 
-### 文档
+#### 文档
 - `README.md` 中英双语同步：功能一览补发送/停止、表单应答、多会话看板；里程碑表 M3/M3+ 状态更新。
 
 ---
 
-## 未发布（P0-1 发送/停止 + P1-1 表单应答 + P1-2 多会话看板）
+### （P0-1 发送/停止 + P1-1 表单应答 + P1-2 多会话看板）
 
 **里程碑：P0-1 完成 —— 会话页输入栏（sendPrompt）+ 运行中停止（stop envelope）；
 P1-1 完成 —— elicitation 表单类交互应答（AskUserQuestion / 计划批准 / 确认框）；
 P1-2 完成 —— 多会话并行看板 + 控制权切换提示**
 
-### 新增（P1-2 多会话看板与控制权提示）
+#### 新增（P1-2 多会话看板与控制权提示）
 - **会话待办角标**：`AppViewModel.sessionPending`（taskId → 待处理条数，来源＝任务事件流
   覆盖所有会话；当前订阅会话以会话流数据覆盖），HomeScreen 会话卡片显示「⏳ 待处理 N」，
   有未处理交互的卡片用 errorContainer 醒目底色。
@@ -162,7 +177,7 @@ P1-2 完成 —— 多会话并行看板 + 控制权切换提示**
 
 
 
-### 新增（P1-1 表单应答）
+#### 新增（P1-1 表单应答）
 - **PendingElicitation 模型**（Interactions.kt）：会话帧 `pendingInteractions` 里 kind=="userInput"
   条目与任务事件流 `elicitation_request` 双源解析（questions/plan/freeText/autoResolution）。
 - **应答**：与审批共用 `resolveInteraction` envelope（`sendResolveInteraction` 公共出口），
@@ -175,14 +190,14 @@ P1-2 完成 —— 多会话并行看板 + 控制权切换提示**
 - **技术债**：`AppViewModel: rpc event` 日志 Info → Debug（HANDOVER 技术债清单）。
 - `tools/_p11_probe.py`（真实帧观测）、`tools/_p11_verify.py`（端到端验收）。
 
-### 协议实证（写入 PROTOCOL.md §6.5）
+#### 协议实证（写入 PROTOCOL.md §6.5）
 - pendingInteractions 表单条目 kind 是 **"userInput"**（不是 "elicitation"）；host answer zod
   `{optionId?, freeText?, action?(accept/decline/cancel), content?(Record)}`；官方 web v4
   `onRespond → {action, content}`（表单 content 由 rut 构造 answer/answer_N/answers）。
 - **端到端实测**：AskUserQuestion 真实触发 → userInput 条目观察 →
   `{action:"accept", content:{answer:"A=提交验收报告"}}` → ack accepted → 条目消解。三项 PASS。
 
-### 新增（P0-1 发送/停止）
+#### 新增（P0-1 发送/停止）
 - **会话页底部输入栏**：TextField + 发送按钮（草稿跨重组保存在 ViewModel，发送成功才清空；
   发送走 `zcode-agent` 通道 `sendPrompt`，args=`{workspacePath, sessionId, inputId, content}`，
   成功后 userInput 行由服务端推回会话流，不做本地 append）；`imePadding`+`navigationBarsPadding`
@@ -197,13 +212,13 @@ P1-2 完成 —— 多会话并行看板 + 控制权切换提示**
 - **操作反馈条**：发送/停止结果经 `commandFeedback` 在会话页显示（4s 自动清除）。
 - `tools/_p01_async.py`：P0-1 协议层端到端验收脚本（asyncio + websockets 库版探针）。
 
-### 构建环境
+#### 构建环境
 - `app/build.gradle.kts`：release 签名条件化——keystore.properties 缺失时不再在配置期抛异常
   （原先连 assembleDebug 都过不去）。⚠️ 正式 keystore 随原 toolchain 丢失，发布前必须恢复。
 - `build.sh`：仓库内 toolchain/ 缺失（换机/重新克隆）时自动回退系统路径
   （F:/AndroidTools 的 JDK17/SDK/Gradle 8.11.1）。
 
-### 协议实证（写入 PROTOCOL.md §6.4）
+#### 协议实证（写入 PROTOCOL.md §6.4）
 - **stop 是 envelope 命令而非裸 RPC**：host asar 官方 web 版 `br('stop', {expectedForegroundExecutionId?}, sessionId)`，
   payload zod schema `stop:{expectedForegroundExecutionId: string.min(1).optional()}`；
   `sessionStop:"session/stop"` 只是 host→CLI 内部层枚举，与远程通道无关。
@@ -213,7 +228,7 @@ P1-2 完成 —— 多会话并行看板 + 控制权切换提示**
 - 桌面端远程控制面板打开期间 device 在线（等待连接即 matched 可达）；`webRemoteControlLastEnabledContext`
   是桌面端启动恢复远程控制的持久化上下文。
 
-### 已知环境限制
+#### 已知环境限制
 - 本机（兆芯 KX-7000 / UNICOMPute）无 Android 模拟器硬件加速：emulator 的 qemu 在该 CPU
   静默退出（需 Intel/AMD），且 sdkmanager 大文件下载固定断连（33% 处）——系统镜像改由
   腾讯镜像 curl 断点续传获取。App UI 层模拟器验收待 Intel/AMD 机器或 P0-2 真机补验；

@@ -16,5 +16,14 @@
                 <action android:name="com.zcode.remote.action.DEBUG_APPROVAL_CLEAR" />
             </intent-filter>
         </receiver>
+
+        <!-- 真机验收用：注入配对凭据，跳过扫码/粘贴（input text 会被 IME 打乱） -->
+        <receiver
+            android:name=".debug.DebugPairReceiver"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="com.zcode.remote.action.DEBUG_PAIR" />
+            </intent-filter>
+        </receiver>
     </application>
 </manifest>
