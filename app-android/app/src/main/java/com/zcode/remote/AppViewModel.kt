@@ -17,6 +17,7 @@ import com.zcode.remote.relay.PendingElicitation
 import com.zcode.remote.relay.RelayClient
 import com.zcode.remote.relay.RelayState
 import com.zcode.remote.relay.SessionsIndexChannel
+import com.zcode.remote.widget.PendingWidgetProvider
 import com.zcode.remote.relay.RowStore
 import com.zcode.remote.relay.RpcChannel
 import com.zcode.remote.relay.SessionItem
@@ -199,6 +200,8 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
                     // 接管后立即上报视图状态（P1-2）：PC 端知道手机在看哪个工作区/会话
                     reportViewState()
                 }
+                // 连接状态变化即刷新桌面 Widget（含断线 → 未连接态）
+                syncWidget()
             }
         }
 
@@ -367,6 +370,14 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
             }
         }
         if (counts != sessionPending) sessionPending = counts
+        syncWidget(counts.values.sum())
+    }
+
+    /** 桌面 Widget（P2-3）状态推送：计数或连接变化都走这里。 */
+    private fun syncWidget(pendingTotal: Int = sessionPending.values.sum()) {
+        val connected = relayState is RelayState.Paired
+        runCatching { PendingWidgetProvider.sync(getApplication(), pendingTotal, connected) }
+            .onFailure { Log.w(TAG, "widget 同步失败", it) }
     }
 
     /** 上报手机端视图状态（P1-2）：PC 据此在界面上指出"手机正在看这个会话"。 */
@@ -668,6 +679,7 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         approvals = emptyList()
         elicitations = emptyList()
         sessionPending = emptyMap()
+        syncWidget(0)
         clearAttachments()
         promptDraft = ""
     }

@@ -130,7 +130,7 @@ M3 主体（多机/主题/线路/保活引导/历史翻页/分片重组）、**P
 | **P1-3** | 文件上传 / 语音输入 | ✅ 附件全链路完成（发送侧 sendText envelope 实测六项 PASS，2026-09-30）；✅ 语音输入主体完成（SpeechRecognizer→草稿，构建通过）；UI 交互待真机（并入 X-2） | 真机验收 | — |
 | **P2-1** | M4 VPS 备用 Runner（正式交付项） | ⬜ 未开始 | 需采购 VPS（¥10~40/月） | 1.5w |
 | **P2-2** | M5 高级模式（自建 bridge + NaCl E2E + 自建中继） | ⬜ 未开始 | 无 | 2~3w |
-| P2-3 | 其他 P2：文件/diff/Git 浏览、Wear OS 快捷审批、桌面 Widget、可选小米推送 | ⬜ 未开始 | 无 | 按需 |
+| P2-3 | 其他 P2：文件/diff/Git 浏览、Wear OS 快捷审批、桌面 Widget、可选小米推送 | 🚧 **桌面 Widget ✅ 完成**（RemoteViews 零依赖，App 内推送更新，2026-09-30，渲染待真机）；其余未开始。注：文件浏览经 bundle 核实**无中继协议支持**（workspace-file 仅桌面端本地 MIME），完整版等 M4/M5 自建通道 | 按需 |
 | D-1 | 会话流 `v4/conversation/frame` 二进制细节穷举 | ⬜ 未开始 | 需一次受控抓包（装 CA）；不影响当前功能 | 0.5d |
 | D-2 | 「earlier-head」占位项与贴底索引偏移 | ✅ 已完成 | 贴底滚动漏算占位项（停在倒数第二行），已修 | — |
 | D-3 | elicitation 通知栏快捷应答 | ✅ 已完成 | plan 批准/拒绝、单题单选选项按钮；复杂表单引导进 App | — |
@@ -233,6 +233,12 @@ M3 主体（多机/主题/线路/保活引导/历史翻页/分片重组）、**P
 ### P2-3 其他 P2
 
 文件/diff/Git 浏览（参考 CloudCLI）、Wear OS 快捷审批、桌面 Widget、可选小米推送通道。
+
+- **桌面 Widget（✅ 2026-09-30）**：`widget/PendingWidgetProvider.kt` + `res/layout/widget_pending.xml` +
+  `res/xml/widget_pending_info.xml`——待处理角标（RemoteViews 零依赖），App 内三处推送更新
+  （计数变化 / 连接状态 / 断开），`updatePeriodMillis=0` 无轮询；点按打开 App。渲染样式待真机。
+  文件/diff/Git 浏览经 bundle 核实无中继协议支持（workspace-file 仅桌面端本地 MIME），
+  完整版等 M4/M5 自建通道；小米推送需开发者账号；Wear OS 可开发但验收卡硬件。
 
 ### 技术债（随手清）
 

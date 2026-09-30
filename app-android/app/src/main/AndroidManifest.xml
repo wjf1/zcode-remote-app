@@ -57,5 +57,17 @@
                 <action android:name="com.zcode.remote.action.RESOLVE_ELICITATION" />
             </intent-filter>
         </receiver>
+
+        <!-- 桌面 Widget（P2-3）：待处理角标，App 内主动推送更新 -->
+        <receiver
+            android:name=".widget.PendingWidgetProvider"
+            android:exported="false">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+            </intent-filter>
+            <meta-data
+                android:name="android.appwidget.provider"
+                android:resource="@xml/widget_pending_info" />
+        </receiver>
     </application>
 </manifest>

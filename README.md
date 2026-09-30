@@ -18,6 +18,7 @@ ZCode 官方远程控制（`zcode.z.ai/remote`）的**原生安卓增强客户�
 - **附件上传**：会话页 📎 选择文件（≤20MiB）→ 分片上传 → 随消息发送，桌面端模型可直接读取内容；走官方 Web 同款 `sendText` 附件链路，端到端实测通过。
 - **语音输入**：输入栏 🎤 系统语音识别转文字（识别中实时上屏），一键追加到消息草稿，零协议改动。
 - **多会话并行看板**：首页会话卡片显示「⏳ 待处理 N」角标并高亮，标出「当前」（订阅中）与「PC 在看」（桌面端打开）的会话；控制权被官方 Web 版/另一终端接管时顶部横幅提示。
+- **桌面 Widget**：主屏卡片实时显示待处理总数（审批 + 表单交互），点按直达 App；连接断开时明示「未连接」。
 - **可靠连接**：完整官方握手（HMAC proof）、心跳、指数退避重连、断线出站缓冲，单端在线互踢提示。
 
 ### 截图
@@ -87,6 +88,7 @@ A **native Android client** for the official ZCode Remote Control relay (`zcode.
 - **Attachments**: pick a file (≤20 MiB) via 📎 in the conversation, chunked upload, then send it with the message — the desktop agent reads the content directly. Uses the same `sendText` attachment path as the official web app, verified end to end.
 - **Voice input**: 🎤 tap-to-talk via the system speech recognizer with live partial results; recognized text is appended to the message draft, with zero protocol changes.
 - **Multi-session board**: each session card shows a "⏳ N pending" badge and highlight, with "current" (subscribed) and "PC viewing" (open on desktop) markers; a banner appears when control is taken over by the official web app or another terminal.
+- **Home-screen widget**: a live card showing the total pending count (approvals + form interactions), tap to jump into the app; an explicit "not connected" state when the relay is down.
 - **Reliable connection**: full official handshake (HMAC proof), heartbeat, exponential-backoff reconnect, offline outbound buffering, and single-terminal kick handling.
 
 ### Milestones

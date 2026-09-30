@@ -1,5 +1,19 @@
 # 变更记录 / Changelog
 
+## 未发布（2026-09-30 五轮：P2-3 桌面 Widget）
+
+### 新增（桌面 Widget：待处理角标）
+- **`widget/PendingWidgetProvider.kt`**（RemoteViews，零新依赖）：桌面卡片显示待处理总数
+  （审批 + 表单交互，E-1 权威角标汇总值）——已连接无待处理显示「运行正常」、有积压显示
+  「N 项待处理 · 点按处理」、断线显示「未连接」；点按即打开 App。
+- **更新时机**：App 内计数变化（`recomputeSessionPending` 尾部）、连接状态变化（relayState
+  collect）、主动断开（disconnect）三处调用 `syncWidget` → `PendingWidgetProvider.sync` 推送；
+  `updatePeriodMillis=0` 不轮询不耗电，App 未运行时显示最后一次状态。
+- **安全**：receiver `exported=false`（系统 APPWIDGET_UPDATE 广播不受限，第三方不可触发）；
+  PendingIntent `IMMUTABLE` 且只打开 MainActivity，无 extras 注入面；Widget 仅显示计数，
+  不含会话内容/凭据。
+- 构建 BUILD SUCCESSFUL；渲染样式待真机查看（X-2 一并）。
+
 ## 未发布（2026-09-30 四轮：E-1 会话权威角标）
 
 ### 新增（E-1 sessions-index 权威角标）

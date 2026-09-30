@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 桌面 Widget（P2-3）：待处理角标。纯 App 主动推送更新（updatePeriodMillis=0，无轮询）。 -->
+<appwidget-provider xmlns:android="http://schemas.android.com/apk/res/android"
+    android:minWidth="110dp"
+    android:minHeight="40dp"
+    android:updatePeriodMillis="0"
+    android:initialLayout="@layout/widget_pending"
+    android:resizeMode="horizontal|vertical"
+    android:widgetCategory="home_screen" />
