@@ -16,6 +16,7 @@ import com.zcode.remote.relay.PendingApproval
 import com.zcode.remote.relay.PendingElicitation
 import com.zcode.remote.relay.RelayClient
 import com.zcode.remote.relay.RelayState
+import com.zcode.remote.relay.SessionsIndexChannel
 import com.zcode.remote.relay.RowStore
 import com.zcode.remote.relay.RpcChannel
 import com.zcode.remote.relay.SessionItem
@@ -140,6 +141,8 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
     private var client: RelayClient? = null
     private var channel: RpcChannel? = null
     private var conversation: ConversationChannel? = null
+    /** workspace 级会话索引（E-1）：服务端权威角标 pendingInteractionSummary。 */
+    private var sessionsIndex: SessionsIndexChannel? = null
 
     init {
         if (device != null) connect()
@@ -180,9 +183,11 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         val c = RelayClient(dev, relayWsUrlOverride = relayOverride())
         val ch = RpcChannel(c)
         val conv = ConversationChannel(ch)
+        val sidx = SessionsIndexChannel(ch)
         client = c
         channel = ch
         conversation = conv
+        sessionsIndex = sidx
         c.connect()
 
         viewModelScope.launch {
@@ -260,6 +265,8 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
                 bridgeState = st
                 Log.i(TAG, "bridge=$st")
                 if (st is RpcChannel.BridgeState.Ready) {
+                    // E-1：workspace 级 sessions-index 订阅（权威角标，一次订阅覆盖全部会话）
+                    activeWorkspaceKey?.let { sidx.subscribe(it, null) }
                     val target = sessions.firstOrNull { it.isRunning } ?: sessions.firstOrNull()
                     target?.let { subscribeConversation(it) }
                 }
@@ -268,8 +275,9 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
 
         viewModelScope.launch {
             ch.events.collect { ev ->
-                // 会话帧优先交给会话层解析
+                // 会话帧优先交给会话层解析；sessions-index 帧交给 E-1 权威角标通道
                 conv.onEvent(ev, rowStore)
+                sidx.onEvent(ev)
                 val text = ev.data.toString()
                 // 每个 delta 一条，量大（HANDOVER 技术债）：降为 debug 级，不刷 info 日志
                 Log.d(TAG, "rpc event id=${ev.id}: ${text.take(400)}")
@@ -286,6 +294,9 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         }
         viewModelScope.launch {
             conv.elicitations.collect { refreshElicitations() }
+        }
+        viewModelScope.launch {
+            sidx.summaries.collect { recomputeSessionPending() }
         }
         // 通知按钮 → AppViewModel 应答（连接只活在这里，所以桥必须在连接建立时挂上）
         ApprovalBridge.handler = { interactionId, optionId -> resolveById(interactionId, optionId) }
@@ -328,17 +339,32 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     /**
-     * 多会话看板（P1-2）：汇总每个会话的待处理条数。
-     * 来源＝任务事件流（含所有会话的 permission_request/elicitation_request，带 taskId）；
-     * 当前订阅的会话改用会话流数据覆盖（更实时、且含会话帧路径的条目）。
+     * 多会话看板（P1-2 / E-1）：汇总每个会话的待处理条数。
+     * 权威来源＝sessions-index 订阅（服务端 pendingInteractionSummary，覆盖全部会话、消解即清零）；
+     * 事件流推导作为回退（仅补权威索引里没有的会话，如订阅失败/未就绪）；
+     * 当前订阅会话以会话流明细数覆盖（最实时、含会话帧路径条目），明细为 0 时仍信权威。
      */
     private fun recomputeSessionPending() {
         val counts = HashMap<String, Int>()
-        taskApprovals.values.forEach { a -> a.sessionId?.let { counts[it] = (counts[it] ?: 0) + 1 } }
-        taskElicitations.values.forEach { e -> e.sessionId?.let { counts[it] = (counts[it] ?: 0) + 1 } }
+        val authoritative = sessionsIndex?.summaries?.value ?: emptyMap()
+        if (authoritative.isNotEmpty()) {
+            authoritative.forEach { (sid, s) -> if (s.total > 0) counts[sid] = s.total }
+            taskApprovals.values.forEach { a ->
+                a.sessionId?.let { sid -> if (sid !in authoritative) counts[sid] = (counts[sid] ?: 0) + 1 }
+            }
+            taskElicitations.values.forEach { e ->
+                e.sessionId?.let { sid -> if (sid !in authoritative) counts[sid] = (counts[sid] ?: 0) + 1 }
+            }
+        } else {
+            taskApprovals.values.forEach { a -> a.sessionId?.let { counts[it] = (counts[it] ?: 0) + 1 } }
+            taskElicitations.values.forEach { e -> e.sessionId?.let { counts[it] = (counts[it] ?: 0) + 1 } }
+        }
         subscribedSessionId?.let { sid ->
             val n = approvals.size + elicitations.size
-            if (n > 0) counts[sid] = n else counts.remove(sid)
+            when {
+                n > 0 -> counts[sid] = n
+                (authoritative[sid]?.total ?: 0) <= 0 -> counts.remove(sid)
+            }
         }
         if (counts != sessionPending) sessionPending = counts
     }
@@ -627,9 +653,11 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         client?.close()
         channel?.reset()
         conversation?.reset()
+        sessionsIndex?.reset()
         client = null
         channel = null
         conversation = null
+        sessionsIndex = null
         // 连接没了就没人能应答：摘掉桥并撤掉通知，避免用户点了个"假批准"
         ApprovalBridge.handler = null
         ElicitationBridge.handler = null

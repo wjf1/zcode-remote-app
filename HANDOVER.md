@@ -23,6 +23,10 @@
   `sendText` envelope（六项验收全 PASS，见 PROTOCOL.md §6.6 与 CHANGELOG），
   App 已切换路径 ✅；**P1-3 语音输入** ✅ 主体完成（`ui/voice/VoiceInput.kt`，
   SpeechRecognizer → 输入草稿，两轮构建通过）。UI 交互待真机（并入 X-2）。
+- **2026-09-30 四轮**：**E-1 权威角标实现完成**——`relay/SessionsIndexChannel.kt`
+  （workspace 级 sessions-index 订阅，服务端 `pendingInteractionSummary`），
+  `recomputeSessionPending` 改权威优先/事件流回退；构建通过。端到端探针
+  `tools/_e1_verify.py` 就绪，**待桌面端远程控制面板在线补跑**（当前面板超时 waiting）。
 - ⚠️ **两条重要现状**（接手先读）：
   1. **release keystore 并未丢失（X-1 已结清，可直接发布）**：`toolchain/keys/zcode-remote.keystore`
      与 `app-android/keystore.properties` 都在本机，其证书 SHA-256 指纹
@@ -130,10 +134,10 @@ M3 主体（多机/主题/线路/保活引导/历史翻页/分片重组）、**P
 | D-1 | 会话流 `v4/conversation/frame` 二进制细节穷举 | ⬜ 未开始 | 需一次受控抓包（装 CA）；不影响当前功能 | 0.5d |
 | D-2 | 「earlier-head」占位项与贴底索引偏移 | ✅ 已完成 | 贴底滚动漏算占位项（停在倒数第二行），已修 | — |
 | D-3 | elicitation 通知栏快捷应答 | ✅ 已完成 | plan 批准/拒绝、单题单选选项按钮；复杂表单引导进 App | — |
-| E-1 | 会话级**权威**角标（订阅 `sessions-index/<workspaceId>` topic 取 `pendingInteractionSummary`） | ⬜ 可选增强 | 无（当前用任务事件流推导，够用） | 0.5d |
+| E-1 | 会话级**权威**角标（订阅 `sessions-index/<workspaceId>` topic 取 `pendingInteractionSummary`） | 🚧 2026-09-30 实现完成（`SessionsIndexChannel` + 权威优先合并，构建通过，PROTOCOL.md §6.7）；端到端探针 `tools/_e1_verify.py` 就绪，待桌面端远程面板在线补跑 | 面板在线 | 探针 10min |
 
-> 优先级建议：**X-2/P0-2（验收补齐，都在打通真机后一并做）→ P1-3 发送侧端到端 + 语音
-> → E-1（角标精确化）→ P2-1 → P2-2**。D 类已清空，剩 E-1 可穿插。
+> 优先级建议：**X-2/P0-2（验收补齐，都在打通真机后一并做）→ E-1 探针补跑（面板在线 10min）
+> → P2-1 → P2-2**。D 类已清空；P1-3 全链路完成（2026-09-30）。
 
 ---
 

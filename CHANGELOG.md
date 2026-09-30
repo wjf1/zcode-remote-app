@@ -1,5 +1,22 @@
 # 变更记录 / Changelog
 
+## 未发布（2026-09-30 四轮：E-1 会话权威角标）
+
+### 新增（E-1 sessions-index 权威角标）
+- **协议实证（bundle 源码定位，research/index-web.js）**：topic `sessions-index/<workspaceId>`，
+  独立 RPC `subscribeSessionsIndexV4`（args `{workspacePath, runtimePolicy:'existing-only'}`）+
+  listen `onDynamicSessionsIndexFrame`；snapshot `sessions[]`（键 `sessionId`）含
+  `pendingInteractionSummary {permissionCount, userInputCount}`；增量 op
+  `session.upserted` / `session.removed`。记载 PROTOCOL.md §6.7。
+- **`relay/SessionsIndexChannel.kt`**：workspace 级订阅（开桥后一次，会话切换不重订），
+  snapshot 全量 / upserted 单条 / removed 删除三路维护，`summaries: StateFlow<Map<sessionId, PendingSummary>>`。
+- **`AppViewModel.recomputeSessionPending` 升级**：服务端权威计数优先（覆盖全部会话、
+  消解即清零、不怕事件流漏帧）；任务事件流推导降级为回退（只补权威索引缺失的会话）；
+  当前订阅会话仍以会话流明细覆盖（明细 0 时信权威）。
+- **端到端探针** `tools/_e1_verify.py` 就绪（订阅 → AskUserQuestion 触发 → 观察 userInputCount
+  0→1 → 消解 → 观察 1→0）；⚠️ 桌面端远程控制面板超时关闭（pair_status 持续 waiting），待面板在线补跑。
+- 构建 BUILD SUCCESSFUL。
+
 ## 未发布（2026-09-30 三轮：P1-3 附件发送侧实证修复 + 语音输入）
 
 ### 关键发现：sendPrompt RPC 会静默丢弃附件（发送侧修复）

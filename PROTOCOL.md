@@ -288,6 +288,23 @@ python tools/probe.py sub <会话ID前缀> [帧落盘路径]   # + 完整会话�
   ③ userInput 行入流且回显 attachments；④ canStop=true（turn 真实运行）；
   ⑤ 桌面端 assistant 原样复述附件首行「zcode-remote P1-3 attachment e2e verify」。
   对照组（同消息走 sendPrompt RPC + attachments）：201 但附件丢失——对照结论如上，六项全 PASS。
+
+### 6.7 sessions-index（会话索引 topic，E-1 权威角标）
+
+- **topic**：`sessions-index/<workspaceId>`（bundle `rle(e)=sessions-index/${e}`）；
+  独立订阅 RPC `subscribeSessionsIndexV4` / `unsubscribeSessionsIndexV4`（`zcode-agent` 通道），
+  args = `{workspacePath[, workspaceIdentity], runtimePolicy:'existing-only', base?, visibility?}`；
+  listen 事件 `onDynamicSessionsIndexFrame`（与 conversation 同为 204 逻辑帧）。
+- **snapshot**：`payload.kind=='snapshot'` → `snapshot.sessions[]`（数组，元素以 `sessionId` 为键），
+  session 条目含 `pendingInteractionSummary`（可选）：
+  zod `Qce = {permissionCount: int≥0, userInputCount: int≥0}`。
+- **增量**：`payload.kind=='deltas'` → op ∈ {`session.upserted`（携带 `session` 条目）, `session.removed`（携带 `sessionId`）}。
+- **App 实现**：`relay/SessionsIndexChannel.kt`——开桥后按当前工作区订阅一次（会话切换不重订），
+  snapshot 全量替换 / upserted 单条更新 / removed 删除，`summaries: StateFlow<Map<sessionId, PendingSummary>>`；
+  `AppViewModel.recomputeSessionPending` 以权威值优先、事件流推导补缺（HANDOVER §E-1）。
+- **端到端探针**：`tools/_e1_verify.py`（订阅 → sendText 触发 AskUserQuestion → 观察
+  userInputCount 0→1 → resolveInteraction 消解 → 观察 1→0）。⚠️ 待桌面端远程控制面板在线时补跑
+  （2026-09-30 面板超时 waiting，探针就绪未跑）。
 - **端到端实测**（tools/_p13_probe.py，桌面端在线，2026-09-29）：
   ① 单分片小文件 `begin(staging,0) → chunk(1) → commit → ref` 全通；
   ② 多分片 900KiB → 3 片（393216+393216+135168）逐片 `nextChunkIndex` 递增正确 → commit → ref。
