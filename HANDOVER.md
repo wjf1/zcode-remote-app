@@ -17,7 +17,8 @@
   [v0.4.0-beta2](https://github.com/wjf1/zcode-remote-app/releases/tag/v0.4.0-beta2)（真机验收问题修复）→
   [v0.4.0-beta3](https://github.com/wjf1/zcode-remote-app/releases/tag/v0.4.0-beta3)（16KB 页对齐修复）→
   [v0.4.0-beta4](https://github.com/wjf1/zcode-remote-app/releases/tag/v0.4.0-beta4)（互踢死循环修复）→
-  [v0.4.0-beta5](https://github.com/wjf1/zcode-remote-app/releases/tag/v0.4.0-beta5)（**当前**，相机扫码重构与修复，versionCode 9）。
+  [v0.4.0-beta5](https://github.com/wjf1/zcode-remote-app/releases/tag/v0.4.0-beta5)（相机扫码重构与修复）→
+  [v0.4.0-beta6](https://github.com/wjf1/zcode-remote-app/releases/tag/v0.4.0-beta6)（**当前**，排版全面对齐桌面版+版本展示与更新闭环，versionCode 10）。
 - **2026-09-29 增量（本轮）**：P0-1 发送/停止 ✅、P1-1 表单应答 ✅、P1-2 多会话看板 ✅、
   P1-4 协议常量结清 ✅、技术债清理 ✅——均已构建通过并推送（提交见 `git log`）。
 - **2026-09-29 二轮**：**X-1 keystore 结清**（实测与发布 APK 同指纹，见下）、

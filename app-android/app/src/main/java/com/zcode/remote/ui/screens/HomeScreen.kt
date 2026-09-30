@@ -1,5 +1,12 @@
 package com.zcode.remote.ui.screens
 
+import android.content.ClipData
+import android.content.ClipboardManager
+import android.content.Context
+import android.content.Intent
+import android.net.Uri
+import android.widget.Toast
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.lazy.LazyColumn
@@ -10,8 +17,11 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import com.zcode.remote.AppViewModel
 import com.zcode.remote.BuildConfig
 import com.zcode.remote.relay.FailureReason
 import com.zcode.remote.relay.RelayState
@@ -48,6 +58,10 @@ fun HomeScreen(
     onEndpointChange: (String, String?) -> Unit = { _, _ -> },
     onThemeChange: (String) -> Unit = {},
     onShowGuide: () -> Unit = {},
+    updateState: AppViewModel.UpdateState = AppViewModel.UpdateState.Idle,
+    githubToken: String = "",
+    onSetGithubToken: (String) -> Unit = {},
+    onCheckUpdate: () -> Unit = {},
     onSessionClick: (SessionItem) -> Unit,
     onDisconnect: () -> Unit,
     onRescan: () -> Unit,
@@ -75,7 +89,16 @@ fun HomeScreen(
         }
 
         SettingsCard(
-            endpointMode, customRelayUrl, themeMode, onEndpointChange, onThemeChange, onShowGuide,
+            endpointMode = endpointMode,
+            customRelayUrl = customRelayUrl,
+            themeMode = themeMode,
+            onEndpointChange = onEndpointChange,
+            onThemeChange = onThemeChange,
+            onShowGuide = onShowGuide,
+            updateState = updateState,
+            githubToken = githubToken,
+            onSetGithubToken = onSetGithubToken,
+            onCheckUpdate = onCheckUpdate,
         )
 
         Card {
@@ -335,7 +358,7 @@ private fun statusLabel(state: RelayState) = when (state) {
 }
 
 
-/** 设置卡：协议线路（M3）+ 主题模式。变更即时生效（线路切换会重连）。 */
+/** 设置卡：协议线路（M3）+ 主题模式 + 软件版本与在线更新。 */
 @Composable
 private fun SettingsCard(
     endpointMode: String,
@@ -344,16 +367,24 @@ private fun SettingsCard(
     onEndpointChange: (String, String?) -> Unit,
     onThemeChange: (String) -> Unit,
     onShowGuide: () -> Unit,
+    updateState: AppViewModel.UpdateState,
+    githubToken: String,
+    onSetGithubToken: (String) -> Unit,
+    onCheckUpdate: () -> Unit,
 ) {
+    val context = LocalContext.current
     var expanded by remember { mutableStateOf(false) }
     var editingCustom by remember { mutableStateOf<String?>(null) }
+    var editingToken by remember { mutableStateOf(false) }
+    var tokenDraft by remember(githubToken) { mutableStateOf(githubToken) }
+
     Card {
         Column(Modifier.padding(vertical = 4.dp)) {
             TextButton(onClick = { expanded = !expanded }, contentPadding = PaddingValues(horizontal = 16.dp)) {
                 Text(if (expanded) "▾ 设置" else "▸ 设置", style = MaterialTheme.typography.titleSmall)
             }
             if (expanded) {
-                Column(Modifier.padding(horizontal = 16.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                Column(Modifier.padding(horizontal = 16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     Text("协议线路", style = MaterialTheme.typography.labelLarge)
                     Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                         listOf(
@@ -386,6 +417,188 @@ private fun SettingsCard(
                                 selected = themeMode == mode,
                                 onClick = { onThemeChange(mode) },
                                 label = { Text(label) },
+                            )
+                        }
+                    }
+
+                    HorizontalDivider(modifier = Modifier.padding(vertical = 4.dp))
+
+                    // ---- 软件版本与在线更新专区 ----
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        Column {
+                            Text("软件版本", style = MaterialTheme.typography.labelLarge)
+                            Text(
+                                "v${BuildConfig.VERSION_NAME} (Build ${BuildConfig.VERSION_CODE})",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                        Button(
+                            onClick = onCheckUpdate,
+                            enabled = updateState !is AppViewModel.UpdateState.Checking,
+                            contentPadding = PaddingValues(horizontal = 12.dp, vertical = 0.dp),
+                            modifier = Modifier.height(34.dp)
+                        ) {
+                            if (updateState is AppViewModel.UpdateState.Checking) {
+                                CircularProgressIndicator(
+                                    modifier = Modifier.size(16.dp),
+                                    strokeWidth = 2.dp,
+                                    color = MaterialTheme.colorScheme.onPrimary
+                                )
+                                Spacer(Modifier.width(6.dp))
+                                Text("检查中…", style = MaterialTheme.typography.labelSmall)
+                            } else {
+                                Text("检查更新", style = MaterialTheme.typography.labelSmall)
+                            }
+                        }
+                    }
+
+                    // 检查结果展示
+                    when (updateState) {
+                        is AppViewModel.UpdateState.Success -> {
+                            val info = updateState.info
+                            if (info.hasNew) {
+                                Card(
+                                    colors = CardDefaults.cardColors(
+                                        containerColor = MaterialTheme.colorScheme.primaryContainer
+                                    ),
+                                    shape = RoundedCornerShape(8.dp),
+                                    modifier = Modifier.fillMaxWidth()
+                                ) {
+                                    Column(Modifier.padding(10.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                                        Text(
+                                            "🎉 发现新版本：${info.tagName}",
+                                            style = MaterialTheme.typography.titleSmall,
+                                            color = MaterialTheme.colorScheme.onPrimaryContainer
+                                        )
+                                        if (!info.body.isNullOrBlank()) {
+                                            Text(
+                                                info.body.take(300),
+                                                style = MaterialTheme.typography.bodySmall,
+                                                color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.85f),
+                                                maxLines = 4,
+                                                overflow = TextOverflow.Ellipsis
+                                            )
+                                        }
+                                        Row(
+                                            modifier = Modifier.fillMaxWidth(),
+                                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                        ) {
+                                            if (!info.downloadUrl.isNullOrBlank()) {
+                                                Button(
+                                                    onClick = {
+                                                        val intent = Intent(Intent.ACTION_VIEW, Uri.parse(info.downloadUrl))
+                                                        context.startActivity(intent)
+                                                    },
+                                                    modifier = Modifier.weight(1f)
+                                                ) {
+                                                    Text("浏览器下载 APK", style = MaterialTheme.typography.labelSmall)
+                                                }
+                                                OutlinedButton(
+                                                    onClick = {
+                                                        val cm = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+                                                        cm.setPrimaryClip(ClipData.newPlainText("download_url", info.downloadUrl))
+                                                        Toast.makeText(context, "下载链接已复制", Toast.LENGTH_SHORT).show()
+                                                    }
+                                                ) {
+                                                    Text("复制链接", style = MaterialTheme.typography.labelSmall)
+                                                }
+                                            } else {
+                                                Button(
+                                                    onClick = {
+                                                        val intent = Intent(
+                                                            Intent.ACTION_VIEW,
+                                                            Uri.parse("https://github.com/wjf1/zcode-remote-app/releases")
+                                                        )
+                                                        context.startActivity(intent)
+                                                    },
+                                                    modifier = Modifier.fillMaxWidth()
+                                                ) {
+                                                    Text("打开 GitHub Releases", style = MaterialTheme.typography.labelSmall)
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            } else {
+                                Text(
+                                    "✓ 已是最新版本 (${info.tagName})",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = Color(0xFF4CAF50)
+                                )
+                            }
+                        }
+                        is AppViewModel.UpdateState.Error -> {
+                            Text(
+                                "⚠️ ${updateState.message}",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.error
+                            )
+                        }
+                        else -> Unit
+                    }
+
+                    // 私有仓库 GitHub Token 配置（折叠）
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(
+                            "GitHub 访问 Token (私有仓库拉取)",
+                            style = MaterialTheme.typography.labelMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                        TextButton(
+                            onClick = { editingToken = !editingToken },
+                            contentPadding = PaddingValues(0.dp)
+                        ) {
+                            Text(if (editingToken) "收起" else if (githubToken.isNotBlank()) "已配置" else "配置",
+                                style = MaterialTheme.typography.labelSmall)
+                        }
+                    }
+
+                    if (editingToken) {
+                        OutlinedTextField(
+                            value = tokenDraft,
+                            onValueChange = { tokenDraft = it },
+                            placeholder = { Text("ghp_... (只需 repo 或 release 只读权限)") },
+                            singleLine = true,
+                            modifier = Modifier.fillMaxWidth(),
+                            trailingIcon = {
+                                TextButton(
+                                    onClick = {
+                                        onSetGithubToken(tokenDraft.trim())
+                                        editingToken = false
+                                        Toast.makeText(context, "Token 已保存", Toast.LENGTH_SHORT).show()
+                                    }
+                                ) { Text("保存") }
+                            }
+                        )
+                    }
+
+                    // 电脑端推送更新指南
+                    Card(
+                        colors = CardDefaults.cardColors(
+                            containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f)
+                        ),
+                        shape = RoundedCornerShape(6.dp),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Column(Modifier.padding(8.dp)) {
+                            Text(
+                                "💻 电脑端推送更新指南",
+                                style = MaterialTheme.typography.labelSmall.copy(fontWeight = androidx.compose.ui.text.font.FontWeight.Bold),
+                                color = MaterialTheme.colorScheme.primary
+                            )
+                            Text(
+                                "手机 USB/无线连电脑后，在 PC 端仓库根目录执行：\n./build.sh install\n即可一键编译并覆盖推送到手机。",
+                                style = MaterialTheme.typography.bodySmall.copy(fontFamily = FontFamily.Monospace),
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
                         }
                     }

@@ -25,6 +25,7 @@ import com.zcode.remote.relay.ConversationChannel
 import com.zcode.remote.relay.ConversationRow
 import com.zcode.remote.relay.PendingApproval
 import com.zcode.remote.relay.PendingElicitation
+import com.zcode.remote.ui.components.MarkdownView
 import com.zcode.remote.ui.voice.VoiceInputButton
 import kotlinx.coroutines.delay
 
@@ -579,22 +580,48 @@ private fun RowItem(row: ConversationRow) = when (row.kind) {
 @Composable
 private fun Bubble(text: String, isUser: Boolean, streaming: Boolean = false) {
     Row(
-        Modifier.fillMaxWidth(),
+        Modifier.fillMaxWidth().padding(vertical = 2.dp),
         horizontalArrangement = if (isUser) Arrangement.End else Arrangement.Start,
     ) {
-        Card(
-            modifier = Modifier.widthIn(max = 300.dp),
-            shape = RoundedCornerShape(12.dp),
-            colors = CardDefaults.cardColors(
-                containerColor = if (isUser) MaterialTheme.colorScheme.primaryContainer
-                else MaterialTheme.colorScheme.surfaceVariant,
-            ),
-        ) {
-            Column(Modifier.padding(10.dp)) {
-                Text(text, style = MaterialTheme.typography.bodyMedium)
-                if (streaming) {
-                    Text("生成中…", style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.primary)
+        if (isUser) {
+            Card(
+                modifier = Modifier.fillMaxWidth(0.85f),
+                shape = RoundedCornerShape(topStart = 14.dp, topEnd = 4.dp, bottomStart = 14.dp, bottomEnd = 14.dp),
+                colors = CardDefaults.cardColors(
+                    containerColor = MaterialTheme.colorScheme.primaryContainer,
+                ),
+            ) {
+                Column(Modifier.padding(horizontal = 14.dp, vertical = 10.dp)) {
+                    Text(
+                        text,
+                        style = MaterialTheme.typography.bodyMedium.copy(
+                            color = MaterialTheme.colorScheme.onPrimaryContainer
+                        )
+                    )
+                }
+            }
+        } else {
+            Card(
+                modifier = Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(12.dp),
+                colors = CardDefaults.cardColors(
+                    containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.65f),
+                ),
+            ) {
+                Column(Modifier.padding(horizontal = 14.dp, vertical = 10.dp)) {
+                    MarkdownView(
+                        markdown = text,
+                        modifier = Modifier.fillMaxWidth(),
+                        textColor = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    if (streaming) {
+                        Spacer(Modifier.height(6.dp))
+                        Text(
+                            "⚡ 生成中…",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.primary
+                        )
+                    }
                 }
             }
         }
@@ -604,19 +631,59 @@ private fun Bubble(text: String, isUser: Boolean, streaming: Boolean = false) {
 @Composable
 private fun ReasoningBlock(row: ConversationRow) {
     var expanded by remember { mutableStateOf(false) }
+    val content = row.text.orEmpty().trim()
+    if (content.isEmpty()) return
+
+    val context = LocalContext.current
+
     Card(
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.45f)
+        ),
         shape = RoundedCornerShape(8.dp),
+        modifier = Modifier.fillMaxWidth().padding(vertical = 2.dp)
     ) {
-        Column(Modifier.padding(8.dp)) {
-            TextButton(onClick = { expanded = !expanded }, contentPadding = PaddingValues(0.dp)) {
-                Text(if (expanded) "▾ 思考过程" else "▸ 思考过程", style = MaterialTheme.typography.labelMedium)
+        Column(Modifier.padding(horizontal = 10.dp, vertical = 6.dp)) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween
+            ) {
+                TextButton(
+                    onClick = { expanded = !expanded },
+                    contentPadding = PaddingValues(horizontal = 4.dp, vertical = 0.dp),
+                    modifier = Modifier.height(30.dp)
+                ) {
+                    Text(
+                        if (expanded) "▾ 🧠 深度思考 (${content.length} 字符)"
+                        else "▸ 🧠 深度思考 (${content.length} 字符)",
+                        style = MaterialTheme.typography.labelMedium,
+                        color = MaterialTheme.colorScheme.primary
+                    )
+                }
+                if (expanded) {
+                    TextButton(
+                        onClick = {
+                            val cm = context.getSystemService(Context.CLIPBOARD_SERVICE) as android.content.ClipboardManager
+                            cm.setPrimaryClip(android.content.ClipData.newPlainText("reasoning", content))
+                            android.widget.Toast.makeText(context, "思考过程已复制", android.widget.Toast.LENGTH_SHORT).show()
+                        },
+                        contentPadding = PaddingValues(horizontal = 6.dp, vertical = 0.dp),
+                        modifier = Modifier.height(26.dp)
+                    ) {
+                        Text("复制", style = MaterialTheme.typography.labelSmall)
+                    }
+                }
             }
             if (expanded) {
-                Text(
-                    row.text.orEmpty(),
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                HorizontalDivider(
+                    modifier = Modifier.padding(vertical = 4.dp),
+                    color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)
+                )
+                MarkdownView(
+                    markdown = content,
+                    modifier = Modifier.fillMaxWidth().padding(top = 2.dp),
+                    textColor = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.9f)
                 )
             }
         }
@@ -625,31 +692,71 @@ private fun ReasoningBlock(row: ConversationRow) {
 
 @Composable
 private fun ToolCallCard(row: ConversationRow) {
+    // 若工具名、输入、输出完全为空，不渲染突兀空卡片
+    val tool = row.toolName?.trim().orEmpty()
+    val input = row.inputText?.trim().orEmpty()
+    val output = row.outputText?.trim().orEmpty()
+    if (tool.isEmpty() && input.isEmpty() && output.isEmpty()) return
+
     var expanded by remember { mutableStateOf(false) }
     val tone = when (row.status) {
         "success" -> Color(0xFF4CAF50)
         "error", "cancelled" -> MaterialTheme.colorScheme.error
         else -> MaterialTheme.colorScheme.primary
     }
-    Card(shape = RoundedCornerShape(8.dp)) {
-        Column(Modifier.padding(10.dp)) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Text("🔧 ${row.toolName ?: "tool"}", style = MaterialTheme.typography.labelLarge,
-                    modifier = Modifier.weight(1f))
-                Text(row.status ?: "", style = MaterialTheme.typography.labelSmall, color = tone)
+
+    Card(
+        shape = RoundedCornerShape(8.dp),
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
+        ),
+        modifier = Modifier.fillMaxWidth().padding(vertical = 2.dp)
+    ) {
+        Column(Modifier.padding(horizontal = 10.dp, vertical = 6.dp)) {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Text(
+                    "🔧 ${tool.ifEmpty { "工具调用" }}",
+                    style = MaterialTheme.typography.labelMedium.copy(fontWeight = androidx.compose.ui.text.font.FontWeight.Medium),
+                    modifier = Modifier.weight(1f)
+                )
+                Text(
+                    when (row.status) {
+                        "success" -> "✓ 成功"
+                        "error" -> "✗ 失败"
+                        "running" -> "执行中…"
+                        "cancelled" -> "已取消"
+                        else -> row.status ?: ""
+                    },
+                    style = MaterialTheme.typography.labelSmall,
+                    color = tone
+                )
+                Spacer(Modifier.width(6.dp))
+                TextButton(
+                    onClick = { expanded = !expanded },
+                    contentPadding = PaddingValues(horizontal = 6.dp, vertical = 0.dp),
+                    modifier = Modifier.height(28.dp)
+                ) {
+                    Text(if (expanded) "收起" else "详情", style = MaterialTheme.typography.labelSmall)
+                }
             }
-            // 摘要行：把输入压成一行看个大概
-            val summary = row.inputText?.replace('\n', ' ')?.trim()
-            if (!summary.isNullOrBlank()) {
-                Text(summary, style = MaterialTheme.typography.bodySmall, maxLines = 2,
-                    overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(top = 2.dp))
-            }
-            TextButton(onClick = { expanded = !expanded }, contentPadding = PaddingValues(0.dp)) {
-                Text(if (expanded) "收起" else "详情", style = MaterialTheme.typography.labelSmall)
+            // 摘要行
+            val summary = input.replace('\n', ' ').trim()
+            if (!expanded && summary.isNotEmpty()) {
+                Text(
+                    summary,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.8f),
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.padding(top = 1.dp)
+                )
             }
             if (expanded) {
-                CodeBlock("输入", row.inputText)
-                CodeBlock("输出", row.outputText)
+                CodeBlock("输入", input)
+                CodeBlock("输出", output)
             }
         }
     }
@@ -673,7 +780,7 @@ private fun TurnHeaderRow(row: ConversationRow) {
     HorizontalDivider(Modifier.padding(vertical = 4.dp))
     Text(
         listOfNotNull(
-            row.state,
+            row.state?.let { phaseLabel(it) },
             row.createdAt?.let { java.text.SimpleDateFormat("HH:mm:ss", java.util.Locale.getDefault()).format(java.util.Date(it)) },
         ).joinToString(" · "),
         style = MaterialTheme.typography.labelSmall,
@@ -702,8 +809,12 @@ private fun statusLabel(s: ConversationChannel.Status) = when (s) {
 }
 
 private fun phaseLabel(p: String) = when (p) {
-    "completedInterrupted" -> "已结束"
+    "completedSuccess" -> "已完成"
+    "completedInterrupted" -> "已中断"
+    "completedError" -> "执行出错"
     "idle" -> "空闲"
     "running" -> "运行中"
+    "waitingUserInput" -> "等待输入"
+    "aborted" -> "已中止"
     else -> p
 }

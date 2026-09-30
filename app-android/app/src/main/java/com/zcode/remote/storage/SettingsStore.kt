@@ -25,10 +25,15 @@ class SettingsStore(context: Context) {
         get() = sp.getString(KEY_THEME, "dark") ?: "dark"
         set(v) = sp.edit().putString(KEY_THEME, v).apply()
 
+    var githubToken: String
+        get() = sp.getString(KEY_GITHUB_TOKEN, "") ?: ""
+        set(v) = sp.edit().putString(KEY_GITHUB_TOKEN, v.trim()).apply()
+
     companion object {
         private const val KEY_ENDPOINT = "endpoint_mode"
         private const val KEY_CUSTOM_URL = "custom_relay_url"
         private const val KEY_THEME = "theme_mode"
+        private const val KEY_GITHUB_TOKEN = "github_token"
 
         const val ENDPOINT_AUTO = "auto"
         const val ENDPOINT_MAIN = "main"

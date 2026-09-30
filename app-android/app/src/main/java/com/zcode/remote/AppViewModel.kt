@@ -84,6 +84,94 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         settings.themeMode = mode
         themeMode = mode
     }
+
+    // ---- 软件版本与在线更新（设置面板）----
+    data class UpdateInfo(
+        val tagName: String,
+        val downloadUrl: String?,
+        val body: String?,
+        val hasNew: Boolean,
+    )
+
+    sealed interface UpdateState {
+        data object Idle : UpdateState
+        data object Checking : UpdateState
+        data class Success(val info: UpdateInfo) : UpdateState
+        data class Error(val message: String) : UpdateState
+    }
+
+    var updateState by mutableStateOf<UpdateState>(UpdateState.Idle)
+        private set
+    var githubToken by mutableStateOf(settings.githubToken)
+        private set
+
+    fun updateGithubToken(token: String) {
+        settings.githubToken = token
+        githubToken = token
+    }
+
+    fun checkForUpdate() {
+        if (updateState is UpdateState.Checking) return
+        updateState = UpdateState.Checking
+        viewModelScope.launch(kotlinx.coroutines.Dispatchers.IO) {
+            runCatching {
+                val client = okhttp3.OkHttpClient.Builder()
+                    .connectTimeout(10, java.util.concurrent.TimeUnit.SECONDS)
+                    .readTimeout(15, java.util.concurrent.TimeUnit.SECONDS)
+                    .build()
+                val reqBuilder = okhttp3.Request.Builder()
+                    .url("https://api.github.com/repos/wjf1/zcode-remote-app/releases/latest")
+                    .header("Accept", "application/vnd.github+json")
+                    .header("User-Agent", "ZCodeRemote-Android")
+
+                val token = settings.githubToken.trim()
+                if (token.isNotEmpty()) {
+                    reqBuilder.header("Authorization", "Bearer $token")
+                }
+
+                val response = client.newCall(reqBuilder.build()).execute()
+                val bodyStr = response.body?.string()
+                if (!response.isSuccessful || bodyStr == null) {
+                    val code = response.code
+                    val errMsg = when (code) {
+                        404, 401 -> if (token.isEmpty()) "私有仓库需配置 GitHub Token 后拉取更新" else "未找到 Release 或 Token 无权限 ($code)"
+                        else -> "检查更新失败: HTTP $code"
+                    }
+                    updateState = UpdateState.Error(errMsg)
+                    return@launch
+                }
+
+                val json = kotlinx.serialization.json.Json { ignoreUnknownKeys = true }
+                val root = json.parseToJsonElement(bodyStr).jsonObject
+                val tagName = root["tag_name"]?.jsonPrimitive?.content ?: ""
+                val releaseBody = root["body"]?.jsonPrimitive?.content ?: ""
+                val assets = root["assets"]?.jsonArray ?: kotlinx.serialization.json.JsonArray(emptyList())
+                val downloadUrl = assets.firstNotNullOfOrNull { el ->
+                    val asset = el.jsonObject
+                    val name = asset["name"]?.jsonPrimitive?.content.orEmpty()
+                    if (name.endsWith(".apk", ignoreCase = true)) {
+                        asset["browser_download_url"]?.jsonPrimitive?.content
+                    } else null
+                }
+
+                val curVer = BuildConfig.VERSION_NAME.removePrefix("v").trim()
+                val remoteVer = tagName.removePrefix("v").trim()
+                val hasNew = remoteVer.isNotBlank() && remoteVer != curVer
+
+                updateState = UpdateState.Success(
+                    UpdateInfo(
+                        tagName = tagName.ifBlank { "最新版" },
+                        downloadUrl = downloadUrl,
+                        body = releaseBody,
+                        hasNew = hasNew,
+                    )
+                )
+            }.onFailure { err ->
+                Log.w(TAG, "checkForUpdate failed", err)
+                updateState = UpdateState.Error("网络连接失败：${err.message ?: "未知错误"}")
+            }
+        }
+    }
     var relayState by mutableStateOf<RelayState>(RelayState.Idle)
         private set
 

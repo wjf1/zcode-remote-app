@@ -90,6 +90,10 @@ class MainActivity : ComponentActivity() {
                         onEndpointChange = { m, u -> vm.setEndpoint(m, u) },
                         onThemeChange = { m -> vm.setTheme(m) },
                         onShowGuide = { showGuide = true },
+                        updateState = vm.updateState,
+                        githubToken = vm.githubToken,
+                        onSetGithubToken = { vm.updateGithubToken(it) },
+                        onCheckUpdate = { vm.checkForUpdate() },
                         onSessionClick = { s -> vm.openSession(s); opened = s },
                         onDisconnect = { vm.disconnect() },
                         onRescan = { opened = null; scanning = true },   // 添加设备：不清现有凭据
