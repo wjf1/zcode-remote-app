@@ -51,11 +51,14 @@ class RelayClient(
 
     private var socket: WebSocket? = null
     @Volatile private var manuallyClosed = false
+    /** 终态失败（互踢/配对失效/协议不匹配）：不参与自动重连，等用户手动恢复。 */
+    @Volatile private var terminalFailed = false
     @Volatile private var reconnectAttempt = 0
     private var heartbeatThread: Thread? = null
 
     fun connect() {
         manuallyClosed = false
+        terminalFailed = false
         _state.value = RelayState.Connecting
         // 官方终端会追加 mid 参数（PROTOCOL.md 3 节）；主机在线时中继强制校验，缺失直接 AUTH_FAILED
         val wsUrl = relayWsUrlOverride ?: device.relayWsUrl
@@ -166,6 +169,13 @@ class RelayClient(
 
     private fun fail(reason: FailureReason, message: String?) {
         stopHeartbeat()
+        // 终态失败不参与自动重连：重连会与占位的另一 terminal（官方 Web/桌面端面板内嵌页）
+        // 形成 3s 级互踢死循环（2026-09-30 真机实测）。用户按横幅指引「断开→重新连接」恢复。
+        if (reason == FailureReason.KICKED || reason == FailureReason.AUTH_FAILED ||
+            reason == FailureReason.PROTOCOL_MISMATCH) {
+            terminalFailed = true
+            reconnectAttempt = 0
+        }
         _state.value = RelayState.Failed(reason, message)
     }
 
@@ -187,7 +197,7 @@ class RelayClient(
 
     private fun scheduleReconnect() {
         stopHeartbeat()
-        if (manuallyClosed) return
+        if (manuallyClosed || terminalFailed) return
         val delayMs = (3000L * (1L shl minOf(reconnectAttempt, 4)))  // 3s,6s,12s,24s,48s 封顶
         reconnectAttempt++
         Thread { runCatching { Thread.sleep(delayMs) }; if (!manuallyClosed) connect() }

@@ -1,5 +1,27 @@
 # 变更记录 / Changelog
 
+## v0.4.0-beta4（2026-09-30）· 互踢死循环修复
+
+**里程碑：App 不再参与终端抢占循环，被踢后停在横幅等用户手动恢复**
+
+### 修复（KICKED 后自动重连引发互踢死循环）
+- **现象**：App 与桌面端「移动端远程控制」面板（内嵌官方 Web 页，同为 terminal）反复互踢——
+  App 被踢 3s 后自动重连抢回名额，又把面板踢掉，形成 3s 级死循环，
+  直至面板关闭才终止（2026-09-30 23:30–23:40 桌面端日志全程还原）。
+- **根因**：`RelayClient.fail()` 对 KICKED 置 `Failed` 态不重连，但服务端踢人后随即关闭 WS，
+  `onClosed` 回调**无条件 `scheduleReconnect()`**，绕过了终态语义。
+- **修复**（`relay/RelayClient.kt`）：
+  - 新增 `terminalFailed` 标志；`fail()` 对 **KICKED / AUTH_FAILED / PROTOCOL_MISMATCH**
+    三类终态失败置位，`scheduleReconnect()` 见标志即放弃；
+  - `connect()`（手动重连/切设备）清除标志，横幅指引「断开→重新连接」路径不受影响；
+  - `DEVICE_OFFLINE` / 网络失败仍保持自动重连（等待对端语义不变）。
+- **行为变化**：被踢后 App 停留在「控制权已在别处接管」横幅（不再自动回抢），
+  关闭桌面端面板后手动点「重新连接」即可恢复。
+- **使用建议**：手机 App 与桌面端远程控制面板避免同时开启——两者都是同账号 terminal，
+  中继只允许一个在线（官方协议设计）。
+
+- `versionName 0.4.0-beta4` / `versionCode 8`；签名同指纹可覆盖升级。
+
 ## v0.4.0-beta3（2026-09-30）· 16 KB 页对齐修复
 
 **里程碑：消除 Android 15「应用兼容性」警告（HyperOS 弹窗）**
