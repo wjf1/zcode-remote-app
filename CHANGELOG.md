@@ -1,5 +1,28 @@
 # 变更记录 / Changelog
 
+## v0.4.0-beta3（2026-09-30）· 16 KB 页对齐修复
+
+**里程碑：消除 Android 15「应用兼容性」警告（HyperOS 弹窗）**
+
+### 修复（16 KB 页对齐，Android 15 / HyperOS 弹窗）
+- **现象**：真机（小米 15 Pro / HyperOS 2 / Android 15）安装后弹「Android 应用兼容性——
+  此应用不符合 16 KB 对齐要求」，列 `libimage_processing_util_jni.so`（LOAD 区段未对齐）、
+  `libdatastore_shared_counter.so`、`libandroidx.graphics.path.so`（未知错误）。
+- **根因**：三个原生库来自旧版 AndroidX 依赖（camera 1.3.4 / datastore 1.1.1 /
+  compose BOM 2024.09.02 传递的 graphics-path），编译时未按 16 KB 页对齐。
+  另经 `tools/_16k_check.py` 核实：zip 条目层 AGP 8.5.2 已做 -P 16 对齐（全 PASS），
+  camera 的 so 是 ELF LOAD 段 4096 对齐——唯一真问题。
+- **修复**（`app/build.gradle.kts` 依赖升级，API 兼容无代码改动）：
+  - `androidx.camera:*` 1.3.4 → **1.4.2**（1.4.x 原生库 16 KB 对齐编译）
+  - `androidx.datastore:datastore-preferences` 1.1.1 → **1.1.7**
+  - 显式钉住 `androidx.graphics:graphics-path:**1.0.1**`（覆盖 compose BOM 传递的旧版）
+- **验证**（`tools/_16k_check.py`，检查每个 `lib/*.so` 的 ELF `PT_LOAD.p_align` 与
+  zip 数据区偏移双重 16 KB 对齐）：修复前 4 FAIL（camera 三 ABI + x86_64），
+  修复后 **16/16 全 PASS**（含 camera 1.4.2 新增的 `libsurface_util_jni.so`）。
+- 说明：该弹窗仅在**可调试应用**上显示（release 不弹），但按规范修复以消除告警。
+
+- `versionName 0.4.0-beta3` / `versionCode 7`；签名同指纹可覆盖升级。
+
 ## v0.4.0-beta2（2026-09-30）· 真机验收问题修复
 
 **里程碑：修复真机验收（2026-09-30）发现的两处 App 缺陷**

@@ -45,7 +45,7 @@ ZCode 官方远程控制（`zcode.z.ai/remote`）的**原生安卓增强客户�
 ### 安装包 / Releases
 
 签名 APK 从 [GitHub Releases](https://github.com/wjf1/zcode-remote-app/releases) 下载
-（如 `ZCodeRemote-0.4.0-beta2.apk`，minSdk 31，Android 12+）。
+（如 `ZCodeRemote-0.4.0-beta3.apk`，minSdk 31，Android 12+）。
 
 ### 快速开始
 
@@ -109,7 +109,7 @@ The remaining roadmap and handover notes live in [HANDOVER.md](HANDOVER.md) (sel
 ### Install / Releases
 
 Signed APKs are published on the [GitHub Releases](https://github.com/wjf1/zcode-remote-app/releases) page
-(e.g. `ZCodeRemote-0.4.0-beta2.apk`, minSdk 31, Android 12+).
+(e.g. `ZCodeRemote-0.4.0-beta3.apk`, minSdk 31, Android 12+).
 
 ### Quick start
 

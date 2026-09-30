@@ -22,8 +22,8 @@ android {
         applicationId = "com.zcode.remote"
         minSdk = 31
         targetSdk = 35
-        versionCode = 6
-        versionName = "0.4.0-beta2"
+        versionCode = 7
+        versionName = "0.4.0-beta3"
     }
 
     signingConfigs {
@@ -70,7 +70,7 @@ dependencies {
     implementation("androidx.lifecycle:lifecycle-viewmodel-compose:2.8.6")
     implementation("androidx.lifecycle:lifecycle-runtime-compose:2.8.6")
     implementation("androidx.navigation:navigation-compose:2.8.1")
-    implementation("androidx.datastore:datastore-preferences:1.1.1")
+    implementation("androidx.datastore:datastore-preferences:1.1.7")
     implementation("androidx.security:security-crypto:1.1.0-alpha06")
 
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.8.1")
@@ -79,8 +79,12 @@ dependencies {
     implementation("com.squareup.okhttp3:okhttp:4.12.0")
 
     // 扫码配对：CameraX 预览 + ZXing 解码（无 Google 服务依赖，国内可用）
-    implementation("androidx.camera:camera-camera2:1.3.4")
-    implementation("androidx.camera:camera-lifecycle:1.3.4")
-    implementation("androidx.camera:camera-view:1.3.4")
+    // CameraX 1.4.x 起原生库按 16 KB 页对齐编译（Android 15 兼容性要求）
+    implementation("androidx.camera:camera-camera2:1.4.2")
+    implementation("androidx.camera:camera-lifecycle:1.4.2")
+    implementation("androidx.camera:camera-view:1.4.2")
     implementation("com.google.zxing:core:3.5.3")
+
+    // 显式钉住 16 KB 对齐修复版，覆盖 compose BOM 传递的旧版 graphics-path
+    implementation("androidx.graphics:graphics-path:1.0.1")
 }
