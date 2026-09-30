@@ -27,6 +27,9 @@
   （workspace 级 sessions-index 订阅，服务端 `pendingInteractionSummary`），
   `recomputeSessionPending` 改权威优先/事件流回退；端到端实测通过（触发 0→1、消解回落）；
   构建通过。剩余全部为硬件依赖项（X-2/P0-2）与需决策的 P2 系列。
+- **⚠️ 2026-09-30 范围决策（用户拍板）**：**M4（P2-1）/M5（P2-2）移出开发计划**，
+  VPS 不再采购——剩余工作仅 X-2/P0-2 真机验收与发版收官；方案文档中 M4/M5 章节仅作历史参考。
+  另：按需池已完成桌面 Widget、附件流式化、会话搜索（详见 CHANGELOG 五/六轮）。
 - ⚠️ **两条重要现状**（接手先读）：
   1. **release keystore 并未丢失（X-1 已结清，可直接发布）**：`toolchain/keys/zcode-remote.keystore`
      与 `app-android/keystore.properties` 都在本机，其证书 SHA-256 指纹
@@ -45,7 +48,7 @@
 |---|---|---|
 | 1 | `PROTOCOL.md` | 中继协议总纲：端点/配对/握手(HMAC proof)/错误码/RPC 面/审批（§6.3 含双路实证与端到端验收记录） |
 | 2 | `research/CONVERSATION-PROTOCOL.md` | 会话流协议：订阅四步序列、204 逻辑帧、快照/增量/行模型、翻页、ack 身份三元组校验（§8 是大坑） |
-| 3 | `ZCode远程控制安卓APP方案.md` | 产品方案：竞品/路线决策/功能清单/里程碑/风险（M4 VPS Runner 为正式交付项） |
+| 3 | `ZCode远程控制安卓APP方案.md` | 产品方案：竞品/路线决策/功能清单/里程碑/风险（⚠️ 其中的 M4/M5 已于 2026-09-30 用户决策取消，该文档仅作历史设计参考） |
 | 4 | `research/FRAME-CODEC.md` | VQL 二进制编解码规范（`relay/Vql.kt` 与 `tools/probe.py` 是两份独立实现，互为校验） |
 | 5 | `CHANGELOG.md` | 版本历史（含踩坑记录，先读再动手） |
 | 6 | `app-android/README.md` | 构建与运行 |
@@ -128,16 +131,17 @@ M3 主体（多机/主题/线路/保活引导/历史翻页/分片重组）、**P
 | X-3 | README 双语同步本轮功能 | ✅ 已完成 | — | — |
 | **P0-2** | 真机验收（小米 15 Pro 日常可用） | ⏳ 待设备 | 需小米 15 Pro 到手 | 0.5d + 3d 观察 |
 | **P1-3** | 文件上传 / 语音输入 | ✅ 附件全链路完成（发送侧 sendText envelope 实测六项 PASS，2026-09-30）；✅ 语音输入主体完成（SpeechRecognizer→草稿，构建通过）；UI 交互待真机（并入 X-2） | 真机验收 | — |
-| **P2-1** | M4 VPS 备用 Runner（正式交付项） | ⬜ 未开始 | 需采购 VPS（¥10~40/月） | 1.5w |
-| **P2-2** | M5 高级模式（自建 bridge + NaCl E2E + 自建中继） | ⬜ 未开始 | 无 | 2~3w |
-| P2-3 | 其他 P2：文件/diff/Git 浏览、Wear OS 快捷审批、桌面 Widget、可选小米推送 | 🚧 **桌面 Widget ✅ 完成**（RemoteViews 零依赖，App 内推送更新，2026-09-30，渲染待真机）；其余未开始。注：文件浏览经 bundle 核实**无中继协议支持**（workspace-file 仅桌面端本地 MIME），完整版等 M4/M5 自建通道 | 按需 |
+| **P2-1** | ~~M4 VPS 备用 Runner~~ | ❌ **已取消**（2026-09-30 用户决策：M4/M5 移出开发计划，VPS 不再采购；下方小节保留作历史参考） | — | — |
+| **P2-2** | ~~M5 高级模式（自建 bridge + NaCl E2E + 自建中继）~~ | ❌ **已取消**（同上） | — | — |
+| P2-3 | 其他 P2：文件/diff/Git 浏览、Wear OS 快捷审批、桌面 Widget、可选小米推送 | 🚧 **桌面 Widget ✅ 完成**（RemoteViews 零依赖，App 内推送更新，2026-09-30，渲染待真机）；其余未开始。注：文件浏览经 bundle 核实**无中继协议支持**（workspace-file 仅桌面端本地 MIME），且 M4/M5 已取消——**文件浏览在官方协议下无落点，就此搁置**；小米推送需开发者账号；Wear OS 可开发但验收卡硬件 | 按需 |
 | D-1 | 会话流 `v4/conversation/frame` 二进制细节穷举 | ⬜ 未开始 | 需一次受控抓包（装 CA）；不影响当前功能 | 0.5d |
 | D-2 | 「earlier-head」占位项与贴底索引偏移 | ✅ 已完成 | 贴底滚动漏算占位项（停在倒数第二行），已修 | — |
 | D-3 | elicitation 通知栏快捷应答 | ✅ 已完成 | plan 批准/拒绝、单题单选选项按钮；复杂表单引导进 App | — |
 | E-1 | 会话级**权威**角标（订阅 `sessions-index/<workspaceId>` topic 取 `pendingInteractionSummary`） | ✅ 2026-09-30 完成（`SessionsIndexChannel` + 权威优先合并；端到端实测：触发 userInputCount 0→1、消解回落，PROTOCOL.md §6.7） | — | — |
 
-> 优先级建议：**X-2/P0-2（验收补齐，都在打通真机后一并做）→ P2-1 → P2-2**。
-> D 类已清空；P1-3 全链路完成、E-1 完成（均 2026-09-30）。
+> 优先级建议：**X-2/P0-2（验收补齐，打通真机后一并做）→ 发新版内测 APK 收官**。
+> D 类已清空；P1-3 全链路、E-1、桌面 Widget 均完成（2026-09-30）；
+> **M4/M5 已取消（2026-09-30 用户决策）**，剩余全部为硬件依赖验收。
 
 ---
 
@@ -218,14 +222,17 @@ M3 主体（多机/主题/线路/保活引导/历史翻页/分片重组）、**P
 - `maxPhysicalFrameBytes` 阈值、PC 侧 meta 字段、心跳间隔分配。方法：`tools/probe.py` 受控实验 + host-index 搜索定位常量，结论回写 PROTOCOL.md。
 - **预估**：0.5 天。
 
-### P2-1 M4：VPS 备用 Runner（正式交付项，已用户确认排期）
+### P2-1 M4：VPS 备用 Runner（❌ 2026-09-30 用户决策取消）
+
+> 以下为原设计记录，仅作历史参考，不再开发。取消原因：实用收益（PC 关机场景）与安全收益
+> （E2E）对单人自用不迫切，不值得 VPS 持续成本 + bridge/双协议维护成本。
 
 - **目标**：PC 关机时任务落到 VPS 执行（同一中继协议接入）。
 - **要点**：VPS（¥10~40/月）部署 `zcode` CLI + ACP server，作为第二台"设备"生成配对；App 端设备列表天然支持（多机管理已就绪）；任务需基于 Git 仓库（提供 Git 同步引导页）；会话服务端可恢复。
 - **验收**：PC 关机，手机新建任务并在 VPS 跑完，结果可见。
 - **预估**：1.5 周（含 VPS 采购部署）。
 
-### P2-2 M5：高级模式（自建 bridge + NaCl E2E + 自建中继）
+### P2-2 M5：高级模式（❌ 2026-09-30 用户决策取消，原设计留档）
 
 - **要点**：桌面端环境变量 `ZCODE_WEB_REMOTE_CONTROL_RELAY_WS_URL` / `ZCODE_WEB_REMOTE_CONTROL_URL` 可指到自建服务器（PROTOCOL §1）；自建中继（Node/Go，纯转发）+ NaCl 端到端加密层（App 与 bridge 共享密钥，中继只见密文）。
 - **验收**：E2E 链路演示（中继抓包全密文）。
@@ -239,7 +246,7 @@ M3 主体（多机/主题/线路/保活引导/历史翻页/分片重组）、**P
   `res/xml/widget_pending_info.xml`——待处理角标（RemoteViews 零依赖），App 内三处推送更新
   （计数变化 / 连接状态 / 断开），`updatePeriodMillis=0` 无轮询；点按打开 App。渲染样式待真机。
   文件/diff/Git 浏览经 bundle 核实无中继协议支持（workspace-file 仅桌面端本地 MIME），
-  完整版等 M4/M5 自建通道；小米推送需开发者账号；Wear OS 可开发但验收卡硬件。
+  完整版等 M4/M5 自建通道（**已取消**）→ 文件浏览就此搁置；小米推送需开发者账号；Wear OS 可开发但验收卡硬件。
 
 ### 技术债（随手清）
 
@@ -262,8 +269,6 @@ M3 主体（多机/主题/线路/保活引导/历史翻页/分片重组）、**P
   `maxMessageBytes = 16 MiB`、`maxFragments = 64`、重组超时 30s、PC 端 auth meta 实参、两侧心跳
   默认 10s / ack 超时 30s。PROTOCOL.md §8 的【待验证】清单已逐项结清（仅剩 conversation frame
   二进制细节，见 D-1）。
-
-### P2-1 M4：VPS 备用 Runner（正式交付项，已用户确认排期）
 
 ## 7. 工作流程约定（每个任务都走这个循环）
 

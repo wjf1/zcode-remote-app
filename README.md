@@ -35,8 +35,8 @@ ZCode 官方远程控制（`zcode.z.ai/remote`）的**原生安卓增强客户�
 | M1 骨架+配对+会话 | 扫码配对、中继连接、会话列表、事件流 | ✅ 模拟器验收通过 |
 | M2 审批与推送 | 会话流实时渲染、权限审批（会话内 + 通知栏）、双源审批接收 | ✅ 端到端验收通过（2026-09-28） |
 | M3 打磨与内测 | 多机管理、线路切换、HyperOS 保活引导、异常兜底 | ✅ 主体完成 |
-| M3+ 交互增强 | 发送/停止、表单类交互应答、多会话看板与控制权提示、附件上传（全链路实测）、语音输入 | ✅ 协议层端到端验收通过（UI 层待真机） |
-| M4+ | VPS 备用 Runner、E2E 高级模式（见方案文档） | 📋 规划中 |
+| M3+ 交互增强 | 发送/停止、表单类交互应答、多会话看板与控制权提示、附件上传（全链路实测）、语音输入、桌面 Widget、会话搜索 | ✅ 协议层端到端验收通过（UI 层待真机） |
+| ~~M4/M5~~ | ~~VPS 备用 Runner、E2E 高级模式~~ | ❌ 已取消（2026-09-30 决策：单人自用下成本收益不划算，详见 HANDOVER） |
 
 ### 接力开发 / Handover
 
@@ -99,8 +99,8 @@ A **native Android client** for the official ZCode Remote Control relay (`zcode.
 | M1 skeleton+pairing+sessions | QR pairing, relay connection, session list, event stream | ✅ Verified on emulator |
 | M2 approvals & push | Live conversation streaming, permission approvals (in-app + notification shade), dual-source approval intake | ✅ E2E verified (2026-09-28) |
 | M3 polish & beta | Multi-device, endpoint switching, HyperOS keep-alive guide | ✅ Core done |
-| M3+ interactions | Send & stop, form-style interaction responses, multi-session board, attachments (full path verified), voice input | ✅ E2E verified at protocol level (UI pending real device) |
-| M4+ | VPS backup runner, E2E advanced mode | 📋 Roadmap |
+| M3+ interactions | Send & stop, form-style interaction responses, multi-session board, attachments (full path verified), voice input, home-screen widget, session search | ✅ E2E verified at protocol level (UI pending real device) |
+| ~~M4/M5~~ | ~~VPS backup runner, E2E advanced mode~~ | ❌ Cancelled (2026-09-30: cost/benefit not worth it for single-user, see HANDOVER) |
 
 ### Handover
 
