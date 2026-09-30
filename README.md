@@ -15,6 +15,8 @@ ZCode 官方远程控制（`zcode.z.ai/remote`）的**原生安卓增强客户�
 - **发送消息与停止**：会话页底部输入栏直接向桌面端发消息（入会话队列，当前 turn 结束后自动执行）；会话运行中显示「停止」按钮，一键中断。
 - **权限审批（核心差异点）**：桌面端请求权限时，锁屏状态下收到高优先级通知，**通知栏直接批准/拒绝**（允许一次 / 总是允许 / 拒绝），并显示桌面端自动决议倒计时。
 - **表单类交互应答**：`AskUserQuestion` / 计划批准（plan_approval）/ 确认框等 elicitation 在 App 内直接作答——单选、多选、自由文本、拒绝。
+- **附件上传**：会话页 📎 选择文件（≤20MiB）→ 分片上传 → 随消息发送，桌面端模型可直接读取内容；走官方 Web 同款 `sendText` 附件链路，端到端实测通过。
+- **语音输入**：输入栏 🎤 系统语音识别转文字（识别中实时上屏），一键追加到消息草稿，零协议改动。
 - **多会话并行看板**：首页会话卡片显示「⏳ 待处理 N」角标并高亮，标出「当前」（订阅中）与「PC 在看」（桌面端打开）的会话；控制权被官方 Web 版/另一终端接管时顶部横幅提示。
 - **可靠连接**：完整官方握手（HMAC proof）、心跳、指数退避重连、断线出站缓冲，单端在线互踢提示。
 
@@ -32,7 +34,7 @@ ZCode 官方远程控制（`zcode.z.ai/remote`）的**原生安卓增强客户�
 | M1 骨架+配对+会话 | 扫码配对、中继连接、会话列表、事件流 | ✅ 模拟器验收通过 |
 | M2 审批与推送 | 会话流实时渲染、权限审批（会话内 + 通知栏）、双源审批接收 | ✅ 端到端验收通过（2026-09-28） |
 | M3 打磨与内测 | 多机管理、线路切换、HyperOS 保活引导、异常兜底 | ✅ 主体完成 |
-| M3+ 交互增强 | 发送/停止、表单类交互应答、多会话看板与控制权提示 | ✅ 协议层端到端验收通过（UI 层待真机） |
+| M3+ 交互增强 | 发送/停止、表单类交互应答、多会话看板与控制权提示、附件上传（全链路实测）、语音输入 | ✅ 协议层端到端验收通过（UI 层待真机） |
 | M4+ | VPS 备用 Runner、E2E 高级模式（见方案文档） | 📋 规划中 |
 
 ### 接力开发 / Handover
@@ -82,6 +84,8 @@ A **native Android client** for the official ZCode Remote Control relay (`zcode.
 - **Send & stop**: a composer at the bottom of the conversation sends prompts straight to the desktop (queued and executed after the current turn); while a session is running a **Stop** button interrupts it.
 - **Permission approvals (key differentiator)**: when the desktop agent requests permission, a high-priority notification arrives even on the lock screen — **approve/deny right from the notification shade** (Allow once / Always allow / Deny), with the desktop auto-resolution countdown shown.
 - **Form-style interactions**: `AskUserQuestion`, plan approvals (`plan_approval`) and confirmation prompts are answered right in the app — single choice, multi-select, free text, or decline.
+- **Attachments**: pick a file (≤20 MiB) via 📎 in the conversation, chunked upload, then send it with the message — the desktop agent reads the content directly. Uses the same `sendText` attachment path as the official web app, verified end to end.
+- **Voice input**: 🎤 tap-to-talk via the system speech recognizer with live partial results; recognized text is appended to the message draft, with zero protocol changes.
 - **Multi-session board**: each session card shows a "⏳ N pending" badge and highlight, with "current" (subscribed) and "PC viewing" (open on desktop) markers; a banner appears when control is taken over by the official web app or another terminal.
 - **Reliable connection**: full official handshake (HMAC proof), heartbeat, exponential-backoff reconnect, offline outbound buffering, and single-terminal kick handling.
 
@@ -93,7 +97,7 @@ A **native Android client** for the official ZCode Remote Control relay (`zcode.
 | M1 skeleton+pairing+sessions | QR pairing, relay connection, session list, event stream | ✅ Verified on emulator |
 | M2 approvals & push | Live conversation streaming, permission approvals (in-app + notification shade), dual-source approval intake | ✅ E2E verified (2026-09-28) |
 | M3 polish & beta | Multi-device, endpoint switching, HyperOS keep-alive guide | ✅ Core done |
-| M3+ interactions | Send & stop, form-style interaction responses, multi-session board | ✅ E2E verified at protocol level (UI pending real device) |
+| M3+ interactions | Send & stop, form-style interaction responses, multi-session board, attachments (full path verified), voice input | ✅ E2E verified at protocol level (UI pending real device) |
 | M4+ | VPS backup runner, E2E advanced mode | 📋 Roadmap |
 
 ### Handover

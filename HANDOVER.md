@@ -14,10 +14,15 @@
 - 已发布签名 Release：[v0.3.0-m3](https://github.com/wjf1/zcode-remote-app/releases/tag/v0.3.0-m3)（私有仓库 `wjf1/zcode-remote-app`，`gh` CLI 已登录账号 wjf1）。
 - **2026-09-29 增量（本轮）**：P0-1 发送/停止 ✅、P1-1 表单应答 ✅、P1-2 多会话看板 ✅、
   P1-4 协议常量结清 ✅、技术债清理 ✅——均已构建通过并推送（提交见 `git log`）。
-- **2026-09-29 二轮（本次接力）**：**X-1 keystore 结清**（实测与发布 APK 同指纹，见下）、
+- **2026-09-29 二轮**：**X-1 keystore 结清**（实测与发布 APK 同指纹，见下）、
   D-2 贴底索引修复 ✅、D-3 elicitation 通知栏快捷应答 ✅、**P1-3 附件上传**
-  （协议实机验证 + Kotlin 客户端 + UI，发送侧端到端待真机）✅ 主体完成；
+  （协议实机验证 + Kotlin 客户端 + UI）✅ 主体完成；
   PROTOCOL.md §6.6 / CHANGELOG / README 已同步。
+- **2026-09-30 三轮（本次接力）**：**P1-3 附件发送侧实证修复**——对照实测发现
+  `sendPrompt` RPC 的 attachments 被 zod strip（201 但附件不到模型侧），改走官方
+  `sendText` envelope（六项验收全 PASS，见 PROTOCOL.md §6.6 与 CHANGELOG），
+  App 已切换路径 ✅；**P1-3 语音输入** ✅ 主体完成（`ui/voice/VoiceInput.kt`，
+  SpeechRecognizer → 输入草稿，两轮构建通过）。UI 交互待真机（并入 X-2）。
 - ⚠️ **两条重要现状**（接手先读）：
   1. **release keystore 并未丢失（X-1 已结清，可直接发布）**：`toolchain/keys/zcode-remote.keystore`
      与 `app-android/keystore.properties` 都在本机，其证书 SHA-256 指纹
@@ -118,7 +123,7 @@ M3 主体（多机/主题/线路/保活引导/历史翻页/分片重组）、**P
 | **X-2** | **App UI 层验收**（P0-1 输入栏/停止、P1-1 表单卡、P1-2 角标与横幅、D-3 通知、P1-3 附件条） | ⏳ 待硬件 | 本机兆芯 CPU 起不了模拟器；需 Intel/AMD 机器或真机 | 0.5d |
 | X-3 | README 双语同步本轮功能 | ✅ 已完成 | — | — |
 | **P0-2** | 真机验收（小米 15 Pro 日常可用） | ⏳ 待设备 | 需小米 15 Pro 到手 | 0.5d + 3d 观察 |
-| **P1-3** | 文件上传 / 语音输入 | 🚧 附件上传主体完成（协议实机验证 + 客户端 + UI）；**发送侧端到端待真机**；语音输入未开始 | 真机验收 | 语音 1d |
+| **P1-3** | 文件上传 / 语音输入 | ✅ 附件全链路完成（发送侧 sendText envelope 实测六项 PASS，2026-09-30）；✅ 语音输入主体完成（SpeechRecognizer→草稿，构建通过）；UI 交互待真机（并入 X-2） | 真机验收 | — |
 | **P2-1** | M4 VPS 备用 Runner（正式交付项） | ⬜ 未开始 | 需采购 VPS（¥10~40/月） | 1.5w |
 | **P2-2** | M5 高级模式（自建 bridge + NaCl E2E + 自建中继） | ⬜ 未开始 | 无 | 2~3w |
 | P2-3 | 其他 P2：文件/diff/Git 浏览、Wear OS 快捷审批、桌面 Widget、可选小米推送 | ⬜ 未开始 | 无 | 按需 |
@@ -181,22 +186,27 @@ M3 主体（多机/主题/线路/保活引导/历史翻页/分片重组）、**P
 - **可选增强**：会话级权威角标来源 `pendingInteractionSummary{permissionCount, userInputCount}`
   在 conversation 的 `sessions-index/<workspaceId>` overlay 里（需订阅该 topic，当前用任务事件流推导）。
 
-### P1-3 文件上传 / 语音输入（🚧 2026-09-29 附件上传主体完成；语音未开始）
+### P1-3 文件上传 / 语音输入（✅ 2026-09-30 全链路完成，UI 待真机）
 
 - **已完成（附件上传）**：
   - **协议实机验证**（`tools/_p13_probe.py`）：四件套 `attachmentBeginV4 → ChunkV4 × N → CommitV4`
     全通；单分片与 900KiB 多分片（3 片）均成功；commit 返回 `ref = zcode-artifact://<sessionId>/<artifactId>`；
     **begin 不需要 connectionId**。常量/编码（20MiB 上限、512KiB host 片上限、官方 384KiB 分片、
     `sha256:` 校验和、`state=="committed"` 幂等）回写 PROTOCOL.md §6.6。
-  - **Kotlin**：`ConversationChannel.uploadAttachment`（含进度回调、失败自动 abort）+ `AttachmentRef`；
-    `sendPrompt` 增加可选 `attachments`（元素 `{ref, fileName, mime, bytes}`，官方 web `attachmentRef` 同形）。
+  - **Kotlin**：`ConversationChannel.uploadAttachment`（含进度回调、失败自动 abort）+ `AttachmentRef`。
   - **UI**：会话页 📎 → SAF 文件选择器 → 进度条 → 已上传 chip（可移除）；发送按钮支持"仅附件"发送。
-- **遗留 / 下一步**：
-  1. **发送侧端到端验收**：App 选文件 → 发送 → 桌面端会话收到附件（尚未做一次真实发送；需真机）。
-  2. **语音输入**：录音 → 系统 IME 语音或本地 Whisper 转文字 → 走 `sendPrompt` content（未开始）。
+- **已完成（发送侧，2026-09-30）**：对照实测发现 `sendPrompt` RPC 的 `attachments` 被 zod strip
+  （201 accepted 但附件不到模型侧），**改走官方 `sendText` envelope**（`sendConversationCommandV4`，
+  payload `{text, attachments}`）——`tools/_p13_send_verify.py` 六项验收全 PASS（含桌面端 assistant
+  原样复述附件内容），`ConversationChannel.sendPrompt` 已切路径，PROTOCOL.md §6.6 已修正。
+- **已完成（语音输入，2026-09-30）**：`ui/voice/VoiceInput.kt`——系统 `SpeechRecognizer` 转文字
+  （官方 web 无语音功能，App 自研；零协议改动），🎤 按钮点击开始/提前结束，partial 实时上屏，
+  最终文本追加输入草稿；RECORD_AUDIO 运行时权限按需请求；不可用设备按钮不渲染。
+- **遗留**：
+  1. UI 交互验收（🎤 按压反馈 / 附件 chip / 语音状态条）待真机或 Intel/AMD 机器（并入 X-2）。
+  2. 真机验证设备端识别引擎可用性（小米 15 Pro 为小爱语音引擎）。
   3. 大文件当前整块读进内存（上限 20MiB），后续可改分片流式读；附件读取上限与 host 一致
      （`ConversationScreen.MAX_ATTACHMENT_BYTES` 需与 `ConversationChannel` 同步）。
-- **预估**：附件发送验收 0.5d；语音 1d。
 
 ### P1-4 协议【待验证】项补全（PROTOCOL.md §8 列表）
 

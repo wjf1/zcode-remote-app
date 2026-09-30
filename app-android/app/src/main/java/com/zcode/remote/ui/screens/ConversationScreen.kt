@@ -25,6 +25,8 @@ import com.zcode.remote.relay.ConversationChannel
 import com.zcode.remote.relay.ConversationRow
 import com.zcode.remote.relay.PendingApproval
 import com.zcode.remote.relay.PendingElicitation
+import com.zcode.remote.ui.voice.VoiceInputButton
+import kotlinx.coroutines.delay
 import java.io.ByteArrayOutputStream
 
 /**
@@ -313,38 +315,66 @@ private fun InputBar(
     onStop: () -> Unit,
     onPick: () -> Unit,
 ) {
-    Row(verticalAlignment = Alignment.Bottom, modifier = Modifier.fillMaxWidth()) {
-        TextButton(onClick = onPick, contentPadding = PaddingValues(horizontal = 8.dp)) {
-            Text("📎", style = MaterialTheme.typography.titleMedium)
+    var voiceListening by remember { mutableStateOf(false) }
+    var voiceLive by remember { mutableStateOf<String?>(null) }
+
+    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+        // 语音状态条（P1-3）：聆听中的实时识别文本，或错误 / 权限提示（4s 自动清除）
+        val voiceLine = if (voiceListening) "🎤 聆听中：${voiceLive ?: "…"}" else voiceLive
+        voiceLine?.let { line ->
+            LaunchedEffect(line) {
+                if (line.startsWith("⚠️")) { delay(4000); voiceLive = null }
+            }
+            Text(
+                line,
+                style = MaterialTheme.typography.labelMedium,
+                color = if (line.startsWith("⚠️")) MaterialTheme.colorScheme.error
+                else MaterialTheme.colorScheme.primary,
+                modifier = Modifier.fillMaxWidth(),
+            )
         }
-        OutlinedTextField(
-            value = prompt,
-            onValueChange = onPromptChange,
-            modifier = Modifier.weight(1f),
-            placeholder = { Text("发送消息到桌面端…") },
-            maxLines = 4,
-            shape = RoundedCornerShape(20.dp),
-        )
-        Spacer(Modifier.width(8.dp))
-        if (canSend) {
-            Button(
-                onClick = onSend,
-                enabled = !sending,
-            ) {
-                Text(if (sending) "发送中…" else "发送")
+        Row(verticalAlignment = Alignment.Bottom, modifier = Modifier.fillMaxWidth()) {
+            TextButton(onClick = onPick, contentPadding = PaddingValues(horizontal = 8.dp)) {
+                Text("📎", style = MaterialTheme.typography.titleMedium)
             }
-        } else if (canStop) {
-            Button(
-                onClick = onStop,
-                enabled = !stopping,
-                colors = ButtonDefaults.buttonColors(
-                    containerColor = MaterialTheme.colorScheme.error,
-                ),
-            ) {
-                Text(if (stopping) "停止中…" else "停止")
+            VoiceInputButton(
+                onFinalText = { text ->
+                    onPromptChange(if (prompt.isBlank()) text else "$prompt $text")
+                },
+                onStateChange = { listening, live ->
+                    voiceListening = listening
+                    voiceLive = live
+                },
+            )
+            OutlinedTextField(
+                value = prompt,
+                onValueChange = onPromptChange,
+                modifier = Modifier.weight(1f),
+                placeholder = { Text("发送消息到桌面端…") },
+                maxLines = 4,
+                shape = RoundedCornerShape(20.dp),
+            )
+            Spacer(Modifier.width(8.dp))
+            if (canSend) {
+                Button(
+                    onClick = onSend,
+                    enabled = !sending,
+                ) {
+                    Text(if (sending) "发送中…" else "发送")
+                }
+            } else if (canStop) {
+                Button(
+                    onClick = onStop,
+                    enabled = !stopping,
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = MaterialTheme.colorScheme.error,
+                    ),
+                ) {
+                    Text(if (stopping) "停止中…" else "停止")
+                }
+            } else {
+                Button(onClick = {}, enabled = false) { Text("发送") }
             }
-        } else {
-            Button(onClick = {}, enabled = false) { Text("发送") }
         }
     }
 }

@@ -274,11 +274,20 @@ python tools/probe.py sub <会话ID前缀> [帧落盘路径]   # + 完整会话�
   官方 web 客户端分片用 **384KiB**（`_b = 384*1024`，留 base64 膨胀余量），App 同值。
 - **编码**：`checksum = "sha256:" + SHA256(fileBytes).hex()`（小写）；`dataBase64` 为标准 base64；
   `uploadId = "upload-" + uuid`。
-- **发送携带**：`sendPrompt` 增加可选 `attachments: [{ref, fileName, mime, bytes}]` 数组
-  （官方 web `attachmentRef` 同形；host `createRemotePromptAttachmentSessionService` 包装
-  `sendPrompt` 并调 `materializePromptAttachments`，已上传的 ref 无 localPath 故原样透传）。
-  ⚠️ **element 形状来自官方 web bundle 源码**（`research/index-nOVzQNKW.js`），
-  上传侧已实机验证，**发送侧尚未做一次真实发送 → 桌面端收到附件** 的端到端验收（待真机）。
+- **发送携带（⚠️ 2026-09-30 实测修正）**：附件必须走会话命令 envelope ——
+  `sendConversationCommandV4` envelope `type:'sendText'`，payload =
+  `{text, attachments: [{ref, fileName, mime, bytes}]}`（元素与官方 web `attachmentRef` 同形）。
+  ack `status=accepted` 且 `result={type:"inputAccepted", delivery:"startNow"}`，
+  会话流 userInput 行**回显 attachments**，桌面端模型可直接读到附件内容。
+  早期结论「sendPrompt RPC 带 attachments、host 包装服务透传」**已被实测推翻**：
+  RPC `sendPrompt` 的 args schema 只有 `{workspacePath, sessionId, inputId, content}`，
+  多传的 `attachments` 被 zod strip——201 accepted 但附件**不到模型侧**
+  （桌面端明确回答「没有收到任何附件」，userInput 行无 attachments 字段）。
+- **发送侧端到端实测**（tools/_p13_send_verify.py，桌面端在线，2026-09-30）：
+  ① 上传四件套 → ref；② sendText envelope 带 attachments → ack accepted(inputAccepted/startNow)；
+  ③ userInput 行入流且回显 attachments；④ canStop=true（turn 真实运行）；
+  ⑤ 桌面端 assistant 原样复述附件首行「zcode-remote P1-3 attachment e2e verify」。
+  对照组（同消息走 sendPrompt RPC + attachments）：201 但附件丢失——对照结论如上，六项全 PASS。
 - **端到端实测**（tools/_p13_probe.py，桌面端在线，2026-09-29）：
   ① 单分片小文件 `begin(staging,0) → chunk(1) → commit → ref` 全通；
   ② 多分片 900KiB → 3 片（393216+393216+135168）逐片 `nextChunkIndex` 递增正确 → commit → ref。

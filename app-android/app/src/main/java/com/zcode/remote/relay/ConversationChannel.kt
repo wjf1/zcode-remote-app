@@ -440,14 +440,15 @@ class ConversationChannel(private val rpc: RpcChannel) {
     }
 
     /**
-     * 发送用户消息（HANDOVER §5.3 实测路径）：`zcode-agent` 通道 `sendPrompt`，
-     * args = `{workspacePath, sessionId, inputId, content}`。
-     * 消息进入会话队列（autoDrain），当前 turn 结束后自动新 turn 执行；
-     * 成功后 userInput 行会由服务端推回会话流，无需本地 append。
+     * 发送用户消息（官方 web 远程页同款路径，P1-3 发送侧实证 2026-09-30）：
+     * `sendConversationCommandV4` envelope `type:'sendText'`，payload = `{text, attachments?}`，
+     * 元素 = [AttachmentRef.toWire]（`{ref, fileName, mime, bytes}`）。
      *
-     * [attachments] 非空时带上 `attachments` 数组（元素 = [AttachmentRef.toWire]）。
-     * host 侧 `createRemotePromptAttachmentSessionService`（asar/out/host/index.js）会包装
-     * `sendPrompt` 并调 `materializePromptAttachments`；已上传的 ref 无 localPath，原样透传。
+     * 实证（tools/_p13_send_verify.py）：旧路径 RPC `sendPrompt` 的 args schema 只有
+     * `{workspacePath, sessionId, inputId, content}`，多传的 attachments 被 zod strip——
+     * 201 accepted 但附件不到模型侧；sendText envelope 附件随消息 materialize，
+     * ack `result={type:"inputAccepted", delivery:"startNow"}`，userInput 行回显 attachments。
+     * 成功后 userInput 行由服务端推回会话流，无需本地 append。
      */
     fun sendPrompt(
         content: String,
@@ -464,17 +465,27 @@ class ConversationChannel(private val rpc: RpcChannel) {
             onResult(Result.failure(IllegalStateException("消息内容为空")))
             return
         }
+        val payload = LinkedHashMap<String, Any>()
+        payload["text"] = content
+        if (attachments.isNotEmpty()) payload["attachments"] = attachments.map { it.toWire() }
         val args = HashMap<String, Any>(target)
-        args["sessionId"] = session
-        args["inputId"] = "inp-${UUID.randomUUID()}"
-        args["content"] = content
-        if (attachments.isNotEmpty()) args["attachments"] = attachments.map { it.toWire() }
-        Log.i(TAG, "sendPrompt session=$session chars=${content.length} attachments=${attachments.size}")
-        rpc.call(RpcChannel.CHANNEL_AGENT, "sendPrompt", listOf(args)) { reply ->
+        args["envelope"] = mapOf(
+            "commandId" to "cmd-${UUID.randomUUID()}",
+            "clientId" to clientId,
+            "sessionId" to session,
+            "type" to "sendText",
+            "payload" to payload,
+            "issuedAt" to System.currentTimeMillis(),
+        )
+        Log.i(TAG, "sendText session=$session chars=${content.length} attachments=${attachments.size}")
+        rpc.call(RpcChannel.CHANNEL_AGENT, "sendConversationCommandV4", listOf(args)) { reply ->
             onResult(
                 when (reply) {
                     is RpcChannel.RpcReply.Err -> Result.failure(IllegalStateException(reply.message))
-                    is RpcChannel.RpcReply.Ok -> Result.success(Unit)
+                    is RpcChannel.RpcReply.Ok -> when (val ack = parseCommandAck(reply.data)) {
+                        is ResolveResult.Accepted -> Result.success(Unit)
+                        is ResolveResult.Failed -> Result.failure(IllegalStateException(ack.message))
+                    }
                 }
             )
         }

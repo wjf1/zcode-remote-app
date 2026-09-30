@@ -1,5 +1,37 @@
 # 变更记录 / Changelog
 
+## 未发布（2026-09-30 三轮：P1-3 附件发送侧实证修复 + 语音输入）
+
+### 关键发现：sendPrompt RPC 会静默丢弃附件（发送侧修复）
+- **现象**（tools/_p13_send_verify.py 对照实测）：`sendPrompt` RPC args 带 `attachments`
+  → 201 accepted、消息入流，但桌面端模型明确回答「没有收到任何附件」，userInput 行无
+  attachments 字段——`sendPrompt` args schema 只有 `{workspacePath, sessionId, inputId, content}`，
+  多传的 attachments 被 zod strip。上轮 CHANGELOG 里「host 包装 sendPrompt 透传附件」的
+  asar 考证结论不成立（§6.6 已修正）。
+- **正确路径（官方 web 远程页唯一发送路径）**：`sendConversationCommandV4` envelope
+  `type:'sendText'`，payload `{text, attachments: [{ref, fileName, mime, bytes}]}` →
+  ack `accepted` + `result={type:"inputAccepted", delivery:"startNow"}`，userInput 行回显
+  attachments，模型可直接读到附件内容（assistant 原样复述附件首行，六项验收全 PASS）。
+- **App 修复**：`ConversationChannel.sendPrompt` 改走 sendText envelope（方法签名/调用方
+  不变；ack 判据 status ∈ accepted/duplicate/noop 复用 parseCommandAck）。纯文本与带附件
+  同路径，与官方 web 完全同构。
+
+### 新增（P1-3 语音输入）
+- **`ui/voice/VoiceInput.kt`**：系统 `SpeechRecognizer` 转文字（官方 web 无语音功能——
+  bundle 里的 speech chunk 只是 lucide 图标，属 App 自研；零协议改动，发送仍是文本）。
+  点击开始聆听（再次点击提前出结果），partial 实时上屏，最终文本追加进输入草稿；
+  RECORD_AUDIO 运行时权限按需请求，拒绝则降级提示；识别不可用的设备按钮整体不渲染。
+- **InputBar 集成**：🎤 按钮（📎 旁），输入栏上方语音状态条（聆听中实时文本 / 错误提示 4s 自清）。
+- **Manifest**：`RECORD_AUDIO` 权限 + `queries` 声明 `android.speech.RecognitionService`
+  （Android 11+ package visibility）；`microphone` uses-feature `required=false`。
+
+### 构建
+- 两轮 `./build.sh`（语音输入初版 / sendText 修复后）均 BUILD SUCCESSFUL。
+
+### 遗留
+- App UI 层验收（语音按钮交互 / 附件 chip / 输入栏布局）仍待真机或 Intel/AMD 机器（X-2 一并）。
+- 语音识别引擎依赖设备端 RecognitionService（小米 15 Pro 为小爱语音引擎），真机需验一次。
+
 ## 未发布（2026-09-29 二轮：X-1 keystore 核验 + D-2/D-3 + P1-3 附件上传）
 
 ### 关键结论：release 签名 keystore 并未丢失（X-1 结清）
