@@ -258,12 +258,46 @@ fun SettingsTab(
                                     )
                                 }
                             }
+                            // 自建中继地址卡片（与其它配置项统一的展示格式）
                             if (endpointMode == "custom") {
-                                Text(
-                                    text = "地址: ${customRelayUrl.ifBlank { "未设置" }}",
-                                    style = MaterialTheme.typography.bodySmall,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                                )
+                                Surface(
+                                    color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
+                                    shape = RoundedCornerShape(10.dp),
+                                    border = ButtonDefaults.outlinedButtonBorder,
+                                    modifier = Modifier.fillMaxWidth()
+                                ) {
+                                    Row(
+                                        modifier = Modifier.padding(horizontal = 12.dp, vertical = 10.dp),
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        Column(modifier = Modifier.weight(1f)) {
+                                            Text(
+                                                text = "自定义中继地址",
+                                                style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Medium),
+                                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                                            )
+                                            Spacer(Modifier.height(2.dp))
+                                            Text(
+                                                text = customRelayUrl.ifBlank { "未设置 · 点击右侧「编辑」填写 wss:// 地址" },
+                                                style = MaterialTheme.typography.bodySmall.copy(
+                                                    fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace,
+                                                    fontSize = 12.sp
+                                                ),
+                                                color = if (customRelayUrl.isBlank()) MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f)
+                                                else MaterialTheme.colorScheme.primary,
+                                                maxLines = 1,
+                                                overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis
+                                            )
+                                        }
+                                        TextButton(
+                                            onClick = { editingCustom = customRelayUrl },
+                                            contentPadding = PaddingValues(horizontal = 10.dp, vertical = 0.dp),
+                                            modifier = Modifier.height(30.dp)
+                                        ) {
+                                            Text("编辑", style = MaterialTheme.typography.labelSmall)
+                                        }
+                                    }
+                                }
                             }
                         }
 

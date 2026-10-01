@@ -1187,6 +1187,57 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
+    /**
+     * 删除会话（官方移动端同款链路）：
+     * 1) 若会话在运行，先走 `zcode-session::closeSession` 结束（fire-and-forget，失败不阻断）；
+     * 2) 再走 `zcode-task::deleteTask` 软删除（task index 写入 deleted=1，bootstrap/列表不再下发）。
+     * 成功后从本地会话列表移除；若删除的是当前订阅中的会话，同步复位订阅状态。
+     */
+    fun deleteSession(item: SessionItem, onResult: (Boolean, String) -> Unit = { _, _ -> }) {
+        val ch = channel ?: run { onResult(false, "连接尚未就绪"); return }
+        val ws = item.workspacePath ?: activeWorkspaceKey ?: run { onResult(false, "未定位到工作区"); return }
+        val target = buildMap<String, Any> {
+            put("workspacePath", ws)
+            put("taskId", item.taskId)
+        }
+
+        // 1) 先尝试结束运行中的会话（失败不阻断删除）
+        ch.call(RpcChannel.CHANNEL_SESSION, "closeSession",
+            listOf(mapOf("workspacePath" to ws, "sessionId" to item.taskId))) { r ->
+            Log.i(TAG, "closeSession(${item.taskId.take(20)}…) → ${r::class.simpleName}")
+        }
+
+        // 2) 软删除任务
+        ch.call(RpcChannel.CHANNEL_TASK, "deleteTask", listOf(target)) { reply ->
+            viewModelScope.launch {
+                when (reply) {
+                    is RpcChannel.RpcReply.Ok -> {
+                        Log.i(TAG, "deleteTask 成功: ${item.taskId.take(20)}…")
+                        // 本地列表同步移除
+                        sessions.removeAll { it.taskId == item.taskId }
+                        // 若删除的是当前订阅中的会话，复位订阅与草稿状态
+                        if (subscribedSessionId == item.taskId) {
+                            subscribedSessionId = null
+                            rowStore.clear()
+                            promptDraft = ""
+                            attachments.clear()
+                            conversation?.reset()
+                        }
+                        recomputeSessionPending()
+                        syncWidget()
+                        flash("会话已删除")
+                        onResult(true, "会话已删除")
+                    }
+                    is RpcChannel.RpcReply.Err -> {
+                        Log.w(TAG, "deleteTask 失败: ${reply.message}")
+                        flash("删除会话失败: ${reply.message}")
+                        onResult(false, reply.message)
+                    }
+                }
+            }
+        }
+    }
+
     /** 从 bootstrap-response 取当前活动工作区 key。 */
     private fun activeWorkspaceKeyOf(payload: JsonObject): String? {
         val result = payload["result"]?.let { runCatching { it.jsonObject }.getOrNull() } ?: return null

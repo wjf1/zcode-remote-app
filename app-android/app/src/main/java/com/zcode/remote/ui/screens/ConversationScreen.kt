@@ -86,10 +86,15 @@ fun ConversationScreen(
     modelReasoningLevels: Map<String, List<String>> = emptyMap(),
     onSwitchModel: (com.zcode.remote.relay.WorkspaceConfigChannel.ModelOption) -> Unit = {},
     onSwitchModelCustom: (String) -> Unit = {},
+    /** 进入会话页时触发一次模型目录刷新（PC 端配置变更准实时同步）。 */
+    onLoadModels: () -> Unit = {},
     onBack: () -> Unit,
 ) {
     val listState = rememberLazyListState()
     val headerCount = if (rows.isEmpty()) 0 else 1
+
+    // 进入会话页即刷新一次模型目录（PC 端新增/删除模型后回到 APP 即可看到最新列表）
+    LaunchedEffect(Unit) { onLoadModels() }
 
     var anchorRowId by remember { mutableStateOf<Int?>(null) }
     LaunchedEffect(rows.size) {

@@ -97,6 +97,7 @@ class MainActivity : ComponentActivity() {
                             modelReasoningLevels = vm.modelReasoningLevels,
                             onSwitchModel = { m -> vm.switchCurrentSessionModel(m) },
                             onSwitchModelCustom = { id -> vm.switchCurrentSessionModelCustom(id) },
+                            onLoadModels = { vm.loadWorkspaceModels() },
                             onBack = { opened = null },
                         )
 
@@ -200,6 +201,7 @@ class MainActivity : ComponentActivity() {
                                             currentProvider = vm.conversationMeta.provider,
                                             availableModels = vm.allAvailableModels,
                                             modelReasoningLevels = vm.modelReasoningLevels,
+                                            onSessionDelete = { vm.deleteSession(it) },
                                             onCreateSession = { prompt, modelOption ->
                                                 vm.createNewSession(
                                                     firstPrompt = prompt,

@@ -1,9 +1,11 @@
 package com.zcode.remote.ui.screens
 
 import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -68,6 +70,8 @@ fun HomeScreen(
     availableModels: List<com.zcode.remote.relay.WorkspaceConfigChannel.ModelOption> = emptyList(),
     /** 各模型合法思考档位：key = "providerId/modelId"。 */
     modelReasoningLevels: Map<String, List<String>> = emptyMap(),
+    /** 长按会话卡片触发删除（closeSession + deleteTask）。 */
+    onSessionDelete: (SessionItem) -> Unit = {},
     onCreateSession: (prompt: String, modelConfig: com.zcode.remote.relay.WorkspaceConfigChannel.ModelOption?) -> Unit = { _, _ -> },
 ) {
     var filterOnlyRunning by remember { mutableStateOf(false) }
@@ -287,7 +291,8 @@ fun HomeScreen(
                         pending = sessionPending[s.taskId] ?: 0,
                         isActive = s.taskId == subscribedSessionId,
                         desktopActive = s.taskId == desktopActiveTaskId,
-                        onClick = { onSessionClick(s) }
+                        onClick = { onSessionClick(s) },
+                        onDelete = { onSessionDelete(s) }
                     )
                 }
             }
@@ -314,8 +319,9 @@ fun HomeScreen(
 }
 
 /**
- * 官方 ZCode 风格精细化会话卡片
+ * 官方 ZCode 风格精细化会话卡片（长按呼出删除确认）
  */
+@OptIn(androidx.compose.foundation.ExperimentalFoundationApi::class)
 @Composable
 private fun SessionItemCard(
     s: SessionItem,
@@ -323,9 +329,11 @@ private fun SessionItemCard(
     isActive: Boolean,
     desktopActive: Boolean,
     onClick: () -> Unit,
+    onDelete: () -> Unit = {},
 ) {
+    var showDeleteConfirm by remember { mutableStateOf(false) }
+
     Card(
-        onClick = onClick,
         shape = RoundedCornerShape(12.dp),
         colors = CardDefaults.cardColors(
             containerColor = when {
@@ -346,7 +354,12 @@ private fun SessionItemCard(
         } else {
             CardDefaults.outlinedCardBorder()
         },
-        modifier = Modifier.fillMaxWidth()
+        modifier = Modifier
+            .fillMaxWidth()
+            .combinedClickable(
+                onClick = onClick,
+                onLongClick = { showDeleteConfirm = true }
+            )
     ) {
         Row(
             modifier = Modifier.padding(14.dp),
@@ -440,6 +453,26 @@ private fun SessionItemCard(
             }
         }
     }
+
+    // 长按删除确认弹窗
+    if (showDeleteConfirm) {
+        AlertDialog(
+            onDismissRequest = { showDeleteConfirm = false },
+            title = { Text("删除会话") },
+            text = {
+                Text("将删除「${s.title.ifBlank { "未命名会话" }}」并从 PC 端会话列表移除，PC 端同步生效。确定删除？")
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    showDeleteConfirm = false
+                    onDelete()
+                }) { Text("删除", color = MaterialTheme.colorScheme.error) }
+            },
+            dismissButton = {
+                TextButton(onClick = { showDeleteConfirm = false }) { Text("取消") }
+            }
+        )
+    }
 }
 
 private fun statusText(s: String) = when (s) {
@@ -504,7 +537,6 @@ private fun CreateSessionDialog(
     var prompt by remember { mutableStateOf("") }
     var voiceListening by remember { mutableStateOf(false) }
     var voiceLive by remember { mutableStateOf<String?>(null) }
-    var customModelId by remember { mutableStateOf("") }
 
     // 模型选择：null = 跟随 PC 端默认；选中 = 显式下发 config
     var selectedModel by remember { mutableStateOf<com.zcode.remote.relay.WorkspaceConfigChannel.ModelOption?>(null) }
@@ -521,16 +553,7 @@ private fun CreateSessionDialog(
 
     val modelsList = if (availableModels.isNotEmpty()) availableModels else (modelState?.models ?: emptyList())
     val hasCatalog = modelsList.isNotEmpty()
-    // 自定义输入优先；否则用下拉选中项
-    val effectiveSelection: com.zcode.remote.relay.WorkspaceConfigChannel.ModelOption? = when {
-        customModelId.isNotBlank() -> com.zcode.remote.relay.WorkspaceConfigChannel.ModelOption(
-            value = "${currentProvider ?: "glm"}/${customModelId.trim()}",
-            name = customModelId.trim(),
-            providerId = currentProvider,
-            providerName = null,
-        )
-        else -> selectedModel
-    }
+    val effectiveSelection = selectedModel
     // 把用户选定的思考档位附着到模型选项上（未选则交给上层自动挑选）
     val finalSelection = effectiveSelection?.copy(thought = selectedThought)
     val availableThoughtLevels = levelsOf(effectiveSelection)
@@ -634,7 +657,7 @@ private fun CreateSessionDialog(
                                                     style = MaterialTheme.typography.bodySmall
                                                 )
                                                 Text(
-                                                    "可在下方输入模型 ID 手动指定（留空跟随 PC 默认）",
+                                                    "可直接选择「跟随 PC 端默认」创建会话",
                                                     style = MaterialTheme.typography.labelSmall,
                                                     color = MaterialTheme.colorScheme.onSurfaceVariant
                                                 )
@@ -649,13 +672,12 @@ private fun CreateSessionDialog(
                                     DropdownMenuItem(
                                         text = { Text("跟随 PC 端默认", style = MaterialTheme.typography.bodySmall) },
                                         leadingIcon = {
-                                            if (selectedModel == null && customModelId.isBlank()) {
+                                            if (selectedModel == null) {
                                                 Icon(Icons.Filled.Check, null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(16.dp))
                                             }
                                         },
                                         onClick = {
                                             selectedModel = null
-                                            customModelId = ""
                                             modelMenuExpanded = false
                                         }
                                     )
@@ -675,7 +697,6 @@ private fun CreateSessionDialog(
                                                     providerId = currentProvider,
                                                     providerName = null,
                                                 )
-                                                customModelId = ""
                                                 modelMenuExpanded = false
                                             }
                                         )
@@ -704,7 +725,6 @@ private fun CreateSessionDialog(
                                             },
                                             onClick = {
                                                 selectedModel = m
-                                                customModelId = ""
                                                 modelMenuExpanded = false
                                             }
                                         )
@@ -765,24 +785,6 @@ private fun CreateSessionDialog(
                         }
                     )
                 }
-
-                // 自定义模型 ID（目录不可用或需临时指定时使用；留空 = 按下拉选择/默认）
-                OutlinedTextField(
-                    value = customModelId,
-                    onValueChange = {
-                        customModelId = it
-                        selectedThought = null   // 手填模型 ID 时档位交回自动挑选
-                    },
-                    placeholder = {
-                        Text(
-                            "可选：手动指定模型 ID（如 glm-4.5 / deepseek-r1）",
-                            style = MaterialTheme.typography.labelSmall
-                        )
-                    },
-                    singleLine = true,
-                    shape = RoundedCornerShape(8.dp),
-                    modifier = Modifier.fillMaxWidth()
-                )
             }
         },
         confirmButton = {
