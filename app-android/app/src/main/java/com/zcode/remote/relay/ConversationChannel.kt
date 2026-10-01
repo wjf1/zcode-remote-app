@@ -496,7 +496,7 @@ class ConversationChannel(private val rpc: RpcChannel) {
     /**
      * 在当前工作区创建新会话（官方 V4 协议同款原生链路）：
      * `sendConversationCommandV4` envelope `type:'createSession'`，sessionId = null。
-     * 可选携带 firstInput = { text, attachments? }。
+     * 可选携带 firstInput = { text, attachments? } 与 config = { provider, model, thought?, mode? }。
      * 服务端创建完成后返回 201 ack，其中 `result.sessionId` 为新分配的会话 ID。
      */
     fun createSession(
@@ -504,6 +504,7 @@ class ConversationChannel(private val rpc: RpcChannel) {
         workspaceIdentity: String? = null,
         firstInputText: String? = null,
         attachments: List<AttachmentRef> = emptyList(),
+        modelConfig: ModelConfig? = null,
         onResult: (Result<String>) -> Unit,
     ) {
         val target = buildMap<String, Any> {
@@ -520,6 +521,15 @@ class ConversationChannel(private val rpc: RpcChannel) {
             }
             payload["firstInput"] = input
         }
+        // 显式模型选择（官方 Host `zo` schema）：provider + model（thought/mode 可选透传）
+        if (modelConfig != null) {
+            val cfg = LinkedHashMap<String, Any>()
+            cfg["provider"] = modelConfig.providerId
+            cfg["model"] = modelConfig.modelId
+            modelConfig.thought?.let { cfg["thought"] = it }
+            modelConfig.mode?.let { cfg["mode"] = it }
+            payload["config"] = cfg
+        }
 
         val args = HashMap<String, Any>(target)
         args["envelope"] = mapOf(
@@ -531,7 +541,8 @@ class ConversationChannel(private val rpc: RpcChannel) {
             "issuedAt" to System.currentTimeMillis(),
         )
 
-        Log.i(TAG, "createSession workspace=$workspacePath hasFirstInput=${!firstInputText.isNullOrBlank()}")
+        Log.i(TAG, "createSession workspace=$workspacePath hasFirstInput=${!firstInputText.isNullOrBlank()} " +
+                "model=${modelConfig?.modelId ?: "inherit-default"}")
         rpc.call(RpcChannel.CHANNEL_AGENT, "sendConversationCommandV4", listOf(args),
             timeoutMs = SEND_ACK_TIMEOUT_MS) { reply ->
             when (reply) {
@@ -556,6 +567,101 @@ class ConversationChannel(private val rpc: RpcChannel) {
                 }
             }
         }
+    }
+
+    /**
+     * 读取工作区配置状态（官方桌面端模型下拉框同款数据源）：
+     * `zcode-session::readWorkspaceState`，返回当前模型、可用模型列表、思考等级与执行模式。
+     */
+    fun readWorkspaceState(
+        workspacePath: String,
+        workspaceIdentity: String? = null,
+        onResult: (Result<WorkspaceState>) -> Unit,
+    ) {
+        val args = buildMap<String, Any> {
+            put("workspacePath", workspacePath)
+            workspaceIdentity?.takeIf { it.isNotBlank() }?.let { put("workspaceIdentity", it) }
+        }
+        Log.i(TAG, "readWorkspaceState ws=$workspacePath")
+        rpc.call(RpcChannel.CHANNEL_SESSION, "readWorkspaceState", listOf(args),
+            timeoutMs = SEND_ACK_TIMEOUT_MS) { reply ->
+            when (reply) {
+                is RpcChannel.RpcReply.Err -> onResult(Result.failure(IllegalStateException(reply.message)))
+                is RpcChannel.RpcReply.Ok -> {
+                    val o = reply.data.asObj()
+                    val state = parseWorkspaceState(o)
+                    if (state != null) {
+                        onResult(Result.success(state))
+                    } else {
+                        onResult(Result.failure(IllegalStateException("工作区状态解析失败: ${reply.data}")))
+                    }
+                }
+            }
+        }
+    }
+
+    /** 解析 PC 端返回的 readWorkspaceState 应答，兼容字段缺失（全部回退默认）。 */
+    private fun parseWorkspaceState(root: JsonObject?): WorkspaceState? {
+        if (root == null) return null
+        val settings = root["settings"].asObj()
+        val model = settings?.get("model").asObj()
+
+        // 当前选中模型（settings.model.current 优先，回落 lastUsed）
+        val currentObj = model?.get("current").asObj() ?: model?.get("lastUsed").asObj()
+        val current = currentObj?.let {
+            ModelConfig(
+                providerId = it["providerId"].asStr() ?: "",
+                modelId = it["modelId"].asStr() ?: "",
+                label = it["label"].asStr(),
+            )
+        }
+
+        // 可用模型列表（settings.model.available / modelCatalog.available）
+        val available = mutableListOf<ModelConfig>()
+        val availArr = model?.get("available").asArray()
+            ?: root["modelCatalog"].asObj()?.get("available").asArray()
+        availArr?.forEach { el ->
+            val item = el.asObj() ?: return@forEach
+            val ref = item["ref"].asObj()
+            val providerId = ref?.get("providerId").asStr()
+                ?: item["modelProviderId"].asStr()
+                ?: item["providerId"].asStr()
+                ?: ""
+            val modelId = ref?.get("modelId").asStr()
+                ?: item["modelId"].asStr()
+                ?: item["value"].asStr()
+                ?: ""
+            if (providerId.isNotBlank() && modelId.isNotBlank()) {
+                available.add(
+                    ModelConfig(
+                        providerId = providerId,
+                        modelId = modelId,
+                        label = item["label"].asStr() ?: modelId,
+                        providerLabel = item["providerLabel"].asStr()
+                            ?: item["modelProviderName"].asStr(),
+                        thoughtLevels = item["reasoning"].asObj()?.get("levels").asArray()
+                            ?.mapNotNull { it.asStr() },
+                    )
+                )
+            }
+        }
+
+        // 执行模式
+        val modeObj = settings?.get("mode").asObj()
+        val currentMode = modeObj?.get("current").asStr()
+        val availableModes = modeObj?.get("available").asArray()?.mapNotNull { it.asStr() }
+
+        // 思考等级
+        val thoughtObj = settings?.get("thoughtLevel").asObj()
+        val currentThought = thoughtObj?.get("current").asStr()
+
+        return WorkspaceState(
+            current = current,
+            available = available,
+            currentMode = currentMode,
+            availableModes = availableModes,
+            currentThought = currentThought,
+        )
     }
 
     // ---------- 附件上传（P1-3，协议实证见 PROTOCOL.md §6.6）----------
@@ -794,6 +900,39 @@ class ConversationChannel(private val rpc: RpcChannel) {
 
     private fun JsonElement?.asInt(): Int? =
         this?.let { runCatching { it.jsonPrimitive.content.toIntOrNull() }.getOrNull() }
+
+    private fun JsonElement?.asArray(): List<JsonElement>? =
+        this?.let { runCatching { it.jsonArray }.getOrNull() }
+
+    /** 工作区模型状态（readWorkspaceState 解析结果）。 */
+    data class ModelConfig(
+        val providerId: String,
+        val modelId: String,
+        val label: String? = null,
+        val providerLabel: String? = null,
+        val thought: String? = null,
+        val mode: String? = null,
+        val thoughtLevels: List<String>? = null,
+    ) {
+        /** 显示名：优先 label，其次 "providerLabel / modelId"，最后 modelId。 */
+        fun displayName(): String = when {
+            !label.isNullOrBlank() -> label
+            !providerLabel.isNullOrBlank() -> "$providerLabel · ${modelId.substringAfterLast('/')}"
+            else -> modelId.substringAfterLast('/')
+        }
+    }
+
+    data class WorkspaceState(
+        /** 当前选中的模型（未读到时为 null，UI 显示"默认（跟随 PC 端）"）。 */
+        val current: ModelConfig?,
+        /** 可用模型目录。 */
+        val available: List<ModelConfig>,
+        /** 当前执行模式（yolo/build/plan）。 */
+        val currentMode: String? = null,
+        val availableModes: List<String>? = null,
+        /** 当前思考等级。 */
+        val currentThought: String? = null,
+    )
 
     /**
      * 已上传附件的引用（sendPrompt `attachments` 数组元素）。

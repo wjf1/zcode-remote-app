@@ -753,6 +753,7 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
     fun createNewSession(
         firstPrompt: String,
         attachments: List<ConversationChannel.AttachmentRef> = emptyList(),
+        modelConfig: ConversationChannel.ModelConfig? = null,
         onSuccess: (SessionItem) -> Unit,
         onError: (String) -> Unit,
     ) {
@@ -770,18 +771,20 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
             workspaceIdentity = null,
             firstInputText = firstPrompt.trim().ifEmpty { null },
             attachments = attachments,
+            modelConfig = modelConfig,
         ) { result ->
             viewModelScope.launch {
                 result.fold(
                     onSuccess = { newSid ->
-                        Log.i(TAG, "createNewSession success: sid=$newSid ws=$ws")
+                        Log.i(TAG, "createNewSession success: sid=$newSid ws=$ws " +
+                                "model=${modelConfig?.modelId ?: "inherit-default"}")
                         val item = SessionItem(
                             taskId = newSid,
                             title = firstPrompt.trim().ifEmpty { "新会话" },
                             displayStatus = "running",
                             workspacePath = ws,
                             workspaceLabel = ws.substringAfterLast('/'),
-                            provider = null,
+                            provider = modelConfig?.providerId,
                             updatedAt = System.currentTimeMillis(),
                             archived = false,
                         )
@@ -796,6 +799,41 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
                         Log.w(TAG, "createNewSession failed: ${err.message}")
                         onError(err.message ?: "创建会话失败")
                     }
+                )
+            }
+        }
+    }
+
+    // ---- 模型目录（新建会话弹窗的模型选择数据源）----
+
+    /** 当前工作区模型状态（可用模型列表 + 默认选中项）。 */
+    var workspaceModelState by mutableStateOf<ConversationChannel.WorkspaceState?>(null)
+        private set
+    var modelStateLoading by mutableStateOf(false)
+        private set
+
+    /**
+     * 拉取工作区模型目录（官方 `zcode-session::readWorkspaceState`）。
+     * 拉取失败静默降级：弹窗里仍可"跟随 PC 默认"创建。
+     */
+    fun loadWorkspaceModels() {
+        val conv = conversation ?: return
+        val ws = activeWorkspaceKey ?: sessions.firstOrNull()?.workspacePath ?: return
+        if (modelStateLoading) return
+        modelStateLoading = true
+        conv.readWorkspaceState(workspacePath = ws) { result ->
+            viewModelScope.launch {
+                modelStateLoading = false
+                result.fold(
+                    onSuccess = { state ->
+                        Log.i(TAG, "workspaceModels loaded: ${state.available.size} 个模型, " +
+                                "current=${state.current?.modelId ?: "none"}")
+                        workspaceModelState = state
+                    },
+                    onFailure = { err ->
+                        // 目录读不到不阻塞新建会话，仅记日志
+                        Log.w(TAG, "workspaceModels load failed: ${err.message}")
+                    },
                 )
             }
         }

@@ -189,10 +189,14 @@ class MainActivity : ComponentActivity() {
                                             onDisconnect = { vm.disconnect() },
                                             onRescan = { opened = null; scanning = true },
                                             onNavigateToSettings = { selectedTab = 2 },
-                                            onCreateSession = { prompt ->
+                                            modelState = vm.workspaceModelState,
+                                            modelsLoading = vm.modelStateLoading,
+                                            onLoadModels = { vm.loadWorkspaceModels() },
+                                            onCreateSession = { prompt, modelConfig ->
                                                 vm.createNewSession(
                                                     firstPrompt = prompt,
                                                     attachments = emptyList(),
+                                                    modelConfig = modelConfig,
                                                     onSuccess = { item -> opened = item },
                                                     onError = { err ->
                                                         android.widget.Toast.makeText(this@MainActivity, err, android.widget.Toast.LENGTH_SHORT).show()

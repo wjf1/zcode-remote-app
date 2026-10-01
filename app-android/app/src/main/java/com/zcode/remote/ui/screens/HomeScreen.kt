@@ -11,6 +11,8 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.Build
+import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Warning
@@ -56,7 +58,11 @@ fun HomeScreen(
     onDisconnect: () -> Unit = {},
     onRescan: () -> Unit = {},
     onNavigateToSettings: () -> Unit = {},
-    onCreateSession: (prompt: String) -> Unit = {},
+    /** 工作区模型目录（新建会话弹窗的模型选择数据源，可为空=加载中/不可用）。 */
+    modelState: com.zcode.remote.relay.ConversationChannel.WorkspaceState? = null,
+    modelsLoading: Boolean = false,
+    onLoadModels: () -> Unit = {},
+    onCreateSession: (prompt: String, modelConfig: com.zcode.remote.relay.ConversationChannel.ModelConfig?) -> Unit = { _, _ -> },
 ) {
     var filterOnlyRunning by remember { mutableStateOf(false) }
     var filterOnlyPending by remember { mutableStateOf(false) }
@@ -284,10 +290,13 @@ fun HomeScreen(
         // 新建会话弹窗
         if (showCreateDialog) {
             CreateSessionDialog(
+                modelState = modelState,
+                modelsLoading = modelsLoading,
+                onLoadModels = onLoadModels,
                 onDismiss = { showCreateDialog = false },
-                onConfirm = { prompt ->
+                onConfirm = { prompt, modelConfig ->
                     showCreateDialog = false
-                    onCreateSession(prompt)
+                    onCreateSession(prompt, modelConfig)
                 }
             )
         }
@@ -453,16 +462,26 @@ private fun statusLabel(state: RelayState) = when (state) {
 
 /**
  * 新建会话弹窗
- * 支持输入首条任务指令或使用语音输入填充
+ * 支持输入首条任务指令、语音输入填充与可选的模型选择（数据源 = PC 端工作区模型目录）。
  */
 @Composable
 private fun CreateSessionDialog(
+    modelState: com.zcode.remote.relay.ConversationChannel.WorkspaceState?,
+    modelsLoading: Boolean,
+    onLoadModels: () -> Unit,
     onDismiss: () -> Unit,
-    onConfirm: (prompt: String) -> Unit,
+    onConfirm: (prompt: String, modelConfig: com.zcode.remote.relay.ConversationChannel.ModelConfig?) -> Unit,
 ) {
     var prompt by remember { mutableStateOf("") }
     var voiceListening by remember { mutableStateOf(false) }
     var voiceLive by remember { mutableStateOf<String?>(null) }
+
+    // 模型选择：null = 跟随 PC 端默认；选中 = 显式下发 config
+    var selectedModel by remember { mutableStateOf<com.zcode.remote.relay.ConversationChannel.ModelConfig?>(null) }
+    var modelMenuExpanded by remember { mutableStateOf(false) }
+
+    // 弹窗打开时拉一次模型目录
+    LaunchedEffect(Unit) { onLoadModels() }
 
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -503,6 +522,127 @@ private fun CreateSessionDialog(
                     shape = RoundedCornerShape(10.dp)
                 )
 
+                // ---- 模型选择器 ----
+                Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                    Text(
+                        text = "模型",
+                        style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.SemiBold),
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    Box {
+                        OutlinedButton(
+                            onClick = { modelMenuExpanded = true },
+                            shape = RoundedCornerShape(8.dp),
+                            contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp),
+                            modifier = Modifier.fillMaxWidth().height(40.dp)
+                        ) {
+                            Icon(
+                                Icons.Filled.Build,
+                                contentDescription = null,
+                                tint = ZCodeTokens.ToolCallTrajectoryDark,
+                                modifier = Modifier.size(16.dp)
+                            )
+                            Spacer(Modifier.width(8.dp))
+                            Text(
+                                text = selectedModel?.displayName()
+                                    ?: modelState?.current?.let { "默认（${it.displayName()}）" }
+                                    ?: "默认（跟随 PC 端）",
+                                style = MaterialTheme.typography.bodySmall,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
+                                modifier = Modifier.weight(1f)
+                            )
+                            Text("▾", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        }
+
+                        DropdownMenu(
+                            expanded = modelMenuExpanded,
+                            onDismissRequest = { modelMenuExpanded = false }
+                        ) {
+                            when {
+                                modelsLoading -> {
+                                    DropdownMenuItem(
+                                        text = { Text("加载模型目录中…", style = MaterialTheme.typography.bodySmall) },
+                                        onClick = {},
+                                        enabled = false,
+                                    )
+                                }
+                                (modelState?.available.isNullOrEmpty()) -> {
+                                    DropdownMenuItem(
+                                        text = {
+                                            Text(
+                                                "未读到模型目录（仍可跟随 PC 默认创建）",
+                                                style = MaterialTheme.typography.bodySmall
+                                            )
+                                        },
+                                        onClick = {},
+                                        enabled = false,
+                                    )
+                                }
+                                else -> {
+                                    // 1. 跟随默认
+                                    DropdownMenuItem(
+                                        text = { Text("跟随 PC 端默认", style = MaterialTheme.typography.bodySmall) },
+                                        leadingIcon = {
+                                            if (selectedModel == null) {
+                                                Icon(Icons.Filled.Check, null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(16.dp))
+                                            }
+                                        },
+                                        onClick = {
+                                            selectedModel = null
+                                            modelMenuExpanded = false
+                                        }
+                                    )
+                                    // 2. PC 端当前模型（快捷置顶）
+                                    modelState?.current?.let { cur ->
+                                        DropdownMenuItem(
+                                            text = { Text("PC 当前 · ${cur.displayName()}", style = MaterialTheme.typography.bodySmall) },
+                                            leadingIcon = {
+                                                if (selectedModel?.modelId == cur.modelId && selectedModel?.providerId == cur.providerId) {
+                                                    Icon(Icons.Filled.Check, null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(16.dp))
+                                                }
+                                            },
+                                            onClick = {
+                                                selectedModel = cur
+                                                modelMenuExpanded = false
+                                            }
+                                        )
+                                    }
+                                    HorizontalDivider(modifier = Modifier.padding(vertical = 2.dp))
+                                    // 3. 全部可用模型
+                                    modelState?.available?.forEach { m ->
+                                        val isSelected = selectedModel?.modelId == m.modelId &&
+                                                selectedModel?.providerId == m.providerId
+                                        DropdownMenuItem(
+                                            text = {
+                                                Column {
+                                                    Text(m.displayName(), style = MaterialTheme.typography.bodySmall)
+                                                    m.providerLabel?.let {
+                                                        Text(
+                                                            it,
+                                                            style = MaterialTheme.typography.labelSmall,
+                                                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                                                        )
+                                                    }
+                                                }
+                                            },
+                                            leadingIcon = {
+                                                if (isSelected) {
+                                                    Icon(Icons.Filled.Check, null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(16.dp))
+                                                }
+                                            },
+                                            onClick = {
+                                                selectedModel = m
+                                                modelMenuExpanded = false
+                                            }
+                                        )
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.End,
@@ -522,7 +662,7 @@ private fun CreateSessionDialog(
         },
         confirmButton = {
             Button(
-                onClick = { onConfirm(prompt.trim()) },
+                onClick = { onConfirm(prompt.trim(), selectedModel) },
                 enabled = prompt.isNotBlank(),
                 shape = RoundedCornerShape(8.dp)
             ) {
