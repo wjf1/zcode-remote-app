@@ -370,15 +370,22 @@ class ConversationChannel(private val rpc: RpcChannel) {
      *   3. 不做断线重放——官方把 resolveInteraction 归为 sensitive 命令，
      *      重连后要靠 `queryConversationCommandsV4` 回查，本 App 选择让用户重新点。
      */
+    /**
+     * 应答一条审批请求（permission interaction，官方 web 同构）。
+     *
+     * 关键修正：必须优先使用 approval.sessionId（审批实际所属的会话），
+     * 绝不能盲目优先使用当前打开的 sessionId，避免在待办列表中跨会话应答时串台。
+     */
     fun resolve(
         approval: PendingApproval,
         option: ApprovalOption,
+        fallbackWorkspacePath: String? = null,
         onResult: (ResolveResult) -> Unit,
     ) {
-        val session = sessionId ?: approval.sessionId
-        val target = subTarget
+        val session = approval.sessionId ?: sessionId
+        val target = subTarget ?: fallbackWorkspacePath?.let { mapOf("workspacePath" to it) }
         if (session == null || target == null) {
-            onResult(ResolveResult.Failed("no-session", "未订阅该会话，无法应答"))
+            onResult(ResolveResult.Failed("no-session", "未定位到审批所属会话或工作区，无法应答"))
             return
         }
         if (option.optionId.isBlank()) {
@@ -387,7 +394,7 @@ class ConversationChannel(private val rpc: RpcChannel) {
         }
 
         Log.i(TAG, "resolve interaction=${approval.interactionId} option=${option.optionId}" +
-                " kind=${option.kind} label=${option.label}")
+                " kind=${option.kind} session=$session ws=${target["workspacePath"]}")
         sendResolveInteraction(session, target,
             buildJsonObject {
                 put("interactionId", approval.interactionId)
@@ -402,19 +409,21 @@ class ConversationChannel(private val rpc: RpcChannel) {
      *   带 questions 的表单 → `{action:"accept", content:{answer: 值}}`（多题 answer_0/1…）；
      *   拒绝 → `{action:"decline"}`；无 questions 的确认/文本 → `{optionId}` / `{freeText}`。
      * 与审批共用 resolveInteraction 管道与 ack 判据（sensitive，不做断线重放）。
+     * 关键修正：优先使用 el.sessionId，避免跨会话应答串台。
      */
     fun resolveElicitation(
         el: PendingElicitation,
         answer: JsonObject,
+        fallbackWorkspacePath: String? = null,
         onResult: (ResolveResult) -> Unit,
     ) {
-        val session = sessionId ?: el.sessionId
-        val target = subTarget
+        val session = el.sessionId ?: sessionId
+        val target = subTarget ?: fallbackWorkspacePath?.let { mapOf("workspacePath" to it) }
         if (session == null || target == null) {
-            onResult(ResolveResult.Failed("no-session", "未订阅该会话，无法应答"))
+            onResult(ResolveResult.Failed("no-session", "未定位到表单所属会话或工作区，无法应答"))
             return
         }
-        Log.i(TAG, "resolveElicitation interaction=${el.interactionId} answer=$answer")
+        Log.i(TAG, "resolveElicitation interaction=${el.interactionId} session=$session ws=${target["workspacePath"]} answer=$answer")
         sendResolveInteraction(session, target,
             buildJsonObject {
                 put("interactionId", el.interactionId)
@@ -547,13 +556,14 @@ class ConversationChannel(private val rpc: RpcChannel) {
             }
             payload["firstInput"] = input
         }
-        // 显式模型选择（官方 Host `zo` schema）：provider + model（thought/mode 可选透传）
-        if (modelConfig != null) {
+        // 显式模型选择（官方 Host `zo` schema）：provider + model + thought + mode
+        if (modelConfig != null && modelConfig.modelId.isNotBlank()) {
             val cfg = LinkedHashMap<String, Any>()
             cfg["provider"] = modelConfig.providerId
             cfg["model"] = modelConfig.modelId
-            modelConfig.thought?.let { cfg["thought"] = it }
-            modelConfig.mode?.let { cfg["mode"] = it }
+            // 官方约束：Gemini 等推理模型在 ZCode 必须指定 reasoning level，否则报 "Reasoning level is required"
+            cfg["thought"] = modelConfig.thought ?: "enabled"
+            cfg["mode"] = modelConfig.mode ?: "yolo"
             payload["config"] = cfg
         }
 

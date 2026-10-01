@@ -217,6 +217,7 @@ class MainActivity : ComponentActivity() {
                                             sessions = vm.sessions.toList(),
                                             sessionPending = vm.sessionPending,
                                             subscribedSessionId = vm.subscribedSessionId,
+                                            feedback = vm.commandFeedback ?: vm.approvalFeedback,
                                             onResolveApproval = { a, opt -> vm.resolve(a, opt) },
                                             onAcceptElicitation = { el, answers -> vm.answerElicitation(el, answers) },
                                             onDeclineElicitation = { vm.declineElicitation(it) },

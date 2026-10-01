@@ -510,23 +510,40 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         resolve(a, opt)
     }
 
-    /** 应答一次审批。 */
+    /** 应答一次审批（乐观消除 + 会话隔离修复）。 */
     fun resolve(approval: PendingApproval, option: ApprovalOption) {
         val conv = conversation ?: run {
             approvalFeedback = "连接已断开，未发出"
+            flash("连接已断开，未发出")
             return
         }
-        conv.resolve(approval, option) { r ->
+        val ws = activeWorkspaceKey ?: sessions.firstOrNull()?.workspacePath
+        val interId = approval.interactionId
+
+        // 乐观消除：点击瞬间立即从本地列表移除，并刷新系统通知栏
+        taskApprovals.remove(interId)
+        approvals = approvals.filter { it.interactionId != interId }
+        runCatching { ApprovalNotifier.sync(getApplication(), approvals) }
+        recomputeSessionPending()
+
+        conv.resolve(approval, option, fallbackWorkspacePath = ws) { r ->
             viewModelScope.launch {
-                approvalFeedback = when (r) {
+                val feedback = when (r) {
                     is ConversationChannel.ResolveResult.Accepted -> when (r.status) {
                         "accepted" -> if (option.isAllow) "已批准" else "已拒绝"
                         "duplicate" -> "已收到（重复提交，服务端只认第一次）"
                         else -> "服务端已消解（可能桌面端先处理了）"
                     }
-                    is ConversationChannel.ResolveResult.Failed -> "发送失败：${r.message}"
+                    is ConversationChannel.ResolveResult.Failed -> {
+                        // 失败回滚：放回审批列表中
+                        taskApprovals[interId] = approval
+                        refreshApprovals()
+                        "发送失败：${r.message}"
+                    }
                 }
-                Log.i(TAG, "resolve result=$r interaction=${approval.interactionId}")
+                approvalFeedback = feedback
+                flash(feedback)
+                Log.i(TAG, "resolve result=$r interaction=$interId feedback=$feedback")
             }
         }
     }
@@ -664,6 +681,14 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
      */
     fun answerElicitation(el: PendingElicitation, answers: Map<Int, List<String>>) {
         val conv = conversation ?: run { flash("连接已断开，未发送"); return }
+        val ws = activeWorkspaceKey ?: sessions.firstOrNull()?.workspacePath
+        val interId = el.interactionId
+
+        // 乐观消除：点击后立即从本地列表移除
+        taskElicitations.remove(interId)
+        elicitations = elicitations.filter { it.interactionId != interId }
+        recomputeSessionPending()
+
         val content = buildJsonObject {
             val readable = LinkedHashMap<String, String>()
             answers.forEach { (idx, values) ->
@@ -685,30 +710,66 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
             put("action", "accept")
             put("content", content)
         }
-        conv.resolveElicitation(el, answer) { r -> flashResolve(r, "已提交") }
+        conv.resolveElicitation(el, answer, fallbackWorkspacePath = ws) { r ->
+            handleElicitationResult(r, "已提交回答", el)
+        }
     }
 
     /** 拒绝表单/计划。 */
     fun declineElicitation(el: PendingElicitation) {
         val conv = conversation ?: run { flash("连接已断开，未发送"); return }
-        conv.resolveElicitation(el, buildJsonObject { put("action", "decline") }) { r ->
-            flashResolve(r, "已拒绝")
+        val ws = activeWorkspaceKey ?: sessions.firstOrNull()?.workspacePath
+        val interId = el.interactionId
+
+        taskElicitations.remove(interId)
+        elicitations = elicitations.filter { it.interactionId != interId }
+        recomputeSessionPending()
+
+        conv.resolveElicitation(el, buildJsonObject { put("action", "decline") }, fallbackWorkspacePath = ws) { r ->
+            handleElicitationResult(r, "已拒绝", el)
         }
     }
 
     /** 计划批准（plan_approval）。 */
     fun approveElicitationPlan(el: PendingElicitation) {
         val conv = conversation ?: run { flash("连接已断开，未发送"); return }
-        conv.resolveElicitation(el, buildJsonObject { put("action", "accept") }) { r ->
-            flashResolve(r, "已批准计划")
+        val ws = activeWorkspaceKey ?: sessions.firstOrNull()?.workspacePath
+        val interId = el.interactionId
+
+        taskElicitations.remove(interId)
+        elicitations = elicitations.filter { it.interactionId != interId }
+        recomputeSessionPending()
+
+        conv.resolveElicitation(el, buildJsonObject { put("action", "accept") }, fallbackWorkspacePath = ws) { r ->
+            handleElicitationResult(r, "已批准计划", el)
         }
     }
 
     /** 自由文本应答（无 questions 的 userInput 条目，freeText=true）。 */
     fun answerElicitationFreeText(el: PendingElicitation, text: String) {
         val conv = conversation ?: run { flash("连接已断开，未发送"); return }
-        conv.resolveElicitation(el, buildJsonObject { put("freeText", text) }) { r ->
-            flashResolve(r, "已提交")
+        val ws = activeWorkspaceKey ?: sessions.firstOrNull()?.workspacePath
+        val interId = el.interactionId
+
+        taskElicitations.remove(interId)
+        elicitations = elicitations.filter { it.interactionId != interId }
+        recomputeSessionPending()
+
+        conv.resolveElicitation(el, buildJsonObject { put("freeText", text) }, fallbackWorkspacePath = ws) { r ->
+            handleElicitationResult(r, "已提交", el)
+        }
+    }
+
+    private fun handleElicitationResult(r: ConversationChannel.ResolveResult, okText: String, el: PendingElicitation) {
+        viewModelScope.launch {
+            when (r) {
+                is ConversationChannel.ResolveResult.Accepted -> flash(okText)
+                is ConversationChannel.ResolveResult.Failed -> {
+                    taskElicitations[el.interactionId] = el
+                    refreshElicitations()
+                    flash("应答失败：${r.message}")
+                }
+            }
         }
     }
 
@@ -787,13 +848,19 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         // 把 "providerId/modelId" 选项值拆成 createSession config 需要的 {provider, model}
         val modelConfig = modelOption?.let {
             val (pid, mid) = WorkspaceConfigChannel.splitModelValue(it.value)
-            ConversationChannel.ModelConfig(providerId = pid, modelId = mid)
+            ConversationChannel.ModelConfig(
+                providerId = pid,
+                modelId = mid,
+                thought = "enabled",
+                mode = "yolo",
+            )
         }
+        val promptText = firstPrompt.trim()
 
         conv.createSession(
             workspacePath = ws,
             workspaceIdentity = null,
-            firstInputText = firstPrompt.trim().ifEmpty { null },
+            firstInputText = promptText.ifEmpty { null },
             attachments = attachments,
             modelConfig = modelConfig,
         ) { result ->
@@ -804,7 +871,7 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
                                 "model=${modelConfig?.modelId ?: "inherit-default"}")
                         val item = SessionItem(
                             taskId = newSid,
-                            title = firstPrompt.trim().ifEmpty { "新会话" },
+                            title = promptText.ifEmpty { "新会话" },
                             displayStatus = "running",
                             workspacePath = ws,
                             workspaceLabel = ws.substringAfterLast('/'),
@@ -815,6 +882,9 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
                         // 若列表里尚未有该会话，前插到首位
                         if (sessions.none { it.taskId == newSid }) {
                             sessions.add(0, item)
+                        }
+                        if (promptText.isNotEmpty()) {
+                            promptDraft = promptText
                         }
                         openSession(item)
                         onSuccess(item)

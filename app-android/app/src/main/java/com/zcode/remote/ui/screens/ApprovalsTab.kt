@@ -43,6 +43,7 @@ fun ApprovalsTab(
     sessions: List<SessionItem>,
     sessionPending: Map<String, Int>,
     subscribedSessionId: String?,
+    feedback: String? = null,
     onResolveApproval: (PendingApproval, ApprovalOption) -> Unit,
     onAcceptElicitation: (PendingElicitation, Map<Int, List<String>>) -> Unit,
     onDeclineElicitation: (PendingElicitation) -> Unit,
@@ -90,6 +91,30 @@ fun ApprovalsTab(
                         modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
                     )
                 }
+            }
+        }
+
+        // 统一操作反馈提示横幅
+        feedback?.let { msg ->
+            Surface(
+                color = if (msg.startsWith("发送失败") || msg.startsWith("应答失败") || msg.startsWith("连接已断开"))
+                    MaterialTheme.colorScheme.errorContainer
+                else
+                    MaterialTheme.colorScheme.primaryContainer,
+                shape = RoundedCornerShape(8.dp),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(bottom = 10.dp)
+            ) {
+                Text(
+                    text = msg,
+                    style = MaterialTheme.typography.labelMedium,
+                    color = if (msg.startsWith("发送失败") || msg.startsWith("应答失败") || msg.startsWith("连接已断开"))
+                        MaterialTheme.colorScheme.onErrorContainer
+                    else
+                        MaterialTheme.colorScheme.onPrimaryContainer,
+                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp)
+                )
             }
         }
 
