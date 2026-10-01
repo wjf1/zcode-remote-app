@@ -572,7 +572,7 @@ private fun CreateSessionDialog(
                                 overflow = TextOverflow.Ellipsis,
                                 modifier = Modifier.weight(1f)
                             )
-                            Text("▾", color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.weight(0f, fill = false))
+                            Text("▾", color = MaterialTheme.colorScheme.onSurfaceVariant)
                         }
 
                         DropdownMenu(
