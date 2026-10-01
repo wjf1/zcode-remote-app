@@ -1,5 +1,19 @@
 # 变更记录 / Changelog
 
+## v0.5.0-beta4（2026-10-01）· 新建会话可手动选择思考档位
+
+**里程碑：把 PC 端权威的模型思考档位表搬进新建会话弹窗，支持按需选择推理强度**
+
+### 新增（思考档位选择器）
+- **新建会话弹窗新增「思考档位」选择器（`CreateSessionDialog`）**：
+  - 数据源为 `model-selection::getView` 解析出的各模型合法档位表（如 deepseek `关闭/低/高/最高`、gemini `关闭/中`）；
+  - 切换模型时自动重置档位选择，档位随所选模型动态刷新；无推理档位的模型不展示该选择器；
+  - 档位值做中文映射（`disabled→关闭`、`low→低`、`medium/enabled→中`、`high→高`、`max/xhigh→最高`），并提示「档位越高推理越深入，但耗时与消耗也更大」；
+  - 未手动选择时沿用自动策略（取首个非 `disabled` 档位），手动指定模型 ID 时档位交回自动挑选；
+  - 选中的档位随 `createSession` 的 `config.thought` 下发，避免再出现非法档位导致的创建失败。
+
+- `versionName 0.5.0-beta4` / `versionCode 14`。
+
 ## v0.5.0-beta3（2026-10-01）· 修复推理模型思考档位校验失败（Reasoning level is required）
 
 **里程碑：彻底解决新建会话/切换模型时因思考档位（reasoning level）非法导致的「Model creation failed」**

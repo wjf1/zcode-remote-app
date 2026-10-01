@@ -198,6 +198,7 @@ class MainActivity : ComponentActivity() {
                                             currentModel = vm.conversationMeta.model,
                                             currentProvider = vm.conversationMeta.provider,
                                             availableModels = vm.allAvailableModels,
+                                            modelReasoningLevels = vm.modelReasoningLevels,
                                             onCreateSession = { prompt, modelOption ->
                                                 vm.createNewSession(
                                                     firstPrompt = prompt,

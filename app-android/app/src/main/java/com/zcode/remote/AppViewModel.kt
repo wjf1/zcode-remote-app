@@ -853,10 +853,10 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
             ConversationChannel.ModelConfig(
                 providerId = pid,
                 modelId = mid,
-                // 思考档位必须用该模型自己的合法值（gemini=enabled，deepseek 可能是 high 等）；
+                // 思考档位必须用该模型自己的合法值（gemini=enabled，deepseek 可能是 low/high/max）；
                 // 官方 registry 校验不通过会直接抛出 "Reasoning level is required" 让会话失败。
-                // 选不出合法值时传 null（不发送 thought），由 PC 端按模型默认档位决定。
-                thought = pickReasoningLevel(pid, mid),
+                // 用户在弹窗里显式选了档位则用选中的，否则自动挑一个合法档位；都没有时不下发。
+                thought = modelOption.thought ?: pickReasoningLevel(pid, mid),
                 mode = "yolo",
             )
         }

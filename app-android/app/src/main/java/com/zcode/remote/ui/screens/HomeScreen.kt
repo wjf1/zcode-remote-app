@@ -66,6 +66,8 @@ fun HomeScreen(
     currentModel: String? = null,
     currentProvider: String? = null,
     availableModels: List<com.zcode.remote.relay.WorkspaceConfigChannel.ModelOption> = emptyList(),
+    /** 各模型合法思考档位：key = "providerId/modelId"。 */
+    modelReasoningLevels: Map<String, List<String>> = emptyMap(),
     onCreateSession: (prompt: String, modelConfig: com.zcode.remote.relay.WorkspaceConfigChannel.ModelOption?) -> Unit = { _, _ -> },
 ) {
     var filterOnlyRunning by remember { mutableStateOf(false) }
@@ -300,6 +302,7 @@ fun HomeScreen(
                 onLoadModels = onLoadModels,
                 currentModel = currentModel,
                 currentProvider = currentProvider,
+                modelReasoningLevels = modelReasoningLevels,
                 onDismiss = { showCreateDialog = false },
                 onConfirm = { prompt, modelConfig ->
                     showCreateDialog = false
@@ -467,6 +470,20 @@ private fun statusLabel(state: RelayState) = when (state) {
     is RelayState.Failed -> "异常"
 }
 
+/** 自动挑选的思考档位：优先首个非 disabled（保持推理开启），全为 disabled 时取第一个。 */
+private fun autoThought(levels: List<String>): String? =
+    levels.firstOrNull { !it.equals("disabled", ignoreCase = true) } ?: levels.firstOrNull()
+
+/** 思考档位的中文展示名（未知档位原样回显）。 */
+private fun thoughtLabel(level: String): String = when (level.lowercase()) {
+    "disabled", "off", "none" -> "关闭"
+    "low", "minimal" -> "低"
+    "medium", "enabled" -> "中"
+    "high" -> "高"
+    "max", "xhigh" -> "最高"
+    else -> level
+}
+
 /**
  * 新建会话弹窗
  * 支持输入首条任务指令、语音输入填充与可选的模型选择（数据源 = PC 端工作区模型目录）。
@@ -479,6 +496,8 @@ private fun CreateSessionDialog(
     onLoadModels: () -> Unit,
     currentModel: String?,
     currentProvider: String?,
+    /** 各模型合法思考档位：key = "providerId/modelId"。 */
+    modelReasoningLevels: Map<String, List<String>> = emptyMap(),
     onDismiss: () -> Unit,
     onConfirm: (prompt: String, modelConfig: com.zcode.remote.relay.WorkspaceConfigChannel.ModelOption?) -> Unit,
 ) {
@@ -490,6 +509,15 @@ private fun CreateSessionDialog(
     // 模型选择：null = 跟随 PC 端默认；选中 = 显式下发 config
     var selectedModel by remember { mutableStateOf<com.zcode.remote.relay.WorkspaceConfigChannel.ModelOption?>(null) }
     var modelMenuExpanded by remember { mutableStateOf(false) }
+    // 思考档位：null = 自动（取首个非 disabled 档位）
+    var selectedThought by remember { mutableStateOf<String?>(null) }
+
+    /** 该模型可供选择的思考档位（空 = 该模型无推理档位，不展示选择器）。 */
+    fun levelsOf(opt: com.zcode.remote.relay.WorkspaceConfigChannel.ModelOption?): List<String> {
+        if (opt == null) return emptyList()
+        val pid = opt.providerId ?: return emptyList()
+        return modelReasoningLevels["$pid/${opt.modelId()}"] ?: emptyList()
+    }
 
     val modelsList = if (availableModels.isNotEmpty()) availableModels else (modelState?.models ?: emptyList())
     val hasCatalog = modelsList.isNotEmpty()
@@ -503,6 +531,12 @@ private fun CreateSessionDialog(
         )
         else -> selectedModel
     }
+    // 把用户选定的思考档位附着到模型选项上（未选则交给上层自动挑选）
+    val finalSelection = effectiveSelection?.copy(thought = selectedThought)
+    val availableThoughtLevels = levelsOf(effectiveSelection)
+
+    // 切换模型后重置档位选择，避免把上一个模型的档位带到新模型
+    LaunchedEffect(effectiveSelection?.value) { selectedThought = null }
 
     // 弹窗打开时拉一次模型目录
     LaunchedEffect(Unit) { onLoadModels() }
@@ -681,6 +715,41 @@ private fun CreateSessionDialog(
                     }
                 }
 
+                // ---- 思考档位选择器（仅当所选模型有推理档位时展示）----
+                if (availableThoughtLevels.size > 1) {
+                    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                        Text(
+                            text = "思考档位",
+                            style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.SemiBold),
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(6.dp)
+                        ) {
+                            availableThoughtLevels.forEach { lv ->
+                                val picked = (selectedThought ?: autoThought(availableThoughtLevels)) == lv
+                                FilterChip(
+                                    selected = picked,
+                                    onClick = { selectedThought = lv },
+                                    label = {
+                                        Text(
+                                            text = thoughtLabel(lv),
+                                            style = MaterialTheme.typography.labelSmall
+                                        )
+                                    },
+                                    shape = RoundedCornerShape(8.dp)
+                                )
+                            }
+                        }
+                        Text(
+                            text = "档位越高推理越深入，但耗时与消耗也更大。",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                }
+
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.End,
@@ -700,7 +769,10 @@ private fun CreateSessionDialog(
                 // 自定义模型 ID（目录不可用或需临时指定时使用；留空 = 按下拉选择/默认）
                 OutlinedTextField(
                     value = customModelId,
-                    onValueChange = { customModelId = it },
+                    onValueChange = {
+                        customModelId = it
+                        selectedThought = null   // 手填模型 ID 时档位交回自动挑选
+                    },
                     placeholder = {
                         Text(
                             "可选：手动指定模型 ID（如 glm-4.5 / deepseek-r1）",
@@ -715,7 +787,7 @@ private fun CreateSessionDialog(
         },
         confirmButton = {
             Button(
-                onClick = { onConfirm(prompt.trim(), effectiveSelection) },
+                onClick = { onConfirm(prompt.trim(), finalSelection) },
                 enabled = prompt.isNotBlank(),
                 shape = RoundedCornerShape(8.dp)
             ) {

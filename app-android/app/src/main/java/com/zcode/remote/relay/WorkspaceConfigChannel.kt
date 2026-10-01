@@ -28,6 +28,8 @@ class WorkspaceConfigChannel(private val rpc: RpcChannel) {
         val name: String,
         val providerId: String?,
         val providerName: String?,
+        /** 用户显式选择的思考档位（null = 用该模型默认档位/由 PC 决定）。 */
+        val thought: String? = null,
     ) {
         /** 拆出 createSession config 用的 modelId：value 含 provider 前缀时取斜杠后段。 */
         fun modelId(): String {
