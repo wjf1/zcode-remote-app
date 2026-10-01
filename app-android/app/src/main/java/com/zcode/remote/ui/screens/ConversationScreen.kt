@@ -13,6 +13,7 @@ import androidx.compose.animation.expandVertically
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.shrinkVertically
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.*
@@ -80,6 +81,9 @@ fun ConversationScreen(
     onStop: () -> Unit = {},
     onAttachmentPicked: (uri: android.net.Uri, name: String, mime: String, size: Long) -> Unit = { _, _, _, _ -> },
     onRemoveAttachment: (ConversationChannel.AttachmentRef) -> Unit = {},
+    availableModels: List<com.zcode.remote.relay.WorkspaceConfigChannel.ModelOption> = emptyList(),
+    onSwitchModel: (com.zcode.remote.relay.WorkspaceConfigChannel.ModelOption) -> Unit = {},
+    onSwitchModelCustom: (String) -> Unit = {},
     onBack: () -> Unit,
 ) {
     val listState = rememberLazyListState()
@@ -152,6 +156,72 @@ fun ConversationScreen(
                     color = if (status is ConversationChannel.Status.Failed) MaterialTheme.colorScheme.error
                     else MaterialTheme.colorScheme.onSurfaceVariant,
                 )
+            }
+
+            // 顶栏右侧：模型切换胶囊
+            Box {
+                var menuExpanded by remember { mutableStateOf(false) }
+                Surface(
+                    onClick = { menuExpanded = true },
+                    shape = RoundedCornerShape(14.dp),
+                    color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.6f),
+                    border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
+                    modifier = Modifier.height(28.dp)
+                ) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        modifier = Modifier.padding(horizontal = 8.dp)
+                    ) {
+                        Text(
+                            text = meta.model?.substringAfterLast('/') ?: "模型",
+                            style = MaterialTheme.typography.labelSmall.copy(
+                                fontWeight = FontWeight.SemiBold,
+                                fontSize = 11.sp
+                            ),
+                            color = MaterialTheme.colorScheme.primary,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                        Spacer(Modifier.width(2.dp))
+                        Text("▾", fontSize = 10.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
+                }
+
+                DropdownMenu(
+                    expanded = menuExpanded,
+                    onDismissRequest = { menuExpanded = false }
+                ) {
+                    if (availableModels.isEmpty()) {
+                        DropdownMenuItem(
+                            text = { Text("未读到备选模型目录", style = MaterialTheme.typography.bodySmall) },
+                            onClick = {},
+                            enabled = false
+                        )
+                    } else {
+                        availableModels.forEach { m ->
+                            val isSelected = m.name == meta.model || m.modelId() == meta.model
+                            DropdownMenuItem(
+                                text = {
+                                    Column {
+                                        Text(m.name, style = MaterialTheme.typography.bodySmall)
+                                        m.providerName?.let {
+                                            Text(it, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                        }
+                                    }
+                                },
+                                leadingIcon = {
+                                    if (isSelected) {
+                                        Icon(Icons.Default.Check, null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(16.dp))
+                                    }
+                                },
+                                onClick = {
+                                    menuExpanded = false
+                                    onSwitchModel(m)
+                                }
+                            )
+                        }
+                    }
+                }
             }
         }
 

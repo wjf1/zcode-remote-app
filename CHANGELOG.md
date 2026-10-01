@@ -4,13 +4,16 @@
 
 **里程碑：重构为底部 3-Tab 现代移动端架构，移植官方 ZCode 设计系统规范，集中式待办看板与独立设置中心**
 
-### 新增（架构重构与新建会话功能）
-- **支持移动端原生发起新会话并自主选择模型（New Session with Model Selection）**：
-  - 基于官方 V4 协议原生信封机制（`zcode-agent::sendConversationCommandV4`，`type = "createSession"`, `sessionId = null`）；
-  - **双路模型数据保障**：通过 `WorkspaceConfigChannel` 订阅工作区配置流，同时从实时会话快照中自动提取 PC 端主力模型作为置顶推荐项；
-  - **支持手动指定模型 ID**：弹窗下方提供可选输入框，随时直接填入任意模型 ID（如 `deepseek-r1` / `glm-4.5` / `claude-3-5-sonnet`）显式指定，留空则智能跟随 PC 默认；
-  - 会话工作台顶栏右侧新增「+ 新建会话」快捷操作，支持任务指令文本与系统语音识别直接填充；
-  - 创建成功后自动同步订阅并无缝跳转至沉浸式对话控制台，直接查看 Agent 的首轮推理与执行过程。
+### 新增（架构重构、新建会话与会话内动态切换模型）
+- **会话内实时动态切换模型（In-Session Model Switching）**：
+  - 基于官方 V4 原生命令信封机制（`zcode-agent::sendConversationCommandV4`，`type = "switchModelConfig"`），带 `baseRevision` CAS 防冲突校验；
+  - 沉浸式会话详情页顶部 AppBar 新增**模型状态胶囊（如 `gemini-3.8-flash-high ▾`）**，点击可展开切换当前工作区可用模型列表；
+  - 切换成功后服务端实时广播 `state.updated` 增量帧更新本地会话快照，下一轮对话指令直接以新模型驱动推理与执行。
+- **支持移动端远程拉取桌面端模型目录并自主选择（Remote Model Catalog Fetching）**：
+  - 修复 `readWorkspaceState` 请求通道为 `zcode-session` 官方服务，从桌面端直接拉取包含当前模型与全部可用模型列表的工作区目录；
+  - **双路模型数据保障**：结合 `WorkspaceConfigChannel` 配置流订阅与实时会话快照提取，保证任何情况下均有模型数据显示；
+  - **支持手动指定模型 ID**：新建会话弹窗支持手动输入任意模型 ID（如 `deepseek-r1` / `glm-4.5` / `claude-3-5-sonnet`）显式指定，留空则智能跟随 PC 默认。
+- **支持移动端原生发起新会话（New Session）**：
 - **底部 3-Tab 移动端架构（对标 GitHub Mobile / Claude Mobile）**：
   - 彻底淘汰此前单页垂直杂乱堆叠的形式，建立清晰的 3 大专属视窗（`MainActivity.kt`）：
     1. **会话 (SessionsTab)**：纯粹的会话流与工作区列表，顶部紧凑设备指示，支持标题/路径搜索与状态快速筛选；

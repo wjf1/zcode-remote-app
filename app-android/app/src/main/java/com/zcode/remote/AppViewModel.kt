@@ -825,25 +825,86 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
-    // ---- 模型目录（新建会话弹窗的模型选择数据源）----
+    // ---- 模型目录（新建会话弹窗与会话内切模型的数据源）----
 
     /** 工作区模型状态（workspace-config 订阅推送，snapshot/deltas 双路更新）。 */
     val workspaceModelState: WorkspaceConfigChannel.WorkspaceState?
         get() = workspaceConfig?.state?.value
+
+    /** 从 zcode-session::readWorkspaceState 读取的模型列表。 */
+    var workspaceSessionModels by mutableStateOf<List<WorkspaceConfigChannel.ModelOption>>(emptyList())
+        private set
+
+    /** 综合可用模型列表（优先配置订阅，回退 session 目录）。 */
+    val allAvailableModels: List<WorkspaceConfigChannel.ModelOption>
+        get() {
+            val fromConfig = workspaceConfig?.state?.value?.models ?: emptyList()
+            if (fromConfig.isNotEmpty()) return fromConfig
+            if (workspaceSessionModels.isNotEmpty()) return workspaceSessionModels
+            return emptyList()
+        }
+
     var modelStateLoading by mutableStateOf(false)
         private set
 
     /**
-     * 触发一次模型目录刷新：workspace-config 是订阅式推送（开桥即订，snapshot 自动到达），
-     * 这里只做"读现值 + 未读到时 resync 兜底"，不再调用远程桥上不存在的 readWorkspaceState。
+     * 触发一次模型目录刷新：同时触发 workspace-config resync 与 zcode-session::readWorkspaceState，
+     * 只要有一路返回模型数据即可填充到 UI。
      */
     fun loadWorkspaceModels() {
-        val wcfg = workspaceConfig ?: return
-        if (wcfg.state.value != null) return
         val ws = activeWorkspaceKey ?: sessions.firstOrNull()?.workspacePath ?: return
         modelStateLoading = true
-        wcfg.resync(ws) {
+        conversation?.readWorkspaceState(ws) { res ->
+            viewModelScope.launch {
+                res.onSuccess { state ->
+                    val list = state.available.map {
+                        WorkspaceConfigChannel.ModelOption(
+                            value = "${it.providerId}/${it.modelId}",
+                            name = it.displayName(),
+                            providerId = it.providerId,
+                            providerName = it.providerLabel,
+                        )
+                    }
+                    if (list.isNotEmpty()) {
+                        workspaceSessionModels = list
+                        Log.i(TAG, "readWorkspaceState 模型加载成功: ${list.size} 个模型")
+                    }
+                }
+            }
+        }
+        workspaceConfig?.resync(ws) {
             modelStateLoading = false
+        }
+    }
+
+    /**
+     * 在已有会话中动态切换模型（官方 V4 switchModelConfig 原生信封链路）。
+     * 成功后服务端广播 state.updated 增量帧，顶栏模型回显即时更新。
+     */
+    fun switchCurrentSessionModel(modelOption: WorkspaceConfigChannel.ModelOption) {
+        val conv = conversation ?: run { flash("连接尚未就绪"); return }
+        val (pid, mid) = WorkspaceConfigChannel.splitModelValue(modelOption.value)
+        conv.switchModelConfig(provider = pid, model = mid) { result ->
+            viewModelScope.launch {
+                result.fold(
+                    onSuccess = { flash("模型已切换为 $mid") },
+                    onFailure = { flash("切换模型失败: ${it.message}") }
+                )
+            }
+        }
+    }
+
+    /** 手动输入模型 ID 切换。 */
+    fun switchCurrentSessionModelCustom(modelId: String, providerId: String? = null) {
+        val conv = conversation ?: run { flash("连接尚未就绪"); return }
+        val pid = providerId ?: conversationMeta.provider ?: "glm"
+        conv.switchModelConfig(provider = pid, model = modelId.trim()) { result ->
+            viewModelScope.launch {
+                result.fold(
+                    onSuccess = { flash("模型已切换为 $modelId") },
+                    onFailure = { flash("切换模型失败: ${it.message}") }
+                )
+            }
         }
     }
 

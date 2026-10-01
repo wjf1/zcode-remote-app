@@ -103,6 +103,8 @@ object ConversationFrames {
         val configModel: String? = null,
         /** 快照 config 块的当前供应商 providerId。 */
         val configProvider: String? = null,
+        /** 当前状态版本号（CAS 命令 switchModelConfig 必须带上 baseRevision）。 */
+        val revision: Long? = null,
     )
 
     /**
@@ -154,6 +156,7 @@ object ConversationFrames {
             control = control,
             configModel = cfg?.str("model"),
             configProvider = cfg?.str("provider"),
+            revision = snap.long("revision") ?: snap.long("seq"),
         )
     }
 

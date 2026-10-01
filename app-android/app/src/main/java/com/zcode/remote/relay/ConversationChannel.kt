@@ -61,6 +61,8 @@ class ConversationChannel(private val rpc: RpcChannel) {
         /** 快照 config 带的 PC 端当前模型（新建会话弹窗展示与 provider 继承用）。 */
         val model: String? = null,
         val provider: String? = null,
+        /** 当前状态版本号（CAS 命令 switchModelConfig 必须带上 baseRevision）。 */
+        val revision: Long = 0L,
     )
 
     private val clientId = "android-${UUID.randomUUID()}"
@@ -192,6 +194,7 @@ class ConversationChannel(private val rpc: RpcChannel) {
                     stopState = control?.stopState ?: _meta.value.stopState,
                     model = snap.configModel ?: _meta.value.model,
                     provider = snap.configProvider ?: _meta.value.provider,
+                    revision = snap.revision ?: _meta.value.revision,
                 )
                 Log.i(TAG, "snapshot: ${snap.rows.size} 行（总 ${snap.totalCount}）" +
                         "待审批=${snap.pendingInteractions.size} delivery=${lf.deliveryKind}" +
@@ -232,6 +235,24 @@ class ConversationChannel(private val rpc: RpcChannel) {
                                         stopState = ctl.stopState ?: _meta.value.stopState,
                                     )
                                     Log.i(TAG, "control 更新 phase=${ctl.phase} canStop=${ctl.canStop} stopState=${ctl.stopState}")
+                                }
+                            }
+                            // revision 增量更新（用于 CAS 校验）
+                            p["revision"]?.let { rEl ->
+                                runCatching { rEl.jsonPrimitive.content.toLongOrNull() }.getOrNull()?.let { r ->
+                                    _meta.value = _meta.value.copy(revision = r)
+                                }
+                            }
+                            // config 增量更新（切换模型后广播）
+                            p["config"].asObj()?.let { cfg ->
+                                val newModel = cfg["model"].asStr()
+                                val newProvider = cfg["provider"].asStr()
+                                if (newModel != null || newProvider != null) {
+                                    _meta.value = _meta.value.copy(
+                                        model = newModel ?: _meta.value.model,
+                                        provider = newProvider ?: _meta.value.provider,
+                                    )
+                                    Log.i(TAG, "config 增量更新 model=$newModel provider=$newProvider")
                                 }
                             }
                         }
@@ -576,8 +597,7 @@ class ConversationChannel(private val rpc: RpcChannel) {
 
     /**
      * 读取工作区配置状态（官方桌面端模型下拉框同款数据源）：
-     * `zcode-agent::readWorkspaceState`（真机实测：zcode-session 通道返回 Method not found，
-     * zcodeAgentService 的 ConnectionScope 是 Proxy 透传，未命中路由方法会原样转发底层服务）。
+     * `zcode-session::readWorkspaceState`，入参为 `[{workspacePath, preferWorkspaceDefaults:true}]`。
      * 返回当前模型、可用模型列表、思考等级与执行模式。
      */
     fun readWorkspaceState(
@@ -591,7 +611,7 @@ class ConversationChannel(private val rpc: RpcChannel) {
             put("preferWorkspaceDefaults", true)
         }
         Log.i(TAG, "readWorkspaceState ws=$workspacePath")
-        rpc.call(RpcChannel.CHANNEL_AGENT, "readWorkspaceState", listOf(args),
+        rpc.call(RpcChannel.CHANNEL_SESSION, "readWorkspaceState", listOf(args),
             timeoutMs = SEND_ACK_TIMEOUT_MS) { reply ->
             when (reply) {
                 is RpcChannel.RpcReply.Err -> {
@@ -606,6 +626,61 @@ class ConversationChannel(private val rpc: RpcChannel) {
                     } else {
                         Log.w(TAG, "readWorkspaceState 返回空目录，回退 model-provider::getAllCached")
                         fetchModelsViaProviderCatalog(onResult)
+                    }
+                }
+            }
+        }
+    }
+
+    /**
+     * 在已有会话中动态切换模型（官方 V4 switchModelConfig 原生命令）：
+     * `sendConversationCommandV4` envelope `type:'switchModelConfig'`。
+     * 携带 sessionId、baseRevision 与 payload = { provider, model, thought? }。
+     * 服务端即时生效并广播 `state.updated` 帧，下一轮发送的消息立即以新模型执行。
+     */
+    fun switchModelConfig(
+        provider: String,
+        model: String,
+        thought: String? = null,
+        onResult: (Result<Unit>) -> Unit,
+    ) {
+        val session = sessionId
+        val target = subTarget
+        if (session == null || target == null) {
+            onResult(Result.failure(IllegalStateException("未订阅会话，无法切换模型")))
+            return
+        }
+        val payload = LinkedHashMap<String, Any>()
+        payload["provider"] = provider
+        payload["model"] = model
+        thought?.let { payload["thought"] = it }
+
+        val baseRev = _meta.value.revision
+        val args = HashMap<String, Any>(target)
+        args["envelope"] = mapOf(
+            "commandId" to "cmd-${UUID.randomUUID()}",
+            "clientId" to clientId,
+            "sessionId" to session,
+            "baseRevision" to baseRev,
+            "type" to "switchModelConfig",
+            "payload" to payload,
+            "issuedAt" to System.currentTimeMillis(),
+        )
+
+        Log.i(TAG, "switchModelConfig session=$session model=$model provider=$provider baseRev=$baseRev")
+        rpc.call(RpcChannel.CHANNEL_AGENT, "sendConversationCommandV4", listOf(args),
+            timeoutMs = SEND_ACK_TIMEOUT_MS) { reply ->
+            when (reply) {
+                is RpcChannel.RpcReply.Err -> onResult(Result.failure(IllegalStateException(reply.message)))
+                is RpcChannel.RpcReply.Ok -> {
+                    val ack = parseCommandAck(reply.data)
+                    when (ack) {
+                        is ResolveResult.Accepted -> {
+                            Log.i(TAG, "switchModelConfig success")
+                            _meta.value = _meta.value.copy(model = model, provider = provider)
+                            onResult(Result.success(Unit))
+                        }
+                        is ResolveResult.Failed -> onResult(Result.failure(IllegalStateException(ack.message)))
                     }
                 }
             }
