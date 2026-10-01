@@ -474,8 +474,8 @@ private fun statusLabel(state: RelayState) = when (state) {
 private fun autoThought(levels: List<String>): String? =
     levels.firstOrNull { !it.equals("disabled", ignoreCase = true) } ?: levels.firstOrNull()
 
-/** 思考档位的中文展示名（未知档位原样回显）。 */
-private fun thoughtLabel(level: String): String = when (level.lowercase()) {
+/** 思考档位的中文展示名（未知档位原样回显）。会话页二级菜单复用。 */
+internal fun thoughtLabel(level: String): String = when (level.lowercase()) {
     "disabled", "off", "none" -> "关闭"
     "low", "minimal" -> "低"
     "medium", "enabled" -> "中"

@@ -888,9 +888,9 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
                         if (sessions.none { it.taskId == newSid }) {
                             sessions.add(0, item)
                         }
-                        if (promptText.isNotEmpty()) {
-                            promptDraft = promptText
-                        }
+                        // 首轮指令已随 createSession 的 firstInput 发出，输入框保持空白
+                        promptDraft = ""
+                        clearAttachments()
                         openSession(item)
                         onSuccess(item)
                     },
@@ -1153,10 +1153,12 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
     fun switchCurrentSessionModel(modelOption: WorkspaceConfigChannel.ModelOption) {
         val conv = conversation ?: run { flash("连接尚未就绪"); return }
         val (pid, mid) = WorkspaceConfigChannel.splitModelValue(modelOption.value)
-        conv.switchModelConfig(provider = pid, model = mid, thought = pickReasoningLevel(pid, mid)) { result ->
+        // 用户选了档位就用选的，否则按该模型自动挑一个合法档位，避免 registry 校验失败
+        val thought = modelOption.thought ?: pickReasoningLevel(pid, mid)
+        conv.switchModelConfig(provider = pid, model = mid, thought = thought) { result ->
             viewModelScope.launch {
                 result.fold(
-                    onSuccess = { flash("模型已切换为 $mid") },
+                    onSuccess = { flash("模型已切换为 $mid" + (thought?.let { " · $it" } ?: "")) },
                     onFailure = { flash("切换模型失败: ${it.message}") }
                 )
             }

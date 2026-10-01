@@ -94,6 +94,7 @@ class MainActivity : ComponentActivity() {
                             onAttachmentPicked = { uri, name, mime, size -> vm.addAttachment(uri, name, mime, size) },
                             onRemoveAttachment = { vm.removeAttachment(it) },
                             availableModels = vm.allAvailableModels,
+                            modelReasoningLevels = vm.modelReasoningLevels,
                             onSwitchModel = { m -> vm.switchCurrentSessionModel(m) },
                             onSwitchModelCustom = { id -> vm.switchCurrentSessionModelCustom(id) },
                             onBack = { opened = null },

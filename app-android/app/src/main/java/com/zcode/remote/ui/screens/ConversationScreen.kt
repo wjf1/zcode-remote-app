@@ -82,6 +82,8 @@ fun ConversationScreen(
     onAttachmentPicked: (uri: android.net.Uri, name: String, mime: String, size: Long) -> Unit = { _, _, _, _ -> },
     onRemoveAttachment: (ConversationChannel.AttachmentRef) -> Unit = {},
     availableModels: List<com.zcode.remote.relay.WorkspaceConfigChannel.ModelOption> = emptyList(),
+    /** 各模型合法思考档位：key = "providerId/modelId"（会话内切模型时用于二级档位菜单）。 */
+    modelReasoningLevels: Map<String, List<String>> = emptyMap(),
     onSwitchModel: (com.zcode.remote.relay.WorkspaceConfigChannel.ModelOption) -> Unit = {},
     onSwitchModelCustom: (String) -> Unit = {},
     onBack: () -> Unit,
@@ -158,11 +160,20 @@ fun ConversationScreen(
                 )
             }
 
-            // 顶栏右侧：模型切换胶囊
+            // 顶栏右侧：模型切换胶囊（两级菜单：先选模型 → 再选思考档位）
             Box {
                 var menuExpanded by remember { mutableStateOf(false) }
+                // 当前处于档位选择阶段的模型（null = 正在选模型）
+                var levelStageModel by remember { mutableStateOf<com.zcode.remote.relay.WorkspaceConfigChannel.ModelOption?>(null) }
+
+                fun levelsOf(m: com.zcode.remote.relay.WorkspaceConfigChannel.ModelOption?): List<String> {
+                    if (m == null) return emptyList()
+                    val pid = m.providerId ?: return emptyList()
+                    return modelReasoningLevels["$pid/${m.modelId()}"] ?: emptyList()
+                }
+
                 Surface(
-                    onClick = { menuExpanded = true },
+                    onClick = { levelStageModel = null; menuExpanded = true },
                     shape = RoundedCornerShape(14.dp),
                     color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.6f),
                     border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
@@ -189,34 +200,73 @@ fun ConversationScreen(
 
                 DropdownMenu(
                     expanded = menuExpanded,
-                    onDismissRequest = { menuExpanded = false }
+                    onDismissRequest = { menuExpanded = false; levelStageModel = null }
                 ) {
-                    if (availableModels.isEmpty()) {
-                        DropdownMenuItem(
-                            text = { Text("未读到备选模型目录", style = MaterialTheme.typography.bodySmall) },
-                            onClick = {},
-                            enabled = false
-                        )
-                    } else {
-                        availableModels.forEach { m ->
-                            val isSelected = m.name == meta.model || m.modelId() == meta.model
+                    val stage = levelStageModel
+                    if (stage == null) {
+                        // ---- 阶段一：选模型 ----
+                        if (availableModels.isEmpty()) {
                             DropdownMenuItem(
-                                text = {
-                                    Column {
-                                        Text(m.name, style = MaterialTheme.typography.bodySmall)
-                                        m.providerName?.let {
-                                            Text(it, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                text = { Text("未读到备选模型目录", style = MaterialTheme.typography.bodySmall) },
+                                onClick = {},
+                                enabled = false
+                            )
+                        } else {
+                            availableModels.forEach { m ->
+                                val isSelected = m.name == meta.model || m.modelId() == meta.model
+                                val levels = levelsOf(m)
+                                DropdownMenuItem(
+                                    text = {
+                                        Column {
+                                            Text(m.name, style = MaterialTheme.typography.bodySmall)
+                                            m.providerName?.let {
+                                                Text(it, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                            }
+                                        }
+                                    },
+                                    leadingIcon = {
+                                        if (isSelected) {
+                                            Icon(Icons.Default.Check, null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(16.dp))
+                                        }
+                                    },
+                                    trailingIcon = {
+                                        if (levels.isNotEmpty()) {
+                                            Text("▸", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                        }
+                                    },
+                                    onClick = {
+                                        if (levels.isEmpty()) {
+                                            // 无推理档位的模型：直接切换
+                                            menuExpanded = false
+                                            onSwitchModel(m.copy(thought = null))
+                                        } else {
+                                            // 有档位：进入第二阶段
+                                            levelStageModel = m
                                         }
                                     }
-                                },
-                                leadingIcon = {
-                                    if (isSelected) {
-                                        Icon(Icons.Default.Check, null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(16.dp))
-                                    }
-                                },
+                                )
+                            }
+                        }
+                    } else {
+                        // ---- 阶段二：选思考档位 ----
+                        DropdownMenuItem(
+                            text = {
+                                Text(
+                                    "← ${stage.name.substringAfterLast('/')}",
+                                    style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.SemiBold),
+                                    color = MaterialTheme.colorScheme.primary
+                                )
+                            },
+                            onClick = { levelStageModel = null }
+                        )
+                        HorizontalDivider()
+                        levelsOf(stage).forEach { lv ->
+                            DropdownMenuItem(
+                                text = { Text(thoughtLabel(lv), style = MaterialTheme.typography.bodySmall) },
                                 onClick = {
                                     menuExpanded = false
-                                    onSwitchModel(m)
+                                    levelStageModel = null
+                                    onSwitchModel(stage.copy(thought = lv))
                                 }
                             )
                         }
