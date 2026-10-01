@@ -5,14 +5,19 @@ import android.content.ClipboardManager
 import android.content.Context
 import android.widget.Toast
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Check
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.AnnotatedString
@@ -24,11 +29,11 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.zcode.remote.ui.theme.ZCodeTokens
 
 /**
- * 纯 Jetpack Compose 原生 Markdown 渲染组件：
- * 对齐桌面端排版体验，支持各级标题、代码块（含横向滚动与一键复制）、
- * 无序/有序列表缩进、引用块、分割线与行内富文本（粗体、斜体、行内代码、删除线）。
+ * 纯 Jetpack Compose 原生 Markdown 渲染组件
+ * 对齐官方 ZCode 桌面端排版体验，自动适配深浅双色，支持代码高亮容器、一键复制、列表与引用。
  */
 @Composable
 fun MarkdownView(
@@ -63,17 +68,19 @@ fun MarkdownView(
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
+                            .height(IntrinsicSize.Min)
                             .background(
-                                color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
+                                color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.45f),
                                 shape = RoundedCornerShape(4.dp)
                             )
-                            .padding(8.dp)
+                            .padding(vertical = 6.dp, horizontal = 8.dp),
+                        verticalAlignment = Alignment.CenterVertically
                     ) {
                         Box(
                             modifier = Modifier
                                 .width(3.dp)
                                 .fillMaxHeight()
-                                .background(MaterialTheme.colorScheme.primary)
+                                .background(MaterialTheme.colorScheme.primary, RoundedCornerShape(1.5.dp))
                         )
                         Spacer(Modifier.width(8.dp))
                         Text(
@@ -85,7 +92,7 @@ fun MarkdownView(
                 }
                 is MarkdownBlock.UnorderedList -> {
                     Row(
-                        modifier = Modifier.fillMaxWidth().padding(start = 6.dp),
+                        modifier = Modifier.fillMaxWidth().padding(start = 4.dp),
                         verticalAlignment = Alignment.Top
                     ) {
                         Text(
@@ -103,7 +110,7 @@ fun MarkdownView(
                 }
                 is MarkdownBlock.OrderedList -> {
                     Row(
-                        modifier = Modifier.fillMaxWidth().padding(start = 6.dp),
+                        modifier = Modifier.fillMaxWidth().padding(start = 4.dp),
                         verticalAlignment = Alignment.Top
                     ) {
                         Text(
@@ -142,37 +149,52 @@ fun MarkdownView(
 private fun CodeCard(language: String, code: String) {
     val context = LocalContext.current
     val scrollState = rememberScrollState()
+    val isDark = isSystemInDarkTheme()
+    var copied by remember { mutableStateOf(false) }
+
+    val bgColor = if (isDark) ZCodeTokens.CodeBgDark else ZCodeTokens.CodeBgLight
+    val headerColor = if (isDark) ZCodeTokens.CodeHeaderDark else ZCodeTokens.CodeHeaderLight
+    val codeColor = if (isDark) Color(0xFFE2E8F0) else Color(0xFF1E293B)
+    val langColor = if (isDark) Color(0xFF94A3B8) else Color(0xFF64748B)
 
     Card(
-        shape = RoundedCornerShape(8.dp),
-        colors = CardDefaults.cardColors(containerColor = Color(0xFF1E1E1E)),
+        shape = RoundedCornerShape(10.dp),
+        colors = CardDefaults.cardColors(containerColor = bgColor),
+        border = CardDefaults.outlinedCardBorder(),
         modifier = Modifier.fillMaxWidth()
     ) {
         Column {
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .background(Color(0xFF2D2D2D))
+                    .background(headerColor)
                     .padding(horizontal = 12.dp, vertical = 4.dp),
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.SpaceBetween
             ) {
                 Text(
                     text = language.ifBlank { "code" },
-                    style = MaterialTheme.typography.labelSmall,
-                    color = Color(0xFFB0B0B0),
+                    style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Medium),
+                    color = langColor,
                     fontFamily = FontFamily.Monospace
                 )
                 TextButton(
                     onClick = {
                         val cm = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
                         cm.setPrimaryClip(ClipData.newPlainText("code", code))
-                        Toast.makeText(context, "代码已复制到剪贴板", Toast.LENGTH_SHORT).show()
+                        copied = true
+                        Toast.makeText(context, "代码已复制", Toast.LENGTH_SHORT).show()
                     },
                     contentPadding = PaddingValues(horizontal = 8.dp, vertical = 0.dp),
                     modifier = Modifier.height(28.dp)
                 ) {
-                    Text("复制", style = MaterialTheme.typography.labelSmall, color = Color(0xFF64B5F6))
+                    if (copied) {
+                        Icon(Icons.Default.Check, null, tint = ZCodeTokens.StatusOnline, modifier = Modifier.size(14.dp))
+                        Spacer(Modifier.width(2.dp))
+                        Text("已复制", style = MaterialTheme.typography.labelSmall, color = ZCodeTokens.StatusOnline)
+                    } else {
+                        Text("复制", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary)
+                    }
                 }
             }
 
@@ -186,9 +208,10 @@ private fun CodeCard(language: String, code: String) {
                     text = code,
                     style = MaterialTheme.typography.bodySmall.copy(
                         fontFamily = FontFamily.Monospace,
+                        fontSize = 12.5.sp,
                         lineHeight = 18.sp
                     ),
-                    color = Color(0xFFE0E0E0),
+                    color = codeColor,
                 )
             }
         }
@@ -270,7 +293,6 @@ private fun buildInlineAnnotatedString(text: String, defaultColor: Color): Annot
     }
 }
 
-/** 块级 Markdown 元素定义 */
 private sealed interface MarkdownBlock {
     data class Heading(val level: Int, val text: String) : MarkdownBlock
     data class CodeBlock(val language: String, val code: String) : MarkdownBlock
@@ -281,7 +303,6 @@ private sealed interface MarkdownBlock {
     data class Paragraph(val text: String) : MarkdownBlock
 }
 
-/** 轻量级分块解析器 */
 private fun parseMarkdownBlocks(raw: String): List<MarkdownBlock> {
     val lines = raw.lines()
     val blocks = mutableListOf<MarkdownBlock>()
@@ -291,7 +312,6 @@ private fun parseMarkdownBlocks(raw: String): List<MarkdownBlock> {
         val line = lines[i]
         val trimmed = line.trim()
 
-        // 1. 代码块 ```
         if (trimmed.startsWith("```")) {
             val lang = trimmed.removePrefix("```").trim()
             val codeLines = mutableListOf<String>()
@@ -305,20 +325,17 @@ private fun parseMarkdownBlocks(raw: String): List<MarkdownBlock> {
             continue
         }
 
-        // 2. 空行跳过
         if (trimmed.isEmpty()) {
             i++
             continue
         }
 
-        // 3. 水平分割线 --- / ***
         if (trimmed.matches(Regex("^[\\-*_]{3,}$"))) {
             blocks.add(MarkdownBlock.Divider)
             i++
             continue
         }
 
-        // 4. 标题 # ~ ####
         val headingMatch = Regex("^(#{1,4})\\s+(.+)$").find(trimmed)
         if (headingMatch != null) {
             val level = headingMatch.groupValues[1].length
@@ -328,7 +345,6 @@ private fun parseMarkdownBlocks(raw: String): List<MarkdownBlock> {
             continue
         }
 
-        // 5. 引用块 >
         if (trimmed.startsWith(">")) {
             val text = trimmed.removePrefix(">").trim()
             blocks.add(MarkdownBlock.Quote(text))
@@ -336,7 +352,6 @@ private fun parseMarkdownBlocks(raw: String): List<MarkdownBlock> {
             continue
         }
 
-        // 6. 无序列表 - 或 *
         val unorderedMatch = Regex("^[-*]\\s+(.+)$").find(trimmed)
         if (unorderedMatch != null) {
             val text = unorderedMatch.groupValues[1].trim()
@@ -345,7 +360,6 @@ private fun parseMarkdownBlocks(raw: String): List<MarkdownBlock> {
             continue
         }
 
-        // 7. 有序列表 1. 2.
         val orderedMatch = Regex("^(\\d+)[.)]\\s+(.+)$").find(trimmed)
         if (orderedMatch != null) {
             val index = orderedMatch.groupValues[1]
@@ -355,7 +369,6 @@ private fun parseMarkdownBlocks(raw: String): List<MarkdownBlock> {
             continue
         }
 
-        // 8. 普通段落
         blocks.add(MarkdownBlock.Paragraph(line))
         i++
     }

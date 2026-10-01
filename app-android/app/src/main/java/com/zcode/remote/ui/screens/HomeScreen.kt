@@ -1,256 +1,279 @@
 package com.zcode.remote.ui.screens
 
-import android.content.ClipData
-import android.content.ClipboardManager
-import android.content.Context
-import android.content.Intent
-import android.net.Uri
-import android.widget.Toast
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.Search
+import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import com.zcode.remote.AppViewModel
-import com.zcode.remote.BuildConfig
+import androidx.compose.ui.unit.sp
 import com.zcode.remote.relay.FailureReason
 import com.zcode.remote.relay.RelayState
 import com.zcode.remote.relay.RpcChannel
 import com.zcode.remote.relay.SessionItem
 import com.zcode.remote.relay.TaskEvent
 import com.zcode.remote.storage.PairedDevice
+import com.zcode.remote.ui.theme.ZCodeTokens
 
-/** 主屏：连接状态 + PC 信息 + 会话列表（点击订阅）+ RPC 观测面板。 */
+/**
+ * 现代高信息密度会话工作台 (Sessions Tab)
+ * 对标官方 ZCode calm, dense, operational 规范，专注于工作区与会话列表管理。
+ */
 @Composable
 fun HomeScreen(
     deviceName: String,
     state: RelayState,
     sessions: List<SessionItem>,
-    events: List<TaskEvent>,
+    events: List<TaskEvent> = emptyList(),
     bridgeState: RpcChannel.BridgeState,
-    rpcEvents: List<String>,
+    rpcEvents: List<String> = emptyList(),
     devices: List<PairedDevice> = emptyList(),
     activeSid: String? = null,
-    /** 每个会话的待处理条数（P1-2 多会话看板）。 */
     sessionPending: Map<String, Int> = emptyMap(),
-    /** 会话搜索关键字（P2-3），由 ViewModel 持有跨重组保留。 */
     query: String = "",
     onQueryChange: (String) -> Unit = {},
-    /** 当前 App 订阅中的会话（高亮）。 */
     subscribedSessionId: String? = null,
-    /** 桌面端正打开的会话（PC 端视图状态提示）。 */
     desktopActiveTaskId: String? = null,
-    onSwitchDevice: (String) -> Unit = {},
-    onRemoveDevice: (String) -> Unit = {},
-    endpointMode: String = "auto",
-    customRelayUrl: String = "",
-    themeMode: String = "dark",
-    onEndpointChange: (String, String?) -> Unit = { _, _ -> },
-    onThemeChange: (String) -> Unit = {},
-    onShowGuide: () -> Unit = {},
-    updateState: AppViewModel.UpdateState = AppViewModel.UpdateState.Idle,
-    githubToken: String = "",
-    onSetGithubToken: (String) -> Unit = {},
-    onCheckUpdate: () -> Unit = {},
     onSessionClick: (SessionItem) -> Unit,
-    onDisconnect: () -> Unit,
-    onRescan: () -> Unit,
+    onDisconnect: () -> Unit = {},
+    onRescan: () -> Unit = {},
+    onNavigateToSettings: () -> Unit = {},
 ) {
-    // 移除设备需二次确认（凭据删除不可逆）
-    var pendingRemove by remember { mutableStateOf<String?>(null) }
+    var filterOnlyRunning by remember { mutableStateOf(false) }
+    var filterOnlyPending by remember { mutableStateOf(false) }
 
-    Column(Modifier.fillMaxSize().statusBarsPadding().padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            Text("ZCode Remote", style = MaterialTheme.typography.headlineSmall, modifier = Modifier.weight(1f))
-            TextButton(onClick = onRescan) { Text("添加设备") }
+    val filteredSessions = remember(sessions, query, filterOnlyRunning, filterOnlyPending, sessionPending) {
+        var list = sessions
+        val q = query.trim()
+        if (q.isNotEmpty()) {
+            list = list.filter {
+                it.title.contains(q, ignoreCase = true) ||
+                        (it.workspacePath ?: "").contains(q, ignoreCase = true)
+            }
         }
+        if (filterOnlyRunning) {
+            list = list.filter { it.isRunning }
+        }
+        if (filterOnlyPending) {
+            list = list.filter { (sessionPending[it.taskId] ?: 0) > 0 }
+        }
+        list
+    }
 
-        // 控制权切换提示（P1-2）：被官方 Web 版/另一台终端接管时醒目提示
-        if (state is RelayState.Failed && state.reason == FailureReason.KICKED) {
-            Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.errorContainer)) {
-                Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                    Text("⚠️ 控制权已在别处接管", style = MaterialTheme.typography.titleSmall)
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .statusBarsPadding()
+            .padding(horizontal = 16.dp, vertical = 12.dp)
+    ) {
+        // 1. 顶栏：标题 + 状态小胶囊
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            modifier = Modifier.padding(bottom = 10.dp)
+        ) {
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = "ZCode 会话",
+                    style = MaterialTheme.typography.headlineSmall.copy(fontWeight = FontWeight.Bold)
+                )
+                Spacer(Modifier.height(2.dp))
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier.clickable { onNavigateToSettings() }
+                ) {
+                    StatusDot(state)
+                    Spacer(Modifier.width(6.dp))
                     Text(
-                        "同一账号同一时刻只允许一个终端在线。若要在此设备继续，请点下方「断开」后重新连接。",
+                        text = "${deviceName.ifEmpty { "远程设备" }} · ${statusLabel(state)}",
                         style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                 }
             }
         }
 
-        SettingsCard(
-            endpointMode = endpointMode,
-            customRelayUrl = customRelayUrl,
-            themeMode = themeMode,
-            onEndpointChange = onEndpointChange,
-            onThemeChange = onThemeChange,
-            onShowGuide = onShowGuide,
-            updateState = updateState,
-            githubToken = githubToken,
-            onSetGithubToken = onSetGithubToken,
-            onCheckUpdate = onCheckUpdate,
-        )
-
-        Card {
-            Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text(deviceName.ifEmpty { "已配对设备" }, style = MaterialTheme.typography.titleMedium,
-                        modifier = Modifier.weight(1f))
-                    TextButton(onClick = onDisconnect) { Text("断开") }
-                }
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    StatusDot(state)
+        // 2. 控制权被接管横幅提示（KICKED）
+        if (state is RelayState.Failed && state.reason == FailureReason.KICKED) {
+            Surface(
+                color = MaterialTheme.colorScheme.errorContainer,
+                shape = RoundedCornerShape(12.dp),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(bottom = 10.dp)
+            ) {
+                Row(
+                    modifier = Modifier.padding(12.dp),
+                    verticalAlignment = Alignment.Top
+                ) {
+                    Icon(
+                        Icons.Default.Warning,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.error,
+                        modifier = Modifier.size(20.dp)
+                    )
                     Spacer(Modifier.width(8.dp))
-                    Text(statusLabel(state), style = MaterialTheme.typography.bodyMedium)
-                }
-                Text("会话桥：" + bridgeLabel(bridgeState), style = MaterialTheme.typography.bodySmall)
-                // 多机管理（M3）：其余已配对设备，点击切换，可移除
-                val others = devices.filter { it.deviceSid != activeSid }
-                if (others.isNotEmpty()) {
-                    HorizontalDivider(Modifier.padding(vertical = 4.dp))
-                    Text("其他设备", style = MaterialTheme.typography.labelMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    others.forEach { d ->
-                        Row(verticalAlignment = Alignment.CenterVertically,
-                            modifier = Modifier.fillMaxWidth()) {
-                            Column(Modifier.weight(1f)) {
-                                Text(d.deviceName ?: d.deviceSid, style = MaterialTheme.typography.bodySmall,
-                                    maxLines = 1, overflow = TextOverflow.Ellipsis)
-                            }
-                            TextButton(onClick = { onSwitchDevice(d.deviceSid) },
-                                contentPadding = PaddingValues(horizontal = 8.dp)) { Text("切换") }
-                            TextButton(onClick = { pendingRemove = d.deviceSid },
-                                contentPadding = PaddingValues(horizontal = 8.dp)) { Text("移除") }
-                        }
+                    Column {
+                        Text(
+                            text = "控制权已被其它终端接管",
+                            style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.Bold),
+                            color = MaterialTheme.colorScheme.onErrorContainer
+                        )
+                        Text(
+                            text = "同一账号单时刻只允许一个终端在线。若要继续，请前往设置重新连接。",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onErrorContainer.copy(alpha = 0.9f)
+                        )
                     }
                 }
-                if (state is RelayState.Failed) {
-                    Text(state.message ?: "", color = MaterialTheme.colorScheme.error,
-                        style = MaterialTheme.typography.bodySmall)
-                }
             }
         }
 
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            Text("会话", style = MaterialTheme.typography.titleMedium, modifier = Modifier.weight(1f))
-            val visible = visibleSessions(sessions, query)
-            if (visible.isNotEmpty()) {
-                Text("${visible.count { it.isRunning }} 运行中 / ${visible.size}",
-                    style = MaterialTheme.typography.bodySmall)
-            }
-        }
-
-        // 会话搜索（P2-3）：按标题/工作区过滤，忽略大小写
+        // 3. 搜索与筛选工具条
         OutlinedTextField(
             value = query,
             onValueChange = onQueryChange,
-            modifier = Modifier.fillMaxWidth(),
-            placeholder = { Text("搜索会话…") },
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(bottom = 8.dp),
+            placeholder = { Text("搜索会话标题或工作区路径…", style = MaterialTheme.typography.bodySmall) },
             singleLine = true,
+            leadingIcon = {
+                Icon(
+                    Icons.Default.Search,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.size(18.dp)
+                )
+            },
             trailingIcon = {
                 if (query.isNotEmpty()) {
-                    TextButton(onClick = { onQueryChange("") },
-                        contentPadding = PaddingValues(horizontal = 8.dp)) { Text("✕") }
+                    IconButton(onClick = { onQueryChange("") }) {
+                        Icon(Icons.Default.Close, null, modifier = Modifier.size(16.dp))
+                    }
                 }
             },
-            shape = RoundedCornerShape(20.dp),
-        )
-
-        if (sessions.isEmpty()) {
-            Text(
-                when (state) {
-                    is RelayState.WaitingPeer -> "已连上中继，等待 PC 端接入…请在 PC 打开「移动端远程控制」"
-                    is RelayState.Paired -> "已与 PC 配对，正在拉取会话列表…"
-                    else -> "连接中…"
-                },
-                style = MaterialTheme.typography.bodySmall,
+            shape = RoundedCornerShape(12.dp),
+            colors = OutlinedTextFieldDefaults.colors(
+                unfocusedBorderColor = MaterialTheme.colorScheme.outlineVariant
             )
+        )
+
+        // 快捷筛选 Chip
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(bottom = 10.dp),
+            horizontalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            val runningCount = sessions.count { it.isRunning }
+            val pendingCount = sessions.count { (sessionPending[it.taskId] ?: 0) > 0 }
+
+            FilterChip(
+                selected = !filterOnlyRunning && !filterOnlyPending,
+                onClick = {
+                    filterOnlyRunning = false
+                    filterOnlyPending = false
+                },
+                label = { Text("全部 (${sessions.size})", style = MaterialTheme.typography.labelSmall) },
+                shape = RoundedCornerShape(8.dp)
+            )
+
+            if (runningCount > 0) {
+                FilterChip(
+                    selected = filterOnlyRunning,
+                    onClick = {
+                        filterOnlyRunning = !filterOnlyRunning
+                        if (filterOnlyRunning) filterOnlyPending = false
+                    },
+                    label = { Text("运行中 ($runningCount)", style = MaterialTheme.typography.labelSmall) },
+                    shape = RoundedCornerShape(8.dp)
+                )
+            }
+
+            if (pendingCount > 0) {
+                FilterChip(
+                    selected = filterOnlyPending,
+                    onClick = {
+                        filterOnlyPending = !filterOnlyPending
+                        if (filterOnlyPending) filterOnlyRunning = false
+                    },
+                    label = { Text("待处理 ($pendingCount)", style = MaterialTheme.typography.labelSmall) },
+                    shape = RoundedCornerShape(8.dp)
+                )
+            }
         }
 
-        val filtered = visibleSessions(sessions, query)
-        LazyColumn(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            if (sessions.isNotEmpty() && filtered.isEmpty()) {
-                item { Text("没有匹配「$query」的会话", style = MaterialTheme.typography.bodySmall) }
+        // 4. 会话列表
+        if (sessions.isEmpty()) {
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(bottom = 60.dp),
+                contentAlignment = Alignment.Center
+            ) {
+                Text(
+                    text = when (state) {
+                        is RelayState.WaitingPeer -> "已连接中继，等待 PC 桌面端接入…\n请在 PC 打开「移动端远程控制」"
+                        is RelayState.Paired -> "已与 PC 配对，正在拉取会话列表…"
+                        else -> "正在建立安全连接…"
+                    },
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    textAlign = androidx.compose.ui.text.style.TextAlign.Center
+                )
             }
-            items(filtered) { s ->
-                SessionCard(
-                    s = s,
-                    pending = sessionPending[s.taskId] ?: 0,
-                    isActive = s.taskId == subscribedSessionId,
-                    desktopActive = s.taskId == desktopActiveTaskId,
-                ) { onSessionClick(s) }
-            }
-            if (rpcEvents.isNotEmpty()) {
-                // 调试观测面板：仅 debug 构建显示（HANDOVER 技术债，release 不含）
-                if (BuildConfig.DEBUG) {
-                    item { Text("RPC 事件（${rpcEvents.size}）", style = MaterialTheme.typography.titleSmall) }
-                    items(rpcEvents) { raw -> RpcEventCard(raw) }
+        } else {
+            LazyColumn(
+                modifier = Modifier.fillMaxSize(),
+                verticalArrangement = Arrangement.spacedBy(8.dp),
+                contentPadding = PaddingValues(bottom = 80.dp)
+            ) {
+                if (filteredSessions.isEmpty()) {
+                    item {
+                        Text(
+                            text = "没有找到匹配的会话",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.padding(vertical = 16.dp)
+                        )
+                    }
+                }
+
+                items(filteredSessions, key = { it.taskId }) { s ->
+                    SessionItemCard(
+                        s = s,
+                        pending = sessionPending[s.taskId] ?: 0,
+                        isActive = s.taskId == subscribedSessionId,
+                        desktopActive = s.taskId == desktopActiveTaskId,
+                        onClick = { onSessionClick(s) }
+                    )
                 }
             }
-            if (events.isNotEmpty()) {
-                item { Text("任务事件", style = MaterialTheme.typography.titleSmall) }
-                items(events) { ev -> EventCard(ev) }
-            }
         }
     }
-
-    // 移除设备二次确认：删除的是加密凭据，不可逆
-    pendingRemove?.let { sid ->
-        val name = devices.firstOrNull { it.deviceSid == sid }?.deviceName ?: sid.take(12)
-        AlertDialog(
-            onDismissRequest = { pendingRemove = null },
-            title = { Text("移除设备") },
-            text = { Text("将删除「$name」的配对凭据，之后需重新扫码才能连接。确定移除？") },
-            confirmButton = {
-                TextButton(onClick = {
-                    onRemoveDevice(sid)
-                    pendingRemove = null
-                }) { Text("移除", color = MaterialTheme.colorScheme.error) }
-            },
-            dismissButton = {
-                TextButton(onClick = { pendingRemove = null }) { Text("取消") }
-            },
-        )
-    }
 }
 
+/**
+ * 官方 ZCode 风格精细化会话卡片
+ */
 @Composable
-private fun RpcEventCard(raw: String) {
-    Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)) {
-        Text(raw, Modifier.padding(10.dp), style = MaterialTheme.typography.bodySmall, maxLines = 6,
-            overflow = TextOverflow.Ellipsis)
-    }
-}
-
-private fun bridgeLabel(b: RpcChannel.BridgeState) = when (b) {
-    is RpcChannel.BridgeState.Closed -> "未开桥"
-    is RpcChannel.BridgeState.Opening -> "开桥中…"
-    is RpcChannel.BridgeState.Ready -> "已就绪"
-    is RpcChannel.BridgeState.Failed -> "失败"
-}
-
-/** 会话过滤（P2-3）：关键字命中标题或工作区路径（忽略大小写），空关键字 = 全部。 */
-private fun visibleSessions(sessions: List<SessionItem>, query: String): List<SessionItem> {
-    val q = query.trim()
-    if (q.isEmpty()) return sessions
-    return sessions.filter {
-        it.title.contains(q, ignoreCase = true) ||
-            (it.workspacePath ?: "").contains(q, ignoreCase = true)
-    }
-}
-
-@Composable
-private fun SessionCard(
+private fun SessionItemCard(
     s: SessionItem,
     pending: Int,
     isActive: Boolean,
@@ -259,373 +282,146 @@ private fun SessionCard(
 ) {
     Card(
         onClick = onClick,
-        colors = when {
-            // 有未处理交互 → 醒目；当前订阅中 → 高亮；运行中 → 弱高亮
-            pending > 0 -> CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.errorContainer)
-            isActive -> CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.secondaryContainer)
-            s.isRunning -> CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)
-            else -> CardDefaults.cardColors()
-        },
-    ) {
-        Row(Modifier.padding(12.dp), verticalAlignment = Alignment.Top) {
-            StatusDot(
-                when {
-                    pending > 0 || s.needsApproval -> RelayState.Failed(com.zcode.remote.relay.FailureReason.INTERNAL, null)
-                    s.isRunning -> RelayState.Paired
-                    else -> RelayState.Idle
-                }
+        shape = RoundedCornerShape(12.dp),
+        colors = CardDefaults.cardColors(
+            containerColor = when {
+                pending > 0 -> MaterialTheme.colorScheme.surface
+                isActive -> MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.25f)
+                s.isRunning -> MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.45f)
+                else -> MaterialTheme.colorScheme.surface
+            }
+        ),
+        border = if (pending > 0) {
+            CardDefaults.outlinedCardBorder().copy(
+                brush = androidx.compose.ui.graphics.SolidColor(ZCodeTokens.StatusPending.copy(alpha = 0.6f))
             )
+        } else if (isActive) {
+            CardDefaults.outlinedCardBorder().copy(
+                brush = androidx.compose.ui.graphics.SolidColor(MaterialTheme.colorScheme.primary.copy(alpha = 0.5f))
+            )
+        } else {
+            CardDefaults.outlinedCardBorder()
+        },
+        modifier = Modifier.fillMaxWidth()
+    ) {
+        Row(
+            modifier = Modifier.padding(14.dp),
+            verticalAlignment = Alignment.Top
+        ) {
+            // 状态指示圆点
+            Box(
+                modifier = Modifier
+                    .padding(top = 4.dp)
+                    .size(8.dp)
+                    .clip(CircleShape)
+                    .background(
+                        when {
+                            pending > 0 -> ZCodeTokens.StatusPending
+                            s.isRunning -> ZCodeTokens.StatusOnline
+                            else -> ZCodeTokens.StatusOffline
+                        }
+                    )
+            )
+
             Spacer(Modifier.width(10.dp))
-            Column(Modifier.weight(1f)) {
+
+            Column(modifier = Modifier.weight(1f)) {
+                // 标题行与徽标
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text(s.title, style = MaterialTheme.typography.titleSmall, maxLines = 2,
-                        overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
+                    Text(
+                        text = s.title.ifBlank { "未命名会话" },
+                        style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.SemiBold),
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier.weight(1f)
+                    )
+
                     if (isActive) {
                         Spacer(Modifier.width(6.dp))
                         Surface(
-                            color = MaterialTheme.colorScheme.secondary,
-                            shape = RoundedCornerShape(6.dp),
-                        ) { Text("当前", style = MaterialTheme.typography.labelSmall,
-                            modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)) }
+                            color = MaterialTheme.colorScheme.primary,
+                            shape = RoundedCornerShape(4.dp)
+                        ) {
+                            Text(
+                                text = "正在查看",
+                                style = MaterialTheme.typography.labelSmall.copy(
+                                    color = MaterialTheme.colorScheme.onPrimary,
+                                    fontSize = 10.sp
+                                ),
+                                modifier = Modifier.padding(horizontal = 5.dp, vertical = 1.dp)
+                            )
+                        }
                     }
+
                     if (desktopActive && !isActive) {
                         Spacer(Modifier.width(6.dp))
-                        Text("PC 在看", style = MaterialTheme.typography.labelSmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        Surface(
+                            color = MaterialTheme.colorScheme.surfaceVariant,
+                            shape = RoundedCornerShape(4.dp)
+                        ) {
+                            Text(
+                                text = "PC焦点",
+                                style = MaterialTheme.typography.labelSmall.copy(fontSize = 10.sp),
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                modifier = Modifier.padding(horizontal = 5.dp, vertical = 1.dp)
+                            )
+                        }
                     }
                 }
-                Spacer(Modifier.height(2.dp))
+
+                Spacer(Modifier.height(4.dp))
+
+                // 工作区路径与模型元数据
                 Text(
-                    listOfNotNull(s.workspaceLabel ?: s.workspacePath, s.provider, statusText(s.displayStatus))
-                        .joinToString(" · "),
-                    style = MaterialTheme.typography.bodySmall, maxLines = 1, overflow = TextOverflow.Ellipsis,
+                    text = listOfNotNull(
+                        s.workspaceLabel ?: s.workspacePath?.substringAfterLast('/'),
+                        s.provider,
+                        statusText(s.displayStatus)
+                    ).joinToString(" · "),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
                 )
+
+                // 待处理提醒
                 if (pending > 0) {
                     Spacer(Modifier.height(4.dp))
-                    Text("⏳ 待处理 $pending", style = MaterialTheme.typography.labelMedium,
-                        color = MaterialTheme.colorScheme.error)
+                    Text(
+                        text = "⏳ $pending 项待决议 (请前往「待办」处理)",
+                        style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.SemiBold),
+                        color = ZCodeTokens.StatusPending
+                    )
                 }
             }
-        }
-    }
-}
-
-@Composable
-private fun EventCard(ev: TaskEvent) {
-    val isApproval = ev.type == "permission_request" || ev.type == "elicitation_request"
-    Card(
-        colors = if (isApproval) CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)
-        else CardDefaults.cardColors(),
-    ) {
-        Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-            Text(label(ev.type), style = MaterialTheme.typography.titleSmall,
-                color = if (isApproval) MaterialTheme.colorScheme.primary else Color.Unspecified)
-            ev.workspacePath?.let { Text(it, style = MaterialTheme.typography.bodySmall, maxLines = 2) }
         }
     }
 }
 
 private fun statusText(s: String) = when (s) {
-    "running" -> "运行中"; "streaming" -> "生成中"; "completed" -> "已完成"
-    "error" -> "出错"; else -> s
-}
-
-private fun label(type: String) = when (type) {
-    "created" -> "任务已创建"; "prompt_sent" -> "指令已发送"; "resumed" -> "任务已恢复"
-    "streaming" -> "生成中"; "permission_request" -> "⏳ 等待审批"; "permission_resolved" -> "审批已处理"
-    "elicitation_request" -> "⏳ 需要补充信息"; "elicitation_resolved" -> "补充已提交"
-    "updated" -> "状态更新"; "completed" -> "✅ 已完成"; "error" -> "❌ 出错"; else -> type
+    "running" -> "运行中"
+    "streaming" -> "生成中"
+    "completed" -> "已完成"
+    "error" -> "异常"
+    else -> s
 }
 
 @Composable
 private fun StatusDot(state: RelayState) {
     val color = when (state) {
-        is RelayState.Paired -> Color(0xFF4CAF50)
-        is RelayState.WaitingPeer -> Color(0xFFFFA726)
-        is RelayState.Failed -> Color(0xFFE53935)
-        else -> Color.Gray
+        is RelayState.Paired -> ZCodeTokens.StatusOnline
+        is RelayState.WaitingPeer -> ZCodeTokens.StatusPending
+        is RelayState.Failed -> ZCodeTokens.StatusError
+        else -> ZCodeTokens.StatusOffline
     }
-    androidx.compose.foundation.Canvas(Modifier.size(10.dp)) { drawCircle(color) }
+    Canvas(Modifier.size(8.dp)) { drawCircle(color) }
 }
 
 private fun statusLabel(state: RelayState) = when (state) {
     RelayState.Idle -> "未连接"
-    RelayState.Connecting -> "连接中继…"
-    RelayState.Authenticating -> "认证中…"
-    RelayState.WaitingPeer -> "等待 PC 接入"
-    RelayState.Paired -> "已配对"
-    is RelayState.Failed -> "连接失败"
-}
-
-
-/** 设置卡：协议线路（M3）+ 主题模式 + 软件版本与在线更新。 */
-@Composable
-private fun SettingsCard(
-    endpointMode: String,
-    customRelayUrl: String,
-    themeMode: String,
-    onEndpointChange: (String, String?) -> Unit,
-    onThemeChange: (String) -> Unit,
-    onShowGuide: () -> Unit,
-    updateState: AppViewModel.UpdateState,
-    githubToken: String,
-    onSetGithubToken: (String) -> Unit,
-    onCheckUpdate: () -> Unit,
-) {
-    val context = LocalContext.current
-    var expanded by remember { mutableStateOf(false) }
-    var editingCustom by remember { mutableStateOf<String?>(null) }
-    var editingToken by remember { mutableStateOf(false) }
-    var tokenDraft by remember(githubToken) { mutableStateOf(githubToken) }
-
-    Card {
-        Column(Modifier.padding(vertical = 4.dp)) {
-            TextButton(onClick = { expanded = !expanded }, contentPadding = PaddingValues(horizontal = 16.dp)) {
-                Text(if (expanded) "▾ 设置" else "▸ 设置", style = MaterialTheme.typography.titleSmall)
-            }
-            if (expanded) {
-                Column(Modifier.padding(horizontal = 16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Text("协议线路", style = MaterialTheme.typography.labelLarge)
-                    Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                        listOf(
-                            "auto" to "自动", "main" to "主线", "backup" to "备线", "custom" to "自定义",
-                        ).forEach { (mode, label) ->
-                            FilterChip(
-                                selected = endpointMode == mode,
-                                onClick = {
-                                    if (mode == "custom") editingCustom = customRelayUrl
-                                    else onEndpointChange(mode, null)
-                                },
-                                label = { Text(label) },
-                            )
-                        }
-                    }
-                    if (endpointMode == "custom") {
-                        Text(
-                            "自定义中继：${customRelayUrl.ifBlank { "未设置（点「自定义」填 wss:// 地址）" }}",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        )
-                    }
-                    TextButton(onClick = onShowGuide, contentPadding = PaddingValues(0.dp)) {
-                        Text("保活引导（小米 / HyperOS）→")
-                    }
-                    Text("主题", style = MaterialTheme.typography.labelLarge)
-                    Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                        listOf("dark" to "深色", "system" to "跟随系统", "light" to "浅色").forEach { (mode, label) ->
-                            FilterChip(
-                                selected = themeMode == mode,
-                                onClick = { onThemeChange(mode) },
-                                label = { Text(label) },
-                            )
-                        }
-                    }
-
-                    HorizontalDivider(modifier = Modifier.padding(vertical = 4.dp))
-
-                    // ---- 软件版本与在线更新专区 ----
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.SpaceBetween
-                    ) {
-                        Column {
-                            Text("软件版本", style = MaterialTheme.typography.labelLarge)
-                            Text(
-                                "v${BuildConfig.VERSION_NAME} (Build ${BuildConfig.VERSION_CODE})",
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
-                        }
-                        Button(
-                            onClick = onCheckUpdate,
-                            enabled = updateState !is AppViewModel.UpdateState.Checking,
-                            contentPadding = PaddingValues(horizontal = 12.dp, vertical = 0.dp),
-                            modifier = Modifier.height(34.dp)
-                        ) {
-                            if (updateState is AppViewModel.UpdateState.Checking) {
-                                CircularProgressIndicator(
-                                    modifier = Modifier.size(16.dp),
-                                    strokeWidth = 2.dp,
-                                    color = MaterialTheme.colorScheme.onPrimary
-                                )
-                                Spacer(Modifier.width(6.dp))
-                                Text("检查中…", style = MaterialTheme.typography.labelSmall)
-                            } else {
-                                Text("检查更新", style = MaterialTheme.typography.labelSmall)
-                            }
-                        }
-                    }
-
-                    // 检查结果展示
-                    when (updateState) {
-                        is AppViewModel.UpdateState.Success -> {
-                            val info = updateState.info
-                            if (info.hasNew) {
-                                Card(
-                                    colors = CardDefaults.cardColors(
-                                        containerColor = MaterialTheme.colorScheme.primaryContainer
-                                    ),
-                                    shape = RoundedCornerShape(8.dp),
-                                    modifier = Modifier.fillMaxWidth()
-                                ) {
-                                    Column(Modifier.padding(10.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                                        Text(
-                                            "🎉 发现新版本：${info.tagName}",
-                                            style = MaterialTheme.typography.titleSmall,
-                                            color = MaterialTheme.colorScheme.onPrimaryContainer
-                                        )
-                                        if (!info.body.isNullOrBlank()) {
-                                            Text(
-                                                info.body.take(300),
-                                                style = MaterialTheme.typography.bodySmall,
-                                                color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.85f),
-                                                maxLines = 4,
-                                                overflow = TextOverflow.Ellipsis
-                                            )
-                                        }
-                                        Row(
-                                            modifier = Modifier.fillMaxWidth(),
-                                            horizontalArrangement = Arrangement.spacedBy(8.dp)
-                                        ) {
-                                            if (!info.downloadUrl.isNullOrBlank()) {
-                                                Button(
-                                                    onClick = {
-                                                        val intent = Intent(Intent.ACTION_VIEW, Uri.parse(info.downloadUrl))
-                                                        context.startActivity(intent)
-                                                    },
-                                                    modifier = Modifier.weight(1f)
-                                                ) {
-                                                    Text("浏览器下载 APK", style = MaterialTheme.typography.labelSmall)
-                                                }
-                                                OutlinedButton(
-                                                    onClick = {
-                                                        val cm = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
-                                                        cm.setPrimaryClip(ClipData.newPlainText("download_url", info.downloadUrl))
-                                                        Toast.makeText(context, "下载链接已复制", Toast.LENGTH_SHORT).show()
-                                                    }
-                                                ) {
-                                                    Text("复制链接", style = MaterialTheme.typography.labelSmall)
-                                                }
-                                            } else {
-                                                Button(
-                                                    onClick = {
-                                                        val intent = Intent(
-                                                            Intent.ACTION_VIEW,
-                                                            Uri.parse("https://github.com/wjf1/zcode-remote-app/releases")
-                                                        )
-                                                        context.startActivity(intent)
-                                                    },
-                                                    modifier = Modifier.fillMaxWidth()
-                                                ) {
-                                                    Text("打开 GitHub Releases", style = MaterialTheme.typography.labelSmall)
-                                                }
-                                            }
-                                        }
-                                    }
-                                }
-                            } else {
-                                Text(
-                                    "✓ 已是最新版本 (${info.tagName})",
-                                    style = MaterialTheme.typography.bodySmall,
-                                    color = Color(0xFF4CAF50)
-                                )
-                            }
-                        }
-                        is AppViewModel.UpdateState.Error -> {
-                            Text(
-                                "⚠️ ${updateState.message}",
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.error
-                            )
-                        }
-                        else -> Unit
-                    }
-
-                    // 私有仓库 GitHub Token 配置（折叠）
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Text(
-                            "GitHub 访问 Token (私有仓库拉取)",
-                            style = MaterialTheme.typography.labelMedium,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                        TextButton(
-                            onClick = { editingToken = !editingToken },
-                            contentPadding = PaddingValues(0.dp)
-                        ) {
-                            Text(if (editingToken) "收起" else if (githubToken.isNotBlank()) "已配置" else "配置",
-                                style = MaterialTheme.typography.labelSmall)
-                        }
-                    }
-
-                    if (editingToken) {
-                        OutlinedTextField(
-                            value = tokenDraft,
-                            onValueChange = { tokenDraft = it },
-                            placeholder = { Text("ghp_... (只需 repo 或 release 只读权限)") },
-                            singleLine = true,
-                            modifier = Modifier.fillMaxWidth(),
-                            trailingIcon = {
-                                TextButton(
-                                    onClick = {
-                                        onSetGithubToken(tokenDraft.trim())
-                                        editingToken = false
-                                        Toast.makeText(context, "Token 已保存", Toast.LENGTH_SHORT).show()
-                                    }
-                                ) { Text("保存") }
-                            }
-                        )
-                    }
-
-                    // 电脑端推送更新指南
-                    Card(
-                        colors = CardDefaults.cardColors(
-                            containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f)
-                        ),
-                        shape = RoundedCornerShape(6.dp),
-                        modifier = Modifier.fillMaxWidth()
-                    ) {
-                        Column(Modifier.padding(8.dp)) {
-                            Text(
-                                "💻 电脑端推送更新指南",
-                                style = MaterialTheme.typography.labelSmall.copy(fontWeight = androidx.compose.ui.text.font.FontWeight.Bold),
-                                color = MaterialTheme.colorScheme.primary
-                            )
-                            Text(
-                                "手机 USB/无线连电脑后，在 PC 端仓库根目录执行：\n./build.sh install\n即可一键编译并覆盖推送到手机。",
-                                style = MaterialTheme.typography.bodySmall.copy(fontFamily = FontFamily.Monospace),
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
-                        }
-                    }
-                }
-                Spacer(Modifier.height(8.dp))
-            }
-        }
-    }
-    editingCustom?.let { current ->
-        AlertDialog(
-            onDismissRequest = { editingCustom = null },
-            title = { Text("自定义中继地址") },
-            text = {
-                OutlinedTextField(
-                    value = current,
-                    onValueChange = { editingCustom = it },
-                    placeholder = { Text("wss://host/ws") },
-                    singleLine = true,
-                )
-            },
-            confirmButton = {
-                TextButton(onClick = {
-                    onEndpointChange("custom", editingCustom)
-                    editingCustom = null
-                }) { Text("保存并重连") }
-            },
-            dismissButton = { TextButton(onClick = { editingCustom = null }) { Text("取消") } },
-        )
-    }
+    RelayState.Connecting -> "连接中"
+    RelayState.Authenticating -> "握手中"
+    RelayState.WaitingPeer -> "等待接入"
+    RelayState.Paired -> "就绪"
+    is RelayState.Failed -> "异常"
 }
