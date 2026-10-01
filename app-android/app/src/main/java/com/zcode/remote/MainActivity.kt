@@ -188,7 +188,17 @@ class MainActivity : ComponentActivity() {
                                             onSessionClick = { s -> vm.openSession(s); opened = s },
                                             onDisconnect = { vm.disconnect() },
                                             onRescan = { opened = null; scanning = true },
-                                            onNavigateToSettings = { selectedTab = 2 }
+                                            onNavigateToSettings = { selectedTab = 2 },
+                                            onCreateSession = { prompt ->
+                                                vm.createNewSession(
+                                                    firstPrompt = prompt,
+                                                    attachments = emptyList(),
+                                                    onSuccess = { item -> opened = item },
+                                                    onError = { err ->
+                                                        android.widget.Toast.makeText(this@MainActivity, err, android.widget.Toast.LENGTH_SHORT).show()
+                                                    }
+                                                )
+                                            }
                                         )
 
                                         1 -> ApprovalsTab(

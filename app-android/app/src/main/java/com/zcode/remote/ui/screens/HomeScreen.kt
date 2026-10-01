@@ -10,6 +10,7 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Warning
@@ -30,6 +31,7 @@ import com.zcode.remote.relay.SessionItem
 import com.zcode.remote.relay.TaskEvent
 import com.zcode.remote.storage.PairedDevice
 import com.zcode.remote.ui.theme.ZCodeTokens
+import com.zcode.remote.ui.voice.VoiceInputButton
 
 /**
  * 现代高信息密度会话工作台 (Sessions Tab)
@@ -54,9 +56,11 @@ fun HomeScreen(
     onDisconnect: () -> Unit = {},
     onRescan: () -> Unit = {},
     onNavigateToSettings: () -> Unit = {},
+    onCreateSession: (prompt: String) -> Unit = {},
 ) {
     var filterOnlyRunning by remember { mutableStateOf(false) }
     var filterOnlyPending by remember { mutableStateOf(false) }
+    var showCreateDialog by remember { mutableStateOf(false) }
 
     val filteredSessions = remember(sessions, query, filterOnlyRunning, filterOnlyPending, sessionPending) {
         var list = sessions
@@ -82,7 +86,7 @@ fun HomeScreen(
             .statusBarsPadding()
             .padding(horizontal = 16.dp, vertical = 12.dp)
     ) {
-        // 1. 顶栏：标题 + 状态小胶囊
+        // 1. 顶栏：标题 + 状态小胶囊 + 新建会话按钮
         Row(
             verticalAlignment = Alignment.CenterVertically,
             modifier = Modifier.padding(bottom = 10.dp)
@@ -105,6 +109,16 @@ fun HomeScreen(
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                 }
+            }
+            Button(
+                onClick = { showCreateDialog = true },
+                shape = RoundedCornerShape(10.dp),
+                contentPadding = PaddingValues(horizontal = 12.dp, vertical = 0.dp),
+                modifier = Modifier.height(36.dp)
+            ) {
+                Icon(Icons.Default.Add, contentDescription = null, modifier = Modifier.size(16.dp))
+                Spacer(Modifier.width(4.dp))
+                Text("新建会话", style = MaterialTheme.typography.labelSmall)
             }
         }
 
@@ -266,6 +280,17 @@ fun HomeScreen(
                 }
             }
         }
+
+        // 新建会话弹窗
+        if (showCreateDialog) {
+            CreateSessionDialog(
+                onDismiss = { showCreateDialog = false },
+                onConfirm = { prompt ->
+                    showCreateDialog = false
+                    onCreateSession(prompt)
+                }
+            )
+        }
     }
 }
 
@@ -424,4 +449,90 @@ private fun statusLabel(state: RelayState) = when (state) {
     RelayState.WaitingPeer -> "等待接入"
     RelayState.Paired -> "就绪"
     is RelayState.Failed -> "异常"
+}
+
+/**
+ * 新建会话弹窗
+ * 支持输入首条任务指令或使用语音输入填充
+ */
+@Composable
+private fun CreateSessionDialog(
+    onDismiss: () -> Unit,
+    onConfirm: (prompt: String) -> Unit,
+) {
+    var prompt by remember { mutableStateOf("") }
+    var voiceListening by remember { mutableStateOf(false) }
+    var voiceLive by remember { mutableStateOf<String?>(null) }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = {
+            Text(
+                text = "发起新会话",
+                style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold)
+            )
+        },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text(
+                    text = "在当前活动工作区创建一个全新的 AI Agent 编程会话。",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+
+                if (voiceListening || !voiceLive.isNullOrBlank()) {
+                    Text(
+                        text = "🎤 ${voiceLive ?: "正在聆听…"}",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.primary
+                    )
+                }
+
+                OutlinedTextField(
+                    value = prompt,
+                    onValueChange = { prompt = it },
+                    placeholder = {
+                        Text(
+                            "输入给 Agent 的第一条任务指令（例如：检查并修复登录组件的单测）…",
+                            style = MaterialTheme.typography.bodySmall
+                        )
+                    },
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .heightIn(min = 100.dp, max = 180.dp),
+                    shape = RoundedCornerShape(10.dp)
+                )
+
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.End,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    VoiceInputButton(
+                        onFinalText = { text ->
+                            prompt = if (prompt.isBlank()) text else "$prompt $text"
+                        },
+                        onStateChange = { listening, live ->
+                            voiceListening = listening
+                            voiceLive = live
+                        }
+                    )
+                }
+            }
+        },
+        confirmButton = {
+            Button(
+                onClick = { onConfirm(prompt.trim()) },
+                enabled = prompt.isNotBlank(),
+                shape = RoundedCornerShape(8.dp)
+            ) {
+                Text("立即创建")
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) {
+                Text("取消")
+            }
+        }
+    )
 }

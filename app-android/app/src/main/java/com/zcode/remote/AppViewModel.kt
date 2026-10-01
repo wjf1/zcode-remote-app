@@ -746,6 +746,61 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         reportViewState()   // P1-2：切换会话即上报，PC 端可提示"手机正在看这个会话"
     }
 
+    /**
+     * 创建全新会话（官方 V4 createSession 原生信封链路）。
+     * 成功后自动切换订阅并上报 PC 端视图状态，同时回调通知 UI 打开该会话。
+     */
+    fun createNewSession(
+        firstPrompt: String,
+        attachments: List<ConversationChannel.AttachmentRef> = emptyList(),
+        onSuccess: (SessionItem) -> Unit,
+        onError: (String) -> Unit,
+    ) {
+        val conv = conversation ?: run {
+            onError("连接尚未就绪，无法创建会话")
+            return
+        }
+        val ws = activeWorkspaceKey ?: sessions.firstOrNull()?.workspacePath ?: run {
+            onError("未定位到活动工作区，请在 PC 端打开一个工作区后再试")
+            return
+        }
+
+        conv.createSession(
+            workspacePath = ws,
+            workspaceIdentity = null,
+            firstInputText = firstPrompt.trim().ifEmpty { null },
+            attachments = attachments,
+        ) { result ->
+            viewModelScope.launch {
+                result.fold(
+                    onSuccess = { newSid ->
+                        Log.i(TAG, "createNewSession success: sid=$newSid ws=$ws")
+                        val item = SessionItem(
+                            taskId = newSid,
+                            title = firstPrompt.trim().ifEmpty { "新会话" },
+                            displayStatus = "running",
+                            workspacePath = ws,
+                            workspaceLabel = ws.substringAfterLast('/'),
+                            provider = null,
+                            updatedAt = System.currentTimeMillis(),
+                            archived = false,
+                        )
+                        // 若列表里尚未有该会话，前插到首位
+                        if (sessions.none { it.taskId == newSid }) {
+                            sessions.add(0, item)
+                        }
+                        openSession(item)
+                        onSuccess(item)
+                    },
+                    onFailure = { err ->
+                        Log.w(TAG, "createNewSession failed: ${err.message}")
+                        onError(err.message ?: "创建会话失败")
+                    }
+                )
+            }
+        }
+    }
+
     /** 向上拉一页更早历史（会话页滚到顶部时触发）。 */
     fun loadEarlier() {
         val conv = conversation ?: return

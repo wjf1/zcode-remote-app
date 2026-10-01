@@ -493,6 +493,71 @@ class ConversationChannel(private val rpc: RpcChannel) {
         }
     }
 
+    /**
+     * 在当前工作区创建新会话（官方 V4 协议同款原生链路）：
+     * `sendConversationCommandV4` envelope `type:'createSession'`，sessionId = null。
+     * 可选携带 firstInput = { text, attachments? }。
+     * 服务端创建完成后返回 201 ack，其中 `result.sessionId` 为新分配的会话 ID。
+     */
+    fun createSession(
+        workspacePath: String,
+        workspaceIdentity: String? = null,
+        firstInputText: String? = null,
+        attachments: List<AttachmentRef> = emptyList(),
+        onResult: (Result<String>) -> Unit,
+    ) {
+        val target = buildMap<String, Any> {
+            put("workspacePath", workspacePath)
+            workspaceIdentity?.takeIf { it.isNotBlank() }?.let { put("workspaceIdentity", it) }
+        }
+        val payload = LinkedHashMap<String, Any>()
+        payload["workspaceId"] = workspacePath
+        if (!firstInputText.isNullOrBlank() || attachments.isNotEmpty()) {
+            val input = LinkedHashMap<String, Any>()
+            input["text"] = firstInputText ?: ""
+            if (attachments.isNotEmpty()) {
+                input["attachments"] = attachments.map { it.toWire() }
+            }
+            payload["firstInput"] = input
+        }
+
+        val args = HashMap<String, Any>(target)
+        args["envelope"] = mapOf(
+            "commandId" to "cmd-${UUID.randomUUID()}",
+            "clientId" to clientId,
+            "sessionId" to null,
+            "type" to "createSession",
+            "payload" to payload,
+            "issuedAt" to System.currentTimeMillis(),
+        )
+
+        Log.i(TAG, "createSession workspace=$workspacePath hasFirstInput=${!firstInputText.isNullOrBlank()}")
+        rpc.call(RpcChannel.CHANNEL_AGENT, "sendConversationCommandV4", listOf(args),
+            timeoutMs = SEND_ACK_TIMEOUT_MS) { reply ->
+            when (reply) {
+                is RpcChannel.RpcReply.Err -> onResult(Result.failure(IllegalStateException(reply.message)))
+                is RpcChannel.RpcReply.Ok -> {
+                    val root = reply.data.asObj()
+                    val ack = root?.get("ack").asObj() ?: root
+                    val status = ack?.get("status").asStr() ?: ""
+                    if (status in SUCCESS_STATUSES) {
+                        val result = ack?.get("result").asObj()
+                        val newSessionId = result?.get("sessionId").asStr()
+                        if (!newSessionId.isNullOrBlank()) {
+                            Log.i(TAG, "createSession success sessionId=$newSessionId")
+                            onResult(Result.success(newSessionId))
+                        } else {
+                            onResult(Result.failure(IllegalStateException("服务端未返回新会话 ID: ${reply.data}")))
+                        }
+                    } else {
+                        val msg = ack?.get("message").asStr() ?: "创建会话被拒绝 (status=$status)"
+                        onResult(Result.failure(IllegalStateException(msg)))
+                    }
+                }
+            }
+        }
+    }
+
     // ---------- 附件上传（P1-3，协议实证见 PROTOCOL.md §6.6）----------
 
     /**
