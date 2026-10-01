@@ -561,8 +561,9 @@ class ConversationChannel(private val rpc: RpcChannel) {
             val cfg = LinkedHashMap<String, Any>()
             cfg["provider"] = modelConfig.providerId
             cfg["model"] = modelConfig.modelId
-            // 官方约束：Gemini 等推理模型在 ZCode 必须指定 reasoning level，否则报 "Reasoning level is required"
-            cfg["thought"] = modelConfig.thought ?: "enabled"
+            // thought 必须落在该模型 optionSpecs.reasoningLevel.values 内，否则 registry 校验直接失败。
+            // 未知档位时不下发，交由 PC 端按模型默认值决定。
+            modelConfig.thought?.takeIf { it.isNotBlank() }?.let { cfg["thought"] = it }
             cfg["mode"] = modelConfig.mode ?: "yolo"
             payload["config"] = cfg
         }
@@ -578,7 +579,8 @@ class ConversationChannel(private val rpc: RpcChannel) {
         )
 
         Log.i(TAG, "createSession workspace=$workspacePath hasFirstInput=${!firstInputText.isNullOrBlank()} " +
-                "model=${modelConfig?.modelId ?: "inherit-default"}")
+                "model=${modelConfig?.modelId ?: "inherit-default"} " +
+                "thought=${modelConfig?.thought ?: "(未指定)"} mode=${modelConfig?.mode ?: "(未指定)"}")
         rpc.call(RpcChannel.CHANNEL_AGENT, "sendConversationCommandV4", listOf(args),
             timeoutMs = SEND_ACK_TIMEOUT_MS) { reply ->
             when (reply) {

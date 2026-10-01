@@ -388,5 +388,6 @@ class RpcChannel(private val relay: RelayClient) {
         const val CHANNEL_MODEL_PROVIDER = "model-provider"  // 模型供应商目录（getAllCached/getAll）
         const val CHANNEL_FILE = "file"                      // 文件系统服务（resolvePath/readTextFile）
         const val CHANNEL_SYSTEM = "system"                  // 系统服务（info 返回 homedir/platform）
+        const val CHANNEL_MODEL_SELECTION = "model-selection" // 模型注册表视图（getView 含各模型合法思考档位）
     }
 }

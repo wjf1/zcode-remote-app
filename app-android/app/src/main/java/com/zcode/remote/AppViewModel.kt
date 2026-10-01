@@ -371,6 +371,8 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
                     activeWorkspaceKey?.let { sidx.subscribe(it, null) }
                     // 从 PC 端 ~/.zcode/v2/provider_config.json 预加载已配置模型目录
                     loadModelsFromConfigFile()
+                    // 模型注册表：各模型的合法思考档位（createSession/switchModelConfig 必需）
+                    loadModelReasoningLevels()
                     val target = sessions.firstOrNull { it.isRunning } ?: sessions.firstOrNull()
                     target?.let { subscribeConversation(it) }
                 }
@@ -851,7 +853,10 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
             ConversationChannel.ModelConfig(
                 providerId = pid,
                 modelId = mid,
-                thought = "enabled",
+                // 思考档位必须用该模型自己的合法值（gemini=enabled，deepseek 可能是 high 等）；
+                // 官方 registry 校验不通过会直接抛出 "Reasoning level is required" 让会话失败。
+                // 选不出合法值时传 null（不发送 thought），由 PC 端按模型默认档位决定。
+                thought = pickReasoningLevel(pid, mid),
                 mode = "yolo",
             )
         }
@@ -919,6 +924,87 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
 
     var modelStateLoading by mutableStateOf(false)
         private set
+
+    /**
+     * 各模型合法的思考档位：key = "providerId/modelId" → 合法档位值列表。
+     * 来源 = PC 端 model-selection::getView（registry 视图，含 model.config.optionSpecs.reasoningLevel.values）。
+     * 官方 registry 对推理模型强制校验 reasoningLevel：值不在合法列表里就直接报
+     * "Reasoning level is required"（或 not supported）导致会话失败，所以必须按模型真实档位下发。
+     */
+    var modelReasoningLevels by mutableStateOf<Map<String, List<String>>>(emptyMap())
+        private set
+
+    /**
+     * 取该模型应当下发的思考档位；无合法档位信息时返回 null（不下发，交由 PC 默认）。
+     * 挑选策略：优先启用推理（首个非 disabled 档位），全为 disabled 时才用 disabled。
+     * 例如 deepseek [disabled,low,high,max] → "low"；gemini [disabled,enabled] → "enabled"。
+     */
+    private fun pickReasoningLevel(providerId: String, modelId: String): String? {
+        val levels = modelReasoningLevels["$providerId/$modelId"] ?: return null
+        return levels.firstOrNull { !it.equals("disabled", ignoreCase = true) }
+            ?: levels.firstOrNull()
+    }
+
+    /**
+     * 拉取 PC 端模型注册表视图（model-selection::getView），提取每个模型的合法思考档位。
+     * 非推理模型不会出现在结果里；拉取失败静默降级为不下发 thought。
+     */
+    fun loadModelReasoningLevels() {
+        val ch = channel ?: return
+        ch.call(RpcChannel.CHANNEL_MODEL_SELECTION, "getView", listOf<Any>()) { reply ->
+            when (reply) {
+                is RpcChannel.RpcReply.Err ->
+                    Log.w(TAG, "model-selection.getView 失败: ${reply.message}")
+                is RpcChannel.RpcReply.Ok -> {
+                    val raw = reply.data?.toString() ?: ""
+                    Log.i(TAG, "model-selection.getView 原始响应(截断): ${raw.take(3000)}")
+                    val parsed = parseReasoningLevels(reply.data)
+                    if (parsed.isNotEmpty()) {
+                        modelReasoningLevels = parsed
+                        Log.i(TAG, "模型思考档位加载成功: " +
+                                parsed.entries.joinToString(", ") { "${it.key}->${it.value}" })
+                    }
+                }
+            }
+        }
+    }
+
+    /**
+     * 从 getView 响应中按多种可能的嵌套形态提取 models[].config.optionSpecs.reasoningLevel.values。
+     * 兼容：根即视图 / 包在 view|snapshot 里；model 标识在 modelId / ref.modelId / config.modelId。
+     */
+    private fun parseReasoningLevels(data: kotlinx.serialization.json.JsonElement?): Map<String, List<String>> {
+        val out = LinkedHashMap<String, List<String>>()
+        fun objOf(e: kotlinx.serialization.json.JsonElement?) =
+            runCatching { e?.jsonObject }.getOrNull()
+
+        val root = objOf(data) ?: return out
+        // 视图可能被包一层
+        val view = objOf(root["view"]) ?: objOf(root["snapshot"]) ?: objOf(root["registry"]) ?: root
+        val providers = runCatching { view["providers"]?.jsonArray }.getOrNull() ?: return out
+
+        for (pEl in providers) {
+            val p = objOf(pEl) ?: continue
+            val pid = runCatching { p["providerId"]?.jsonPrimitive?.content }.getOrNull() ?: continue
+            val models = runCatching { p["models"]?.jsonArray }.getOrNull() ?: continue
+            for (mEl in models) {
+                val m = objOf(mEl) ?: continue
+                val cfg = objOf(m["config"])
+                val mid = runCatching { m["modelId"]?.jsonPrimitive?.content }.getOrNull()
+                    ?: runCatching { objOf(m["ref"])?.get("modelId")?.jsonPrimitive?.content }.getOrNull()
+                    ?: runCatching { cfg?.get("modelId")?.jsonPrimitive?.content }.getOrNull()
+                    ?: continue
+                val levels = runCatching {
+                    objOf(cfg?.get("optionSpecs"))
+                        ?.get("reasoningLevel")?.jsonObject
+                        ?.get("values")?.jsonArray
+                        ?.mapNotNull { it.jsonPrimitive.content }
+                }.getOrNull()
+                if (!levels.isNullOrEmpty()) out["$pid/$mid"] = levels
+            }
+        }
+        return out
+    }
 
     /**
      * 触发一次模型目录刷新：三路并发探测（provider_config 配置文件直读 + workspace-config resync + readWorkspaceState），
@@ -1067,7 +1153,7 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
     fun switchCurrentSessionModel(modelOption: WorkspaceConfigChannel.ModelOption) {
         val conv = conversation ?: run { flash("连接尚未就绪"); return }
         val (pid, mid) = WorkspaceConfigChannel.splitModelValue(modelOption.value)
-        conv.switchModelConfig(provider = pid, model = mid) { result ->
+        conv.switchModelConfig(provider = pid, model = mid, thought = pickReasoningLevel(pid, mid)) { result ->
             viewModelScope.launch {
                 result.fold(
                     onSuccess = { flash("模型已切换为 $mid") },
@@ -1081,7 +1167,7 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
     fun switchCurrentSessionModelCustom(modelId: String, providerId: String? = null) {
         val conv = conversation ?: run { flash("连接尚未就绪"); return }
         val pid = providerId ?: conversationMeta.provider ?: "glm"
-        conv.switchModelConfig(provider = pid, model = modelId.trim()) { result ->
+        conv.switchModelConfig(provider = pid, model = modelId.trim(), thought = pickReasoningLevel(pid, modelId.trim())) { result ->
             viewModelScope.launch {
                 result.fold(
                     onSuccess = { flash("模型已切换为 $modelId") },

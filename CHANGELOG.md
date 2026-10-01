@@ -1,5 +1,25 @@
 # 变更记录 / Changelog
 
+## v0.5.0-beta3（2026-10-01）· 修复推理模型思考档位校验失败（Reasoning level is required）
+
+**里程碑：彻底解决新建会话/切换模型时因思考档位（reasoning level）非法导致的「Model creation failed」**
+
+### 修复（推理模型思考档位必须按模型真实合法值下发）
+- **根因定位（真机 + 官方 Host 源码交叉实证）**：
+  - 官方 registry 对带推理能力的模型强制校验 `modelSelection.options.reasoningLevel`，其值必须落在该模型 `config.optionSpecs.reasoningLevel.values` 内；
+  - 旧实现硬编码下发 `thought: "enabled"`，而该值仅对 Gemini / Claude 等部分模型合法；
+  - DeepSeek 系列合法值为 `[disabled, low, high, max]`、GLM 为 `[low, high, max]`，`"enabled"` 直接触发
+    `Reasoning level is required for <provider>/<model>` → 会话创建即失败（task_status=error 并归档），
+    手机端表现为停在 0 行 draft 且无任何提示。
+- **修复实现**：
+  - 新增 `model-selection::getView` 调用（远程桥实测可达），解析出**每个模型的合法思考档位表**并缓存；
+  - 新建会话与「会话内切换模型」均改为按所选模型自己的合法档位下发（优先启用推理：取首个非 `disabled` 档位；
+    例如 deepseek→`low`、gemini→`enabled`、GLM→`low`）；
+  - 拿不到档位信息时**不下发** `thought`，交由 PC 端按模型默认档位决定，避免再次误发非法值；
+  - `createSession` 日志补充 `thought` / `mode` 输出，便于后续排查。
+
+- `versionName 0.5.0-beta3` / `versionCode 13`。
+
 ## v0.5.0-beta2（2026-10-01）· 修复新建会话推理模型校验失败与审批点击会话串台问题
 
 **里程碑：修复新建会话带模型时校验失败变成 draft/error 的缺陷，彻底解决待办审批跨会话点击无反应问题**
