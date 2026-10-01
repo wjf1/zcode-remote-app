@@ -59,10 +59,10 @@ fun HomeScreen(
     onRescan: () -> Unit = {},
     onNavigateToSettings: () -> Unit = {},
     /** 工作区模型目录（新建会话弹窗的模型选择数据源，可为空=加载中/不可用）。 */
-    modelState: com.zcode.remote.relay.ConversationChannel.WorkspaceState? = null,
+    modelState: com.zcode.remote.relay.WorkspaceConfigChannel.WorkspaceState? = null,
     modelsLoading: Boolean = false,
     onLoadModels: () -> Unit = {},
-    onCreateSession: (prompt: String, modelConfig: com.zcode.remote.relay.ConversationChannel.ModelConfig?) -> Unit = { _, _ -> },
+    onCreateSession: (prompt: String, modelConfig: com.zcode.remote.relay.WorkspaceConfigChannel.ModelOption?) -> Unit = { _, _ -> },
 ) {
     var filterOnlyRunning by remember { mutableStateOf(false) }
     var filterOnlyPending by remember { mutableStateOf(false) }
@@ -466,18 +466,18 @@ private fun statusLabel(state: RelayState) = when (state) {
  */
 @Composable
 private fun CreateSessionDialog(
-    modelState: com.zcode.remote.relay.ConversationChannel.WorkspaceState?,
+    modelState: com.zcode.remote.relay.WorkspaceConfigChannel.WorkspaceState?,
     modelsLoading: Boolean,
     onLoadModels: () -> Unit,
     onDismiss: () -> Unit,
-    onConfirm: (prompt: String, modelConfig: com.zcode.remote.relay.ConversationChannel.ModelConfig?) -> Unit,
+    onConfirm: (prompt: String, modelConfig: com.zcode.remote.relay.WorkspaceConfigChannel.ModelOption?) -> Unit,
 ) {
     var prompt by remember { mutableStateOf("") }
     var voiceListening by remember { mutableStateOf(false) }
     var voiceLive by remember { mutableStateOf<String?>(null) }
 
     // 模型选择：null = 跟随 PC 端默认；选中 = 显式下发 config
-    var selectedModel by remember { mutableStateOf<com.zcode.remote.relay.ConversationChannel.ModelConfig?>(null) }
+    var selectedModel by remember { mutableStateOf<com.zcode.remote.relay.WorkspaceConfigChannel.ModelOption?>(null) }
     var modelMenuExpanded by remember { mutableStateOf(false) }
 
     // 弹窗打开时拉一次模型目录
@@ -544,8 +544,8 @@ private fun CreateSessionDialog(
                             )
                             Spacer(Modifier.width(8.dp))
                             Text(
-                                text = selectedModel?.displayName()
-                                    ?: modelState?.current?.let { "默认（${it.displayName()}）" }
+                                text = selectedModel?.name
+                                    ?: modelState?.findCurrent()?.let { "默认（${it.name}）" }
                                     ?: "默认（跟随 PC 端）",
                                 style = MaterialTheme.typography.bodySmall,
                                 maxLines = 1,
@@ -567,7 +567,7 @@ private fun CreateSessionDialog(
                                         enabled = false,
                                     )
                                 }
-                                (modelState?.available.isNullOrEmpty()) -> {
+                                (modelState?.models.isNullOrEmpty()) -> {
                                     DropdownMenuItem(
                                         text = {
                                             Text(
@@ -594,11 +594,11 @@ private fun CreateSessionDialog(
                                         }
                                     )
                                     // 2. PC 端当前模型（快捷置顶）
-                                    modelState?.current?.let { cur ->
+                                    modelState?.findCurrent()?.let { cur ->
                                         DropdownMenuItem(
-                                            text = { Text("PC 当前 · ${cur.displayName()}", style = MaterialTheme.typography.bodySmall) },
+                                            text = { Text("PC 当前 · ${cur.name}", style = MaterialTheme.typography.bodySmall) },
                                             leadingIcon = {
-                                                if (selectedModel?.modelId == cur.modelId && selectedModel?.providerId == cur.providerId) {
+                                                if (selectedModel?.value == cur.value) {
                                                     Icon(Icons.Filled.Check, null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(16.dp))
                                                 }
                                             },
@@ -610,14 +610,13 @@ private fun CreateSessionDialog(
                                     }
                                     HorizontalDivider(modifier = Modifier.padding(vertical = 2.dp))
                                     // 3. 全部可用模型
-                                    modelState?.available?.forEach { m ->
-                                        val isSelected = selectedModel?.modelId == m.modelId &&
-                                                selectedModel?.providerId == m.providerId
+                                    modelState?.models?.forEach { m ->
+                                        val isSelected = selectedModel?.value == m.value
                                         DropdownMenuItem(
                                             text = {
                                                 Column {
-                                                    Text(m.displayName(), style = MaterialTheme.typography.bodySmall)
-                                                    m.providerLabel?.let {
+                                                    Text(m.name, style = MaterialTheme.typography.bodySmall)
+                                                    m.providerName?.let {
                                                         Text(
                                                             it,
                                                             style = MaterialTheme.typography.labelSmall,

@@ -17,6 +17,7 @@ import com.zcode.remote.relay.PendingElicitation
 import com.zcode.remote.relay.RelayClient
 import com.zcode.remote.relay.RelayState
 import com.zcode.remote.relay.SessionsIndexChannel
+import com.zcode.remote.relay.WorkspaceConfigChannel
 import com.zcode.remote.widget.PendingWidgetProvider
 import com.zcode.remote.relay.RowStore
 import com.zcode.remote.relay.RpcChannel
@@ -238,6 +239,7 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
     private var conversation: ConversationChannel? = null
     /** workspace 级会话索引（E-1）：服务端权威角标 pendingInteractionSummary。 */
     private var sessionsIndex: SessionsIndexChannel? = null
+    private var workspaceConfig: WorkspaceConfigChannel? = null
 
     init {
         if (device != null) connect()
@@ -279,10 +281,12 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         val ch = RpcChannel(c)
         val conv = ConversationChannel(ch)
         val sidx = SessionsIndexChannel(ch)
+        val wcfg = WorkspaceConfigChannel(ch)
         client = c
         channel = ch
         conversation = conv
         sessionsIndex = sidx
+        workspaceConfig = wcfg
         c.connect()
 
         viewModelScope.launch {
@@ -364,6 +368,8 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
                 if (st is RpcChannel.BridgeState.Ready) {
                     // E-1：workspace 级 sessions-index 订阅（权威角标，一次订阅覆盖全部会话）
                     activeWorkspaceKey?.let { sidx.subscribe(it, null) }
+                    // 模型目录：workspace-config 订阅（readWorkspaceState 在远程桥不可用的替代路径）
+                    activeWorkspaceKey?.let { wcfg.subscribe(it, null) }
                     val target = sessions.firstOrNull { it.isRunning } ?: sessions.firstOrNull()
                     target?.let { subscribeConversation(it) }
                 }
@@ -375,6 +381,7 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
                 // 会话帧优先交给会话层解析；sessions-index 帧交给 E-1 权威角标通道
                 conv.onEvent(ev, rowStore)
                 sidx.onEvent(ev)
+                wcfg.onEvent(ev)
                 val text = ev.data.toString()
                 // 每个 delta 一条，量大（HANDOVER 技术债）：降为 debug 级，不刷 info 日志
                 Log.d(TAG, "rpc event id=${ev.id}: ${text.take(400)}")
@@ -749,11 +756,12 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
     /**
      * 创建全新会话（官方 V4 createSession 原生信封链路）。
      * 成功后自动切换订阅并上报 PC 端视图状态，同时回调通知 UI 打开该会话。
+     * modelOption 来自 workspace-config 订阅的模型目录；null = 跟随 PC 端默认。
      */
     fun createNewSession(
         firstPrompt: String,
         attachments: List<ConversationChannel.AttachmentRef> = emptyList(),
-        modelConfig: ConversationChannel.ModelConfig? = null,
+        modelOption: WorkspaceConfigChannel.ModelOption? = null,
         onSuccess: (SessionItem) -> Unit,
         onError: (String) -> Unit,
     ) {
@@ -764,6 +772,12 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         val ws = activeWorkspaceKey ?: sessions.firstOrNull()?.workspacePath ?: run {
             onError("未定位到活动工作区，请在 PC 端打开一个工作区后再试")
             return
+        }
+
+        // 把 "providerId/modelId" 选项值拆成 createSession config 需要的 {provider, model}
+        val modelConfig = modelOption?.let {
+            val (pid, mid) = WorkspaceConfigChannel.splitModelValue(it.value)
+            ConversationChannel.ModelConfig(providerId = pid, modelId = mid)
         }
 
         conv.createSession(
@@ -806,36 +820,23 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
 
     // ---- 模型目录（新建会话弹窗的模型选择数据源）----
 
-    /** 当前工作区模型状态（可用模型列表 + 默认选中项）。 */
-    var workspaceModelState by mutableStateOf<ConversationChannel.WorkspaceState?>(null)
-        private set
+    /** 工作区模型状态（workspace-config 订阅推送，snapshot/deltas 双路更新）。 */
+    val workspaceModelState: WorkspaceConfigChannel.WorkspaceState?
+        get() = workspaceConfig?.state?.value
     var modelStateLoading by mutableStateOf(false)
         private set
 
     /**
-     * 拉取工作区模型目录（官方 `zcode-session::readWorkspaceState`）。
-     * 拉取失败静默降级：弹窗里仍可"跟随 PC 默认"创建。
+     * 触发一次模型目录刷新：workspace-config 是订阅式推送（开桥即订，snapshot 自动到达），
+     * 这里只做"读现值 + 未读到时 resync 兜底"，不再调用远程桥上不存在的 readWorkspaceState。
      */
     fun loadWorkspaceModels() {
-        val conv = conversation ?: return
+        val wcfg = workspaceConfig ?: return
+        if (wcfg.state.value != null) return
         val ws = activeWorkspaceKey ?: sessions.firstOrNull()?.workspacePath ?: return
-        if (modelStateLoading) return
         modelStateLoading = true
-        conv.readWorkspaceState(workspacePath = ws) { result ->
-            viewModelScope.launch {
-                modelStateLoading = false
-                result.fold(
-                    onSuccess = { state ->
-                        Log.i(TAG, "workspaceModels loaded: ${state.available.size} 个模型, " +
-                                "current=${state.current?.modelId ?: "none"}")
-                        workspaceModelState = state
-                    },
-                    onFailure = { err ->
-                        // 目录读不到不阻塞新建会话，仅记日志
-                        Log.w(TAG, "workspaceModels load failed: ${err.message}")
-                    },
-                )
-            }
+        wcfg.resync(ws) {
+            modelStateLoading = false
         }
     }
 
@@ -866,10 +867,12 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         channel?.reset()
         conversation?.reset()
         sessionsIndex?.reset()
+        workspaceConfig?.reset()
         client = null
         channel = null
         conversation = null
         sessionsIndex = null
+        workspaceConfig = null
         // 连接没了就没人能应答：摘掉桥并撤掉通知，避免用户点了个"假批准"
         ApprovalBridge.handler = null
         ElicitationBridge.handler = null
