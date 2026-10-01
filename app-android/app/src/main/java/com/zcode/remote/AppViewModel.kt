@@ -32,6 +32,7 @@ import com.zcode.remote.storage.MultiDeviceStore
 import com.zcode.remote.storage.PairedDevice
 import com.zcode.remote.storage.SettingsStore
 import kotlinx.coroutines.launch
+import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.buildJsonArray
@@ -368,6 +369,8 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
                 if (st is RpcChannel.BridgeState.Ready) {
                     // E-1：workspace 级 sessions-index 订阅（权威角标，一次订阅覆盖全部会话）
                     activeWorkspaceKey?.let { sidx.subscribe(it, null) }
+                    // 从 PC 端 ~/.zcode/v2/provider_config.json 预加载已配置模型目录
+                    loadModelsFromConfigFile()
                     val target = sessions.firstOrNull { it.isRunning } ?: sessions.firstOrNull()
                     target?.let { subscribeConversation(it) }
                 }
@@ -848,12 +851,17 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         private set
 
     /**
-     * 触发一次模型目录刷新：同时触发 workspace-config resync 与 zcode-session::readWorkspaceState，
+     * 触发一次模型目录刷新：三路并发探测（provider_config 配置文件直读 + workspace-config resync + readWorkspaceState），
      * 只要有一路返回模型数据即可填充到 UI。
      */
     fun loadWorkspaceModels() {
         val ws = activeWorkspaceKey ?: sessions.firstOrNull()?.workspacePath ?: return
         modelStateLoading = true
+        // 1) 最稳定的直接链路：通过 file 服务的 resolvePath/readTextFile 读取 ~/.zcode/v2/provider_config.json
+        loadModelsFromConfigFile {
+            modelStateLoading = false
+        }
+        // 2) 远程会话目录链路（若支持）
         conversation?.readWorkspaceState(ws) { res ->
             viewModelScope.launch {
                 res.onSuccess { state ->
@@ -872,9 +880,114 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
                 }
             }
         }
-        workspaceConfig?.resync(ws) {
-            modelStateLoading = false
+        // 3) 配置流 resync
+        workspaceConfig?.resync(ws)
+    }
+
+    /**
+     * 从 PC 端 ~/.zcode/v2/provider_config.json 配置文件中直接拉取用户已配置的模型目录。
+     * （先通过 system::info 获取真实的 homedir，再通过 file::readTextFile 读取配置文件，100% 绕过远程 RPC 限制）。
+     */
+    fun loadModelsFromConfigFile(onDone: () -> Unit = {}) {
+        val ch = channel ?: run { onDone(); return }
+
+        fun readConfigByPath(realPath: String) {
+            Log.i(TAG, "正在读取 PC 端模型配置: $realPath")
+            ch.call(RpcChannel.CHANNEL_FILE, "readTextFile", listOf(mapOf("path" to realPath))) { r2 ->
+                viewModelScope.launch {
+                    when (r2) {
+                        is RpcChannel.RpcReply.Err -> {
+                            Log.w(TAG, "readTextFile 失败 ($realPath): ${r2.message}")
+                        }
+                        is RpcChannel.RpcReply.Ok -> {
+                            val content = runCatching {
+                                r2.data?.jsonObject?.get("content")?.jsonPrimitive?.content
+                            }.getOrNull()
+                            if (!content.isNullOrBlank()) {
+                                val parsed = parseProviderConfigModels(content)
+                                if (parsed.isNotEmpty()) {
+                                    workspaceSessionModels = parsed
+                                    Log.i(TAG, "从 provider_config.json 成功解析 ${parsed.size} 个可用模型: ${parsed.map { it.name }}")
+                                }
+                            }
+                        }
+                    }
+                    onDone()
+                }
+            }
         }
+
+        // 1) 优先调用 system::info 获取桌面系统真实 homedir
+        ch.call(RpcChannel.CHANNEL_SYSTEM, "info", listOf<Any>()) { rSys ->
+            when (rSys) {
+                is RpcChannel.RpcReply.Ok -> {
+                    val homedir = runCatching {
+                        rSys.data?.jsonObject?.get("homedir")?.jsonPrimitive?.content
+                    }.getOrNull()
+                    if (!homedir.isNullOrBlank()) {
+                        val fullPath = "${homedir.trimEnd('\\', '/')}/.zcode/v2/provider_config.json"
+                        readConfigByPath(fullPath)
+                        return@call
+                    }
+                    // homedir 缺失则回退 resolvePath
+                    fallbackResolvePath(ch, ::readConfigByPath, onDone)
+                }
+                is RpcChannel.RpcReply.Err -> {
+                    Log.w(TAG, "system.info 失败: ${rSys.message}，回退 resolvePath")
+                    fallbackResolvePath(ch, ::readConfigByPath, onDone)
+                }
+            }
+        }
+    }
+
+    private fun fallbackResolvePath(ch: RpcChannel, onPath: (String) -> Unit, onDone: () -> Unit) {
+        val pathArg = mapOf("path" to "~/.zcode/v2/provider_config.json")
+        ch.call(RpcChannel.CHANNEL_FILE, "resolvePath", listOf(pathArg)) { r1 ->
+            when (r1) {
+                is RpcChannel.RpcReply.Err -> {
+                    Log.w(TAG, "resolvePath 兜底亦失败: ${r1.message}")
+                    onDone()
+                }
+                is RpcChannel.RpcReply.Ok -> {
+                    val realPath = r1.data?.let {
+                        runCatching { it.jsonPrimitive.content }.getOrNull()
+                    } ?: runCatching {
+                        r1.data?.jsonObject?.get("path")?.jsonPrimitive?.content
+                    }.getOrNull() ?: "~/.zcode/v2/provider_config.json"
+                    onPath(realPath)
+                }
+            }
+        }
+    }
+
+    /** 解析 provider_config.json 结构中的全部模型。 */
+    private fun parseProviderConfigModels(jsonStr: String): List<WorkspaceConfigChannel.ModelOption> {
+        val result = mutableListOf<WorkspaceConfigChannel.ModelOption>()
+        runCatching {
+            val root = Json.parseToJsonElement(jsonStr).jsonObject
+            val config = root["config"]?.jsonObject
+            val rules = config?.get("providerConfigRules")?.jsonObject?.get("providerRules")?.jsonArray
+            rules?.forEach { rEl ->
+                val r = rEl.jsonObject
+                val pid = r["providerId"]?.jsonPrimitive?.content ?: ""
+                val pname = r["providerName"]?.jsonPrimitive?.content
+                val cfg = r["config"]?.jsonObject
+                val modelIds = (cfg?.get("personalModelIds")?.jsonArray ?: cfg?.get("modelOrder")?.jsonArray)
+                    ?.mapNotNull { runCatching { it.jsonPrimitive.content }.getOrNull() }
+                    ?: emptyList()
+                for (mid in modelIds) {
+                    result.add(
+                        WorkspaceConfigChannel.ModelOption(
+                            value = "$pid/$mid",
+                            name = mid,
+                            providerId = pid,
+                            providerName = pname,
+                        )
+                    )
+                }
+            }
+        }.onFailure { Log.w(TAG, "parseProviderConfigModels 解析异常", it) }
+        return result
     }
 
     /**

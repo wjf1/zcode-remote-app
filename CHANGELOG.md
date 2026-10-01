@@ -10,8 +10,8 @@
   - 沉浸式会话详情页顶部 AppBar 新增**模型状态胶囊（如 `gemini-3.8-flash-high ▾`）**，点击可展开切换当前工作区可用模型列表；
   - 切换成功后服务端实时广播 `state.updated` 增量帧更新本地会话快照，下一轮对话指令直接以新模型驱动推理与执行。
 - **支持移动端远程拉取桌面端模型目录并自主选择（Remote Model Catalog Fetching）**：
-  - 修复 `readWorkspaceState` 请求通道为 `zcode-session` 官方服务，从桌面端直接拉取包含当前模型与全部可用模型列表的工作区目录；
-  - **双路模型数据保障**：结合 `WorkspaceConfigChannel` 配置流订阅与实时会话快照提取，保证任何情况下均有模型数据显示；
+  - **核心突破**：通过远程桥必开的 `system::info` 获取真实桌面用户主目录（`homedir`），结合 `file::readTextFile` 直接读取 `~/.zcode/v2/provider_config.json`，彻底攻克远程 RPC 作用域限制，实机成功解析全部可用模型目录（涵盖 commandcode、Gemini、DeepSeek 等 7 个配置模型）；
+  - **三路模型数据保障**：结合配置文件直读、`WorkspaceConfigChannel` 配置流订阅与实时会话快照提取，保证任何情况下均有模型数据显示；
   - **支持手动指定模型 ID**：新建会话弹窗支持手动输入任意模型 ID（如 `deepseek-r1` / `glm-4.5` / `claude-3-5-sonnet`）显式指定，留空则智能跟随 PC 默认。
 - **支持移动端原生发起新会话（New Session）**：
 - **底部 3-Tab 移动端架构（对标 GitHub Mobile / Claude Mobile）**：

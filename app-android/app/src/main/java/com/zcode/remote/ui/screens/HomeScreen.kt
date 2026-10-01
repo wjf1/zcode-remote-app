@@ -65,6 +65,7 @@ fun HomeScreen(
     /** PC 端当前会话快照里的模型（弹窗展示与 provider 继承用，可为空）。 */
     currentModel: String? = null,
     currentProvider: String? = null,
+    availableModels: List<com.zcode.remote.relay.WorkspaceConfigChannel.ModelOption> = emptyList(),
     onCreateSession: (prompt: String, modelConfig: com.zcode.remote.relay.WorkspaceConfigChannel.ModelOption?) -> Unit = { _, _ -> },
 ) {
     var filterOnlyRunning by remember { mutableStateOf(false) }
@@ -294,6 +295,7 @@ fun HomeScreen(
         if (showCreateDialog) {
             CreateSessionDialog(
                 modelState = modelState,
+                availableModels = availableModels,
                 modelsLoading = modelsLoading,
                 onLoadModels = onLoadModels,
                 currentModel = currentModel,
@@ -472,6 +474,7 @@ private fun statusLabel(state: RelayState) = when (state) {
 @Composable
 private fun CreateSessionDialog(
     modelState: com.zcode.remote.relay.WorkspaceConfigChannel.WorkspaceState?,
+    availableModels: List<com.zcode.remote.relay.WorkspaceConfigChannel.ModelOption> = emptyList(),
     modelsLoading: Boolean,
     onLoadModels: () -> Unit,
     currentModel: String?,
@@ -488,7 +491,8 @@ private fun CreateSessionDialog(
     var selectedModel by remember { mutableStateOf<com.zcode.remote.relay.WorkspaceConfigChannel.ModelOption?>(null) }
     var modelMenuExpanded by remember { mutableStateOf(false) }
 
-    val hasCatalog = !modelState?.models.isNullOrEmpty()
+    val modelsList = if (availableModels.isNotEmpty()) availableModels else (modelState?.models ?: emptyList())
+    val hasCatalog = modelsList.isNotEmpty()
     // 自定义输入优先；否则用下拉选中项
     val effectiveSelection: com.zcode.remote.relay.WorkspaceConfigChannel.ModelOption? = when {
         customModelId.isNotBlank() -> com.zcode.remote.relay.WorkspaceConfigChannel.ModelOption(
@@ -643,8 +647,8 @@ private fun CreateSessionDialog(
                                         )
                                     }
                                     HorizontalDivider(modifier = Modifier.padding(vertical = 2.dp))
-                                    // 3. 全部可用模型（workspace-config 目录，可能为空）
-                                    modelState?.models?.forEach { m ->
+                                    // 3. 全部可用模型（综合从 PC 端读到的模型列表）
+                                    modelsList.forEach { m ->
                                         val isSelected = selectedModel?.value == m.value
                                         DropdownMenuItem(
                                             text = {
