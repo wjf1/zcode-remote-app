@@ -6,28 +6,51 @@
 
 ## 中文
 
-ZCode 官方远程控制（`zcode.z.ai/remote`）的**原生安卓增强客户端**——Kotlin + Jetpack Compose 实现，复用官方中继与配对协议（逆向实证，见 [PROTOCOL.md](PROTOCOL.md)），提供比官方 Web 版更强的通知、审批与会话体验。
+ZCode 官方远程控制（`zcode.z.ai/remote`）的**原生安卓增强客户端**——Kotlin + Jetpack Compose 实现，深度对标 [zai-org/ZCode](https://github.com/zai-org/ZCode) 工业级设计规范与现代移动端交互架构（GitHub Mobile / Claude Mobile），复用官方中继与配对协议（逆向实证，见 [PROTOCOL.md](PROTOCOL.md)），提供比官方 Web 版更强的通知、审批、流式会话与移动端操控体验。
 
-### 功能一览
+### 核心架构与功能一览
 
-- **现代化 3-Tab 移动端架构**：彻底告别杂乱堆叠，采用「会话工作台 / 待办审批 / 设置中心」标准底部导航架构；全面支持系统物理返回键拦截（`BackHandler`），杜绝手势误杀退出。
-- **对齐官方 ZCode 工业级设计**：全量接入官方 `theme-zai-dark` 与 `theme-zai-light` 设计系统；淘汰系统 Emoji、改用规范 Material 矢量图标；官方同款深度思考折叠胶囊（带纵向弱引导线）与紧凑工具调用卡片；代码块自适应深浅底色与一键复制。
-- **移动端一键发起新会话**：会话工作台顶栏直接「+ 新建会话」，支持首条 Prompt 指令输入与语音转文字填充，创建后直接切入流式对话窗口。
-- **扫码配对**：扫描桌面端二维码即完成配对，凭据经 AES-256-GCM + Android Keystore 加密存储；支持手动粘贴链接兜底；支持多台设备管理（切换 / 移除）。
-- **会话列表与流式对话**：工作区分组的会话卡片（运行状态高亮），点开会话可实时查看流式输出（思考过程 / 工具调用 / 正文），滚到顶部自动翻页加载更早历史，支持按标题 / 工作区搜索过滤。
-- **发送消息与停止**：会话页底部输入栏直接向桌面端发消息（入会话队列，当前 turn 结束后自动执行）；会话运行中显示「停止」按钮，一键中断。
+```
+                  ┌──────────────────────────────────────────────┐
+                  │           ZCode Remote (Scaffold)            │
+                  └──────────────────────┬───────────────────────┘
+                                         │
+       ┌─────────────────────────────────┼─────────────────────────────────┐
+       │ (Tab 1: 会话工作台)              │ (Tab 2: 待办审批 Inbox)         │ (Tab 3: 控制中心 Settings)
+┌──────▼───────────┐              ┌──────▼───────────┐              ┌──────▼───────────┐
+│   会话工作台     │              │  待办与审批看板  │              │  系统与设备设置  │
+├──────────────────┤              ├──────────────────┤              ├──────────────────┤
+│ • 设备状态呼吸灯 │              │ • 权限审批操作流 │              │ • 当前连接卡片   │
+│ • 「+ 新建会话」 │              │ • 表单提问应答   │              │ • 多设备管理切换 │
+│ • 实时搜索/过滤  │              │ • 实施计划确认   │              │ • 协议线路选择   │
+│ • 流式会话卡片   │              │ • 倒计时进度条   │              │ • HyperOS 保活   │
+│ • 运行中状态高亮 │              │ • 历史待办留档   │              │ • 在线检查更新   │
+└──────────────────┘              └──────────────────┘              └──────────────────┘
+```
+
+- **现代化 3-Tab 移动端架构**：彻底告别单页混乱堆叠，采用「会话工作台 / 待办审批 / 设置中心」标准底部导航架构；全面接入系统级物理返回键拦截（`BackHandler`），杜绝手势误杀退出的问题。
+- **深度对标官方 ZCode 工业级设计**：
+  - 全量接入官方 `theme-zai-dark`（`#161616`）与 `theme-zai-light`（`#F8F8FA`）色彩体系，搭配官方 15% 微边框（Hairline Border）；
+  - 引入官方 Trajectory 四色轨迹语义：用户消息蓝（`#60A5FA`）、助手响应青（`#2DD4BF`）、思考轨迹紫（`#A78BFA`）、工具调用琥珀橙（`#F59E0B`）；
+  - 全面淘汰杂乱的系统 Emoji，统一采用规范的 Material 矢量图标；
+  - 官方同款深度思考组件（`ReasoningBlock`）：紧凑紫色折叠胶囊 + 平滑展开动画 + 标志性左侧弱引导竖线 + 一键复制；
+  - 官方紧凑工具卡片（`ToolCallCard`）：类型标签徽章 + 状态徽标 + 终端代码框格式化展开。
+- **移动端一键发起新会话**：会话工作台顶栏直接「+ 新建会话」，基于官方 V4 原生信封链路（`sendConversationCommandV4(type: "createSession", sessionId: null)`），支持首条 Prompt 输入与实时语音识别填充，创建后直接切入流式对话窗口。
 - **集中式审批与待办看板**：底部导航栏实时角标（Badge）提醒，集中看板统一处理权限审批（允许一次 / 总是允许 / 拒绝）与表单交互（AskUserQuestion / 计划确认），带桌面端决议倒计时。
-- **通知栏审批（核心差异点）**：桌面端请求权限时，锁屏状态下收到高优先级通知，**通知栏直接批准/拒绝**。
-- **附件上传**：会话页 📎 选择文件（≤20MiB）→ 分片上传 → 随消息发送，桌面端模型可直接读取内容；走官方 Web 同款 `sendText` 附件链路，端到端实测通过。
+- **通知栏锁屏审批（核心差异点）**：桌面端请求权限时，锁屏状态下收到高优先级系统通知，**通知栏直接批准/拒绝**。
+- **扫码配对**：扫描桌面端二维码即完成配对，凭据经 AES-256-GCM + Android Keystore 加密存储；支持手动粘贴链接兜底；支持多台设备管理（切换 / 移除）。
+- **会话流式渲染与代码块自适应**：原生 Markdown 渲染支持各级标题、粗体、列表、引用，代码块自动适配深浅双色主题并配备一键复制反馈；滚到顶部自动翻页加载更早历史。
+- **发送消息与停止**：会话页底部悬浮药丸输入栏直接向桌面端发消息；会话运行中显示平滑变形的「停止」按钮，一键中断。
+- **附件上传**：会话页选择文件（≤20MiB）→ 分片上传 → 随消息发送，桌面端模型可直接读取内容；走官方 Web 同款 `sendText` 附件链路。
 - **语音输入**：输入栏 🎤 系统语音识别转文字（识别中实时上屏），一键追加到消息草稿，零协议改动。
 - **桌面 Widget**：主屏卡片实时显示待处理总数（审批 + 表单交互），点按直达 App；连接断开时明示「未连接」。
 - **可靠连接**：完整官方握手（HMAC proof）、心跳、指数退避重连、断线出站缓冲，单端在线互踢提示。
 
-### 截图
+### 界面一览
 
-| 会话列表 | 会话流 | 通知栏审批 | 运行中 |
+| 会话工作台 | 待办与审批看板 | 沉浸式对话控制台 | 独立系统设置 |
 |:---:|:---:|:---:|:---:|
-| ![会话列表](docs/screenshots/app-sessions.png) | ![会话流](docs/screenshots/app-conversation.png) | ![通知栏审批](docs/screenshots/app-approval-notification.png) | ![运行中](docs/screenshots/app-working.png) |
+| ![会话列表](docs/screenshots/app-sessions.png) | ![待办看板](docs/screenshots/app-approval-notification.png) | ![会话流](docs/screenshots/app-conversation.png) | ![运行中](docs/screenshots/app-working.png) |
 
 ### 里程碑状态
 
@@ -38,7 +61,7 @@ ZCode 官方远程控制（`zcode.z.ai/remote`）的**原生安卓增强客户�
 | M2 审批与推送 | 会话流实时渲染、权限审批（会话内 + 通知栏）、双源审批接收 | ✅ 端到端验收通过（2026-09-28） |
 | M3 打磨与内测 | 多机管理、线路切换、HyperOS 保活引导、异常兜底 | ✅ 主体完成 |
 | M3+ 交互增强 | 发送/停止、表单类交互应答、多会话看板与控制权提示、附件上传（全链路实测）、语音输入、桌面 Widget、会话搜索 | ✅ 协议层端到端验收通过 |
-| M3++ 移动端重构 | 底部 3-Tab 移动架构、官方 ZCode 设计系统对齐（zai-dark/zai-light）、集中待办看板、独立设置中心、BackHandler 与动效 | ✅ 完成（v0.5.0-beta1，2026-10-01） |
+| M3++ 移动端全面重构 | 底部 3-Tab 移动架构、官方 ZCode 设计系统对齐（zai-dark/zai-light）、集中待办看板、独立设置中心、原生新建会话、BackHandler 拦截与深浅主题自适应 | ✅ 完成（v0.5.0-beta1，2026-10-01） |
 | ~~M4/M5~~ | ~~VPS 备用 Runner、E2E 高级模式~~ | ❌ 已取消（2026-09-30 决策：单人自用下成本收益不划算，详见 HANDOVER） |
 
 ### 接力开发 / Handover
@@ -48,7 +71,7 @@ ZCode 官方远程控制（`zcode.z.ai/remote`）的**原生安卓增强客户�
 ### 安装包 / Releases
 
 签名 APK 从 [GitHub Releases](https://github.com/wjf1/zcode-remote-app/releases) 下载
-（如 `ZCodeRemote-0.4.0-beta6.apk`，minSdk 31，Android 12+）。
+（如 `ZCodeRemote-0.5.0-beta1.apk`，minSdk 31，Android 12+）。
 
 ### 快速开始
 
@@ -62,16 +85,9 @@ ZCode 官方远程控制（`zcode.z.ai/remote`）的**原生安卓增强客户�
 
 详见 [app-android/README.md](app-android/README.md)。
 
-### 文档
-
-- [方案文档（竞品/逆向/架构/里程碑）](ZCode远程控制安卓APP方案.md)
-- [PROTOCOL.md（中继协议，含实测修正）](PROTOCOL.md)
-- [research/CONVERSATION-PROTOCOL.md（会话流协议）](research/CONVERSATION-PROTOCOL.md)
-- [tools/（probe 协议探针 / setmode 切模式 / 验收脚本）](tools/)
-
 ### 安全边界
 
-本项目仅连接**本人自己的** ZCode 账号/设备（暂不开源、不分发）。走官方中继无端到端加密，凭据与消息对中继服务器可见；二维码泄露等于控制权泄露，App 端已做凭据加密存储。E2E 需求由 M5「高级模式」（自建 bridge + NaCl）满足。
+本项目仅连接**本人自己的** ZCode 账号/设备（暂不开源、不分发）。走官方中继无端到端加密，凭据与消息对中继服务器可见；二维码泄露等于控制权泄露，App 端已做凭据加密存储。
 
 ---
 
@@ -79,20 +95,45 @@ ZCode 官方远程控制（`zcode.z.ai/remote`）的**原生安卓增强客户�
 
 ## English
 
-A **native Android client** for the official ZCode Remote Control relay (`zcode.z.ai/remote`), built with Kotlin + Jetpack Compose. It reuses the official pairing protocol and relay (reverse-engineered and verified, see [PROTOCOL.md](PROTOCOL.md)) and delivers a stronger notification / approval / session experience than the official web app.
+A **native Android client** for the official ZCode Remote Control relay (`zcode.z.ai/remote`), built with Kotlin + Jetpack Compose. Deeply aligned with the [zai-org/ZCode](https://github.com/zai-org/ZCode) design specifications and modern mobile interaction patterns (GitHub Mobile / Claude Mobile), it reuses the official pairing protocol and relay (reverse-engineered and verified, see [PROTOCOL.md](PROTOCOL.md)) to deliver a far superior notification, approval, live streaming, and session experience.
 
-### Features
+### Architecture & Features
 
-- **QR pairing**: scan the desktop QR code and you're paired; credentials are stored with AES-256-GCM + Android Keystore, with manual link paste as fallback and multi-device management (switch / remove).
-- **Sessions & live streaming**: session cards grouped by workspace with status highlight; tap in to watch streaming output (reasoning / tool calls / assistant text) in real time, with automatic pagination when you scroll to the top and search/filter by title or workspace.
-- **Send & stop**: a composer at the bottom of the conversation sends prompts straight to the desktop (queued and executed after the current turn); while a session is running a **Stop** button interrupts it.
-- **Permission approvals (key differentiator)**: when the desktop agent requests permission, a high-priority notification arrives even on the lock screen — **approve/deny right from the notification shade** (Allow once / Always allow / Deny), with the desktop auto-resolution countdown shown.
-- **Form-style interactions**: `AskUserQuestion`, plan approvals (`plan_approval`) and confirmation prompts are answered right in the app — single choice, multi-select, free text, or decline.
-- **Attachments**: pick a file (≤20 MiB) via 📎 in the conversation, chunked upload, then send it with the message — the desktop agent reads the content directly. Uses the same `sendText` attachment path as the official web app, verified end to end.
-- **Voice input**: 🎤 tap-to-talk via the system speech recognizer with live partial results; recognized text is appended to the message draft, with zero protocol changes.
-- **Multi-session board**: each session card shows a "⏳ N pending" badge and highlight, with "current" (subscribed) and "PC viewing" (open on desktop) markers; a banner appears when control is taken over by the official web app or another terminal.
-- **Home-screen widget**: a live card showing the total pending count (approvals + form interactions), tap to jump into the app; an explicit "not connected" state when the relay is down.
-- **Reliable connection**: full official handshake (HMAC proof), heartbeat, exponential-backoff reconnect, offline outbound buffering, and single-terminal kick handling.
+```
+                  ┌──────────────────────────────────────────────┐
+                  │           ZCode Remote (Scaffold)            │
+                  └──────────────────────┬───────────────────────┘
+                                         │
+       ┌─────────────────────────────────┼─────────────────────────────────┐
+       │ (Tab 1: Sessions)               │ (Tab 2: Approvals / Inbox)      │ (Tab 3: Settings)
+┌──────▼───────────┐              ┌──────▼───────────┐              ┌──────▼───────────┐
+│   Sessions Tab   │              │  Approvals Inbox │              │   Settings Tab   │
+├──────────────────┤              ├──────────────────┤              ├──────────────────┤
+│ • Pulse status   │              │ • Permission flow│              │ • Active device  │
+│ • "+ New Session"│              │ • Form questions │              │ • Multi-device   │
+│ • Search/Filter  │              │ • Plan approval  │              │ • Relay endpoint │
+│ • Live stream    │              │ • Countdown bar  │              │ • Keep-alive guide│
+│ • Running status │              │ • History archive│              │ • Update checker │
+└────────────────┘              └──────────────────┘              └──────────────────┘
+```
+
+- **Modern 3-Tab Mobile Architecture**: Say goodbye to crowded single-page layouts. Clean navigation across **Sessions Workbench**, **Approvals Inbox**, and **Settings Center**; full integration with system `BackHandler` prevents accidental exits.
+- **Aligned with Official ZCode Industrial Design**:
+  - Full support for `theme-zai-dark` (`#161616`) and `theme-zai-light` (`#F8F8FA`), paired with 15% hairline borders for clean, calm contrast;
+  - Official Trajectory colors: User Blue (`#60A5FA`), Assistant Teal (`#2DD4BF`), Reasoning Purple (`#A78BFA`), and ToolCall Amber (`#F59E0B`);
+  - Replaced ad-hoc emojis with crisp, standard Material vector icons;
+  - Official `ReasoningBlock`: Sleek collapsible purple pill + smooth expand animation + vertical guide line + one-tap copy;
+  - Official `ToolCallCard`: Compact tool badge + status chip + formatted terminal code block.
+- **Create New Sessions from Mobile**: One-tap "+ New Session" on the workbench header powered by the official V4 envelope command (`sendConversationCommandV4(type: "createSession", sessionId: null)`), with text or speech recognition input.
+- **Centralized Approvals Inbox**: Dedicated tab with live Badge counter for pending permissions and form interactions (`AskUserQuestion`, plan approvals) with desktop auto-resolution countdown.
+- **Lock-screen Notifications (Key Differentiator)**: Approve/deny directly from system notifications without unlocking the screen.
+- **QR Pairing & Multi-device Management**: AES-256-GCM + Android Keystore encrypted credential storage, manual link fallback, and multi-device switching/deletion.
+- **Markdown & Code Rendering**: Adaptive light/dark code blocks with one-tap copy confirmation; auto-pagination when scrolling to top.
+- **Send & Stop**: Pill-shaped floating composer sends prompts; morphing Stop button interrupts running turns.
+- **Chunked Attachments**: Pick files (≤20 MiB) in conversation, chunked stream upload, sent via official `sendText` attachment path.
+- **Voice Input**: Tap-to-talk speech recognition with live partial results appended to drafts.
+- **Home-Screen Widget**: Live card showing total pending items, tap to jump into the app.
+- **Reliable Connectivity**: HMAC handshake proof, 30s heartbeat, exponential backoff, and offline outbound queue.
 
 ### Milestones
 
@@ -102,30 +143,21 @@ A **native Android client** for the official ZCode Remote Control relay (`zcode.
 | M1 skeleton+pairing+sessions | QR pairing, relay connection, session list, event stream | ✅ Verified on emulator |
 | M2 approvals & push | Live conversation streaming, permission approvals (in-app + notification shade), dual-source approval intake | ✅ E2E verified (2026-09-28) |
 | M3 polish & beta | Multi-device, endpoint switching, HyperOS keep-alive guide | ✅ Core done |
-| M3+ interactions | Send & stop, form-style interaction responses, multi-session board, attachments (full path verified), voice input, home-screen widget, session search | ✅ E2E verified at protocol level (UI pending real device) |
+| M3+ interactions | Send & stop, form-style interaction responses, multi-session board, attachments, voice input, home-screen widget, search | ✅ E2E verified at protocol level |
+| M3++ Mobile UI/UX Overhaul | Modern 3-Tab architecture, official ZCode design system alignment (zai-dark/zai-light), dedicated inbox, native createSession, BackHandler & adaptive theme | ✅ Done (v0.5.0-beta1, 2026-10-01) |
 | ~~M4/M5~~ | ~~VPS backup runner, E2E advanced mode~~ | ❌ Cancelled (2026-09-30: cost/benefit not worth it for single-user, see HANDOVER) |
 
-### Handover
+### Releases
 
-The remaining roadmap and handover notes live in [HANDOVER.md](HANDOVER.md) (self-contained, written for an AI agent to pick up directly).
+Download signed APKs from [GitHub Releases](https://github.com/wjf1/zcode-remote-app/releases)
+(e.g., `ZCodeRemote-0.5.0-beta1.apk`, minSdk 31, Android 12+).
 
-### Install / Releases
+### Quick Start
 
-Signed APKs are published on the [GitHub Releases](https://github.com/wjf1/zcode-remote-app/releases) page
-(e.g. `ZCodeRemote-0.4.0-beta6.apk`, minSdk 31, Android 12+).
-
-### Quick start
-
-No Android Studio required — the local toolchain (JDK 17 + Gradle + Android SDK) lives in `toolchain/`:
+No Android Studio required — toolchain (JDK 17 + Gradle + Android SDK) is in `toolchain/`:
 
 ```bash
 ./build.sh           # build APK
 ./build.sh install   # build + install to device/emulator + launch
 ./build.sh log       # tail relay logs
 ```
-
-See [app-android/README.md](app-android/README.md) for details.
-
-### Security notes
-
-This project connects **only to the owner's own** ZCode account/devices (private, not distributed). The official relay has no end-to-end encryption — credentials and messages are visible to the relay server; a leaked QR code equals leaked control. The app encrypts credentials at rest; E2E will come with the M5 "advanced mode" (self-hosted bridge + NaCl).
