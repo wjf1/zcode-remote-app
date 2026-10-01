@@ -384,5 +384,6 @@ class RpcChannel(private val relay: RelayClient) {
         const val CHANNEL_SESSION = "zcode-session"  // 仅 createSession 等会话管理方法
         const val CHANNEL_TASK = "zcode-task"
         const val CHANNEL_WORKSPACE = "workspace"
+        const val CHANNEL_MODEL_PROVIDER = "model-provider"  // 模型供应商目录（getAllCached/getAll）
     }
 }

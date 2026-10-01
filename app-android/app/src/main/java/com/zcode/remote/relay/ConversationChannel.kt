@@ -571,7 +571,9 @@ class ConversationChannel(private val rpc: RpcChannel) {
 
     /**
      * 读取工作区配置状态（官方桌面端模型下拉框同款数据源）：
-     * `zcode-session::readWorkspaceState`，返回当前模型、可用模型列表、思考等级与执行模式。
+     * `zcode-agent::readWorkspaceState`（真机实测：zcode-session 通道返回 Method not found，
+     * zcodeAgentService 的 ConnectionScope 是 Proxy 透传，未命中路由方法会原样转发底层服务）。
+     * 返回当前模型、可用模型列表、思考等级与执行模式。
      */
     fun readWorkspaceState(
         workspacePath: String,
@@ -581,20 +583,61 @@ class ConversationChannel(private val rpc: RpcChannel) {
         val args = buildMap<String, Any> {
             put("workspacePath", workspacePath)
             workspaceIdentity?.takeIf { it.isNotBlank() }?.let { put("workspaceIdentity", it) }
+            put("preferWorkspaceDefaults", true)
         }
         Log.i(TAG, "readWorkspaceState ws=$workspacePath")
-        rpc.call(RpcChannel.CHANNEL_SESSION, "readWorkspaceState", listOf(args),
+        rpc.call(RpcChannel.CHANNEL_AGENT, "readWorkspaceState", listOf(args),
             timeoutMs = SEND_ACK_TIMEOUT_MS) { reply ->
             when (reply) {
-                is RpcChannel.RpcReply.Err -> onResult(Result.failure(IllegalStateException(reply.message)))
+                is RpcChannel.RpcReply.Err -> {
+                    Log.w(TAG, "readWorkspaceState failed: ${reply.message}，回退 model-provider::getAllCached")
+                    fetchModelsViaProviderCatalog(onResult)
+                }
                 is RpcChannel.RpcReply.Ok -> {
                     val o = reply.data.asObj()
                     val state = parseWorkspaceState(o)
-                    if (state != null) {
+                    if (state != null && state.available.isNotEmpty()) {
                         onResult(Result.success(state))
                     } else {
-                        onResult(Result.failure(IllegalStateException("工作区状态解析失败: ${reply.data}")))
+                        Log.w(TAG, "readWorkspaceState 返回空目录，回退 model-provider::getAllCached")
+                        fetchModelsViaProviderCatalog(onResult)
                     }
+                }
+            }
+        }
+    }
+
+    /**
+     * 回退路径（官方移动端 useModelProviders 同款）：
+     * `model-provider::getAllCached()`（无参），把每个供应商下的 models 展平为模型目录。
+     * 此路径读不到"当前选中模型"，current 恒为 null（UI 显示"跟随 PC 默认"）。
+     */
+    private fun fetchModelsViaProviderCatalog(onResult: (Result<WorkspaceState>) -> Unit) {
+        rpc.call(RpcChannel.CHANNEL_MODEL_PROVIDER, "getAllCached", listOf<Any>()) { reply ->
+            when (reply) {
+                is RpcChannel.RpcReply.Err ->
+                    onResult(Result.failure(IllegalStateException("模型目录读取失败：${reply.message}")))
+                is RpcChannel.RpcReply.Ok -> {
+                    val available = mutableListOf<ModelConfig>()
+                    reply.data.asArray()?.forEach { el ->
+                        val provider = el.asObj() ?: return@forEach
+                        val providerId = provider["id"].asStr() ?: return@forEach
+                        val providerName = provider["name"].asStr()
+                        provider["models"].asArray()?.forEach { mEl ->
+                            val m = mEl.asObj() ?: return@forEach
+                            val modelId = m["id"].asStr() ?: return@forEach
+                            available.add(
+                                ModelConfig(
+                                    providerId = providerId,
+                                    modelId = modelId,
+                                    label = m["name"].asStr() ?: modelId,
+                                    providerLabel = providerName,
+                                )
+                            )
+                        }
+                    }
+                    Log.i(TAG, "providerCatalog 回退成功：${available.size} 个模型")
+                    onResult(Result.success(WorkspaceState(current = null, available = available)))
                 }
             }
         }
