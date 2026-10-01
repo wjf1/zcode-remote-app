@@ -51,8 +51,9 @@ class WorkspaceConfigChannel(private val rpc: RpcChannel) {
     private var listenId: Int? = null
     private var subscriptionId: String? = null
 
-    /** 开桥后按当前工作区订阅一次（会话切换无需重订）。 */
+    /** 开桥后按当前工作区订阅一次（会话切换无需重订，幂等：已订阅直接跳过）。 */
     fun subscribe(workspacePath: String, workspaceIdentity: String?) {
+        if (listenId != null) return   // conv.status 会多次发射 Live，避免重复 listen 泄漏
         val target = buildMap<String, Any> {
             put("workspacePath", workspacePath)
             workspaceIdentity?.let { put("workspaceIdentity", it) }
@@ -99,9 +100,15 @@ class WorkspaceConfigChannel(private val rpc: RpcChannel) {
         val frame = lf.frame ?: return
 
         when (frame.payloadKind) {
-            "snapshot" -> applyOptions(frame.payload["configOptions"], "snapshot")
+            // 真机帧实证：payload.snapshot = {protocolVersion, workspaceId, logEpoch,
+            //   config:{configOptions:[...], slashCommands:[...]}}
+            // configOptions 在 snapshot.config 里（三层嵌套）
+            "snapshot" -> {
+                val snap = frame.payload["snapshot"] as? JsonObject
+                val cfg = snap?.get("config") as? JsonObject
+                applyOptions(cfg?.get("configOptions"), "snapshot")
+            }
             "deltas" -> {
-                // 增量整组替换 configOptions（emitWorkspaceConfigOptionsUpdate 每次全量下发）
                 val deltas = frame.payload["deltas"]?.let {
                     runCatching { it as? kotlinx.serialization.json.JsonArray }.getOrNull()
                 } ?: return
@@ -109,6 +116,8 @@ class WorkspaceConfigChannel(private val rpc: RpcChannel) {
                     val o = d as? JsonObject ?: continue
                     val patch = o["patch"] as? JsonObject ?: continue
                     val opts = patch["configOptions"]
+                        ?: (patch["config"] as? JsonObject)?.get("configOptions")
+                        ?: ((patch["snapshot"] as? JsonObject)?.get("config") as? JsonObject)?.get("configOptions")
                     if (opts != null) applyOptions(opts, "deltas")
                 }
             }

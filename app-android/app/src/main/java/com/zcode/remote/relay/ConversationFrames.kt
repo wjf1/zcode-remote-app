@@ -99,6 +99,10 @@ object ConversationFrames {
         val elicitations: List<PendingElicitation> = emptyList(),
         /** control 块（运行/停止状态由服务端算好下发）。 */
         val control: Control? = null,
+        /** 快照 config 块的当前模型（PC 端实际在用的 model，如 "glm-4.5"）。 */
+        val configModel: String? = null,
+        /** 快照 config 块的当前供应商 providerId。 */
+        val configProvider: String? = null,
     )
 
     /**
@@ -130,6 +134,8 @@ object ConversationFrames {
         val snap = payload.obj("snapshot") ?: return null
         val rowsObj = snap.obj("rows")
         val control = parseControl(snap.obj("control"))
+        // 快照 config 块：PC 端当前模型与供应商（真机帧实证每帧都带）
+        val cfg = snap.obj("config")
         return Snapshot(
             sessionId = snap.str("sessionId"),
             logEpoch = snap.str("logEpoch"),
@@ -146,6 +152,8 @@ object ConversationFrames {
                 runCatching { snap["pendingInteractions"]?.jsonArray }.getOrNull(),
                 snap.str("sessionId")),
             control = control,
+            configModel = cfg?.str("model"),
+            configProvider = cfg?.str("provider"),
         )
     }
 

@@ -192,6 +192,8 @@ class MainActivity : ComponentActivity() {
                                             modelState = vm.workspaceModelState,
                                             modelsLoading = vm.modelStateLoading,
                                             onLoadModels = { vm.loadWorkspaceModels() },
+                                            currentModel = vm.conversationMeta.model,
+                                            currentProvider = vm.conversationMeta.provider,
                                             onCreateSession = { prompt, modelOption ->
                                                 vm.createNewSession(
                                                     firstPrompt = prompt,

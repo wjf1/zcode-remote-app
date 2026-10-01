@@ -310,7 +310,8 @@ class RpcChannel(private val relay: RelayClient) {
             return
         }
 
-        Log.i(TAG, "rpc recv type=$type id=$id data=${data?.toString()?.take(400)}")
+        // 调试期加长到 6000：workspace-config snapshot 帧较大，400 字符看不出 configOptions 结构
+        Log.i(TAG, "rpc recv type=$type id=$id data=${data?.toString()?.take(6000)}")
         when (type) {
             TYPE_SUCCESS -> {
                 val cb = id?.let { pendingResponses.remove(it) }

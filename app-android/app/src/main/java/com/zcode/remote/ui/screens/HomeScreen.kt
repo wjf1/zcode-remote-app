@@ -62,6 +62,9 @@ fun HomeScreen(
     modelState: com.zcode.remote.relay.WorkspaceConfigChannel.WorkspaceState? = null,
     modelsLoading: Boolean = false,
     onLoadModels: () -> Unit = {},
+    /** PC 端当前会话快照里的模型（弹窗展示与 provider 继承用，可为空）。 */
+    currentModel: String? = null,
+    currentProvider: String? = null,
     onCreateSession: (prompt: String, modelConfig: com.zcode.remote.relay.WorkspaceConfigChannel.ModelOption?) -> Unit = { _, _ -> },
 ) {
     var filterOnlyRunning by remember { mutableStateOf(false) }
@@ -293,6 +296,8 @@ fun HomeScreen(
                 modelState = modelState,
                 modelsLoading = modelsLoading,
                 onLoadModels = onLoadModels,
+                currentModel = currentModel,
+                currentProvider = currentProvider,
                 onDismiss = { showCreateDialog = false },
                 onConfirm = { prompt, modelConfig ->
                     showCreateDialog = false
@@ -469,16 +474,31 @@ private fun CreateSessionDialog(
     modelState: com.zcode.remote.relay.WorkspaceConfigChannel.WorkspaceState?,
     modelsLoading: Boolean,
     onLoadModels: () -> Unit,
+    currentModel: String?,
+    currentProvider: String?,
     onDismiss: () -> Unit,
     onConfirm: (prompt: String, modelConfig: com.zcode.remote.relay.WorkspaceConfigChannel.ModelOption?) -> Unit,
 ) {
     var prompt by remember { mutableStateOf("") }
     var voiceListening by remember { mutableStateOf(false) }
     var voiceLive by remember { mutableStateOf<String?>(null) }
+    var customModelId by remember { mutableStateOf("") }
 
     // 模型选择：null = 跟随 PC 端默认；选中 = 显式下发 config
     var selectedModel by remember { mutableStateOf<com.zcode.remote.relay.WorkspaceConfigChannel.ModelOption?>(null) }
     var modelMenuExpanded by remember { mutableStateOf(false) }
+
+    val hasCatalog = !modelState?.models.isNullOrEmpty()
+    // 自定义输入优先；否则用下拉选中项
+    val effectiveSelection: com.zcode.remote.relay.WorkspaceConfigChannel.ModelOption? = when {
+        customModelId.isNotBlank() -> com.zcode.remote.relay.WorkspaceConfigChannel.ModelOption(
+            value = "${currentProvider ?: "glm"}/${customModelId.trim()}",
+            name = customModelId.trim(),
+            providerId = currentProvider,
+            providerName = null,
+        )
+        else -> selectedModel
+    }
 
     // 弹窗打开时拉一次模型目录
     LaunchedEffect(Unit) { onLoadModels() }
@@ -544,15 +564,15 @@ private fun CreateSessionDialog(
                             )
                             Spacer(Modifier.width(8.dp))
                             Text(
-                                text = selectedModel?.name
-                                    ?: modelState?.findCurrent()?.let { "默认（${it.name}）" }
+                                text = effectiveSelection?.name
+                                    ?: currentModel?.let { "默认（${it}）" }
                                     ?: "默认（跟随 PC 端）",
                                 style = MaterialTheme.typography.bodySmall,
                                 maxLines = 1,
                                 overflow = TextOverflow.Ellipsis,
                                 modifier = Modifier.weight(1f)
                             )
-                            Text("▾", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            Text("▾", color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.weight(0f, fill = false))
                         }
 
                         DropdownMenu(
@@ -567,13 +587,20 @@ private fun CreateSessionDialog(
                                         enabled = false,
                                     )
                                 }
-                                (modelState?.models.isNullOrEmpty()) -> {
+                                !hasCatalog -> {
                                     DropdownMenuItem(
                                         text = {
-                                            Text(
-                                                "未读到模型目录（仍可跟随 PC 默认创建）",
-                                                style = MaterialTheme.typography.bodySmall
-                                            )
+                                            Column {
+                                                Text(
+                                                    "远程模型目录暂不可用",
+                                                    style = MaterialTheme.typography.bodySmall
+                                                )
+                                                Text(
+                                                    "可在下方输入模型 ID 手动指定（留空跟随 PC 默认）",
+                                                    style = MaterialTheme.typography.labelSmall,
+                                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                                )
+                                            }
                                         },
                                         onClick = {},
                                         enabled = false,
@@ -584,32 +611,39 @@ private fun CreateSessionDialog(
                                     DropdownMenuItem(
                                         text = { Text("跟随 PC 端默认", style = MaterialTheme.typography.bodySmall) },
                                         leadingIcon = {
-                                            if (selectedModel == null) {
+                                            if (selectedModel == null && customModelId.isBlank()) {
                                                 Icon(Icons.Filled.Check, null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(16.dp))
                                             }
                                         },
                                         onClick = {
                                             selectedModel = null
+                                            customModelId = ""
                                             modelMenuExpanded = false
                                         }
                                     )
-                                    // 2. PC 端当前模型（快捷置顶）
-                                    modelState?.findCurrent()?.let { cur ->
+                                    // 2. PC 端当前模型（从会话快照 config 快捷置顶）
+                                    currentModel?.let { cur ->
                                         DropdownMenuItem(
-                                            text = { Text("PC 当前 · ${cur.name}", style = MaterialTheme.typography.bodySmall) },
+                                            text = { Text("PC 当前 · $cur", style = MaterialTheme.typography.bodySmall) },
                                             leadingIcon = {
-                                                if (selectedModel?.value == cur.value) {
+                                                if (selectedModel?.name == cur) {
                                                     Icon(Icons.Filled.Check, null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(16.dp))
                                                 }
                                             },
                                             onClick = {
-                                                selectedModel = cur
+                                                selectedModel = com.zcode.remote.relay.WorkspaceConfigChannel.ModelOption(
+                                                    value = "${currentProvider ?: "glm"}/$cur",
+                                                    name = cur,
+                                                    providerId = currentProvider,
+                                                    providerName = null,
+                                                )
+                                                customModelId = ""
                                                 modelMenuExpanded = false
                                             }
                                         )
                                     }
                                     HorizontalDivider(modifier = Modifier.padding(vertical = 2.dp))
-                                    // 3. 全部可用模型
+                                    // 3. 全部可用模型（workspace-config 目录，可能为空）
                                     modelState?.models?.forEach { m ->
                                         val isSelected = selectedModel?.value == m.value
                                         DropdownMenuItem(
@@ -632,6 +666,7 @@ private fun CreateSessionDialog(
                                             },
                                             onClick = {
                                                 selectedModel = m
+                                                customModelId = ""
                                                 modelMenuExpanded = false
                                             }
                                         )
@@ -657,11 +692,26 @@ private fun CreateSessionDialog(
                         }
                     )
                 }
+
+                // 自定义模型 ID（目录不可用或需临时指定时使用；留空 = 按下拉选择/默认）
+                OutlinedTextField(
+                    value = customModelId,
+                    onValueChange = { customModelId = it },
+                    placeholder = {
+                        Text(
+                            "可选：手动指定模型 ID（如 glm-4.5 / deepseek-r1）",
+                            style = MaterialTheme.typography.labelSmall
+                        )
+                    },
+                    singleLine = true,
+                    shape = RoundedCornerShape(8.dp),
+                    modifier = Modifier.fillMaxWidth()
+                )
             }
         },
         confirmButton = {
             Button(
-                onClick = { onConfirm(prompt.trim(), selectedModel) },
+                onClick = { onConfirm(prompt.trim(), effectiveSelection) },
                 enabled = prompt.isNotBlank(),
                 shape = RoundedCornerShape(8.dp)
             ) {

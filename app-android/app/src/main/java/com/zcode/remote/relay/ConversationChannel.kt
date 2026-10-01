@@ -58,6 +58,9 @@ class ConversationChannel(private val rpc: RpcChannel) {
         val canStop: Boolean? = null,
         /** idle | stoppable | stopping（stopping 时按钮显示"停止中"并禁用）。 */
         val stopState: String? = null,
+        /** 快照 config 带的 PC 端当前模型（新建会话弹窗展示与 provider 继承用）。 */
+        val model: String? = null,
+        val provider: String? = null,
     )
 
     private val clientId = "android-${UUID.randomUUID()}"
@@ -187,6 +190,8 @@ class ConversationChannel(private val rpc: RpcChannel) {
                     logEpoch = snap.logEpoch ?: _meta.value.logEpoch,
                     canStop = control?.canStop ?: _meta.value.canStop,
                     stopState = control?.stopState ?: _meta.value.stopState,
+                    model = snap.configModel ?: _meta.value.model,
+                    provider = snap.configProvider ?: _meta.value.provider,
                 )
                 Log.i(TAG, "snapshot: ${snap.rows.size} 行（总 ${snap.totalCount}）" +
                         "待审批=${snap.pendingInteractions.size} delivery=${lf.deliveryKind}" +

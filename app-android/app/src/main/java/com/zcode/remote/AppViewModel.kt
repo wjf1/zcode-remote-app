@@ -368,8 +368,6 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
                 if (st is RpcChannel.BridgeState.Ready) {
                     // E-1：workspace 级 sessions-index 订阅（权威角标，一次订阅覆盖全部会话）
                     activeWorkspaceKey?.let { sidx.subscribe(it, null) }
-                    // 模型目录：workspace-config 订阅（readWorkspaceState 在远程桥不可用的替代路径）
-                    activeWorkspaceKey?.let { wcfg.subscribe(it, null) }
                     val target = sessions.firstOrNull { it.isRunning } ?: sessions.firstOrNull()
                     target?.let { subscribeConversation(it) }
                 }
@@ -390,7 +388,16 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
             }
         }
 
-        viewModelScope.launch { conv.status.collect { conversationStatus = it } }
+        viewModelScope.launch {
+            conv.status.collect { st ->
+                conversationStatus = st
+                // 模型目录订阅需要会话握手完成（真机实证：bridge Ready 即订会报
+                // fault.connection.handshakeRequired，Live 后才可用）
+                if (st is ConversationChannel.Status.Live) {
+                    activeWorkspaceKey?.let { wcfg.subscribe(it, null) }
+                }
+            }
+        }
         viewModelScope.launch { conv.meta.collect { conversationMeta = it } }
         viewModelScope.launch { conv.earlier.collect { earlier = it } }
         viewModelScope.launch {
