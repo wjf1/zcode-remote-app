@@ -44,6 +44,7 @@ import com.zcode.remote.ui.theme.ZCodeTokens
  * 独立的系统与设备设置中心 (Settings Tab)
  * 从主屏彻底剥离所有配置项，按模块清晰组织：设备管理、通信线路、外观主题、系统保活、版本更新。
  */
+@OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
 @Composable
 fun SettingsTab(
     deviceName: String,
@@ -237,10 +238,13 @@ fun SettingsTab(
                         modifier = Modifier.padding(16.dp),
                         verticalArrangement = Arrangement.spacedBy(14.dp)
                     ) {
-                        // 线路切换
+                        // 线路切换（FlowRow：窄屏下整颗 Chip 换行，文字不折断）
                         Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
                             Text("中继线路模式", style = MaterialTheme.typography.labelLarge)
-                            Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                            FlowRow(
+                                horizontalArrangement = Arrangement.spacedBy(6.dp),
+                                verticalArrangement = Arrangement.spacedBy(6.dp)
+                            ) {
                                 listOf(
                                     "auto" to "自动判定",
                                     "main" to "官方主线",
@@ -253,7 +257,13 @@ fun SettingsTab(
                                             if (mode == "custom") editingCustom = customRelayUrl
                                             else onEndpointChange(mode, null)
                                         },
-                                        label = { Text(label, style = MaterialTheme.typography.labelSmall) },
+                                        label = {
+                                            Text(
+                                                label,
+                                                style = MaterialTheme.typography.labelSmall,
+                                                maxLines = 1
+                                            )
+                                        },
                                         shape = RoundedCornerShape(8.dp)
                                     )
                                 }
@@ -306,7 +316,10 @@ fun SettingsTab(
                         // 主题切换
                         Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
                             Text("界面外观", style = MaterialTheme.typography.labelLarge)
-                            Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                            FlowRow(
+                                horizontalArrangement = Arrangement.spacedBy(6.dp),
+                                verticalArrangement = Arrangement.spacedBy(6.dp)
+                            ) {
                                 listOf(
                                     "dark" to "深色模式",
                                     "system" to "跟随系统",
@@ -315,7 +328,13 @@ fun SettingsTab(
                                     FilterChip(
                                         selected = themeMode == mode,
                                         onClick = { onThemeChange(mode) },
-                                        label = { Text(label, style = MaterialTheme.typography.labelSmall) },
+                                        label = {
+                                            Text(
+                                                label,
+                                                style = MaterialTheme.typography.labelSmall,
+                                                maxLines = 1
+                                            )
+                                        },
                                         shape = RoundedCornerShape(8.dp)
                                     )
                                 }
