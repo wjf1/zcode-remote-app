@@ -81,6 +81,9 @@ dependencies {
 
     implementation("com.squareup.okhttp3:okhttp:4.12.0")
 
+    // Sprint 6：JVM 单元测试（VQL 金标准对拍 + 纯函数；不需要模拟器/真机）
+    testImplementation("junit:junit:4.13.2")
+
     // 扫码配对：CameraX 预览 + ZXing 解码（无 Google 服务依赖，国内可用）
     // CameraX 1.4.x 起原生库按 16 KB 页对齐编译（Android 15 兼容性要求）
     implementation("androidx.camera:camera-camera2:1.4.2")

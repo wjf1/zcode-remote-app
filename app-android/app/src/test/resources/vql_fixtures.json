@@ -1,0 +1,176 @@
+{
+  "cases": [
+    {
+      "name": "null",
+      "kind": "null",
+      "value": null,
+      "hex": "00"
+    },
+    {
+      "name": "empty string",
+      "kind": "string",
+      "value": "",
+      "hex": "0100"
+    },
+    {
+      "name": "ascii string",
+      "kind": "string",
+      "value": "hello zcode",
+      "hex": "010b68656c6c6f207a636f6465"
+    },
+    {
+      "name": "chinese string",
+      "kind": "string",
+      "value": "会话审批通过",
+      "hex": "0112e4bc9ae8af9de5aea1e689b9e9809ae8bf87"
+    },
+    {
+      "name": "long string 300B (2-byte varint)",
+      "kind": "string",
+      "value": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+      "hex": "01ac02787878787878787878787878787878787878787878787878787878787878787878787878787878787878787878787878787878787878787878787878787878787878787878787878787878787878787878787878787878787878787878787878787878787878787878787878787878787878787878787878787878787878787878787878787878787878787878787878787878787878787878787878787878787878787878787878787878787878787878787878787878787878787878787878787878787878787878787878787878787878787878787878787878787878787878787878787878787878787878787878787878787878787878787878787878787878787878787878787878787878787878787878787878787878787878787878787878787878787878787878"
+    },
+    {
+      "name": "long chinese string (multi-byte len)",
+      "kind": "string",
+      "value": "审批审批审批审批审批审批审批审批审批审批审批审批审批审批审批审批审批审批审批审批审批审批审批审批审批审批审批审批审批审批审批审批审批审批审批审批审批审批审批审批审批审批审批审批审批审批审批审批审批审批审批审批审批审批审批审批审批审批审批审批审批审批审批审批审批审批审批审批审批审批审批审批审批审批审批审批审批审批审批审批审批审批审批审批审批审批审批审批审批审批审批审批审批审批审批审批审批审批审批审批审批审批审批审批审批审批审批审批审批审批审批审批审批审批审批审批审批审批审批审批审批审批审批审批审批审批审批审批审批审批审批审批审批审批审批审批审批审批审批审批审批审批审批审批审批审批审批审批审批审批审批审批审批审批审批审批审批审批审批审批审批审批审批审批审批审批审批审批审批审批审批审批审批审批审批审批审批审批审批审批审批审批审批审批审批审批审批审批审批审批审批审批审批审批审批审批审批审批审批审批",
+      "hex": "01b009e5aea1e689b9e5aea1e689b9e5aea1e689b9e5aea1e689b9e5aea1e689b9e5aea1e689b9e5aea1e689b9e5aea1e689b9e5aea1e689b9e5aea1e689b9e5aea1e689b9e5aea1e689b9e5aea1e689b9e5aea1e689b9e5aea1e689b9e5aea1e689b9e5aea1e689b9e5aea1e689b9e5aea1e689b9e5aea1e689b9e5aea1e689b9e5aea1e689b9e5aea1e689b9e5aea1e689b9e5aea1e689b9e5aea1e689b9e5aea1e689b9e5aea1e689b9e5aea1e689b9e5aea1e689b9e5aea1e689b9e5aea1e689b9e5aea1e689b9e5aea1e689b9e5aea1e689b9e5aea1e689b9e5aea1e689b9e5aea1e689b9e5aea1e689b9e5aea1e689b9e5aea1e689b9e5aea1e689b9e5aea1e689b9e5aea1e689b9e5aea1e689b9e5aea1e689b9e5aea1e689b9e5aea1e689b9e5aea1e689b9e5aea1e689b9e5aea1e689b9e5aea1e689b9e5aea1e689b9e5aea1e689b9e5aea1e689b9e5aea1e689b9e5aea1e689b9e5aea1e689b9e5aea1e689b9e5aea1e689b9e5aea1e689b9e5aea1e689b9e5aea1e689b9e5aea1e689b9e5aea1e689b9e5aea1e689b9e5aea1e689b9e5aea1e689b9e5aea1e689b9e5aea1e689b9e5aea1e689b9e5aea1e689b9e5aea1e689b9e5aea1e689b9e5aea1e689b9e5aea1e689b9e5aea1e689b9e5aea1e689b9e5aea1e689b9e5aea1e689b9e5aea1e689b9e5aea1e689b9e5aea1e689b9e5aea1e689b9e5aea1e689b9e5aea1e689b9e5aea1e689b9e5aea1e689b9e5aea1e689b9e5aea1e689b9e5aea1e689b9e5aea1e689b9e5aea1e689b9e5aea1e689b9e5aea1e689b9e5aea1e689b9e5aea1e689b9e5aea1e689b9e5aea1e689b9e5aea1e689b9e5aea1e689b9e5aea1e689b9e5aea1e689b9e5aea1e689b9e5aea1e689b9e5aea1e689b9e5aea1e689b9e5aea1e689b9e5aea1e689b9e5aea1e689b9e5aea1e689b9e5aea1e689b9e5aea1e689b9e5aea1e689b9e5aea1e689b9e5aea1e689b9e5aea1e689b9e5aea1e689b9e5aea1e689b9e5aea1e689b9e5aea1e689b9e5aea1e689b9e5aea1e689b9e5aea1e689b9e5aea1e689b9e5aea1e689b9e5aea1e689b9e5aea1e689b9e5aea1e689b9e5aea1e689b9e5aea1e689b9e5aea1e689b9e5aea1e689b9e5aea1e689b9e5aea1e689b9e5aea1e689b9e5aea1e689b9e5aea1e689b9e5aea1e689b9e5aea1e689b9e5aea1e689b9e5aea1e689b9e5aea1e689b9e5aea1e689b9e5aea1e689b9e5aea1e689b9e5aea1e689b9e5aea1e689b9e5aea1e689b9e5aea1e689b9e5aea1e689b9e5aea1e689b9e5aea1e689b9e5aea1e689b9e5aea1e689b9e5aea1e689b9e5aea1e689b9e5aea1e689b9e5aea1e689b9e5aea1e689b9e5aea1e689b9e5aea1e689b9e5aea1e689b9e5aea1e689b9e5aea1e689b9e5aea1e689b9e5aea1e689b9e5aea1e689b9e5aea1e689b9e5aea1e689b9e5aea1e689b9e5aea1e689b9e5aea1e689b9e5aea1e689b9e5aea1e689b9e5aea1e689b9e5aea1e689b9e5aea1e689b9e5aea1e689b9e5aea1e689b9e5aea1e689b9e5aea1e689b9e5aea1e689b9e5aea1e689b9e5aea1e689b9e5aea1e689b9e5aea1e689b9e5aea1e689b9e5aea1e689b9e5aea1e689b9e5aea1e689b9e5aea1e689b9e5aea1e689b9e5aea1e689b9e5aea1e689b9e5aea1e689b9e5aea1e689b9e5aea1e689b9e5aea1e689b9e5aea1e689b9"
+    },
+    {
+      "name": "int 0",
+      "kind": "int",
+      "value": 0,
+      "hex": "0600"
+    },
+    {
+      "name": "int 127 (varint 1B)",
+      "kind": "int",
+      "value": 127,
+      "hex": "067f"
+    },
+    {
+      "name": "int 128 (varint 2B)",
+      "kind": "int",
+      "value": 128,
+      "hex": "068001"
+    },
+    {
+      "name": "int 16383 (varint 2B max)",
+      "kind": "int",
+      "value": 16383,
+      "hex": "06ff7f"
+    },
+    {
+      "name": "int 16384 (varint 3B)",
+      "kind": "int",
+      "value": 16384,
+      "hex": "06808001"
+    },
+    {
+      "name": "int32 max",
+      "kind": "int",
+      "value": 2147483647,
+      "hex": "06ffffffff07"
+    },
+    {
+      "name": "bool true (JSON tag)",
+      "kind": "bool",
+      "value": true,
+      "hex": "050474727565"
+    },
+    {
+      "name": "bool false (JSON tag)",
+      "kind": "bool",
+      "value": false,
+      "hex": "050566616c7365"
+    },
+    {
+      "name": "buffer",
+      "kind": "buffer",
+      "value": "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f202122232425262728292a2b2c2d2e2f303132333435363738393a3b3c3d3e3f",
+      "hex": "0240000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f202122232425262728292a2b2c2d2e2f303132333435363738393a3b3c3d3e3f"
+    },
+    {
+      "name": "empty array",
+      "kind": "array",
+      "value": [],
+      "hex": "0400"
+    },
+    {
+      "name": "mixed array",
+      "kind": "array",
+      "value": [
+        "a",
+        1,
+        true,
+        null,
+        {
+          "k": "v"
+        }
+      ],
+      "hex": "040501016106010504747275650005097b226b223a2276227d"
+    },
+    {
+      "name": "nested object",
+      "kind": "object",
+      "value": {
+        "sessionId": "abc-123",
+        "mode": "build",
+        "中文键": "中文值",
+        "count": 3,
+        "flag": false,
+        "nested": {
+          "deep": [
+            1,
+            2,
+            "three"
+          ],
+          "empty": {}
+        }
+      },
+      "hex": "0580017b2273657373696f6e4964223a226162632d313233222c226d6f6465223a226275696c64222c22e4b8ade69687e994ae223a22e4b8ade69687e580bc222c22636f756e74223a332c22666c6167223a66616c73652c226e6573746564223a7b2264656570223a5b312c322c227468726565225d2c22656d707479223a7b7d7d7d"
+    },
+    {
+      "name": "object with unicode values",
+      "kind": "object",
+      "value": {
+        "命令": "git push --force",
+        "行数": 848
+      },
+      "hex": "052a7b22e591bde4bba4223a226769742070757368202d2d666f726365222c22e8a18ce695b0223a3834387d"
+    },
+    {
+      "name": "empty object",
+      "kind": "object",
+      "value": {},
+      "hex": "05027b7d"
+    }
+  ],
+  "multi": [
+    {
+      "name": "rpc head + args",
+      "values": [
+        "zcode-agent",
+        "setMode",
+        [
+          {
+            "workspacePath": "F:/x/y",
+            "sessionId": "t1",
+            "mode": "build"
+          }
+        ]
+      ],
+      "hex": "010b7a636f64652d6167656e7401077365744d6f64650401053a7b22776f726b737061636550617468223a22463a2f782f79222c2273657373696f6e4964223a227431222c226d6f6465223a226275696c64227d"
+    },
+    {
+      "name": "mixed scalars",
+      "values": [
+        "str",
+        42,
+        true,
+        null
+      ],
+      "hex": "0103737472062a05047472756500"
+    }
+  ]
+}

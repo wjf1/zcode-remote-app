@@ -1,0 +1,42 @@
+name: CI
+
+# Sprint 6 · 回归网：这个项目的协议是逆向的、上游一改就可能碎 —— CI 变红 =
+# 「协议被上游打破」的最早信号（而不是某天手机没通知才发现）。全部纯 JVM，
+# 不需要真机/模拟器。
+on:
+  push:
+    branches: [master]
+  pull_request:
+
+jobs:
+  test-and-build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      # 金标准对拍：Python 侧独立编解码实现生成共享向量（Kotlin Vql.kt 逐一比对）
+      - name: 生成 VQL 对拍 fixture
+        run: python tools/gen_vql_fixtures.py
+
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: "8.7"
+
+      - name: JVM 单元测试（VQL 对拍 + 纯函数）+ 组装 debug
+        run: gradle testDebugUnitTest assembleDebug --console=plain
+        working-directory: app-android
+
+      - name: 汇总测试结果
+        if: always()
+        run: |
+          find app-android/app/build/test-results -name "*.xml" 2>/dev/null | head -20
+          grep -h "tests=" app-android/app/build/test-results/testDebugUnitTest/*.xml 2>/dev/null | head -20

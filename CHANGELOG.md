@@ -1,11 +1,15 @@
 # 变更记录 / Changelog
 
-## 未发布（2026-10-02）· Sprint 0–3：三个 P0 缺陷修复 + diff 视图 + 连接保活
+## 未发布（2026-10-02）· Sprint 0–3：三个 P0 缺陷修复 + diff 视图 + 连接保活 ／ Sprint 6：回归网与可移植性
 
 **里程碑：完成外部审查计划（HANDOVER §6.1）的 Sprint 0–3 —— 修复三个实证级 P0 缺陷、
-连接生命周期与界面解耦、执行模式默认安全化、工具调用渲染红绿 diff。**
+连接生命周期与界面解耦、执行模式默认安全化、工具调用渲染红绿 diff；
+随后补齐 Sprint 6 回归网（23 项 JVM 测试全绿 + CI + 构建脚本可移植化）。**
 
 ### 新增
+- **VQL 金标准对拍测试（Sprint 6）**：新增 `tools/gen_vql_fixtures.py`（Python 侧独立编解码实现）生成 20 个共享向量 + 2 个多值流（`app/src/test/resources/vql_fixtures.json`），Kotlin `Vql.kt` 对每个向量做「编码字节级一致 + 解码语义一致 + 偏移推进一致」双向对拍——协议上游一变，CI 先红。
+- **纯函数单测（Sprint 6）**：`ToolDiffParser`/Myers diff（含交换型修改回溯、空文件 `"".lines()` 规范化、超 4000 行降级、重建校验）、`ConversationRow.from`（字段映射 + raw 整包保留 + 缺 rowId/kind 拒解）、`ApprovalOption.sortKey`（渲染顺序全分支）、`splitModelValue`（$variant 剥离 + 无斜杠回退）、`PairedDevice.relayWsUrl`（线路分派）。23 项测试全绿；QrParser 依赖 `android.net.Uri` 不入 JVM 测试（真机验收覆盖）。
+- **GitHub Actions CI（Sprint 6）**：`.github/workflows/ci.yml` —— Ubuntu runner 上跑 `gen_vql_fixtures.py → testDebugUnitTest → assembleDebug`，纯 JVM 无需真机。
 - **执行模式选择器（Sprint 2 / P0-B）**：新建会话弹窗新增「执行模式」选择（规划 plan / 构建 build / 全自动 yolo），**默认 build**；选 yolo 时显示醒目风险文案。会话页顶栏新增执行模式胶囊，常驻显示当前模式（yolo 红底警示），点击切换（走 `setMode` RPC，菜单内如实提示「仅对下一轮对话生效」——协议语义见 HANDOVER §5.4）。
 - **工具调用 diff 视图（Sprint 3 第一步）**：Edit / Write / MultiEdit 工具行从 `inputText` 纯客户端解析 `old_string` / `new_string`（`ui/components/DiffView.kt`），渲染行号红绿 diff（行级 Myers 算法、长段未变更自动折叠、横向滚动、一键复制 unified 文本）；折叠态摘要直接显示「文件名 +N −M」。零 RPC、零协议改动；超 4000 行自动降级整段替换显示，不阻塞审批渲染。
 - **连接终态常驻通知（Sprint 2 / A 组）**：KICKED（控制权被接管）/ AUTH_FAILED（配对失效）/ PROTOCOL_MISMATCH（协议升级）三种终态由「仅 App 内横幅」升级为系统常驻通知（`notify/TerminalNotifier.kt`，点按打开 App，恢复正常连接自动撤除）——手机在兜里不再静默失去审批能力。
@@ -13,6 +17,7 @@
 - **连接前台服务真正启用（Sprint 1 / P0-A）**：`ConnectionService` 从占位死代码变为真实前台服务（LOW 重要性常驻通知保进程），连接栈迁入进程级 `ConnectionScope` 单例——锁屏/切后台/划掉界面后连接与审批通知继续存活，不再随 Activity 生灭。服务类型改 `specialUse`（Android 15 对 dataSync 型有 24h 内累计 6h 硬超时，specialUse 不受限）并实现 `onTimeout` 兜底。
 
 ### 修复
+- **diff 空行规范化（Sprint 6 测试发现的真实缺陷）**：`diffLines` 入口把 `[""]`（Kotlin `"".lines()` 的产物，即空文件/纯插入场景）规范化为空列表——修复 Write 全新文件时 diff 不再是纯新增、`removed` 虚高的问题。
 - **新建会话不再默认 YOLO（Sprint 2 / P0-B）**：`createNewSession` 硬编码的 `mode = "yolo"`（AppViewModel）与 `?: "yolo"` 兜底（ConversationChannel）均改为参数化 / `?: "build"`——此前手机端创建的所有会话全部免审批（既是安全洞，也让锁屏审批对这些会话永不触发）。成因追溯：v0.5.0-beta2 为绕 Gemini 校验显式下发 `mode:"yolo"`，后续修了 `thought` 漏了 `mode`。
 - **入站帧不再静默丢弃（Sprint 1 / B 组）**：`RelayClient` 入站流由 `extraBufferCapacity=64 + DROP_OLDEST`（长流式输出突发时静默丢最旧帧、会话行悄悄错位）改为 Channel 队列 + 单泵协程顺序 emit（缓冲 512、挂起而非丢弃、严格保序）。
 - **自报版本号真实化（Sprint 1 / B 组）**：`RelayClient` 构造改传 `BuildConfig.VERSION_NAME`——此前永远向中继自报 0.1.0。
@@ -23,8 +28,9 @@
 - **release 开启 R8 + 资源收缩**：补建 `proguard-rules.pro`（`assumenosideeffects` 编译期剥离 `Log.v/d/i/w` 调用含字符串参数，与 ZLog 门控双保险）；自家代码本轮保守 keep（混淆改名待真机冒烟后放开）。
 
 ### 变更与验证状态
+- **build.sh 可移植化（Sprint 6）**：仓库根改由 `${BASH_SOURCE[0]}` 推导、JDK/SDK/Gradle 依次回退到「仓库 toolchain/ → 环境变量 → PATH」——clone 到任意目录、任意机器 `./build.sh` 直接可构建（此前必须放在 `F:/AI/Zcode/zcode-remote-app` 才行）。
 - 文档：HANDOVER §4 / §6.0 失效结论勘误（前台服务死代码、文件浏览「无落点」被实测推翻、乐观消解已实现）；新增 §6.1 计划评审结论与 Sprint 0–7 排期；§8 新增「协议做不到类结论须标注静态分析/实测依据」红线。
-- 验收状态：构建验证 `./build.sh`（debug）；**UI 与链路验收待真机（小米 15 Pro）**——清单见 HANDOVER §6.1（划掉任务 30min 后审批可达、release 包 logcat 无正文与 proof、模式胶囊切换、diff 渲染等）。
+- 验收状态：debug/release 构建 BUILD SUCCESSFUL；23 项 JVM 测试全绿；release dex 日志字符串剥离复检通过；**UI 与链路验收待真机（小米 15 Pro）**——清单见 HANDOVER §6.1。
 
 ## v0.5.0-beta5（2026-10-01）· 会话内切换模型支持选档位 + 修复新会话草稿残留
 

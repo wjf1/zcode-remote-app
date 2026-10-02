@@ -132,12 +132,16 @@ object ToolDiffParser {
      * 保证 UI 永不被巨型 diff 的计算阻塞（Happy 预算思想的本地化）。
      */
     fun diffLines(old: List<String>, new: List<String>): List<DiffLine> {
-        val n = old.size
-        val m = new.size
-        if (n == 0) return new.map { DiffLine(DiffType.ADD, it) }
-        if (m == 0) return old.map { DiffLine(DiffType.DEL, it) }
+        // Kotlin 陷阱："".lines() == [""]（单空行）而非空列表——Write 的空文件、
+        // Edit 的空 old_string（纯插入）都会踩到；统一规范化为空列表
+        val a = if (old == listOf("")) emptyList() else old
+        val b = if (new == listOf("")) emptyList() else new
+        if (a.isEmpty()) return b.map { DiffLine(DiffType.ADD, it) }
+        if (b.isEmpty()) return a.map { DiffLine(DiffType.DEL, it) }
+        val n = a.size
+        val m = b.size
         if (n + m > 4000) {
-            return old.map { DiffLine(DiffType.DEL, it) } + new.map { DiffLine(DiffType.ADD, it) }
+            return a.map { DiffLine(DiffType.DEL, it) } + b.map { DiffLine(DiffType.ADD, it) }
         }
         val max = n + m
         val offset = max
@@ -154,7 +158,7 @@ object ToolDiffParser {
                     v[k - 1 + offset] + 1
                 }
                 var y = x - k
-                while (x < n && y < m && old[x] == new[y]) { x++; y++ }
+                while (x < n && y < m && a[x] == b[y]) { x++; y++ }
                 v[k + offset] = x
                 if (x >= n && y >= m) { foundD = d; break }
                 k += 2
@@ -162,7 +166,7 @@ object ToolDiffParser {
             if (foundD >= 0) break
         }
         if (foundD < 0) {  // 理论不可达，防御
-            return old.map { DiffLine(DiffType.DEL, it) } + new.map { DiffLine(DiffType.ADD, it) }
+            return a.map { DiffLine(DiffType.DEL, it) } + b.map { DiffLine(DiffType.ADD, it) }
         }
         val out = ArrayList<DiffLine>(n + m)
         var x = n
@@ -174,11 +178,11 @@ object ToolDiffParser {
             val prevK = if (k == -d || (k != d && vv[k - 1 + offset] < vv[k + 1 + offset])) k + 1 else k - 1
             val prevX = vv[prevK + offset]
             val prevY = prevX - prevK
-            while (x > prevX && y > prevY) { out += DiffLine(DiffType.CONTEXT, old[x - 1]); x--; y-- }
-            if (x == prevX) { out += DiffLine(DiffType.ADD, new[prevY]); y = prevY }
-            else { out += DiffLine(DiffType.DEL, old[prevX]); x = prevX }
+            while (x > prevX && y > prevY) { out += DiffLine(DiffType.CONTEXT, a[x - 1]); x--; y-- }
+            if (x == prevX) { out += DiffLine(DiffType.ADD, b[prevY]); y = prevY }
+            else { out += DiffLine(DiffType.DEL, a[prevX]); x = prevX }
         }
-        while (x > 0 && y > 0 && old[x - 1] == new[y - 1]) { out += DiffLine(DiffType.CONTEXT, old[x - 1]); x--; y-- }
+        while (x > 0 && y > 0 && a[x - 1] == b[y - 1]) { out += DiffLine(DiffType.CONTEXT, a[x - 1]); x--; y-- }
         out.reverse()
         return out
     }

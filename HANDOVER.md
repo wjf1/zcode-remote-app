@@ -281,7 +281,7 @@ RemoteInput 全仓 0 命中）。总体判断：**功能面已超出对标官方
 | Sprint 3 第二步 | 只读文件浏览器——视 `tools/probe.py` 对 file 通道的探测结论（方法全貌/路径边界/大小限制） | ⬜ 待探测 |
 | Sprint 4 | 通知层升级：RemoteInput 内联回复、审批专用高重要性渠道（治 HyperOS 折叠） | ⬜ 后续接力 |
 | Sprint 5 | Room 缓存（离线可读/秒开）+ share sheet + 配对链接 VIEW deep link + 快捷指令 chips | ⬜ 后续接力 |
-| Sprint 6 | 回归网：VQL 金标准对拍测试（Kotlin↔Python 共享 fixture）+ 纯函数单测 + GitHub Actions + `build.sh` 去硬编码路径 | ⬜ 后续接力 |
+| Sprint 6 | 回归网：VQL 金标准对拍测试（Kotlin↔Python 共享 fixture）+ 纯函数单测（23 项全绿，2026-10-02）+ GitHub Actions + `build.sh` 去硬编码路径 | ✅ 2026-10-02 |
 | Sprint 7 | 凭据生命周期（一次性配对/可吊销/生物识别）与自建中继 + E2EE——**独立决策不随本轮**，需用户拍板 | ⬜ 需决策 |
 
 **真机验收清单（并入 P0-2，需小米 15 Pro）**：① 从最近任务划掉 App，30min 后 PC 触发审批手机仍收到
