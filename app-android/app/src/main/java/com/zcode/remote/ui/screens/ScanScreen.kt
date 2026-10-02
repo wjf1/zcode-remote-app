@@ -3,7 +3,7 @@ package com.zcode.remote.ui.screens
 import android.Manifest
 import android.annotation.SuppressLint
 import android.content.pm.PackageManager
-import android.util.Log
+import com.zcode.remote.util.ZLog
 import android.util.Size
 import android.view.MotionEvent
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -114,7 +114,7 @@ fun ScanScreen(onPaired: (PairedDevice) -> Unit) {
                                 val text = decodeQr(reader, proxy)
                                 proxy.close()
                                 if (text != null && pairedHandled.compareAndSet(false, true)) {
-                                    Log.i(TAG, "二维码扫描成功: ${text.take(60)}...")
+                                    ZLog.i(TAG, "二维码扫描成功: ${text.take(60)}...")
                                     QrParser.parse(text)?.let { dev ->
                                         ContextCompat.getMainExecutor(ctx).execute {
                                             runCatching {
@@ -124,7 +124,7 @@ fun ScanScreen(onPaired: (PairedDevice) -> Unit) {
                                             onPaired(dev)
                                         }
                                     } ?: run {
-                                        Log.w(TAG, "扫描成功但 QrParser 解析失败: $text")
+                                        ZLog.w(TAG, "扫描成功但 QrParser 解析失败: $text")
                                         pairedHandled.set(false)
                                     }
                                 }
@@ -150,7 +150,7 @@ fun ScanScreen(onPaired: (PairedDevice) -> Unit) {
                                     }
                                     true
                                 }
-                            }.onFailure { Log.e(TAG, "相机绑定失败", it) }
+                            }.onFailure { ZLog.e(TAG, "相机绑定失败", it) }
                         }, ContextCompat.getMainExecutor(ctx))
                         previewView
                     }

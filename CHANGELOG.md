@@ -1,5 +1,31 @@
 # 变更记录 / Changelog
 
+## 未发布（2026-10-02）· Sprint 0–3：三个 P0 缺陷修复 + diff 视图 + 连接保活
+
+**里程碑：完成外部审查计划（HANDOVER §6.1）的 Sprint 0–3 —— 修复三个实证级 P0 缺陷、
+连接生命周期与界面解耦、执行模式默认安全化、工具调用渲染红绿 diff。**
+
+### 新增
+- **执行模式选择器（Sprint 2 / P0-B）**：新建会话弹窗新增「执行模式」选择（规划 plan / 构建 build / 全自动 yolo），**默认 build**；选 yolo 时显示醒目风险文案。会话页顶栏新增执行模式胶囊，常驻显示当前模式（yolo 红底警示），点击切换（走 `setMode` RPC，菜单内如实提示「仅对下一轮对话生效」——协议语义见 HANDOVER §5.4）。
+- **工具调用 diff 视图（Sprint 3 第一步）**：Edit / Write / MultiEdit 工具行从 `inputText` 纯客户端解析 `old_string` / `new_string`（`ui/components/DiffView.kt`），渲染行号红绿 diff（行级 Myers 算法、长段未变更自动折叠、横向滚动、一键复制 unified 文本）；折叠态摘要直接显示「文件名 +N −M」。零 RPC、零协议改动；超 4000 行自动降级整段替换显示，不阻塞审批渲染。
+- **连接终态常驻通知（Sprint 2 / A 组）**：KICKED（控制权被接管）/ AUTH_FAILED（配对失效）/ PROTOCOL_MISMATCH（协议升级）三种终态由「仅 App 内横幅」升级为系统常驻通知（`notify/TerminalNotifier.kt`，点按打开 App，恢复正常连接自动撤除）——手机在兜里不再静默失去审批能力。
+- **网络感知重连（Sprint 1 / B 组）**：重连闸门 `relay/NetworkGate.kt` 注入 `ConnectivityManager.NetworkCallback`——飞行模式/切 Wi-Fi 期间不再空转退避，网络恢复即刻重连（原实现最长多等一轮 48s）；退避加 jitter。
+- **连接前台服务真正启用（Sprint 1 / P0-A）**：`ConnectionService` 从占位死代码变为真实前台服务（LOW 重要性常驻通知保进程），连接栈迁入进程级 `ConnectionScope` 单例——锁屏/切后台/划掉界面后连接与审批通知继续存活，不再随 Activity 生灭。服务类型改 `specialUse`（Android 15 对 dataSync 型有 24h 内累计 6h 硬超时，specialUse 不受限）并实现 `onTimeout` 兜底。
+
+### 修复
+- **新建会话不再默认 YOLO（Sprint 2 / P0-B）**：`createNewSession` 硬编码的 `mode = "yolo"`（AppViewModel）与 `?: "yolo"` 兜底（ConversationChannel）均改为参数化 / `?: "build"`——此前手机端创建的所有会话全部免审批（既是安全洞，也让锁屏审批对这些会话永不触发）。成因追溯：v0.5.0-beta2 为绕 Gemini 校验显式下发 `mode:"yolo"`，后续修了 `thought` 漏了 `mode`。
+- **入站帧不再静默丢弃（Sprint 1 / B 组）**：`RelayClient` 入站流由 `extraBufferCapacity=64 + DROP_OLDEST`（长流式输出突发时静默丢最旧帧、会话行悄悄错位）改为 Channel 队列 + 单泵协程顺序 emit（缓冲 512、挂起而非丢弃、严格保序）。
+- **自报版本号真实化（Sprint 1 / B 组）**：`RelayClient` 构造改传 `BuildConfig.VERSION_NAME`——此前永远向中继自报 0.1.0。
+- **心跳与重连协程化（Sprint 1 / B 组）**：裸 `Thread.sleep` 守护线程并入协程作用域统一治理，`close()` 时全部收敛取消。
+
+### 安全加固
+- **release 日志全面治理（Sprint 1 / P0-C）**：新增 `util/ZLog` 统一日志门（debug 全量、release 静默），relay/rpc/storage/UI 全部 30+ 处 `android.util.Log` 调用迁移完毕；`RelayClient` 的 HMAC proof 与 deviceSid 日志连 debug 也不再输出 proof 本体。直接修复「release 包把会话正文、审批详情与握手凭据明文写进 logcat」的凭据红线违规（HANDOVER §8）。
+- **release 开启 R8 + 资源收缩**：补建 `proguard-rules.pro`（`assumenosideeffects` 编译期剥离 `Log.v/d/i/w` 调用含字符串参数，与 ZLog 门控双保险）；自家代码本轮保守 keep（混淆改名待真机冒烟后放开）。
+
+### 变更与验证状态
+- 文档：HANDOVER §4 / §6.0 失效结论勘误（前台服务死代码、文件浏览「无落点」被实测推翻、乐观消解已实现）；新增 §6.1 计划评审结论与 Sprint 0–7 排期；§8 新增「协议做不到类结论须标注静态分析/实测依据」红线。
+- 验收状态：构建验证 `./build.sh`（debug）；**UI 与链路验收待真机（小米 15 Pro）**——清单见 HANDOVER §6.1（划掉任务 30min 后审批可达、release 包 logcat 无正文与 proof、模式胶囊切换、diff 渲染等）。
+
 ## v0.5.0-beta5（2026-10-01）· 会话内切换模型支持选档位 + 修复新会话草稿残留
 
 **里程碑：把思考档位选择延伸到会话内切换模型；修复首轮指令发送后输入框仍残留同一段文字**

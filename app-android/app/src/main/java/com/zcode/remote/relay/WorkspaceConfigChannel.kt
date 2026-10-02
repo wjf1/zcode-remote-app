@@ -1,6 +1,6 @@
 package com.zcode.remote.relay
 
-import android.util.Log
+import com.zcode.remote.util.ZLog
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.serialization.json.JsonObject
@@ -68,10 +68,10 @@ class WorkspaceConfigChannel(private val rpc: RpcChannel) {
                     val root = reply.data as? JsonObject
                     val ack = root ?: (root?.get("ack") as? JsonObject)
                     subscriptionId = ack?.str("subscriptionId")
-                    Log.i(TAG, "workspace-config subscribed sub=$subscriptionId")
+                    ZLog.i(TAG, "workspace-config subscribed sub=$subscriptionId")
                 }
                 is RpcChannel.RpcReply.Err ->
-                    Log.w(TAG, "workspace-config subscribe 失败: ${reply.message}")
+                    ZLog.w(TAG, "workspace-config subscribe 失败: ${reply.message}")
             }
         }
     }
@@ -84,9 +84,9 @@ class WorkspaceConfigChannel(private val rpc: RpcChannel) {
         rpc.call(RpcChannel.CHANNEL_AGENT, "resyncWorkspaceConfigV4", listOf(target)) { reply ->
             when (reply) {
                 is RpcChannel.RpcReply.Err ->
-                    Log.w(TAG, "workspace-config resync 失败: ${reply.message}")
+                    ZLog.w(TAG, "workspace-config resync 失败: ${reply.message}")
                 is RpcChannel.RpcReply.Ok ->
-                    Log.i(TAG, "workspace-config resync 已请求")
+                    ZLog.i(TAG, "workspace-config resync 已请求")
             }
             onDone()
         }
@@ -147,7 +147,7 @@ class WorkspaceConfigChannel(private val rpc: RpcChannel) {
                 )
             }
             _state.value = WorkspaceState(currentValue = currentValue, models = models)
-            Log.i(TAG, "workspace-config $source: ${models.size} 个模型, current=$currentValue")
+            ZLog.i(TAG, "workspace-config $source: ${models.size} 个模型, current=$currentValue")
             return
         }
     }

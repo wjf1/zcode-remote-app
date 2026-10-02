@@ -39,7 +39,10 @@ android {
 
     buildTypes {
         release {
-            isMinifyEnabled = false
+            // P0-C：开 R8 做日志剥离与库裁剪（proguard-rules.pro；自家代码本轮保守 keep，
+            // 混淆改名待真机冒烟后再放开）。release 构建后必须真机冒烟验证。
+            isMinifyEnabled = true
+            isShrinkResources = true
             // keystore.properties 缺失时不挂 release 签名（配置期 getByName 会抛异常，
             // 连 assembleDebug 都过不去）；发布前必须恢复正式 keystore。
             if (keystoreProps.isNotEmpty()) {

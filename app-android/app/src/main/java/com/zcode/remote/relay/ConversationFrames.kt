@@ -1,6 +1,6 @@
 package com.zcode.remote.relay
 
-import android.util.Log
+import com.zcode.remote.util.ZLog
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.booleanOrNull
 import kotlinx.serialization.json.intOrNull
@@ -188,7 +188,7 @@ object ConversationFrames {
                 "state.updated" -> Delta.StateUpdated(o.obj("patch"))
                 null -> null
                 else -> {
-                    Log.i(TAG, "未处理的 delta op=$op")
+                    ZLog.i(TAG, "未处理的 delta op=$op")
                     Delta.Unknown(op)
                 }
             }
@@ -310,7 +310,7 @@ class RowStore(private val out: MutableList<ConversationRow>) {
         val pos = index[rowId]
         if (pos == null) {
             // 理论上先有 row.appended；缺失时兜底建行，避免丢内容
-            Log.w("RowStore", "appendText 找不到 rowId=$rowId，兜底新建")
+            ZLog.w("RowStore", "appendText 找不到 rowId=$rowId，兜底新建")
             upsert(ConversationRow(rowId = rowId, kind = "streaming", text = append))
             return
         }
@@ -321,7 +321,7 @@ class RowStore(private val out: MutableList<ConversationRow>) {
             "output.text" -> cur.copy(outputText = (cur.outputText ?: "") + append)
             "summaryText" -> cur
             else -> {
-                Log.i("RowStore", "未知 delta path=$path")
+                ZLog.i("RowStore", "未知 delta path=$path")
                 cur
             }
         }

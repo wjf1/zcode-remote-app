@@ -34,6 +34,14 @@
   （workspace 级 sessions-index 订阅，服务端 `pendingInteractionSummary`），
   `recomputeSessionPending` 改权威优先/事件流回退；端到端实测通过（触发 0→1、消解回落）；
   构建通过。剩余全部为硬件依赖项（X-2/P0-2）与需决策的 P2 系列。
+- **2026-10-02 七轮（本轮接力）：外部审查报告评审通过，P0 修复周期启动**——
+  对《提升空间分析与开发计划》（基于 v0.5.0-beta5 全量代码审查 + 12 竞品 2026-10 生态扫描）
+  做实证抽查：抽验 10 条关键断言（YOLO 硬编码、ConnectionService 死代码、release 日志泄露、
+  proguard 文件缺失、零测试、三个千行文件、file 通道读穿工作区外文件、RemoteInput 全仓 0 命中等）
+  **全部命中且行号与代码精确一致**，报告可信，采纳其 Sprint 0–3 计划。
+  本轮范围：Sprint 0（文档清账）→ Sprint 1（P0-A 前台服务 / P0-C 日志治理 / B 组连接韧性）→
+  Sprint 2（P0-B 执行模式选择器 + 终态通知）→ Sprint 3 第一步（diff 视图，纯客户端零协议）。
+  详见 §6.1。后续接力按 §6.1 表格继续。
 - **⚠️ 2026-09-30 范围决策（用户拍板）**：**M4（P2-1）/M5（P2-2）移出开发计划**，
   VPS 不再采购——剩余工作仅 X-2/P0-2 真机验收与发版收官；方案文档中 M4/M5 章节仅作历史参考。
   另：按需池已完成桌面 Widget、附件流式化、会话搜索（详见 CHANGELOG 五/六轮）。
@@ -171,7 +179,8 @@ ADB -s <serial> shell am broadcast -n com.zcode.remote/.debug.DebugApprovalRecei
 | 权限审批（双源接收/通知栏批准/resolveInteraction 应答） | ✅ 端到端验收 | `relay/Interactions.kt` `notify/ApprovalNotifier.kt` `AppViewModel.kt` |
 | rpc-frame 分片重组（CRC32+messageBytes 双校验） | ✅（多分片实环境未现，直通路径 190 帧无回归） | `relay/RpcChannel.kt` |
 | 线路切换（主线/备线/自定义，Origin 同源推导）+ 主题三模式 | ✅ 实测 | `storage/SettingsStore.kt` `ui/theme/Theme.kt` `HomeScreen.kt` |
-| 保活引导页 / debug 注入 receiver / 前台服务 | ✅ | `ui/screens/KeepAliveGuideScreen.kt` `app/src/debug/` `service/ConnectionService.kt` |
+| 保活引导页 / debug 注入 receiver | ✅ | `ui/screens/KeepAliveGuideScreen.kt` `app/src/debug/` |
+| 前台服务 | ⚠️ **占位死代码**（2026-10-02 审查证实：`start()/stop()` 全仓无调用者，连接实际绑定 Activity 生命周期）→ Sprint 1 P0-A 迁移 | `service/ConnectionService.kt` |
 
 版本序列：`v0.2.0-m2` → `v0.2.1-m2b` → `v0.2.2-m3a` → `v0.2.3-m3b` → `v0.3.0-m3` →
 `v0.4.0-beta1`（发版收官内测）→ `v0.4.0-beta2`（真机验收问题修复）→ **`v0.4.0-beta3`（当前，versionName 0.4.0-beta3 /
@@ -206,28 +215,86 @@ P1-2 多会话看板、P1-4 协议常量结清、P1-3 附件+语音、E-1 权威
 会话列表/多机/设置、会话流渲染、发送消息端到端、附件全链路（桌面端 Begin/Chunk/Commit 实证）、
 停止按钮、**审批端到端**（真实审批→手机通知→Allow once→accepted→消解，两条实证）、语音按钮降级。
 
-**唯一剩余待办（无开发阻塞项）**：
+**待办总览（2026-10-02 更新——下方旧结论「无开发阻塞项」已被审查推翻，见 §6.1）**：
 
 | 项 | 内容 | 状态 |
 |---|---|---|
-| **P0-2** | 日常使用观察（3 天）：锁屏通知可达性、HyperOS 杀后台 30min 后审批可达 | ⏳ 待观察（无代码工作） |
+| **P0-A/B/C** | 前台服务死代码 / 新建会话硬编码 YOLO / release 明文日志（2026-10-02 审查实证） | 🔨 Sprint 1–2 开发中 |
+| **P0-2** | 日常使用观察（3 天）：锁屏通知可达性、HyperOS 杀后台 30min 后审批可达 | ⏳ 待观察（依赖 P0-A 修复后重测） |
 | O-1 | 锁屏通知建议手动确认「设置→通知→锁屏通知」已开 | ⏳ 用户侧 |
 | O-2 | 桌面 Widget 拖到桌面看渲染；会话搜索/主题切换肉眼确认 | ⏳ 用户侧 |
 | D-1 | 会话流 `v4/conversation/frame` 二进制细节穷举（不影响功能，未知 op 有 Unknown 兜底） | ⬜ 按需，需受控抓包 |
 | P2-3 余项 | Wear OS 快捷审批（验收卡硬件）、小米推送（需开发者账号） | 按需/搁置 |
 
 **可选增强（非阻塞，按需启动）**：
-- 审批「双通道并存 + 消解 ~3s 延迟」体验优化 —— 桌面端行为侧，App 可做的是**乐观消解**
-  （点批准后本地先移除卡片，收到 `permission_resolved` 再校准），成本低、感知明显。
+- ~~审批乐观消解~~ → **✅ 已实现**（点批准本地先移除卡片、失败自动回滚，CHANGELOG 有记录）——
+  2026-10-02 勘误：旧文档仍把它挂在「可选增强」，实际早已上线，划掉。
 - 发送失败后自动保留草稿并提示重发（当前超时失败保留 `promptDraft`，行为已合理）。
 - 表单卡（AskUserQuestion）转发条件探查（PROTOCOL.md §8 待验证项）。
 
-> **M4/M5 已取消（2026-09-30 用户决策）**，文件浏览在官方协议下无落点就此搁置；
-> 剩余全部为「日常观察」与「按需增强」，**无开发阻塞项**，可随时转正式版。
+> **M4/M5 已取消（2026-09-30 用户决策）**。
+>
+> ⚠️ **2026-10-02 勘误**：旧结论「文件浏览在官方协议下无落点就此搁置」**已失效**——该判断依据的是
+> bundle 静态分析，而实测已打通 `system.info → file.resolvePath → file.readTextFile` 链路并成功读取
+> **工作区之外**的 `~/.zcode/v2/provider_config.json`（见 CHANGELOG「核心突破」条目与
+> `AppViewModel.kt` 实现、`RpcChannel.kt` 的 `CHANNEL_FILE/CHANNEL_SYSTEM` 常量）。
+> 只读文件浏览与 diff 视图**不需要任何新协议**，已列入 Sprint 3（§6.1）。
+>
+> **新规则**：任何「协议做不到」的结论必须标注依据是 bundle 静态分析还是真机实测；两者冲突时
+> 以实测为准并回改文档（本次教训）。
 
 ---
 
+### 6.1 2026-10-02 计划评审结论与本轮开发计划（Sprint 0–7，接手先看）
+
+**评审结论**：外部《提升空间分析与开发计划》经实证抽查后采纳——10 条关键断言逐一对照仓库代码，
+全部命中且行号精确一致（抽查项：`AppViewModel.kt:860` 与 `ConversationChannel.kt:567` 的 yolo、
+`ConnectionService` 零调用者、`RelayClient.kt:109/116` 与 `RpcChannel.kt:128` 明文日志、
+`proguard-rules.pro` 被引用但不存在、无 `src/test`、三个千行文件行数、CHANGELOG「核心突破」、
+RemoteInput 全仓 0 命中）。总体判断：**功能面已超出对标官方 Web 的目标，剩余空间不在加功能**，
+而在 ① 三个实证级 P0 缺陷；② 被静态分析误判挡住的 diff/文件浏览（移动端最高价值）；
+③ 工程卫生为零。战略上**不追功能广度**（同类独立产品 Terragon / Vibe Kanban 已相继关停），
+值得投的是官方产品结构性做不到的位置（多供应商非官方端点生态 / 自建中继 / E2EE）。
+
+**三个 P0 缺陷（证据均已在仓库复核）**：
+
+- **P0-A 前台服务是死代码**：`ConnectionService.start()/stop()` 全仓无调用者；WebSocket 在
+  `AppViewModel` 构造 → 连接生命周期 = Activity 生命周期，进程被系统回收即失联，锁屏审批靠运气。
+  平台约束：targetSdk=35 下 Android 15 对 `dataSync` FGS 施加 24h 内累计 6h 上限（超时回调
+  `Service.onTimeout()`，数秒内须 `stopSelf()`）→ 须改 `specialUse` 类型并实现 `onTimeout`。
+- **P0-B 新建会话硬编码 YOLO**：`AppViewModel.kt:860` `mode = "yolo"` 写死 + `ConversationChannel.kt:567`
+  兜底 `?: "yolo"`，UI 无处显示/选择执行模式 → 手机建的会话全部免审批（既是安全洞，又让锁屏审批
+  对这些会话永不触发）。成因：v0.5.0-beta2 为绕 Gemini 校验显式下发 `mode:"yolo"`，后续修了
+  `thought` 未修 `mode`（CHANGELOG 有记录）。
+- **P0-C release 包明文日志**：`RelayClient.kt:109`（完整入站帧=全部会话正文）、`:116`（HMAC proof
+  与 deviceSid）、`RpcChannel.kt:128`（500 字符 payload）均无 `BuildConfig.DEBUG` 门控；
+  release `isMinifyEnabled=false` 且引用的 `proguard-rules.pro` 不存在 → 直接违反 §8 凭据红线。
+
+**Sprint 排期总表**：
+
+| Sprint | 内容 | 状态 |
+|---|---|---|
+| Sprint 0 | 文档清账：修正本文失效结论（§4 / §6.0）+ 新增「静态分析 vs 实测」标注规则 | ✅ 2026-10-02 |
+| Sprint 1 | **P0-A** 连接迁入进程级 `ConnectionScope` + FGS `specialUse`/`onTimeout`；**P0-C** `ZLog` 门控 + R8 + 补建 proguard 剥离日志；**B组** `NetworkCallback` / 入站流 `SUSPEND` / `appVersion` 改取 `BuildConfig.VERSION_NAME` | 🔨 本轮 |
+| Sprint 2 | **P0-B** 执行模式选择器（plan/build/yolo，默认 build）+ 会话页模式胶囊（`setMode` 仅对新 turn 生效须如实提示）+ KICKED/AUTH_FAILED/PROTOCOL_MISMATCH 三种终态常驻通知 | 🔨 本轮 |
+| Sprint 3 第一步 | diff 视图（纯客户端解析写类工具 `inputText`/`raw` 的 old/new → unified diff 红绿渲染，零协议零 RPC 可离线开发） | 🔨 本轮 |
+| Sprint 3 第二步 | 只读文件浏览器——视 `tools/probe.py` 对 file 通道的探测结论（方法全貌/路径边界/大小限制） | ⬜ 待探测 |
+| Sprint 4 | 通知层升级：RemoteInput 内联回复、审批专用高重要性渠道（治 HyperOS 折叠） | ⬜ 后续接力 |
+| Sprint 5 | Room 缓存（离线可读/秒开）+ share sheet + 配对链接 VIEW deep link + 快捷指令 chips | ⬜ 后续接力 |
+| Sprint 6 | 回归网：VQL 金标准对拍测试（Kotlin↔Python 共享 fixture）+ 纯函数单测 + GitHub Actions + `build.sh` 去硬编码路径 | ⬜ 后续接力 |
+| Sprint 7 | 凭据生命周期（一次性配对/可吊销/生物识别）与自建中继 + E2EE——**独立决策不随本轮**，需用户拍板 | ⬜ 需决策 |
+
+**真机验收清单（并入 P0-2，需小米 15 Pro）**：① 从最近任务划掉 App，30min 后 PC 触发审批手机仍收到
+通知；② 飞行模式往返后连接自动恢复；③ release 包 `adb logcat` 抓不到任何会话正文与 proof；
+④ 手机新建会话（不手动选 yolo）→ PC 端工具调用触发审批推送到手机；⑤ 模式胶囊常驻且可切换；
+⑥ 官方 Web 抢占连接后手机收到「已被接管」系统通知。
+
+**明确不做（沿用审查结论）**：iOS/跨端重写、手机端完整 Git 写操作（只读 diff，写操作交给 Agent）、
+FCM/小米推送主通道（IM Bot 通道兜底另议）、追功能广度（多供应商面板/Marketplace/RBAC）。
+
 ### P0-1 会话页「发送消息 + 停止按钮」（✅ 2026-09-29 完成，协议层端到端验收通过）
+
+
 
 - **已完成**：`ConversationScreen` 底部输入栏（TextField + 发送，走 `sendPrompt`）与
   「停止」按钮（`control.canStop` 时显示，envelope `type:'stop'`，官方 web 同款）。
@@ -368,3 +435,5 @@ P1-2 多会话看板、P1-4 协议常量结清、P1-3 附件+语音、E-1 权威
 - **resolveInteraction 不做断线自动重放**（官方 sensitive 命令语义，宁可让用户重按）。
 - **凭据安全**：passHash 只出现在配对链接里，App 内已加密存储；不要把它写进日志/文档/代码。
 - 起后台进程用工具的 run_in_background，禁止裸 `&`/`nohup`（会杀 agent host）。
+- **「协议做不到」类结论必须标注依据**（bundle 静态分析 or 真机实测），两者冲突以实测为准并回改文档
+  （2026-10-02 新增，教训见 §6.0 勘误）。

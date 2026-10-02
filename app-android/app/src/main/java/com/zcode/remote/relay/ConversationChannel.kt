@@ -1,7 +1,7 @@
 package com.zcode.remote.relay
 
 import android.util.Base64
-import android.util.Log
+import com.zcode.remote.util.ZLog
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.serialization.json.JsonElement
@@ -150,7 +150,7 @@ class ConversationChannel(private val rpc: RpcChannel) {
                             subscriptionId = subId
                             _meta.value = _meta.value.copy(logEpoch = epoch)
                             _status.value = Status.Live(subId, mode, epoch)
-                            Log.i(TAG, "subscribed sub=$subId mode=$mode logEpoch=$epoch")
+                            ZLog.i(TAG, "subscribed sub=$subId mode=$mode logEpoch=$epoch")
                         }
                     }
                 }
@@ -165,11 +165,11 @@ class ConversationChannel(private val rpc: RpcChannel) {
         val data = event.data.asObj() ?: return
         val lf = ConversationFrames.parseLogicalFrame(data)
         if (lf == null) {
-            Log.w(TAG, "无法解析逻辑帧: ${data.toString().take(300)}")
+            ZLog.w(TAG, "无法解析逻辑帧: ${data.toString().take(300)}")
             return
         }
         if (lf.kind == "fragment") {
-            Log.w(TAG, "收到分片逻辑帧（未实现重组）frameId=${lf.logicalFrameId}")
+            ZLog.w(TAG, "收到分片逻辑帧（未实现重组）frameId=${lf.logicalFrameId}")
             return
         }
         val frame = lf.frame ?: return
@@ -196,7 +196,7 @@ class ConversationChannel(private val rpc: RpcChannel) {
                     provider = snap.configProvider ?: _meta.value.provider,
                     revision = snap.revision ?: _meta.value.revision,
                 )
-                Log.i(TAG, "snapshot: ${snap.rows.size} 行（总 ${snap.totalCount}）" +
+                ZLog.i(TAG, "snapshot: ${snap.rows.size} 行（总 ${snap.totalCount}）" +
                         "待审批=${snap.pendingInteractions.size} delivery=${lf.deliveryKind}" +
                         " canStop=${control?.canStop} stopState=${control?.stopState}")
             }
@@ -212,7 +212,7 @@ class ConversationChannel(private val rpc: RpcChannel) {
                             val next = PendingApproval.parseFrom(p, sessionId)
                             if (next != _interactions.value) {
                                 _interactions.value = next
-                                Log.i(TAG, "pendingInteractions → ${next.size} 条 " +
+                                ZLog.i(TAG, "pendingInteractions → ${next.size} 条 " +
                                         next.joinToString(",") { "${it.toolName ?: "?"}#${it.interactionId.take(18)}" })
                             }
                             // elicitations 同组替换；仅当 patch 带该键时才更新（缺失=不涉及）
@@ -221,7 +221,7 @@ class ConversationChannel(private val rpc: RpcChannel) {
                                     runCatching { it.jsonArray }.getOrNull(), sessionId)
                                 if (nextE != _elicitations.value) {
                                     _elicitations.value = nextE
-                                    Log.i(TAG, "elicitations → ${nextE.size} 条 " +
+                                    ZLog.i(TAG, "elicitations → ${nextE.size} 条 " +
                                             nextE.joinToString(",") { "${it.toolName ?: "?"}#${it.interactionId.take(18)}" })
                                 }
                             }
@@ -234,7 +234,7 @@ class ConversationChannel(private val rpc: RpcChannel) {
                                         canStop = ctl.canStop ?: _meta.value.canStop,
                                         stopState = ctl.stopState ?: _meta.value.stopState,
                                     )
-                                    Log.i(TAG, "control 更新 phase=${ctl.phase} canStop=${ctl.canStop} stopState=${ctl.stopState}")
+                                    ZLog.i(TAG, "control 更新 phase=${ctl.phase} canStop=${ctl.canStop} stopState=${ctl.stopState}")
                                 }
                             }
                             // revision 增量更新（用于 CAS 校验）
@@ -252,17 +252,17 @@ class ConversationChannel(private val rpc: RpcChannel) {
                                         model = newModel ?: _meta.value.model,
                                         provider = newProvider ?: _meta.value.provider,
                                     )
-                                    Log.i(TAG, "config 增量更新 model=$newModel provider=$newProvider")
+                                    ZLog.i(TAG, "config 增量更新 model=$newModel provider=$newProvider")
                                 }
                             }
                         }
                         is ConversationFrames.Delta.Unknown ->
-                            Log.i(TAG, "未处理 delta：${d.op}")
+                            ZLog.i(TAG, "未处理 delta：${d.op}")
                     }
                 }
                 // deltas 为空是合法的（仅推 seq 的心跳），不记日志避免刷屏
             }
-            else -> Log.i(TAG, "未知 payload kind=${frame.payloadKind}")
+            else -> ZLog.i(TAG, "未知 payload kind=${frame.payloadKind}")
         }
     }
 
@@ -313,11 +313,11 @@ class ConversationChannel(private val rpc: RpcChannel) {
         args["sessionId"] = session
         args["beforeRowId"] = firstRowId
         args["limit"] = 60
-        Log.i(TAG, "loadEarlier beforeRowId=$firstRowId session=$session")
+        ZLog.i(TAG, "loadEarlier beforeRowId=$firstRowId session=$session")
         rpc.call(RpcChannel.CHANNEL_AGENT, "conversationRowsRangeV4", listOf(args)) { reply ->
             when (reply) {
                 is RpcChannel.RpcReply.Err -> {
-                    Log.w(TAG, "loadEarlier error: ${reply.message}")
+                    ZLog.w(TAG, "loadEarlier error: ${reply.message}")
                     _earlier.value = EarlierState(loading = false, hasMore = _earlier.value.hasMore, pulled = true)
                     onResult(Result.failure(IllegalStateException(reply.message)))
                 }
@@ -337,7 +337,7 @@ class ConversationChannel(private val rpc: RpcChannel) {
                             }
                     } ?: emptyList()
                     if (atEpoch != null && curEpoch != null && atEpoch != curEpoch) {
-                        Log.w(TAG, "loadEarlier logEpoch 不匹配（$atEpoch != $curEpoch），整批丢弃")
+                        ZLog.w(TAG, "loadEarlier logEpoch 不匹配（$atEpoch != $curEpoch），整批丢弃")
                         _earlier.value = EarlierState(loading = false, hasMore = false, pulled = true)
                         onResult(Result.failure(IllegalStateException("logEpoch 已变更")))
                         return@call
@@ -348,7 +348,7 @@ class ConversationChannel(private val rpc: RpcChannel) {
                     } ?: false
                     if (rows.isNotEmpty()) store.prepend(rows)
                     _earlier.value = EarlierState(loading = false, hasMore = hasMore, pulled = true)
-                    Log.i(TAG, "loadEarlier +${rows.size} 行 hasMore=$hasMore")
+                    ZLog.i(TAG, "loadEarlier +${rows.size} 行 hasMore=$hasMore")
                     onResult(Result.success(rows.size))
                 }
             }
@@ -393,7 +393,7 @@ class ConversationChannel(private val rpc: RpcChannel) {
             return
         }
 
-        Log.i(TAG, "resolve interaction=${approval.interactionId} option=${option.optionId}" +
+        ZLog.i(TAG, "resolve interaction=${approval.interactionId} option=${option.optionId}" +
                 " kind=${option.kind} session=$session ws=${target["workspacePath"]}")
         sendResolveInteraction(session, target,
             buildJsonObject {
@@ -423,7 +423,7 @@ class ConversationChannel(private val rpc: RpcChannel) {
             onResult(ResolveResult.Failed("no-session", "未定位到表单所属会话或工作区，无法应答"))
             return
         }
-        Log.i(TAG, "resolveElicitation interaction=${el.interactionId} session=$session ws=${target["workspacePath"]} answer=$answer")
+        ZLog.i(TAG, "resolveElicitation interaction=${el.interactionId} session=$session ws=${target["workspacePath"]} answer=$answer")
         sendResolveInteraction(session, target,
             buildJsonObject {
                 put("interactionId", el.interactionId)
@@ -513,7 +513,7 @@ class ConversationChannel(private val rpc: RpcChannel) {
             "payload" to payload,
             "issuedAt" to System.currentTimeMillis(),
         )
-        Log.i(TAG, "sendText session=$session chars=${content.length} attachments=${attachments.size}")
+        ZLog.i(TAG, "sendText session=$session chars=${content.length} attachments=${attachments.size}")
         rpc.call(RpcChannel.CHANNEL_AGENT, "sendConversationCommandV4", listOf(args),
             timeoutMs = SEND_ACK_TIMEOUT_MS) { reply ->
             onResult(
@@ -564,7 +564,9 @@ class ConversationChannel(private val rpc: RpcChannel) {
             // thought 必须落在该模型 optionSpecs.reasoningLevel.values 内，否则 registry 校验直接失败。
             // 未知档位时不下发，交由 PC 端按模型默认值决定。
             modelConfig.thought?.takeIf { it.isNotBlank() }?.let { cfg["thought"] = it }
-            cfg["mode"] = modelConfig.mode ?: "yolo"
+            // P0-B：mode 兜底从 yolo 改为 build —— 免审批模式绝不能是默认值
+            // （旧兜底会让任何未显式带 mode 的创建路径静默变成全自动放行）
+            cfg["mode"] = modelConfig.mode ?: "build"
             payload["config"] = cfg
         }
 
@@ -578,7 +580,7 @@ class ConversationChannel(private val rpc: RpcChannel) {
             "issuedAt" to System.currentTimeMillis(),
         )
 
-        Log.i(TAG, "createSession workspace=$workspacePath hasFirstInput=${!firstInputText.isNullOrBlank()} " +
+        ZLog.i(TAG, "createSession workspace=$workspacePath hasFirstInput=${!firstInputText.isNullOrBlank()} " +
                 "model=${modelConfig?.modelId ?: "inherit-default"} " +
                 "thought=${modelConfig?.thought ?: "(未指定)"} mode=${modelConfig?.mode ?: "(未指定)"}")
         rpc.call(RpcChannel.CHANNEL_AGENT, "sendConversationCommandV4", listOf(args),
@@ -593,7 +595,7 @@ class ConversationChannel(private val rpc: RpcChannel) {
                         val result = ack?.get("result").asObj()
                         val newSessionId = result?.get("sessionId").asStr()
                         if (!newSessionId.isNullOrBlank()) {
-                            Log.i(TAG, "createSession success sessionId=$newSessionId")
+                            ZLog.i(TAG, "createSession success sessionId=$newSessionId")
                             onResult(Result.success(newSessionId))
                         } else {
                             onResult(Result.failure(IllegalStateException("服务端未返回新会话 ID: ${reply.data}")))
@@ -603,6 +605,33 @@ class ConversationChannel(private val rpc: RpcChannel) {
                         onResult(Result.failure(IllegalStateException(msg)))
                     }
                 }
+            }
+        }
+    }
+
+    /**
+     * 切换会话执行模式（P0-B；plan/build/yolo 等，协议合法值同 tools/setmode.py 的 VALID）。
+     * 协议语义（HANDOVER §5.4）：**只对新的 agent turn 生效**，运行中 turn 的权限上下文
+     * 不变 —— UI 必须如实提示，否则用户会误以为已经拦住了。
+     */
+    fun setMode(mode: String, onResult: (Result<Unit>) -> Unit) {
+        val session = sessionId ?: run {
+            onResult(Result.failure(IllegalStateException("会话尚未订阅")))
+            return
+        }
+        val target = subTarget ?: run {
+            onResult(Result.failure(IllegalStateException("缺少订阅目标（workspace）")))
+            return
+        }
+        val arg = HashMap<String, Any>(target)
+        arg["sessionId"] = session
+        arg["mode"] = mode
+        ZLog.i(TAG, "setMode session=$session mode=$mode")
+        rpc.call(RpcChannel.CHANNEL_AGENT, "setMode", listOf(arg),
+            timeoutMs = SEND_ACK_TIMEOUT_MS) { reply ->
+            when (reply) {
+                is RpcChannel.RpcReply.Err -> onResult(Result.failure(IllegalStateException(reply.message)))
+                is RpcChannel.RpcReply.Ok -> onResult(Result.success(Unit))
             }
         }
     }
@@ -622,12 +651,12 @@ class ConversationChannel(private val rpc: RpcChannel) {
             workspaceIdentity?.takeIf { it.isNotBlank() }?.let { put("workspaceIdentity", it) }
             put("preferWorkspaceDefaults", true)
         }
-        Log.i(TAG, "readWorkspaceState ws=$workspacePath")
+        ZLog.i(TAG, "readWorkspaceState ws=$workspacePath")
         rpc.call(RpcChannel.CHANNEL_SESSION, "readWorkspaceState", listOf(args),
             timeoutMs = SEND_ACK_TIMEOUT_MS) { reply ->
             when (reply) {
                 is RpcChannel.RpcReply.Err -> {
-                    Log.w(TAG, "readWorkspaceState failed: ${reply.message}，回退 model-provider::getAllCached")
+                    ZLog.w(TAG, "readWorkspaceState failed: ${reply.message}，回退 model-provider::getAllCached")
                     fetchModelsViaProviderCatalog(onResult)
                 }
                 is RpcChannel.RpcReply.Ok -> {
@@ -636,7 +665,7 @@ class ConversationChannel(private val rpc: RpcChannel) {
                     if (state != null && state.available.isNotEmpty()) {
                         onResult(Result.success(state))
                     } else {
-                        Log.w(TAG, "readWorkspaceState 返回空目录，回退 model-provider::getAllCached")
+                        ZLog.w(TAG, "readWorkspaceState 返回空目录，回退 model-provider::getAllCached")
                         fetchModelsViaProviderCatalog(onResult)
                     }
                 }
@@ -679,7 +708,7 @@ class ConversationChannel(private val rpc: RpcChannel) {
             "issuedAt" to System.currentTimeMillis(),
         )
 
-        Log.i(TAG, "switchModelConfig session=$session model=$model provider=$provider baseRev=$baseRev")
+        ZLog.i(TAG, "switchModelConfig session=$session model=$model provider=$provider baseRev=$baseRev")
         rpc.call(RpcChannel.CHANNEL_AGENT, "sendConversationCommandV4", listOf(args),
             timeoutMs = SEND_ACK_TIMEOUT_MS) { reply ->
             when (reply) {
@@ -688,7 +717,7 @@ class ConversationChannel(private val rpc: RpcChannel) {
                     val ack = parseCommandAck(reply.data)
                     when (ack) {
                         is ResolveResult.Accepted -> {
-                            Log.i(TAG, "switchModelConfig success")
+                            ZLog.i(TAG, "switchModelConfig success")
                             _meta.value = _meta.value.copy(model = model, provider = provider)
                             onResult(Result.success(Unit))
                         }
@@ -728,7 +757,7 @@ class ConversationChannel(private val rpc: RpcChannel) {
                             )
                         }
                     }
-                    Log.i(TAG, "providerCatalog 回退成功：${available.size} 个模型")
+                    ZLog.i(TAG, "providerCatalog 回退成功：${available.size} 个模型")
                     onResult(Result.success(WorkspaceState(current = null, available = available)))
                 }
             }
@@ -857,12 +886,12 @@ class ConversationChannel(private val rpc: RpcChannel) {
 
         fun abort() {
             rpc.call(RpcChannel.CHANNEL_AGENT, "attachmentAbortV4", listOf(HashMap(base))) {
-                Log.i(TAG, "attachmentAbort sent uploadId=${base["uploadId"]}")
+                ZLog.i(TAG, "attachmentAbort sent uploadId=${base["uploadId"]}")
             }
         }
 
         fun fail(message: String) {
-            Log.w(TAG, "uploadAttachment 失败：$message")
+            ZLog.w(TAG, "uploadAttachment 失败：$message")
             abort()
             onResult(Result.failure(IllegalStateException(message)))
         }
@@ -893,7 +922,7 @@ class ConversationChannel(private val rpc: RpcChannel) {
                         val ref = reply.data.asObj()?.get("ref").asStr()
                         if (ref.isNullOrBlank()) fail("提交附件未返回 ref：${reply.data}")
                         else {
-                            Log.i(TAG, "附件已提交 ref=$ref file=$fileName bytes=$total")
+                            ZLog.i(TAG, "附件已提交 ref=$ref file=$fileName bytes=$total")
                             onResult(Result.success(AttachmentRef(ref, fileName, mime, total)))
                         }
                     }
@@ -965,7 +994,7 @@ class ConversationChannel(private val rpc: RpcChannel) {
         beginArgs["totalBytes"] = totalBytes
         beginArgs["totalChunks"] = totalChunks
         beginArgs["checksum"] = "sha256:" + digest
-        Log.i(TAG, "attachmentBegin file=$fileName mime=$mime bytes=$total chunks=$totalChunks")
+        ZLog.i(TAG, "attachmentBegin file=$fileName mime=$mime bytes=$total chunks=$totalChunks")
         rpc.call(RpcChannel.CHANNEL_AGENT, "attachmentBeginV4", listOf(beginArgs)) { reply ->
             when (reply) {
                 is RpcChannel.RpcReply.Err -> onResult(
@@ -1014,7 +1043,7 @@ class ConversationChannel(private val rpc: RpcChannel) {
                 ?: emptyMap()),
             "issuedAt" to System.currentTimeMillis(),
         )
-        Log.i(TAG, "stop session=$session fg=${foregroundExecutionId ?: "-"}")
+        ZLog.i(TAG, "stop session=$session fg=${foregroundExecutionId ?: "-"}")
         rpc.call(RpcChannel.CHANNEL_AGENT, "sendConversationCommandV4", listOf(args),
             timeoutMs = SEND_ACK_TIMEOUT_MS) { reply ->
             onResult(

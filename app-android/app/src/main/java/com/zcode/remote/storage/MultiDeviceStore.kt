@@ -1,5 +1,6 @@
 package com.zcode.remote.storage
 
+import com.zcode.remote.util.ZLog
 import android.content.Context
 import android.util.Base64
 import javax.crypto.Cipher
@@ -45,7 +46,7 @@ class MultiDeviceStore(context: Context) {
     /** 追加/更新设备（同 deviceSid 覆盖）并激活。 */
     fun upsertActive(device: PairedDevice): Snapshot {
         val cur = load()
-        android.util.Log.i("MultiDeviceStore", "upsert cur=${cur.devices.size}")
+        ZLog.i("MultiDeviceStore", "upsert cur=${cur.devices.size}")
         val list = cur.devices.filter { it.deviceSid != device.deviceSid } + device
         val snap = Snapshot(list, device.deviceSid)
         save(snap)
@@ -74,7 +75,7 @@ class MultiDeviceStore(context: Context) {
 
     private fun readV2(): Snapshot? {
         val json = readEncrypted("devices_v2") ?: return null
-        android.util.Log.i("MultiDeviceStore", "readV2 json.len=${json.length}")
+        ZLog.i("MultiDeviceStore", "readV2 json.len=${json.length}")
         return runCatching {
             // 轻量解析（避免引 JSON 库）：active 与 list 行都经我们自己的转义规则写出
             val active = Regex("\"active\":\"([^\"]*)\"").find(json)?.groupValues?.get(1)
@@ -87,9 +88,9 @@ class MultiDeviceStore(context: Context) {
                 if (p.size < 5) return@mapNotNull null
                 PairedDevice(p[0], p[1], p[2].ifEmpty { null }, p[3].ifEmpty { null }, p[4])
             }
-            android.util.Log.i("MultiDeviceStore", "readV2 parsed=${devices.size} active=$active")
+            ZLog.i("MultiDeviceStore", "readV2 parsed=${devices.size} active=$active")
             Snapshot(devices, active?.ifEmpty { null })
-        }.onFailure { android.util.Log.w("MultiDeviceStore", "readV2 failed", it) }.getOrNull()
+        }.onFailure { ZLog.w("MultiDeviceStore", "readV2 failed", it) }.getOrNull()
     }
 
     /** 旧版单条（iv/data）→ v2。 */

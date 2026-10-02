@@ -5,7 +5,8 @@
     <uses-permission android:name="android.permission.CAMERA" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
-    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC" />
+    <!-- P0-A：连接保活改用 specialUse 型前台服务（dataSync 在 Android 15 有 24h 内 6h 硬超时） -->
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE" />
     <!-- 语音输入（P1-3）：SpeechRecognizer 运行时权限 -->
     <uses-permission android:name="android.permission.RECORD_AUDIO" />
 
@@ -35,10 +36,15 @@
             </intent-filter>
         </activity>
 
+        <!-- P0-A：中继连接保活前台服务（specialUse 不受 Android 15 dataSync 6h/24h 超时限制） -->
         <service
             android:name=".service.ConnectionService"
             android:exported="false"
-            android:foregroundServiceType="dataSync" />
+            android:foregroundServiceType="specialUse">
+            <property
+                android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
+                android:value="保持与 ZCode 桌面端的中继长连接以接收实时审批通知" />
+        </service>
 
         <!-- 审批通知栏按钮的回调（批准/拒绝），必须 exported=false，只收自己发的广播 -->
         <receiver

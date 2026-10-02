@@ -23,6 +23,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.zcode.remote.relay.ApprovalOption
+import com.zcode.remote.relay.ConversationChannel
 import com.zcode.remote.relay.PendingApproval
 import com.zcode.remote.relay.SessionItem
 import com.zcode.remote.ui.screens.*
@@ -98,6 +99,15 @@ class MainActivity : ComponentActivity() {
                             onSwitchModel = { m -> vm.switchCurrentSessionModel(m) },
                             onSwitchModelCustom = { id -> vm.switchCurrentSessionModelCustom(id) },
                             onLoadModels = { vm.loadWorkspaceModels() },
+                            currentSessionMode = vm.sessionModeOverride
+                                ?: (vm.conversationStatus as? ConversationChannel.Status.Live)?.mode,
+                            onSwitchMode = { m ->
+                                vm.setSessionMode(m) { err ->
+                                    if (err != null) {
+                                        android.widget.Toast.makeText(this@MainActivity, "切换失败：$err", android.widget.Toast.LENGTH_SHORT).show()
+                                    }
+                                }
+                            },
                             onBack = { opened = null },
                         )
 
@@ -202,11 +212,12 @@ class MainActivity : ComponentActivity() {
                                             availableModels = vm.allAvailableModels,
                                             modelReasoningLevels = vm.modelReasoningLevels,
                                             onSessionDelete = { vm.deleteSession(it) },
-                                            onCreateSession = { prompt, modelOption ->
+                                            onCreateSession = { prompt, modelOption, execMode ->
                                                 vm.createNewSession(
                                                     firstPrompt = prompt,
                                                     attachments = emptyList(),
                                                     modelOption = modelOption,
+                                                    execMode = execMode,
                                                     onSuccess = { item -> opened = item },
                                                     onError = { err ->
                                                         android.widget.Toast.makeText(this@MainActivity, err, android.widget.Toast.LENGTH_SHORT).show()

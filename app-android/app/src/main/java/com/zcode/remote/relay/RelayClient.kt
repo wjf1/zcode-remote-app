@@ -1,10 +1,20 @@
 package com.zcode.remote.relay
 
+import com.zcode.remote.util.ZLog
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.channels.BufferOverflow
+import kotlinx.coroutines.channels.Channel
+import kotlinx.coroutines.cancel
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.isActive
+import kotlinx.coroutines.launch
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.jsonObject
@@ -41,25 +51,49 @@ class RelayClient(
         .connectTimeout(10, TimeUnit.SECONDS)
         .build()
 
+    private val io = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+    private var heartbeatJob: Job? = null
+    private var reconnectJob: Job? = null
+    private var pumpJob: Job? = null
+
+    /** 重连前的挂起点（B 组）：默认纯退避延迟；App 侧注入 [NetworkGate] 后无网时等待网络恢复。 */
+    @Volatile
+    var networkWait: suspend (Long) -> Unit = { delayMs -> delay(delayMs) }
+
     private val _state = MutableStateFlow<RelayState>(RelayState.Idle)
     val state: StateFlow<RelayState> = _state
 
     private val _inbound = MutableSharedFlow<JsonObject>(
-        extraBufferCapacity = 64, onBufferOverflow = BufferOverflow.DROP_OLDEST)
+        replay = 0, extraBufferCapacity = 512, onBufferOverflow = BufferOverflow.SUSPEND)
     /** 内层 data.payload（zcode_type 路由后），UI/会话层订阅。 */
     val inbound: SharedFlow<JsonObject> = _inbound
+
+    /**
+     * 入站帧队列（B 组）：OkHttp 线程只入队，单泵协程顺序 emit —— 保证帧序，且突发时
+     * 挂起而非丢弃（原 DROP_OLDEST 会在长流式输出时静默丢最旧帧，会话行悄悄错位）。
+     */
+    private val frameQueue = Channel<JsonObject>(Channel.UNLIMITED)
+
+    init { startPump() }
+
+    private fun startPump() {
+        if (pumpJob?.isActive == true) return
+        pumpJob = io.launch {
+            for (payload in frameQueue) _inbound.emit(payload)
+        }
+    }
 
     private var socket: WebSocket? = null
     @Volatile private var manuallyClosed = false
     /** 终态失败（互踢/配对失效/协议不匹配）：不参与自动重连，等用户手动恢复。 */
     @Volatile private var terminalFailed = false
     @Volatile private var reconnectAttempt = 0
-    private var heartbeatThread: Thread? = null
 
     fun connect() {
         manuallyClosed = false
         terminalFailed = false
         _state.value = RelayState.Connecting
+        startPump()
         // 官方终端会追加 mid 参数（PROTOCOL.md 3 节）；主机在线时中继强制校验，缺失直接 AUTH_FAILED
         val wsUrl = relayWsUrlOverride ?: device.relayWsUrl
         val url = wsUrl +
@@ -77,14 +111,18 @@ class RelayClient(
     fun close() {
         manuallyClosed = true
         stopHeartbeat()
+        reconnectJob?.cancel(); reconnectJob = null
         socket?.close(1000, "client-close")
         socket = null
         _state.value = RelayState.Idle
+        // 实例废弃（AppViewModel 总是先 close 再 new）：连同泵协程一起收掉，frameQueue 残帧作废
+        io.cancel()
+        pumpJob = null
     }
 
     fun send(obj: JsonObject): Boolean {
         val s = RelayProtocol.json.encodeToString(JsonObject.serializer(), obj)
-        android.util.Log.i(TAG, "ws send ${s.take(200)}")
+        ZLog.i(TAG, "ws send ${s.take(200)}")
         return socket?.send(s) ?: false
     }
 
@@ -100,20 +138,21 @@ class RelayClient(
 
     private val listener = object : WebSocketListener() {
         override fun onOpen(webSocket: WebSocket, response: Response) {
-            android.util.Log.i(TAG, "ws open http=${response.code}")
+            ZLog.i(TAG, "ws open http=${response.code}")
             _state.value = RelayState.Authenticating
             send(RelayProtocol.authInit(device.deviceSid, appVersion))
         }
 
         override fun onMessage(webSocket: WebSocket, text: String) {
-            android.util.Log.i(TAG, "ws recv $text")
+            ZLog.i(TAG, "ws recv $text")
             val frame = runCatching { RelayProtocol.parse(text) }.getOrNull() ?: return
             when (RelayProtocol.typeOf(frame)) {
                 "auth_challenge" -> {
                     val nonce = RelayProtocol.nonceOf(frame) ?: return
                     val proof = RelayProtocol.calculateProof(
                         device.passHash, nonce, RelayProtocol.ROLE_TERMINAL, device.deviceSid)
-                    android.util.Log.i(TAG, "proof=$proof sid=${device.deviceSid} hashLen=${device.passHash.length}")
+                    // P0-C：proof 与 sid 是握手凭据，绝不能进 release 日志（ZLog release 静默 + R8 剥离）
+                    ZLog.i(TAG, "auth proof computed sid=${device.deviceSid} hashLen=${device.passHash.length}")
                     send(RelayProtocol.authResponse(device.deviceSid, proof))
                 }
                 "auth_ack", "pair_status_ack" -> {
@@ -122,7 +161,7 @@ class RelayClient(
                         "matched" -> { reconnectAttempt = 0; _state.value = RelayState.Paired; startHeartbeat() }
                         // 协议变更兜底（M3）：关键握手帧出现未知结构，别再静默忽略
                         else -> {
-                            android.util.Log.w(TAG, "unknown pair_status in $frame")
+                            ZLog.w(TAG, "unknown pair_status=$st")
                             if (frame["type"]?.toString()?.contains("auth_ack") == true) {
                                 fail(FailureReason.PROTOCOL_MISMATCH,
                                     "握手应答结构未知（pair_status=${st ?: "缺失"}），官方协议可能已升级，请更新 App")
@@ -134,7 +173,7 @@ class RelayClient(
                     val payload = frame["payload"]?.let {
                         runCatching { it.jsonObject }.getOrNull()
                     } ?: return
-                    _inbound.tryEmit(payload)
+                    frameQueue.trySend(payload)
                 }
                 "error" -> {
                     val err = RelayProtocol.RelayError.from(RelayProtocol.errorCodeOf(frame))
@@ -154,13 +193,13 @@ class RelayClient(
         }
 
         override fun onFailure(webSocket: WebSocket, t: Throwable, response: Response?) {
-            android.util.Log.w(TAG, "ws failure", t)
+            ZLog.w(TAG, "ws failure", t)
             if (manuallyClosed) return
             scheduleReconnect()
         }
 
         override fun onClosed(webSocket: WebSocket, code: Int, reason: String) {
-            android.util.Log.i(TAG, "ws closed code=$code reason=$reason")
+            ZLog.i(TAG, "ws closed code=$code")
             if (!manuallyClosed) scheduleReconnect()
         }
     }
@@ -180,27 +219,27 @@ class RelayClient(
     }
 
     private fun startHeartbeat() {
-        if (heartbeatThread?.isAlive == true) return
-        heartbeatThread = Thread {
-            while (!Thread.currentThread().isInterrupted && !manuallyClosed) {
+        if (heartbeatJob?.isActive == true) return
+        heartbeatJob = io.launch {
+            while (isActive && !manuallyClosed) {
                 runCatching { send(RelayProtocol.heartbeat(device.deviceSid)) }
-                try {
-                    Thread.sleep(30_000)
-                } catch (_: InterruptedException) {
-                    break
-                }
+                delay(30_000)
             }
-        }.apply { isDaemon = true; start() }
+        }
     }
 
-    private fun stopHeartbeat() { heartbeatThread?.interrupt(); heartbeatThread = null }
+    private fun stopHeartbeat() { heartbeatJob?.cancel(); heartbeatJob = null }
 
     private fun scheduleReconnect() {
         stopHeartbeat()
         if (manuallyClosed || terminalFailed) return
-        val delayMs = (3000L * (1L shl minOf(reconnectAttempt, 4)))  // 3s,6s,12s,24s,48s 封顶
+        val delayMs = 3000L * (1L shl minOf(reconnectAttempt, 4))  // 3s,6s,12s,24s,48s 封顶
         reconnectAttempt++
-        Thread { runCatching { Thread.sleep(delayMs) }; if (!manuallyClosed) connect() }
-            .apply { isDaemon = true; start() }
+        reconnectJob?.cancel()
+        reconnectJob = io.launch {
+            // 挂起点：注入 NetworkGate 后，无网时等网络恢复即刻重连，而非空转到下一轮退避
+            runCatching { networkWait(delayMs) }
+            if (!manuallyClosed && !terminalFailed) connect()
+        }
     }
 }

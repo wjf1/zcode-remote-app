@@ -1,6 +1,6 @@
 package com.zcode.remote.relay
 
-import android.util.Log
+import com.zcode.remote.util.ZLog
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.serialization.json.JsonObject
@@ -44,10 +44,10 @@ class SessionsIndexChannel(private val rpc: RpcChannel) {
                     val root = reply.data as? JsonObject
                     val ack = root ?: (root?.get("ack") as? JsonObject)
                     subscriptionId = ack?.str("subscriptionId")
-                    Log.i(TAG, "sessions-index subscribed sub=$subscriptionId")
+                    ZLog.i(TAG, "sessions-index subscribed sub=$subscriptionId")
                 }
                 is RpcChannel.RpcReply.Err ->
-                    Log.w(TAG, "sessions-index subscribe 失败: ${reply.message}")
+                    ZLog.w(TAG, "sessions-index subscribe 失败: ${reply.message}")
             }
         }
     }
@@ -72,7 +72,7 @@ class SessionsIndexChannel(private val rpc: RpcChannel) {
                     parseSummary(o)?.let { next[sid] = it }
                 }
                 _summaries.value = next
-                Log.i(TAG, "sessions-index snapshot: ${next.size} 会话，待处理 " +
+                ZLog.i(TAG, "sessions-index snapshot: ${next.size} 会话，待处理 " +
                         next.values.count { it.total > 0 })
             }
             "deltas" -> {

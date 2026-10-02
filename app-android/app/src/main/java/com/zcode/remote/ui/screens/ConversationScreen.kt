@@ -88,6 +88,10 @@ fun ConversationScreen(
     onSwitchModelCustom: (String) -> Unit = {},
     /** 进入会话页时触发一次模型目录刷新（PC 端配置变更准实时同步）。 */
     onLoadModels: () -> Unit = {},
+    /** 当前会话执行模式（P0-B：订阅 ack / 快照；用户切换后的乐观值由上层合并后传入）。 */
+    currentSessionMode: String? = null,
+    /** 切换执行模式（协议语义：仅对下一轮 agent turn 生效）。 */
+    onSwitchMode: (String) -> Unit = {},
     onBack: () -> Unit,
 ) {
     val listState = rememberLazyListState()
@@ -164,6 +168,12 @@ fun ConversationScreen(
                     else MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             }
+
+            // 顶栏右侧：执行模式胶囊（P0-B）—— 当前模式常驻可见，yolo 红底警示；点击弹出切换菜单
+            ModeChip(
+                currentMode = currentSessionMode,
+                onSwitchMode = onSwitchMode,
+            )
 
             // 顶栏右侧：模型切换胶囊（两级菜单：先选模型 → 再选思考档位）
             Box {
@@ -423,6 +433,97 @@ fun ConversationScreen(
             onPick = { filePicker.launch(arrayOf("*/*")) },
         )
     }
+}
+
+/**
+ * 顶栏执行模式胶囊（P0-B）：当前模式常驻可见，yolo 红底警示；点击弹出切换菜单。
+ * 协议语义（HANDOVER §5.4）：setMode 只对下一轮 agent turn 生效，菜单内如实提示。
+ */
+@Composable
+private fun ModeChip(
+    currentMode: String?,
+    onSwitchMode: (String) -> Unit,
+) {
+    val mode = currentMode ?: "build"
+    Box {
+        var menuExpanded by remember { mutableStateOf(false) }
+        Surface(
+            onClick = { menuExpanded = true },
+            shape = RoundedCornerShape(14.dp),
+            color = if (mode == "yolo") MaterialTheme.colorScheme.errorContainer
+            else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.6f),
+            border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
+            modifier = Modifier.height(28.dp)
+        ) {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                modifier = Modifier.padding(horizontal = 8.dp)
+            ) {
+                Text(
+                    text = if (mode == "yolo") "⚠ $mode" else mode,
+                    style = MaterialTheme.typography.labelSmall.copy(
+                        fontWeight = FontWeight.SemiBold,
+                        fontSize = 11.sp
+                    ),
+                    color = if (mode == "yolo") MaterialTheme.colorScheme.error
+                    else MaterialTheme.colorScheme.tertiary,
+                    maxLines = 1
+                )
+                Spacer(Modifier.width(2.dp))
+                Text("▾", fontSize = 10.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+        }
+        DropdownMenu(expanded = menuExpanded, onDismissRequest = { menuExpanded = false }) {
+            listOf("plan", "build", "yolo").forEach { m ->
+                DropdownMenuItem(
+                    text = {
+                        Column {
+                            Text(modeDisplayName(m), style = MaterialTheme.typography.bodySmall)
+                            if (m == "yolo") {
+                                Text(
+                                    "免审批：所有工具调用自动放行",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = MaterialTheme.colorScheme.error
+                                )
+                            }
+                        }
+                    },
+                    leadingIcon = {
+                        if (m == mode) {
+                            Icon(
+                                Icons.Default.Check, null,
+                                tint = MaterialTheme.colorScheme.primary,
+                                modifier = Modifier.size(16.dp)
+                            )
+                        }
+                    },
+                    onClick = {
+                        menuExpanded = false
+                        if (m != mode) onSwitchMode(m)
+                    }
+                )
+            }
+            HorizontalDivider(modifier = Modifier.padding(vertical = 2.dp))
+            DropdownMenuItem(
+                text = {
+                    Text(
+                        "切换仅对下一轮对话生效；运行中的轮次权限不变",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                },
+                onClick = {},
+                enabled = false
+            )
+        }
+    }
+}
+
+private fun modeDisplayName(m: String): String = when (m) {
+    "plan" -> "规划 plan（只读规划，不改文件）"
+    "build" -> "构建 build（工具调用需审批）"
+    "yolo" -> "全自动 yolo（免审批）"
+    else -> m
 }
 
 private fun inspectAttachment(context: Context, uri: Uri): Triple<String, String, Long>? {
@@ -986,6 +1087,10 @@ private fun ToolCallCard(row: ConversationRow) {
     if (tool.isEmpty() && input.isEmpty() && output.isEmpty()) return
 
     var expanded by remember { mutableStateOf(false) }
+    // Sprint 3：写类工具（Edit/Write/MultiEdit）从 inputText 解析红绿 diff —— 纯客户端，零 RPC
+    val toolDiff = remember(row.rowId, input) {
+        runCatching { com.zcode.remote.ui.components.ToolDiffParser.parse(row.toolName, input) }.getOrNull()
+    }
     val tone = when (row.status) {
         "success" -> ZCodeTokens.StatusOnline
         "error", "cancelled" -> MaterialTheme.colorScheme.error
@@ -1039,7 +1144,20 @@ private fun ToolCallCard(row: ConversationRow) {
             }
 
             val summary = input.replace('\n', ' ').trim()
-            if (!expanded && summary.isNotEmpty()) {
+            if (!expanded && toolDiff != null) {
+                // 折叠态：写类工具直接显示 文件 + 增删统计，一眼判断这次改动是否越界
+                Text(
+                    text = buildString {
+                        toolDiff.filePath?.let { append("📄 $it  ") }
+                        append("+${toolDiff.added} −${toolDiff.removed}")
+                    },
+                    style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.SemiBold),
+                    color = MaterialTheme.colorScheme.tertiary,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.padding(top = 4.dp)
+                )
+            } else if (!expanded && summary.isNotEmpty()) {
                 Text(
                     text = summary,
                     style = MaterialTheme.typography.bodySmall.copy(fontFamily = FontFamily.Monospace, fontSize = 11.5.sp),
@@ -1052,6 +1170,15 @@ private fun ToolCallCard(row: ConversationRow) {
 
             AnimatedVisibility(visible = expanded) {
                 Column(Modifier.padding(top = 6.dp)) {
+                    if (toolDiff != null) {
+                        com.zcode.remote.ui.components.DiffBlock(toolDiff)
+                        Text(
+                            "原始输入",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.padding(top = 6.dp)
+                        )
+                    }
                     CodeBlock("输入", input)
                     CodeBlock("输出", output)
                 }

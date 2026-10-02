@@ -3,7 +3,7 @@ package com.zcode.remote.relay
 import android.os.Handler
 import android.os.Looper
 import android.util.Base64
-import android.util.Log
+import com.zcode.remote.util.ZLog
 import kotlinx.coroutines.channels.BufferOverflow
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -80,7 +80,7 @@ class RpcChannel(private val relay: RelayClient) {
         for (id in stale) {
             val cb = pendingResponses.remove(id) ?: continue
             cancelTimeout(id)
-            Log.w(TAG, "failPending id=$id reason=$reason")
+            ZLog.w(TAG, "failPending id=$id reason=$reason")
             runCatching { cb(RpcReply.Err(reason, null)) }
         }
     }
@@ -111,7 +111,7 @@ class RpcChannel(private val relay: RelayClient) {
             put("workspaceKey", workspaceKey)
             taskId?.let { put("taskId", it) }
         }
-        Log.i(TAG, "bridge-open ws=$workspaceKey sid=$sid")
+        ZLog.i(TAG, "bridge-open ws=$workspaceKey sid=$sid")
         relay.sendPayload(payload)
     }
 
@@ -125,7 +125,7 @@ class RpcChannel(private val relay: RelayClient) {
                 bridgeGeneration = payload["bridgeGeneration"]?.let {
                     runCatching { it.jsonPrimitive.content.toIntOrNull() }.getOrNull() }
                 recoveryId = payload["recoveryId"]?.let { runCatching { it.jsonPrimitive.content }.getOrNull() }
-                Log.i(TAG, "bridge-ready sid=$sid gen=$bridgeGeneration payload=${payload.toString().take(500)}")
+                ZLog.i(TAG, "bridge-ready sid=$sid gen=$bridgeGeneration payload=${payload.toString().take(500)}")
                 if (sid != null) {
                     // 新桥 ack 序列空间全新：旧桥挂起请求立即失败收场，防止调用方状态卡死
                     failPending("bridge re-established")
@@ -133,7 +133,7 @@ class RpcChannel(private val relay: RelayClient) {
                 }
             }
             "workspace-bridge-error", "bridge-degraded" -> {
-                Log.w(TAG, "bridge error: ${payload.toString().take(300)}")
+                ZLog.w(TAG, "bridge error: ${payload.toString().take(300)}")
                 _bridge.value = BridgeState.Failed(payload.toString().take(200))
             }
         }
@@ -155,7 +155,7 @@ class RpcChannel(private val relay: RelayClient) {
     ): Int? {
         val bridge = _bridge.value
         if (bridge !is BridgeState.Ready) {
-            Log.w(TAG, "call($method) skipped: bridge not ready (${bridge})")
+            ZLog.w(TAG, "call($method) skipped: bridge not ready (${bridge})")
             onResponse?.invoke(RpcReply.Err("bridge not ready", null))
             return null
         }
@@ -167,7 +167,7 @@ class RpcChannel(private val relay: RelayClient) {
                 // remove 原子性保证与 WS 线程的应答分发不会双触发。
                 val task = Runnable {
                     val cb = pendingResponses.remove(id) ?: return@Runnable
-                    Log.w(TAG, "rpc timeout id=$id method=$method after=${timeoutMs}ms")
+                    ZLog.w(TAG, "rpc timeout id=$id method=$method after=${timeoutMs}ms")
                     cb(RpcReply.Err("timeout after ${timeoutMs}ms", null))
                 }
                 timeoutTasks[id] = task
@@ -175,7 +175,7 @@ class RpcChannel(private val relay: RelayClient) {
             }
         }
         val msg = Vql.serialize(listOf(TYPE_PROMISE, id, channelName, method), args)
-        Log.i(TAG, "rpc call channel=$channelName method=$method id=$id bytes=${msg.size}")
+        ZLog.i(TAG, "rpc call channel=$channelName method=$method id=$id bytes=${msg.size}")
         sendMessage(msg, bridge.bridgeSessionId)
         return id
     }
@@ -195,14 +195,14 @@ class RpcChannel(private val relay: RelayClient) {
     ): Int? {
         val bridge = _bridge.value
         if (bridge !is BridgeState.Ready) {
-            Log.w(TAG, "listen($event) skipped: bridge not ready (${bridge})")
+            ZLog.w(TAG, "listen($event) skipped: bridge not ready (${bridge})")
             onResponse?.invoke(RpcReply.Err("bridge not ready", null))
             return null
         }
         val id = nextRequestId++
         if (onResponse != null) pendingResponses[id] = onResponse
         val msg = Vql.serialize(listOf(TYPE_EVENT_LISTEN, id, channelName, event), arg)
-        Log.i(TAG, "rpc listen channel=$channelName event=$event id=$id bytes=${msg.size}")
+        ZLog.i(TAG, "rpc listen channel=$channelName event=$event id=$id bytes=${msg.size}")
         sendMessage(msg, bridge.bridgeSessionId)
         return id
     }
@@ -254,7 +254,7 @@ class RpcChannel(private val relay: RelayClient) {
             val buf = fragmentBuffers.getOrPut(messageSeq ?: -1) { HashMap() }
             buf[fragIndex] = bytes
             if (buf.size < fragCount) {
-                Log.d(TAG, "fragment buffered seq=$messageSeq ${buf.size}/$fragCount")
+                ZLog.d(TAG, "fragment buffered seq=$messageSeq ${buf.size}/$fragCount")
                 trimFragmentBuffers()
                 return
             }
@@ -267,13 +267,13 @@ class RpcChannel(private val relay: RelayClient) {
             val expectCrc = payload["checksum"]?.let { runCatching { it.jsonObject["value"]?.jsonPrimitive?.content }.getOrNull() }
             val actualCrc = String.format("%08x", CRC32().apply { update(joined) }.value)
             if (expectCrc != null && !expectCrc.equals(actualCrc, ignoreCase = true)) {
-                Log.w(TAG, "fragment checksum mismatch seq=$messageSeq expect=$expectCrc actual=$actualCrc")
+                ZLog.w(TAG, "fragment checksum mismatch seq=$messageSeq expect=$expectCrc actual=$actualCrc")
                 return
             }
             val messageBytes = payload["messageBytes"]?.let {
                 runCatching { it.jsonPrimitive.content.toIntOrNull() }.getOrNull() }
             if (messageBytes != null && messageBytes != joined.size) {
-                Log.w(TAG, "fragment size mismatch seq=$messageSeq expect=$messageBytes actual=${joined.size}")
+                ZLog.w(TAG, "fragment size mismatch seq=$messageSeq expect=$messageBytes actual=${joined.size}")
                 return
             }
             joined
@@ -299,19 +299,19 @@ class RpcChannel(private val relay: RelayClient) {
             val head = Vql.deserialize(bytes)
             val kind = head.value as? List<*>
             if (kind == null) {
-                Log.w(TAG, "rpc frame head not array: ${head.value?.toString()?.take(120)}")
+                ZLog.w(TAG, "rpc frame head not array: ${head.value?.toString()?.take(120)}")
                 return
             }
             type = (kind.getOrNull(0) as? Int) ?: -1
             id = kind.getOrNull(1) as? Int
             data = Vql.deserialize(bytes, head.nextOffset).value
         } catch (t: Throwable) {
-            Log.w(TAG, "rpc decode failed", t)
+            ZLog.w(TAG, "rpc decode failed", t)
             return
         }
 
         // 调试期加长到 6000：workspace-config snapshot 帧较大，400 字符看不出 configOptions 结构
-        Log.i(TAG, "rpc recv type=$type id=$id data=${data?.toString()?.take(6000)}")
+        ZLog.i(TAG, "rpc recv type=$type id=$id data=${data?.toString()?.take(6000)}")
         when (type) {
             TYPE_SUCCESS -> {
                 val cb = id?.let { pendingResponses.remove(it) }
@@ -322,7 +322,7 @@ class RpcChannel(private val relay: RelayClient) {
                 val el = toJsonElement(data)
                 val msg = el.let { runCatching { it.jsonObject["message"]?.jsonPrimitive?.content }.getOrNull() }
                     ?: el.toString().take(300)
-                Log.w(TAG, "rpc error id=$id: $msg")
+                ZLog.w(TAG, "rpc error id=$id: $msg")
                 val cb = id?.let { pendingResponses.remove(it) }
                 id?.let { cancelTimeout(it) }
                 cb?.invoke(RpcReply.Err(msg, el))

@@ -1,7 +1,8 @@
 package com.zcode.remote
 
 import android.app.Application
-import android.util.Log
+import android.net.ConnectivityManager
+import com.zcode.remote.util.ZLog
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
@@ -9,15 +10,20 @@ import androidx.compose.runtime.setValue
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.zcode.remote.relay.BridgeFrames
+import com.zcode.remote.BuildConfig
 import com.zcode.remote.relay.ApprovalOption
 import com.zcode.remote.relay.ConversationChannel
 import com.zcode.remote.relay.ConversationRow
+import com.zcode.remote.relay.FailureReason
+import com.zcode.remote.relay.NetworkGate
 import com.zcode.remote.relay.PendingApproval
 import com.zcode.remote.relay.PendingElicitation
 import com.zcode.remote.relay.RelayClient
 import com.zcode.remote.relay.RelayState
 import com.zcode.remote.relay.SessionsIndexChannel
 import com.zcode.remote.relay.WorkspaceConfigChannel
+import com.zcode.remote.service.ConnectionScope
+import com.zcode.remote.service.ConnectionService
 import com.zcode.remote.widget.PendingWidgetProvider
 import com.zcode.remote.relay.RowStore
 import com.zcode.remote.relay.RpcChannel
@@ -28,6 +34,7 @@ import com.zcode.remote.notify.ApprovalBridge
 import com.zcode.remote.notify.ApprovalNotifier
 import com.zcode.remote.notify.ElicitationBridge
 import com.zcode.remote.notify.ElicitationNotifier
+import com.zcode.remote.notify.TerminalNotifier
 import com.zcode.remote.storage.MultiDeviceStore
 import com.zcode.remote.storage.PairedDevice
 import com.zcode.remote.storage.SettingsStore
@@ -169,7 +176,7 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
                     )
                 )
             }.onFailure { err ->
-                Log.w(TAG, "checkForUpdate failed", err)
+                ZLog.w(TAG, "checkForUpdate failed", err)
                 updateState = UpdateState.Error("网络连接失败：${err.message ?: "未知错误"}")
             }
         }
@@ -235,12 +242,25 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
 
     fun updateSessionQuery(q: String) { sessionQuery = q }
 
-    private var client: RelayClient? = null
-    private var channel: RpcChannel? = null
-    private var conversation: ConversationChannel? = null
+    // ---- 连接栈（Sprint 1 / P0-A）：实际持有方是进程级 ConnectionScope（由前台服务
+    // ConnectionService 保护进程），下面是读写代理 —— ViewModel 重建/销毁不影响连接本体，
+    // 既有引用点全部无需改动。
+    private var client: RelayClient?
+        get() = ConnectionScope.client
+        set(value) { ConnectionScope.client = value }
+    private var channel: RpcChannel?
+        get() = ConnectionScope.channel
+        set(value) { ConnectionScope.channel = value }
+    private var conversation: ConversationChannel?
+        get() = ConnectionScope.conversation
+        set(value) { ConnectionScope.conversation = value }
     /** workspace 级会话索引（E-1）：服务端权威角标 pendingInteractionSummary。 */
-    private var sessionsIndex: SessionsIndexChannel? = null
-    private var workspaceConfig: WorkspaceConfigChannel? = null
+    private var sessionsIndex: SessionsIndexChannel?
+        get() = ConnectionScope.sessionsIndex
+        set(value) { ConnectionScope.sessionsIndex = value }
+    private var workspaceConfig: WorkspaceConfigChannel?
+        get() = ConnectionScope.workspaceConfig
+        set(value) { ConnectionScope.workspaceConfig = value }
 
     init {
         if (device != null) connect()
@@ -275,10 +295,22 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
 
     fun connect() {
         val dev = device ?: return
+        ConnectionScope.manuallyDisconnected = false
+        // P0-A：前台服务保住进程 —— App 在后台/锁屏时连接与审批通知才可达（招牌功能的性命）
+        ConnectionService.start(getApplication())
         client?.close()
         channel?.reset()
         conversation?.reset()
-        val c = RelayClient(dev, relayWsUrlOverride = relayOverride())
+        val c = RelayClient(
+            dev,
+            // B 组：自报真实版本号（原默认 0.1.0，上游按 app_version 做能力协商时是哑雷）
+            appVersion = BuildConfig.VERSION_NAME,
+            relayWsUrlOverride = relayOverride(),
+        )
+        // B 组：网络感知重连 —— 无网时挂起等恢复即刻重连，而非空转退避
+        val cm = getApplication<Application>().getSystemService(ConnectivityManager::class.java)
+        val gate = NetworkGate(cm)
+        c.networkWait = gate::waitBeforeReconnect
         val ch = RpcChannel(c)
         val conv = ConversationChannel(ch)
         val sidx = SessionsIndexChannel(ch)
@@ -293,6 +325,17 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         viewModelScope.launch {
             c.state.collect { st ->
                 relayState = st
+                // Sprint 2 / A 组第 3 项：终态失败发常驻系统通知 —— 手机在兜里时不能
+                // 静默失去全部审批能力（KICKED/配对失效/协议升级用户都必须立刻知道）。
+                val terminal = (st as? RelayState.Failed)?.takeIf {
+                    it.reason == FailureReason.KICKED || it.reason == FailureReason.AUTH_FAILED ||
+                        it.reason == FailureReason.PROTOCOL_MISMATCH
+                }
+                if (terminal != null) {
+                    TerminalNotifier.show(getApplication(), terminalTitle(terminal.reason), terminal.message)
+                } else {
+                    TerminalNotifier.clear(getApplication())
+                }
                 if (st is RelayState.Paired) {
                     ch.reset()
                     c.sendPayload(BridgeFrames.bootstrapRequest("boot-${System.currentTimeMillis()}"))
@@ -365,7 +408,7 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         viewModelScope.launch {
             ch.bridge.collect { st ->
                 bridgeState = st
-                Log.i(TAG, "bridge=$st")
+                ZLog.i(TAG, "bridge=$st")
                 if (st is RpcChannel.BridgeState.Ready) {
                     // E-1：workspace 级 sessions-index 订阅（权威角标，一次订阅覆盖全部会话）
                     activeWorkspaceKey?.let { sidx.subscribe(it, null) }
@@ -387,7 +430,7 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
                 wcfg.onEvent(ev)
                 val text = ev.data.toString()
                 // 每个 delta 一条，量大（HANDOVER 技术债）：降为 debug 级，不刷 info 日志
-                Log.d(TAG, "rpc event id=${ev.id}: ${text.take(400)}")
+                ZLog.d(TAG, "rpc event id=${ev.id}: ${text.take(400)}")
                 rpcEvents.add(0, text.take(4000))
                 if (rpcEvents.size > 50) rpcEvents.removeAt(rpcEvents.lastIndex)
             }
@@ -396,6 +439,8 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         viewModelScope.launch {
             conv.status.collect { st ->
                 conversationStatus = st
+                // 换会话/重订阅时清掉上一个会话的模式乐观覆盖，回到订阅 ack 的真实值
+                if (st is ConversationChannel.Status.Idle) sessionModeOverride = null
                 // 模型目录订阅需要会话握手完成（真机实证：bridge Ready 即订会报
                 // fault.connection.handshakeRequired，Live 后才可用）
                 if (st is ConversationChannel.Status.Live) {
@@ -432,10 +477,10 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         val next = merged.values.toList()
         if (next == approvals) return
         approvals = next
-        Log.i(TAG, "approvals → ${next.size} 条 " +
+        ZLog.i(TAG, "approvals → ${next.size} 条 " +
                 next.joinToString(",") { "${it.toolName ?: "?"}#${it.interactionId.take(18)}" })
         runCatching { ApprovalNotifier.sync(getApplication(), next) }
-            .onFailure { Log.w(TAG, "通知栏刷新失败", it) }
+            .onFailure { ZLog.w(TAG, "通知栏刷新失败", it) }
         recomputeSessionPending()
     }
 
@@ -447,10 +492,10 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         val next = merged.values.toList()
         if (next == elicitations) return
         elicitations = next
-        Log.i(TAG, "elicitations → ${next.size} 条 " +
+        ZLog.i(TAG, "elicitations → ${next.size} 条 " +
                 next.joinToString(",") { "${it.toolName ?: "?"}#${it.interactionId.take(18)}" })
         runCatching { ElicitationNotifier.sync(getApplication(), next) }
-            .onFailure { Log.w(TAG, "表单通知栏刷新失败", it) }
+            .onFailure { ZLog.w(TAG, "表单通知栏刷新失败", it) }
         recomputeSessionPending()
     }
 
@@ -490,7 +535,7 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
     private fun syncWidget(pendingTotal: Int = sessionPending.values.sum()) {
         val connected = relayState is RelayState.Paired
         runCatching { PendingWidgetProvider.sync(getApplication(), pendingTotal, connected) }
-            .onFailure { Log.w(TAG, "widget 同步失败", it) }
+            .onFailure { ZLog.w(TAG, "widget 同步失败", it) }
     }
 
     /** 上报手机端视图状态（P1-2）：PC 据此在界面上指出"手机正在看这个会话"。 */
@@ -498,7 +543,7 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         val c = client ?: return
         val payload = BridgeFrames.mobileViewStateUpdate(activeWorkspaceKey, subscribedSessionId)
         c.sendPayload(payload)
-        Log.i(TAG, "view-state → ws=$activeWorkspaceKey task=${subscribedSessionId?.take(20)}")
+        ZLog.i(TAG, "view-state → ws=$activeWorkspaceKey task=${subscribedSessionId?.take(20)}")
     }
 
     /** 通知栏按钮走这条路径：按 id 找回对象再应答。 */
@@ -545,7 +590,7 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
                 }
                 approvalFeedback = feedback
                 flash(feedback)
-                Log.i(TAG, "resolve result=$r interaction=$interId feedback=$feedback")
+                ZLog.i(TAG, "resolve result=$r interaction=$interId feedback=$feedback")
             }
         }
     }
@@ -593,7 +638,7 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
                     onSuccess = {
                         promptDraft = ""
                         attachments.clear()
-                        Log.i(TAG, "sendPrompt ok session=$subscribedSessionId atts=${atts.size}")
+                        ZLog.i(TAG, "sendPrompt ok session=$subscribedSessionId atts=${atts.size}")
                     },
                     onFailure = { flash("发送失败：${it.message}") },
                 )
@@ -669,7 +714,7 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
                         is ConversationChannel.ResolveResult.Failed -> "停止失败：${r.message}"
                     }
                 )
-                Log.i(TAG, "stop result=$r")
+                ZLog.i(TAG, "stop result=$r")
             }
         }
     }
@@ -811,7 +856,7 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         val ws = s.workspacePath ?: activeWorkspaceKey ?: return
         subscribedSessionId = s.taskId
         clearAttachments()   // 附件与会话绑定，切会话即清空
-        Log.i(TAG, "subscribe conversation session=${s.taskId} ws=$ws")
+        ZLog.i(TAG, "subscribe conversation session=${s.taskId} ws=$ws")
         conv.subscribe(
             workspacePath = ws,
             workspaceIdentity = null,
@@ -835,6 +880,8 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         firstPrompt: String,
         attachments: List<ConversationChannel.AttachmentRef> = emptyList(),
         modelOption: WorkspaceConfigChannel.ModelOption? = null,
+        /** 执行模式（P0-B）：plan/build/yolo，默认 build —— 旧版写死 yolo 让手机建的会话全部免审批。 */
+        execMode: String = "build",
         onSuccess: (SessionItem) -> Unit,
         onError: (String) -> Unit,
     ) {
@@ -857,7 +904,8 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
                 // 官方 registry 校验不通过会直接抛出 "Reasoning level is required" 让会话失败。
                 // 用户在弹窗里显式选了档位则用选中的，否则自动挑一个合法档位；都没有时不下发。
                 thought = modelOption.thought ?: pickReasoningLevel(pid, mid),
-                mode = "yolo",
+                // P0-B：执行模式来自新建会话弹窗选择（默认 build），不再写死 yolo
+                mode = execMode,
             )
         }
         val promptText = firstPrompt.trim()
@@ -872,7 +920,7 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
             viewModelScope.launch {
                 result.fold(
                     onSuccess = { newSid ->
-                        Log.i(TAG, "createNewSession success: sid=$newSid ws=$ws " +
+                        ZLog.i(TAG, "createNewSession success: sid=$newSid ws=$ws " +
                                 "model=${modelConfig?.modelId ?: "inherit-default"}")
                         val item = SessionItem(
                             taskId = newSid,
@@ -895,7 +943,7 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
                         onSuccess(item)
                     },
                     onFailure = { err ->
-                        Log.w(TAG, "createNewSession failed: ${err.message}")
+                        ZLog.w(TAG, "createNewSession failed: ${err.message}")
                         onError(err.message ?: "创建会话失败")
                     }
                 )
@@ -954,14 +1002,14 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         ch.call(RpcChannel.CHANNEL_MODEL_SELECTION, "getView", listOf<Any>()) { reply ->
             when (reply) {
                 is RpcChannel.RpcReply.Err ->
-                    Log.w(TAG, "model-selection.getView 失败: ${reply.message}")
+                    ZLog.w(TAG, "model-selection.getView 失败: ${reply.message}")
                 is RpcChannel.RpcReply.Ok -> {
                     val raw = reply.data?.toString() ?: ""
-                    Log.i(TAG, "model-selection.getView 原始响应(截断): ${raw.take(3000)}")
+                    ZLog.i(TAG, "model-selection.getView 原始响应(截断): ${raw.take(3000)}")
                     val parsed = parseReasoningLevels(reply.data)
                     if (parsed.isNotEmpty()) {
                         modelReasoningLevels = parsed
-                        Log.i(TAG, "模型思考档位加载成功: " +
+                        ZLog.i(TAG, "模型思考档位加载成功: " +
                                 parsed.entries.joinToString(", ") { "${it.key}->${it.value}" })
                     }
                 }
@@ -1031,7 +1079,7 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
                     }
                     if (list.isNotEmpty()) {
                         workspaceSessionModels = list
-                        Log.i(TAG, "readWorkspaceState 模型加载成功: ${list.size} 个模型")
+                        ZLog.i(TAG, "readWorkspaceState 模型加载成功: ${list.size} 个模型")
                     }
                 }
             }
@@ -1048,12 +1096,12 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         val ch = channel ?: run { onDone(); return }
 
         fun readConfigByPath(realPath: String) {
-            Log.i(TAG, "正在读取 PC 端模型配置: $realPath")
+            ZLog.i(TAG, "正在读取 PC 端模型配置: $realPath")
             ch.call(RpcChannel.CHANNEL_FILE, "readTextFile", listOf(mapOf("path" to realPath))) { r2 ->
                 viewModelScope.launch {
                     when (r2) {
                         is RpcChannel.RpcReply.Err -> {
-                            Log.w(TAG, "readTextFile 失败 ($realPath): ${r2.message}")
+                            ZLog.w(TAG, "readTextFile 失败 ($realPath): ${r2.message}")
                         }
                         is RpcChannel.RpcReply.Ok -> {
                             val content = runCatching {
@@ -1063,7 +1111,7 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
                                 val parsed = parseProviderConfigModels(content)
                                 if (parsed.isNotEmpty()) {
                                     workspaceSessionModels = parsed
-                                    Log.i(TAG, "从 provider_config.json 成功解析 ${parsed.size} 个可用模型: ${parsed.map { it.name }}")
+                                    ZLog.i(TAG, "从 provider_config.json 成功解析 ${parsed.size} 个可用模型: ${parsed.map { it.name }}")
                                 }
                             }
                         }
@@ -1089,7 +1137,7 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
                     fallbackResolvePath(ch, ::readConfigByPath, onDone)
                 }
                 is RpcChannel.RpcReply.Err -> {
-                    Log.w(TAG, "system.info 失败: ${rSys.message}，回退 resolvePath")
+                    ZLog.w(TAG, "system.info 失败: ${rSys.message}，回退 resolvePath")
                     fallbackResolvePath(ch, ::readConfigByPath, onDone)
                 }
             }
@@ -1101,7 +1149,7 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         ch.call(RpcChannel.CHANNEL_FILE, "resolvePath", listOf(pathArg)) { r1 ->
             when (r1) {
                 is RpcChannel.RpcReply.Err -> {
-                    Log.w(TAG, "resolvePath 兜底亦失败: ${r1.message}")
+                    ZLog.w(TAG, "resolvePath 兜底亦失败: ${r1.message}")
                     onDone()
                 }
                 is RpcChannel.RpcReply.Ok -> {
@@ -1142,7 +1190,7 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
                     )
                 }
             }
-        }.onFailure { Log.w(TAG, "parseProviderConfigModels 解析异常", it) }
+        }.onFailure { ZLog.w(TAG, "parseProviderConfigModels 解析异常", it) }
         return result
     }
 
@@ -1183,7 +1231,7 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
     fun loadEarlier() {
         val conv = conversation ?: return
         conv.loadEarlier(rowStore) { r ->
-            r.onFailure { Log.w(TAG, "loadEarlier: ${it.message}") }
+            r.onFailure { ZLog.w(TAG, "loadEarlier: ${it.message}") }
         }
     }
 
@@ -1204,7 +1252,7 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         // 1) 先尝试结束运行中的会话（失败不阻断删除）
         ch.call(RpcChannel.CHANNEL_SESSION, "closeSession",
             listOf(mapOf("workspacePath" to ws, "sessionId" to item.taskId))) { r ->
-            Log.i(TAG, "closeSession(${item.taskId.take(20)}…) → ${r::class.simpleName}")
+            ZLog.i(TAG, "closeSession(${item.taskId.take(20)}…) → ${r::class.simpleName}")
         }
 
         // 2) 软删除任务
@@ -1212,7 +1260,7 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
             viewModelScope.launch {
                 when (reply) {
                     is RpcChannel.RpcReply.Ok -> {
-                        Log.i(TAG, "deleteTask 成功: ${item.taskId.take(20)}…")
+                        ZLog.i(TAG, "deleteTask 成功: ${item.taskId.take(20)}…")
                         // 本地列表同步移除
                         sessions.removeAll { it.taskId == item.taskId }
                         // 若删除的是当前订阅中的会话，复位订阅与草稿状态
@@ -1229,7 +1277,7 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
                         onResult(true, "会话已删除")
                     }
                     is RpcChannel.RpcReply.Err -> {
-                        Log.w(TAG, "deleteTask 失败: ${reply.message}")
+                        ZLog.w(TAG, "deleteTask 失败: ${reply.message}")
                         flash("删除会话失败: ${reply.message}")
                         onResult(false, reply.message)
                     }
@@ -1253,6 +1301,9 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     fun disconnect() {
+        ConnectionScope.manuallyDisconnected = true
+        ConnectionService.stop(getApplication())
+        TerminalNotifier.clear(getApplication())
         client?.close()
         channel?.reset()
         conversation?.reset()
@@ -1288,6 +1339,50 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         rows.clear()
         subscribedSessionId = null
     }
+
+    /** 连接终态通知的短标题（Sprint 2 / A 组）。 */
+    private fun terminalTitle(reason: FailureReason): String = when (reason) {
+        FailureReason.KICKED -> "控制权已在别处接管"
+        FailureReason.AUTH_FAILED -> "配对已失效，请重新扫码"
+        FailureReason.PROTOCOL_MISMATCH -> "中继协议可能已升级"
+        else -> "连接已终止"
+    }
+
+    // ---- 执行模式（P0-B）----
+
+    /** 用户在会话页手动切换后的执行模式乐观值（订阅 ack 的 mode 只在重订阅时更新）。 */
+    var sessionModeOverride by mutableStateOf<String?>(null)
+        private set
+
+    /**
+     * 切换当前会话执行模式（plan/build/yolo）。协议语义（§5.4）：仅对下一轮 agent turn 生效。
+     * [onResult] 参数为 null 表示成功，否则为错误信息。
+     */
+    fun setSessionMode(mode: String, onResult: (String?) -> Unit) {
+        val conv = conversation ?: run { onResult("连接尚未就绪"); return }
+        conv.setMode(mode) { r ->
+            viewModelScope.launch {
+                r.fold(
+                    onSuccess = {
+                        ZLog.i(TAG, "setMode success mode=$mode")
+                        sessionModeOverride = mode
+                        onResult(null)
+                    },
+                    onFailure = { err ->
+                        ZLog.w(TAG, "setMode failed: ${err.message}")
+                        onResult(err.message ?: "切换失败")
+                    },
+                )
+            }
+        }
+    }
+
+    /**
+     * Sprint 1 / P0-A：连接栈归进程级 ConnectionScope 所有，ViewModel 销毁**不关连接** ——
+     * 划掉界面后连接与通知仍存活；下次进入 App 时本类重建并经 init{connect()} 归位。
+     * （禁止在此 close：那会把 P0-A 退回「连接随 Activity 生灭」。）
+     */
+    override fun onCleared() { super.onCleared() }
 
     companion object { private const val TAG = "AppViewModel" }
 }

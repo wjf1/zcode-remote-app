@@ -72,7 +72,7 @@ fun HomeScreen(
     modelReasoningLevels: Map<String, List<String>> = emptyMap(),
     /** 长按会话卡片触发删除（closeSession + deleteTask）。 */
     onSessionDelete: (SessionItem) -> Unit = {},
-    onCreateSession: (prompt: String, modelConfig: com.zcode.remote.relay.WorkspaceConfigChannel.ModelOption?) -> Unit = { _, _ -> },
+    onCreateSession: (prompt: String, modelConfig: com.zcode.remote.relay.WorkspaceConfigChannel.ModelOption?, execMode: String) -> Unit = { _, _, _ -> },
 ) {
     var filterOnlyRunning by remember { mutableStateOf(false) }
     var filterOnlyPending by remember { mutableStateOf(false) }
@@ -309,9 +309,9 @@ fun HomeScreen(
                 currentProvider = currentProvider,
                 modelReasoningLevels = modelReasoningLevels,
                 onDismiss = { showCreateDialog = false },
-                onConfirm = { prompt, modelConfig ->
+                onConfirm = { prompt, modelConfig, execMode ->
                     showCreateDialog = false
-                    onCreateSession(prompt, modelConfig)
+                    onCreateSession(prompt, modelConfig, execMode)
                 }
             )
         }
@@ -521,6 +521,17 @@ internal fun thoughtLabel(level: String): String = when (level.lowercase()) {
  * 新建会话弹窗
  * 支持输入首条任务指令、语音输入填充与可选的模型选择（数据源 = PC 端工作区模型目录）。
  */
+
+/** P0-B：执行模式全集（协议合法值见 tools/setmode.py 的 VALID）。 */
+private val EXEC_MODES = listOf("plan", "build", "yolo")
+
+internal fun execModeLabel(m: String): String = when (m) {
+    "plan" -> "规划 plan"
+    "build" -> "构建 build"
+    "yolo" -> "全自动 yolo"
+    else -> m
+}
+
 @Composable
 private fun CreateSessionDialog(
     modelState: com.zcode.remote.relay.WorkspaceConfigChannel.WorkspaceState?,
@@ -532,11 +543,14 @@ private fun CreateSessionDialog(
     /** 各模型合法思考档位：key = "providerId/modelId"。 */
     modelReasoningLevels: Map<String, List<String>> = emptyMap(),
     onDismiss: () -> Unit,
-    onConfirm: (prompt: String, modelConfig: com.zcode.remote.relay.WorkspaceConfigChannel.ModelOption?) -> Unit,
+    onConfirm: (prompt: String, modelConfig: com.zcode.remote.relay.WorkspaceConfigChannel.ModelOption?, execMode: String) -> Unit,
 ) {
     var prompt by remember { mutableStateOf("") }
     var voiceListening by remember { mutableStateOf(false) }
     var voiceLive by remember { mutableStateOf<String?>(null) }
+
+    // 执行模式（P0-B）：默认 build；yolo 免审批，须醒目警示
+    var selectedExecMode by remember { mutableStateOf("build") }
 
     // 模型选择：null = 跟随 PC 端默认；选中 = 显式下发 config
     var selectedModel by remember { mutableStateOf<com.zcode.remote.relay.WorkspaceConfigChannel.ModelOption?>(null) }
@@ -770,6 +784,45 @@ private fun CreateSessionDialog(
                     }
                 }
 
+                // ---- 执行模式选择器（P0-B）：默认 build；选 yolo 给醒目风险文案 ----
+                Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                    Text(
+                        text = "执行模式",
+                        style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.SemiBold),
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
+                        EXEC_MODES.forEach { m ->
+                            FilterChip(
+                                selected = selectedExecMode == m,
+                                onClick = { selectedExecMode = m },
+                                label = {
+                                    Text(
+                                        text = execModeLabel(m),
+                                        style = MaterialTheme.typography.labelSmall
+                                    )
+                                },
+                                shape = RoundedCornerShape(8.dp)
+                            )
+                        }
+                    }
+                    when (selectedExecMode) {
+                        "yolo" -> Text(
+                            text = "⚠ 免审批：所有工具调用自动放行，PC 端将无确认执行任意命令；锁屏审批对本会话不触发。",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.error
+                        )
+                        else -> Text(
+                            text = "build=工具调用需在手机审批；plan=只读规划。切换仅对新建的会话生效。",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                }
+
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.End,
@@ -789,7 +842,7 @@ private fun CreateSessionDialog(
         },
         confirmButton = {
             Button(
-                onClick = { onConfirm(prompt.trim(), finalSelection) },
+                onClick = { onConfirm(prompt.trim(), finalSelection, selectedExecMode) },
                 enabled = prompt.isNotBlank(),
                 shape = RoundedCornerShape(8.dp)
             ) {
