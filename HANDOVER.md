@@ -20,7 +20,8 @@
   [v0.4.0-beta5](https://github.com/wjf1/zcode-remote-app/releases/tag/v0.4.0-beta5)（相机扫码重构与修复）→
   [v0.4.0-beta6](https://github.com/wjf1/zcode-remote-app/releases/tag/v0.4.0-beta6)（排版全面对齐桌面版+版本展示与更新闭环，versionCode 10）→
   [v0.5.0-beta1…beta5](https://github.com/wjf1/zcode-remote-app/releases/tag/v0.5.0-beta5)（3-Tab 架构重构 + 模型思考档位链路，versionCode 15）→
-  [v0.5.0-beta6](https://github.com/wjf1/zcode-remote-app/releases/tag/v0.5.0-beta6)（**当前**，三个 P0 缺陷结清 + 最近文件只读预览 + 工具调用 Diff 视图 + Sprint 0–3/6 真机全通收官，versionCode 16）。
+  [v0.5.0-beta6](https://github.com/wjf1/zcode-remote-app/releases/tag/v0.5.0-beta6)（三个 P0 缺陷结清 + 最近文件只读预览 + 工具调用 Diff 视图，versionCode 16）→
+  [v0.5.0-beta7](https://github.com/wjf1/zcode-remote-app/releases/tag/v0.5.0-beta7)（**当前**，会话流智能贴底 + 悬浮「回到底部」+ 输入栏快捷指令胶囊，versionCode 17）。
 - **2026-09-29 增量（本轮）**：P0-1 发送/停止 ✅、P1-1 表单应答 ✅、P1-2 多会话看板 ✅、
   P1-4 协议常量结清 ✅、技术债清理 ✅——均已构建通过并推送（提交见 `git log`）。
 - **2026-09-29 二轮**：**X-1 keystore 结清**（实测与发布 APK 同指纹，见下）、
@@ -186,7 +187,7 @@ ADB -s <serial> shell am broadcast -n com.zcode.remote/.debug.DebugApprovalRecei
 
 版本序列：`v0.2.0-m2` → `v0.2.1-m2b` → `v0.2.2-m3a` → `v0.2.3-m3b` → `v0.3.0-m3` →
 `v0.4.0-beta1…beta6`（发版内测 → 真机修复 → 16KB 对齐 → 互踢修复 → 扫码重构 → 排版对齐）→
-`v0.5.0-beta1…beta5`（模型档位链路，versionCode 15）→ `v0.5.0-beta6`（**当前**，三个 P0 缺陷结清 + 最近文件只读预览 + 工具调用 Diff 视图 + Sprint 0–3/6 真机全通收官，versionCode 16）。
+`v0.5.0-beta1…beta5`（模型档位链路，versionCode 15）→ `v0.5.0-beta6`（P0 结清 + 最近文件 + Diff 视图，versionCode 16）→ `v0.5.0-beta7`（**当前**，会话流智能贴底 + 悬浮「回到底部」+ 输入栏快捷指令胶囊，versionCode 17）。
 
 ## 5. 关键技术结论（浓缩坑清单，动手前必读）
 
@@ -316,7 +317,7 @@ RemoteInput 全仓 0 命中）。总体判断：**功能面已超出对标官方
 2. **缺 `ACCESS_NETWORK_STATE` 权限** → NetworkGate 全部 ConnectivityManager 调用被 SecurityException 拦截（被 runCatching 吞掉后退化为纯退避——症状是断网后"协程假死"）。已补 Manifest。
 3. **OkHttp 对网络整体丢失的失败回调延迟到网络恢复时才冒出**（断网期连接静默死亡、心跳停止）+ 退避计数被快速失败烧到 48s 封顶 → NetworkGate 重构为**常驻监控**：onLost 立即断 socket + attempt 归零调度重连，onAvailable 即刻放行。
 4. **两个 mode 撞名**：订阅 ack 的 `mode` 是**订阅模式**（snapshot/live），与**执行模式**（plan/build/yolo）完全不同——ModeChip 曾错显 "snapshot"。执行模式权威来源改为 `readWorkspaceState` 的 `settings.mode.current`（MainActivity 已加警示注释）。
-5. （体验缺陷，未修，记录）**会话运行中上翻浏览会被新行贴底逻辑强拉回底部**——`LaunchedEffect(rows.size)` 无"用户正在上翻"判定，影响浏览历史行；建议后续在贴底逻辑里加"距底部超过阈值则不打扰"判定。
+5. ✅（**已于 v0.5.0-beta7 修复**）**会话运行中上翻浏览被新行强拉贴底**——引入 `isNearBottom` 视口状态判定，仅在靠近底部时自动平滑贴底；上翻时保留阅读位置，并弹出悬浮「回到底部 ↓」胶囊按钮平滑定位；同时新增 `ActionChipsBar` 常用快捷指令栏（减少打字成本）。
 
 **验收环境注意事项（接手必读）**：
 - **DebugPairReceiver 注入必须用面板「刷新二维码」轮换出的独立 deviceSid**——注入桌面端本体 sid（setting.json 的）会与面板内嵌 terminal 互踢（同 sid 单 terminal 槽），表现为手机反复 KICKED/waiting。正常扫码配对天然规避（新 sid 与桌面端并存）。

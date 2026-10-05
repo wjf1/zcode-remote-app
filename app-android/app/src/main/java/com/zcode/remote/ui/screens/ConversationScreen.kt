@@ -51,6 +51,7 @@ import com.zcode.remote.ui.components.MarkdownView
 import com.zcode.remote.ui.theme.ZCodeTokens
 import com.zcode.remote.ui.voice.VoiceInputButton
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 
 /**
  * 沉浸式会话详情与对话控制台
@@ -112,6 +113,20 @@ fun ConversationScreen(
     // 进入会话页即刷新一次模型目录（PC 端新增/删除模型后回到 APP 即可看到最新列表）
     LaunchedEffect(Unit) { onLoadModels() }
 
+    val coroutineScope = rememberCoroutineScope()
+    // 智能贴底状态：用户是否在列表底部附近（距离末尾 <= 2 项，或无法向前滚动）
+    val isNearBottom by remember {
+        derivedStateOf {
+            val layoutInfo = listState.layoutInfo
+            val total = layoutInfo.totalItemsCount
+            if (total <= 1) true
+            else {
+                val lastVisible = layoutInfo.visibleItemsInfo.lastOrNull()?.index ?: 0
+                lastVisible >= total - 2 || !listState.canScrollForward
+            }
+        }
+    }
+
     var anchorRowId by remember { mutableStateOf<Int?>(null) }
     LaunchedEffect(rows.size) {
         val anchor = anchorRowId
@@ -119,7 +134,8 @@ fun ConversationScreen(
             val idx = rows.indexOfFirst { it.rowId == anchor }
             if (idx >= 0) listState.scrollToItem(idx + headerCount)
             anchorRowId = null
-        } else {
+        } else if (isNearBottom) {
+            // 仅当用户处于底部附近时自动平滑贴底；上翻查阅历史或 diff 时不强拉打断
             if (rows.isNotEmpty()) listState.animateScrollToItem(rows.lastIndex + headerCount)
         }
     }
@@ -416,26 +432,66 @@ fun ConversationScreen(
                 }
             }
         } else {
-            // 2. 消息流列表
-            LazyColumn(
-                state = listState,
-                modifier = Modifier.weight(1f),
-                verticalArrangement = Arrangement.spacedBy(8.dp),
-            ) {
-                item(key = "earlier-head") {
-                    Text(
-                        text = when {
-                            earlier.loading -> "加载更早历史…"
-                            earlier.pulled && !earlier.hasMore -> "已到会话开头"
-                            else -> "上滑加载更早历史"
-                        },
-                        style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
-                        modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
-                        textAlign = androidx.compose.ui.text.style.TextAlign.Center,
-                    )
+            // 2. 消息流列表（外层 Box 承载悬浮「回到底部」提示胶囊）
+            Box(modifier = Modifier.weight(1f).fillMaxWidth()) {
+                LazyColumn(
+                    state = listState,
+                    modifier = Modifier.fillMaxSize(),
+                    verticalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    item(key = "earlier-head") {
+                        Text(
+                            text = when {
+                                earlier.loading -> "加载更早历史…"
+                                earlier.pulled && !earlier.hasMore -> "已到会话开头"
+                                else -> "上滑加载更早历史"
+                            },
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
+                            modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
+                            textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+                        )
+                    }
+                    items(rows, key = { it.rowId }) { row -> RowItem(row) }
                 }
-                items(rows, key = { it.rowId }) { row -> RowItem(row) }
+
+                // 悬浮「回到底部」胶囊按钮（仅在用户主动上翻查阅历史且列表有内容时展示）
+                androidx.compose.animation.AnimatedVisibility(
+                    visible = !isNearBottom && rows.isNotEmpty(),
+                    enter = fadeIn() + expandVertically(),
+                    exit = fadeOut() + shrinkVertically(),
+                    modifier = Modifier.align(Alignment.BottomEnd).padding(bottom = 10.dp, end = 6.dp)
+                ) {
+                    Surface(
+                        onClick = {
+                            coroutineScope.launch {
+                                listState.animateScrollToItem(rows.lastIndex + headerCount)
+                            }
+                        },
+                        shape = RoundedCornerShape(16.dp),
+                        color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.95f),
+                        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
+                        shadowElevation = 4.dp
+                    ) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.KeyboardArrowDown,
+                                contentDescription = "回到底部",
+                                tint = MaterialTheme.colorScheme.onPrimaryContainer,
+                                modifier = Modifier.size(16.dp)
+                            )
+                            Spacer(Modifier.width(4.dp))
+                            Text(
+                                text = "回到底部",
+                                style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.SemiBold),
+                                color = MaterialTheme.colorScheme.onPrimaryContainer
+                            )
+                        }
+                    }
+                }
             }
         }
 
@@ -456,6 +512,16 @@ fun ConversationScreen(
             uploadPercent = attachUploadPercent,
             onPick = { filePicker.launch(arrayOf("*/*")) },
             onRemove = onRemoveAttachment,
+        )
+
+        // 3.5 常用快捷指令胶囊（减少软键盘输入成本）
+        ActionChipsBar(
+            onSelectChip = { chip ->
+                val current = prompt.trim()
+                val next = if (current.isEmpty()) chip else "$current $chip"
+                onPromptChange(next)
+            },
+            modifier = Modifier.padding(vertical = 2.dp)
         )
 
         // 4. 底部现代化输入栏
@@ -481,6 +547,54 @@ fun ConversationScreen(
                     onDismissPreview = onDismissFilePreview,
                     onClose = { showFiles = false },
                 )
+            }
+        }
+    }
+}
+
+/**
+ * 常用快捷指令胶囊栏（减少移动端软键盘输入成本）
+ */
+@Composable
+private fun ActionChipsBar(
+    onSelectChip: (String) -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val chips = listOf(
+        "继续",
+        "运行测试验证",
+        "修复该问题",
+        "检查 Git 状态",
+        "整理并提交"
+    )
+    Row(
+        modifier = modifier
+            .fillMaxWidth()
+            .horizontalScroll(rememberScrollState()),
+        horizontalArrangement = Arrangement.spacedBy(6.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        chips.forEach { chipText ->
+            Surface(
+                onClick = { onSelectChip(chipText) },
+                shape = RoundedCornerShape(12.dp),
+                color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
+                border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)),
+                modifier = Modifier.height(26.dp)
+            ) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier.padding(horizontal = 10.dp)
+                ) {
+                    Text(
+                        text = chipText,
+                        style = MaterialTheme.typography.labelSmall.copy(
+                            fontSize = 11.sp,
+                            fontWeight = FontWeight.Medium
+                        ),
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
             }
         }
     }
