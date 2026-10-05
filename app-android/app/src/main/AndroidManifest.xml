@@ -47,6 +47,25 @@
                 <category android:name="android.intent.category.DEFAULT" />
                 <data android:mimeType="*/*" />
             </intent-filter>
+            <!-- Sprint 5：配对链接 VIEW Deep Link（支持 zcode://pair 与官方 https 链接一键唤起自动配对） -->
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="zcode" android:host="pair" />
+            </intent-filter>
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="https" android:host="zcode.z.ai" android:pathPrefix="/remote" />
+            </intent-filter>
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="https" android:host="zcode.chatglm.site" android:pathPrefix="/remote" />
+            </intent-filter>
         </activity>
 
         <!-- P0-A：中继连接保活前台服务（specialUse 不受 Android 15 dataSync 6h/24h 超时限制） -->

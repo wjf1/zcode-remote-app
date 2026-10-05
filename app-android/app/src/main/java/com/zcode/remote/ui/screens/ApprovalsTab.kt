@@ -21,6 +21,8 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -258,6 +260,7 @@ private fun ApprovalInboxCard(
     a: PendingApproval,
     onResolve: (PendingApproval, ApprovalOption) -> Unit
 ) {
+    val haptic = LocalHapticFeedback.current
     Card(
         shape = RoundedCornerShape(14.dp),
         colors = CardDefaults.cardColors(
@@ -336,7 +339,10 @@ private fun ApprovalInboxCard(
                 // 拒绝按钮
                 if (denyOptions.isNotEmpty()) {
                     OutlinedButton(
-                        onClick = { onResolve(a, denyOptions.first()) },
+                        onClick = {
+                            haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                            onResolve(a, denyOptions.first())
+                        },
                         colors = ButtonDefaults.outlinedButtonColors(
                             contentColor = MaterialTheme.colorScheme.error
                         ),
@@ -352,7 +358,10 @@ private fun ApprovalInboxCard(
                 // 允许按钮
                 allowOptions.forEach { opt ->
                     Button(
-                        onClick = { onResolve(a, opt) },
+                        onClick = {
+                            haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                            onResolve(a, opt)
+                        },
                         colors = ButtonDefaults.buttonColors(
                             containerColor = if (opt.kind == "allowAlways") MaterialTheme.colorScheme.primary
                             else MaterialTheme.colorScheme.primary.copy(alpha = 0.85f)

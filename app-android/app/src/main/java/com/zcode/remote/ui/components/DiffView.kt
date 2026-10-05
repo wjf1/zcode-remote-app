@@ -25,7 +25,9 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalClipboardManager
+import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
@@ -192,6 +194,7 @@ object ToolDiffParser {
 @Composable
 fun DiffBlock(diff: ToolDiff, modifier: Modifier = Modifier) {
     val clipboard = LocalClipboardManager.current
+    val haptic = LocalHapticFeedback.current
     var forceExpanded by remember { mutableStateOf(false) }
 
     // 折叠长段未变更行：连续 CONTEXT > 10 行时中间折叠，留头尾各 3 行
@@ -243,6 +246,7 @@ fun DiffBlock(diff: ToolDiff, modifier: Modifier = Modifier) {
                 )
                 TextButton(
                     onClick = {
+                        haptic.performHapticFeedback(HapticFeedbackType.LongPress)
                         clipboard.setText(AnnotatedString(diff.toUnifiedText()))
                     },
                     contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 6.dp),

@@ -27,6 +27,7 @@ import com.zcode.remote.relay.ApprovalOption
 import com.zcode.remote.relay.ConversationChannel
 import com.zcode.remote.relay.PendingApproval
 import com.zcode.remote.relay.SessionItem
+import com.zcode.remote.storage.QrParser
 import com.zcode.remote.ui.screens.*
 import com.zcode.remote.ui.theme.ZCodeTheme
 import com.zcode.remote.ui.theme.ZCodeTokens
@@ -38,6 +39,7 @@ class MainActivity : ComponentActivity() {
         super.onNewIntent(intent)
         setIntent(intent)
         handleShareIntent(intent)
+        handleDeepLink(intent)
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -45,7 +47,10 @@ class MainActivity : ComponentActivity() {
         setContent {
             val vm: AppViewModel = viewModel()
             appVm = vm
-            LaunchedEffect(Unit) { handleShareIntent(intent) }
+            LaunchedEffect(Unit) {
+                handleShareIntent(intent)
+                handleDeepLink(intent)
+            }
             ZCodeTheme(forceDark = when (vm.themeMode) {
                 "dark" -> true
                 "light" -> false
@@ -310,6 +315,18 @@ class MainActivity : ComponentActivity() {
                     android.widget.Toast.makeText(this, "已添加分享附件: $name", android.widget.Toast.LENGTH_SHORT).show()
                 }
             }
+        }
+    }
+
+    private fun handleDeepLink(intent: Intent?) {
+        if (intent == null || intent.action != Intent.ACTION_VIEW) return
+        val uri = intent.data ?: return
+        val rawUrl = uri.toString()
+        val dev = QrParser.parse(rawUrl)
+        if (dev != null) {
+            val vm = appVm ?: return
+            vm.pair(dev)
+            android.widget.Toast.makeText(this, "已通过链接自动配对：${dev.deviceName ?: dev.deviceSid}", android.widget.Toast.LENGTH_SHORT).show()
         }
     }
 }

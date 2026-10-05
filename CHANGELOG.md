@@ -1,5 +1,24 @@
 # 变更记录 / Changelog
 
+## v0.5.0-beta10（2026-10-05）· 配对链接 Deep Link 唤起与交互触觉反馈
+
+**里程碑：实现 Sprint 5 核心扩展 —— 支持通过 `zcode://pair` 与官方 `https://zcode.z.ai/remote` 链接一键唤起 App 自动配对；全面接入 Android 系统级触觉反馈（Haptic Feedback），提供极佳的操作确认与机械回馈感。**
+
+### 新增
+- **配对链接 VIEW Deep Link 一键唤起（Sprint 5 核心）**：`AndroidManifest.xml` 与 `MainActivity` 注册 `zcode://pair` 以及官方 `https://zcode.z.ai/remote` / `https://zcode.chatglm.site/remote` 的 VIEW 意图过滤器，点击外部链接直接拉起 App 并由 `QrParser` 解析参数完成无感自动配对，免除扫码或复制粘贴。
+- **系统级触觉震动反馈（Haptic Feedback）**：
+  - 审批决议（允许一次 / 总是允许 / 拒绝）触发长震动确认（`HapticFeedbackType.LongPress`）；
+  - 消息发送与会话中断触发重触感反馈；
+  - 代码 Diff 差异一键复制触发触觉确认；
+  - 点击常用快捷指令胶囊（Action Chips）与「回到底部」悬浮按钮触发轻触感回馈（`HapticFeedbackType.TextHandleMove`）。
+
+### 变更与验证状态
+- **真机端到端实测 PASS（小米 15 Pro / HyperOS）**：
+  1. 模拟触发 `zcode://pair` Deep Link，App 成功捕获意图并完成设备连接与快照订阅。
+  2. 关键交互均伴随细腻舒适的系统振动反馈。
+  3. 24 项 JVM 单元测试与 Release 构建全绿。
+- `versionName 0.5.0-beta10` / `versionCode 20`。
+
 ## v0.5.0-beta9（2026-10-05）· 单轮 Turn 变更文件聚合面板（Turn Diff Summary）
 
 **里程碑：实现 Sprint 3 第三步收官 —— 会话流内单轮 Turn 文件变更一站式聚合 Review（对标 GitHub PR Files Changed），彻底免除逐个翻找与展开工具行的繁琐操作。**

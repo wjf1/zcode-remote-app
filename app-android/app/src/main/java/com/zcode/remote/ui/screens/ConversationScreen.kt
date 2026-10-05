@@ -35,7 +35,9 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -115,6 +117,7 @@ fun ConversationScreen(
     // 进入会话页即刷新一次模型目录（PC 端新增/删除模型后回到 APP 即可看到最新列表）
     LaunchedEffect(Unit) { onLoadModels() }
 
+    val haptic = LocalHapticFeedback.current
     val coroutineScope = rememberCoroutineScope()
     // 智能贴底状态：用户是否在列表底部附近（距离末尾 <= 2 项，或无法向前滚动）
     val isNearBottom by remember {
@@ -474,6 +477,7 @@ fun ConversationScreen(
                 ) {
                     Surface(
                         onClick = {
+                            haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
                             coroutineScope.launch {
                                 listState.animateScrollToItem(rows.lastIndex + headerCount)
                             }
@@ -527,6 +531,7 @@ fun ConversationScreen(
         // 3.5 常用快捷指令胶囊（减少软键盘输入成本）
         ActionChipsBar(
             onSelectChip = { chip ->
+                haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
                 val current = prompt.trim()
                 val next = if (current.isEmpty()) chip else "$current $chip"
                 onPromptChange(next)
@@ -542,8 +547,14 @@ fun ConversationScreen(
             stopping = stopState == "stopping",
             canSend = prompt.isNotBlank() || attachments.isNotEmpty(),
             onPromptChange = onPromptChange,
-            onSend = onSend,
-            onStop = onStop,
+            onSend = {
+                haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                onSend()
+            },
+            onStop = {
+                haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                onStop()
+            },
             onPick = { filePicker.launch(arrayOf("*/*")) },
         )
 
