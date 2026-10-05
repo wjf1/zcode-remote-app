@@ -351,3 +351,43 @@ python tools/probe.py sub <会话ID前缀> [帧落盘路径]   # + 完整会话�
 ## 9. 版本基线
 
 PC：ZCode 3.11.2 win-x64（`@zcodedesktop-updater`）。手机端：`index-nOVzQNKW.js`（2026-09-13 拉取）。升级后需 diff：`research/` 内留存了两侧原始 bundle 供比对。
+
+## 10. 远程可达 RPC 面（2026-10-05 探测 · Sprint 3 第二步前置）
+
+> 背景：模型目录功能实际经 `system.info → file.resolvePath → file.readTextFile` 读通了**工作区之外**的
+> `~/.zcode/v2/provider_config.json`，但本协议文档此前零记载（见 HANDOVER §6.1 吸收项）。本节固化
+> `tools/enumerate_rpc.py` 的探测结论。**本节全部结论标注依据：[静态]=asar/out/host 静态枚举；[实测]=真机/探针动态验证。**
+
+### 10.1 file 通道方法族 [静态]
+
+`resolvePath` / `stat` / `readTextFile` / `readFile`（**带 `startLine`/`endLine` 分段读**）/
+`readFileRange` / `readMediaPreview` / `readBinaryPreview`。方法族内**无任何写方法**（host 全量 grep
+无 file 写路径）。
+
+### 10.2 路径规则链 [静态]
+
+`readTextFile(t)` → `resolveAllowedFilePath(t)` → `LR(t)` 解析 → `ow(workspacePath, ...path.split("/"))`
+（**path.resolve 语义：绝对路径直接覆盖 workspace 基座**）→ `assertContainedPath(r, o, false, n)` →
+Repo Wiki ignore 过滤（`getIgnorePatterns`，命中报「文件被 Repo Wiki 安全规则过滤」）。
+
+**推论（待动态实测确认）**：绝对路径在 resolve 语义下覆盖基座，`assertContainedPath(自身)` 恒真 →
+**工作区外任意绝对路径可能可读**（与 CHANGELOG「核心突破」实测读通 `~/.zcode/v2/provider_config.json`
+一致）；`~` 由前置步骤展开为 homedir。若实测证实，README「安全边界」须升级为
+**「二维码/凭据泄露 = 可远程读取 PC 上（被 ignore 规则放行的）任意文本文件」**。
+
+### 10.3 其他能力线索 [静态]
+
+- **目录列举**：host 内存在 `readdir`/`listFiles` 实现（workspaceAccess 服务），**RPC 通道归属待实测**——
+  若可达，文件浏览器（目录树）可行；不可达则只能做「最近文件」面板（从会话流工具调用参数抽路径）。
+- **git 能力**：host 存在 `getStatus`/`switchBranch`/`createBranchAndSwitch`/`createCheckpoint` 等方法
+  （服务层），**通道归属待实测**——若可达，diff 数据源可直接走 `git diff`（精确），否则从会话流还原。
+- 疑似无关通道（静态未深挖）：`zcode-task`/`workspace`/`model-provider`/`model-selection`（后两者已在用）。
+
+### 10.4 动态实测边界 [实测]
+
+- **matched 是开桥硬前提**：同 deviceSid 已有 terminal 在线（手机 App）时，探针后连仅获 `waiting`，
+  `bootstrap` 无应答（2026-10-05 实测两轮）。**探测须独占 terminal**（先停手机 App）。
+- 「刷新二维码」rotate 后凭据三处同步（setting.json / credentials.json / telemetry-state）——
+  `probe.py` 的 `load_credentials` 读到的即为**当前配对 sid**（与手机同 sid，互斥）。
+- ⏳ **待补**：四问动态实测结果（readTextFile 沙箱边界 / readdir 可达性 / git 通道归属 / 写能力确认），
+  待设备窗口后跑 `python tools/enumerate_rpc.py` 补全本节。

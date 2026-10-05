@@ -279,7 +279,7 @@ RemoteInput 全仓 0 命中）。总体判断：**功能面已超出对标官方
 | Sprint 1 | **P0-A** 连接迁入进程级 `ConnectionScope` + FGS `specialUse`/`onTimeout`；**P0-C** `ZLog` 门控 + R8 + 补建 proguard 剥离日志；**B组** `NetworkCallback` / 入站流 `SUSPEND` / `appVersion` 改取 `BuildConfig.VERSION_NAME` | 🔨 本轮 |
 | Sprint 2 | **P0-B** 执行模式选择器（plan/build/yolo，默认 build）+ 会话页模式胶囊（`setMode` 仅对新 turn 生效须如实提示）+ KICKED/AUTH_FAILED/PROTOCOL_MISMATCH 三种终态常驻通知 | 🔨 本轮 |
 | Sprint 3 第一步 | diff 视图（纯客户端解析写类工具 `inputText`/`raw` 的 old/new → unified diff 红绿渲染，零协议零 RPC 可离线开发） | 🔨 本轮 |
-| Sprint 3 第二步 | 只读文件浏览器——视 `tools/probe.py` 对 file 通道的探测结论（方法全貌/路径边界/大小限制） | ⬜ 待探测 |
+| Sprint 3 第二步 | 只读文件能力——**探测已完成（2026-10-05）**：静态枚举落 PROTOCOL.md §10（file 方法族含 readFileRange 分段读、路径 resolve 语义推论、无写方法）；实测边界确认 **matched 是开桥硬前提**（同 sid 双 terminal 后连者仅 waiting）；「最近文件」面板（剧本 B）确认为优先形态，**四问动态实测待手机让出 terminal 后跑 `tools/enumerate_rpc.py` 补 §10.4** | 🔨 静态完成 |
 | Sprint 4 | 通知层升级：RemoteInput 内联回复、审批专用高重要性渠道（治 HyperOS 折叠） | ⬜ 后续接力 |
 | Sprint 5 | Room 缓存（离线可读/秒开）+ share sheet + 配对链接 VIEW deep link + 快捷指令 chips | ⬜ 后续接力 |
 | Sprint 6 | 回归网：VQL 金标准对拍测试（Kotlin↔Python 共享 fixture）+ 纯函数单测（23 项全绿，2026-10-02）+ GitHub Actions + `build.sh` 去硬编码路径 | ✅ 2026-10-02 |
