@@ -1,6 +1,7 @@
 package com.zcode.remote.relay
 
 import com.zcode.remote.util.ZLog
+import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.booleanOrNull
 import kotlinx.serialization.json.intOrNull
@@ -201,6 +202,7 @@ object ConversationFrames {
  *
  * kind: userInput / assistantText / reasoning / toolCall / turnHeader / subagent / hookInvocation / timelineMarker
  */
+@Serializable
 data class ConversationRow(
     val rowId: Int,
     val kind: String,
@@ -257,6 +259,8 @@ class RowStore(private val out: MutableList<ConversationRow>) {
         index.clear()
         out.clear()
     }
+
+    fun snapshot(): List<ConversationRow> = ArrayList(out)
 
     /** 当前窗口最早一行（向上翻页的 beforeRowId）。 */
     fun firstRowId(): Int? = out.firstOrNull()?.rowId

@@ -393,6 +393,11 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         gate.startWatch()
         val ch = RpcChannel(c)
         val conv = ConversationChannel(ch)
+        conv.onRowsUpdated = { sid, updatedRows ->
+            viewModelScope.launch {
+                SessionCacheStore.saveRows(getApplication(), sid, updatedRows)
+            }
+        }
         val sidx = SessionsIndexChannel(ch)
         val wcfg = WorkspaceConfigChannel(ch)
         client = c
@@ -937,6 +942,15 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         val ws = s.workspacePath ?: activeWorkspaceKey ?: return
         subscribedSessionId = s.taskId
         clearAttachments()   // 附件与会话绑定，切会话即清空
+
+        // Sprint 5 离线缓存秒开：点击会话卡片首帧立即同步呈现历史消息行
+        rowStore.clear()
+        val cached = SessionCacheStore.loadRows(getApplication(), s.taskId)
+        if (cached.isNotEmpty()) {
+            rowStore.replaceAll(cached)
+            ZLog.i(TAG, "离线缓存秒开: 首帧加载 ${cached.size} 行历史消息 session=${s.taskId.take(24)}")
+        }
+
         ZLog.i(TAG, "subscribe conversation session=${s.taskId} ws=$ws")
         conv.subscribe(
             workspacePath = ws,

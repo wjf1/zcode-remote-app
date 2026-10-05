@@ -1,5 +1,20 @@
 # 变更记录 / Changelog
 
+## v0.5.0-beta12（2026-10-05）· 会话消息流离线持久化（点进会话瞬间秒开）
+
+**里程碑：把离线缓存从「首页会话列表」延伸到「单个会话消息流」—— 点击任意会话卡片，首帧立即呈现该会话最近 200 行历史消息，无需等待订阅握手与快照回包；网络快照到达后由 `replaceAll` 平滑对齐权威状态。**
+
+### 新增
+- **单会话消息流本地缓存（`SessionCacheStore.loadRows/saveRows`）**：`ConversationRow` 全字段支持 `@Serializable` 编解码；按 `sessionId` 独立文件存储（文件名做安全字符转义），保留最近 **200 行**防止体积膨胀；沿用原子文件替换写入。
+- **会话详情首帧秒开**：`AppViewModel.subscribeConversation` 在发起订阅前先同步读取本地缓存并 `rowStore.replaceAll(cached)`，点击会话卡片即刻渲染历史对话。
+- **行变更自动持久化钩子**：`ConversationChannel.onRowsUpdated` 在快照到达与历史翻页（`loadEarlier`）时回调，由 `AppViewModel` 异步写回最新消息行；订阅时不再强制 `clear()`，改由快照 `replaceAll` 平滑对齐。
+- **独立回归单测**：补充 `conversationRowSerializationAndRowStoreSnapshot`，覆盖 `ConversationRow` 序列化回环与 `RowStore.snapshot()`，全仓单测增至 26 项全绿。
+
+### 变更与验证状态
+- **真机端到端实测 PASS（小米 15 Pro / HyperOS）**：点进会话首帧立即呈现本地缓存历史消息行；网络快照到达后无缝对齐，无闪烁或重复行。
+- 26 项 JVM 单元测试与 Release 构建全绿。
+- `versionName 0.5.0-beta12` / `versionCode 22`。
+
 ## v0.5.0-beta11（2026-10-05）· 会话离线持久化与冷启动秒开（Offline First）
 
 **里程碑：实现 Sprint 5 最终项闭环 —— 引入 `SessionCacheStore` 本地持久化缓存，冷启动首帧直接渲染上一轮 25+ 会话（0ms 瞬间秒开），彻底杜绝白屏与等待握手回包的滞后感；后台静默增量刷新并原子写回。**

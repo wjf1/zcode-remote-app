@@ -25,7 +25,8 @@
   [v0.5.0-beta8](https://github.com/wjf1/zcode-remote-app/releases/tag/v0.5.0-beta8)（系统通知栏 RemoteInput 内联快捷回复 + 系统级 Share Sheet 分享接入，versionCode 18）→
   [v0.5.0-beta9](https://github.com/wjf1/zcode-remote-app/releases/tag/v0.5.0-beta9)（单轮 Turn 变更文件聚合面板 Turn Diff Summary，versionCode 19）→
   [v0.5.0-beta10](https://github.com/wjf1/zcode-remote-app/releases/tag/v0.5.0-beta10)（配对链接 Deep Link 一键唤起 + 系统交互触觉反馈，versionCode 20）→
-  [v0.5.0-beta11](https://github.com/wjf1/zcode-remote-app/releases/tag/v0.5.0-beta11)（**当前**，会话离线持久化与冷启动秒开 SessionCacheStore，versionCode 21）。
+  [v0.5.0-beta11](https://github.com/wjf1/zcode-remote-app/releases/tag/v0.5.0-beta11)（会话离线持久化与冷启动秒开 SessionCacheStore，versionCode 21）→
+  [v0.5.0-beta12](https://github.com/wjf1/zcode-remote-app/releases/tag/v0.5.0-beta12)（**当前**，会话消息流离线持久化与点进秒开，versionCode 22）。
 - **2026-09-29 增量（本轮）**：P0-1 发送/停止 ✅、P1-1 表单应答 ✅、P1-2 多会话看板 ✅、
   P1-4 协议常量结清 ✅、技术债清理 ✅——均已构建通过并推送（提交见 `git log`）。
 - **2026-09-29 二轮**：**X-1 keystore 结清**（实测与发布 APK 同指纹，见下）、
@@ -191,7 +192,7 @@ ADB -s <serial> shell am broadcast -n com.zcode.remote/.debug.DebugApprovalRecei
 
 版本序列：`v0.2.0-m2` → `v0.2.1-m2b` → `v0.2.2-m3a` → `v0.2.3-m3b` → `v0.3.0-m3` →
 `v0.4.0-beta1…beta6`（发版内测 → 真机修复 → 16KB 对齐 → 互踢修复 → 扫码重构 → 排版对齐）→
-`v0.5.0-beta1…beta5`（模型档位链路，versionCode 15）→ `v0.5.0-beta6`（P0 结清 + 最近文件 + Diff 视图，versionCode 16）→ `v0.5.0-beta7`（智能贴底 + 快捷胶囊，versionCode 17）→ `v0.5.0-beta8`（通知栏 RemoteInput + Share Sheet，versionCode 18）→ `v0.5.0-beta9`（单轮 Turn 变更聚合，versionCode 19）→ `v0.5.0-beta10`（Deep Link + 触觉反馈，versionCode 20）→ `v0.5.0-beta11`（**当前**，会话离线持久化与冷启动秒开 SessionCacheStore，versionCode 21）。
+`v0.5.0-beta1…beta5`（模型档位链路，versionCode 15）→ `v0.5.0-beta6`（P0 结清 + 最近文件 + Diff 视图，versionCode 16）→ `v0.5.0-beta7`（智能贴底 + 快捷胶囊，versionCode 17）→ `v0.5.0-beta8`（通知栏 RemoteInput + Share Sheet，versionCode 18）→ `v0.5.0-beta9`（单轮 Turn 变更聚合，versionCode 19）→ `v0.5.0-beta10`（Deep Link + 触觉反馈，versionCode 20）→ `v0.5.0-beta11`（会话列表离线持久化秒开，versionCode 21）→ `v0.5.0-beta12`（**当前**，会话消息流离线持久化与点进秒开，versionCode 22）。
 
 ## 5. 关键技术结论（浓缩坑清单，动手前必读）
 

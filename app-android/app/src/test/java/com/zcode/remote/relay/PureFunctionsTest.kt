@@ -216,4 +216,39 @@ class PureFunctionsTest {
         assertEquals(false, decoded[0].archived)
         assertEquals(true, decoded[1].archived)
     }
+
+    // ---------- ConversationRow 离线消息行序列化与 RowStore.snapshot ----------
+
+    @Test
+    fun conversationRowSerializationAndRowStoreSnapshot() {
+        val rows = listOf(
+            ConversationRow(
+                rowId = 1,
+                kind = "userInput",
+                turnId = "t1",
+                text = "hello agent",
+                createdAt = 1_700_000_000_100L
+            ),
+            ConversationRow(
+                rowId = 2,
+                kind = "toolCall",
+                toolName = "Edit",
+                inputText = """{"file_path":"F:/a.txt","old_string":"foo","new_string":"bar"}""",
+                status = "success"
+            )
+        )
+        val jsonStr = kotlinx.serialization.json.Json.encodeToString(rows)
+        val decoded = kotlinx.serialization.json.Json.decodeFromString<List<ConversationRow>>(jsonStr)
+        assertEquals(rows, decoded)
+        assertEquals(2, decoded.size)
+        assertEquals("hello agent", decoded[0].text)
+        assertEquals("Edit", decoded[1].toolName)
+
+        val storeList = mutableListOf<ConversationRow>()
+        val store = RowStore(storeList)
+        store.replaceAll(decoded)
+        val snapshot = store.snapshot()
+        assertEquals(2, snapshot.size)
+        assertEquals(decoded, snapshot)
+    }
 }

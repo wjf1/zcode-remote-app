@@ -48,6 +48,9 @@ class ConversationChannel(private val rpc: RpcChannel) {
     private val _elicitations = MutableStateFlow<List<PendingElicitation>>(emptyList())
     val elicitations: StateFlow<List<PendingElicitation>> = _elicitations
 
+    /** 行变更通知钩子（供 AppViewModel 监听并将最新消息行写入离线缓存）。 */
+    var onRowsUpdated: ((sessionId: String, rows: List<ConversationRow>) -> Unit)? = null
+
     data class ConversationMeta(
         val title: String? = null,
         val phase: String? = null,
@@ -80,7 +83,7 @@ class ConversationChannel(private val rpc: RpcChannel) {
     fun subscribe(workspacePath: String, workspaceIdentity: String?, session: String, store: RowStore) {
         sessionId = session
         subscriptionId = null
-        store.clear()
+        // 允许预加载离线缓存行：不强制即时 clear，待快照到达时由 replaceAll 平滑对齐权威状态
         _status.value = Status.Idle
         _interactions.value = emptyList()
 
@@ -181,6 +184,7 @@ class ConversationChannel(private val rpc: RpcChannel) {
             "snapshot" -> {
                 val snap = ConversationFrames.parseSnapshot(frame.payload) ?: return
                 store.replaceAll(snap.rows)
+                sessionId?.let { sid -> onRowsUpdated?.invoke(sid, snap.rows) }
                 _interactions.value = snap.pendingInteractions
                 _elicitations.value = snap.elicitations
                 val control = snap.control
@@ -346,7 +350,10 @@ class ConversationChannel(private val rpc: RpcChannel) {
                         val s = runCatching { e.jsonPrimitive.content }.getOrNull()
                         s?.toBooleanStrictOrNull() ?: (s == "true")
                     } ?: false
-                    if (rows.isNotEmpty()) store.prepend(rows)
+                    if (rows.isNotEmpty()) {
+                        store.prepend(rows)
+                        sessionId?.let { sid -> onRowsUpdated?.invoke(sid, store.snapshot()) }
+                    }
                     _earlier.value = EarlierState(loading = false, hasMore = hasMore, pulled = true)
                     ZLog.i(TAG, "loadEarlier +${rows.size} 行 hasMore=$hasMore")
                     onResult(Result.success(rows.size))
