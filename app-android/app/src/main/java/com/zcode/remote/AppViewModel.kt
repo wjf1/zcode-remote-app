@@ -37,6 +37,7 @@ import com.zcode.remote.notify.ElicitationNotifier
 import com.zcode.remote.notify.TerminalNotifier
 import com.zcode.remote.storage.MultiDeviceStore
 import com.zcode.remote.storage.PairedDevice
+import com.zcode.remote.storage.SessionCacheStore
 import com.zcode.remote.storage.SettingsStore
 import kotlinx.coroutines.launch
 import kotlinx.serialization.json.Json
@@ -334,6 +335,11 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         set(value) { ConnectionScope.workspaceConfig = value }
 
     init {
+        // Sprint 5 离线缓存秒开：冷启动时立即同步读取本地持久化会话列表
+        val cached = SessionCacheStore.load(app)
+        if (cached.isNotEmpty()) {
+            sessions.addAll(cached)
+        }
         if (device != null) connect()
     }
 
@@ -428,6 +434,7 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
                         val list = parseBootstrapSessions(payload)
                         if (list.isNotEmpty()) {
                             sessions.clear(); sessions.addAll(list)
+                            viewModelScope.launch { SessionCacheStore.save(getApplication(), list) }
                         }
                         // 取活动工作区 → 开桥（会话流前置条件）
                         val wsKey = activeWorkspaceKeyOf(payload)
@@ -1009,6 +1016,7 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
                         // 若列表里尚未有该会话，前插到首位
                         if (sessions.none { it.taskId == newSid }) {
                             sessions.add(0, item)
+                            viewModelScope.launch { SessionCacheStore.save(getApplication(), sessions.toList()) }
                         }
                         // 首轮指令已随 createSession 的 firstInput 发出，输入框保持空白
                         promptDraft = ""
@@ -1340,8 +1348,9 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
                 when (reply) {
                     is RpcChannel.RpcReply.Ok -> {
                         ZLog.i(TAG, "deleteTask 成功: ${item.taskId.take(20)}…")
-                        // 本地列表同步移除
+                        // 本地列表同步移除并写回持久化缓存
                         sessions.removeAll { it.taskId == item.taskId }
+                        viewModelScope.launch { SessionCacheStore.save(getApplication(), sessions.toList()) }
                         // 若删除的是当前订阅中的会话，复位订阅与草稿状态
                         if (subscribedSessionId == item.taskId) {
                             subscribedSessionId = null

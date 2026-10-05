@@ -1,5 +1,20 @@
 # 变更记录 / Changelog
 
+## v0.5.0-beta11（2026-10-05）· 会话离线持久化与冷启动秒开（Offline First）
+
+**里程碑：实现 Sprint 5 最终项闭环 —— 引入 `SessionCacheStore` 本地持久化缓存，冷启动首帧直接渲染上一轮 25+ 会话（0ms 瞬间秒开），彻底杜绝白屏与等待握手回包的滞后感；后台静默增量刷新并原子写回。**
+
+### 新增
+- **会话离线持久化缓存（`SessionCacheStore.kt`）**：纯客户端零外部重依赖，采用原子文件替换写入机制（`.tmp` → `renameTo`）防止闪退损坏；冷启动 `AppViewModel` 初始化时立即读取本地缓存，首帧直接呈现完整会话列表与运行状态。
+- **会话变更动态同步与增量写回**：`SessionItem` 全面支持 `@Serializable` 编解码；`bootstrap-response` 网络回包、新建会话（前插）与删除会话（移除）均自动异步写回本地缓存。
+- **独立序列化回环单测**：补充 `sessionItemSerializationRoundtrip` 回归测试，全仓纯函数单测增至 25 项全绿。
+
+### 变更与验证状态
+- **真机端到端实测 PASS（小米 15 Pro / HyperOS）**：
+  1. 模拟强制停止进程（`am force-stop`）后重新拉起冷启动，首屏瞬间渲染 25 条历史会话，日志捕获 `SessionCache: 成功持久化 25 条会话缓存`。
+  2. 25 项 JVM 单元测试与 Release 构建全绿。
+- `versionName 0.5.0-beta11` / `versionCode 21`。
+
 ## v0.5.0-beta10（2026-10-05）· 配对链接 Deep Link 唤起与交互触觉反馈
 
 **里程碑：实现 Sprint 5 核心扩展 —— 支持通过 `zcode://pair` 与官方 `https://zcode.z.ai/remote` 链接一键唤起 App 自动配对；全面接入 Android 系统级触觉反馈（Haptic Feedback），提供极佳的操作确认与机械回馈感。**

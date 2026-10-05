@@ -1,5 +1,6 @@
 package com.zcode.remote.relay
 
+import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.jsonArray
@@ -42,6 +43,7 @@ object BridgeFrames {
 }
 
 /** 会话（任务）条目：来自 bootstrap-response.result.tasks（PROTOCOL.md 5/6.2 节，实测确认）。 */
+@Serializable
 data class SessionItem(
     val taskId: String,
     val title: String,

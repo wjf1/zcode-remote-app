@@ -43,6 +43,7 @@ ZCode 官方远程控制（`zcode.z.ai/remote`）的**原生安卓增强客户�
 - **发送消息与停止**：会话页底部悬浮药丸输入栏直接向桌面端发消息；会话运行中显示平滑变形的「停止」按钮，一键中断。
 - **附件上传**：会话页选择文件（≤20MiB）→ 分片上传 → 随消息发送，桌面端模型可直接读取内容；走官方 Web 同款 `sendText` 附件链路。
 - **语音输入**：输入栏 🎤 系统语音识别转文字（识别中实时上屏），一键追加到消息草稿，零协议改动。
+- **会话离线持久化与冷启动秒开（Sprint 5 核心）**：`SessionCacheStore` 本地原子持久化缓存，App 启动时首帧 0ms 瞬间渲染历史会话列表，彻底告别冷启动白屏与等待握手回包的滞后感；网络就绪后后台静默增量对拍并自动写回。
 - **配对链接 Deep Link 一键唤起（Sprint 5）**：点击外部浏览器、邮件或分享卡片中的 `zcode://pair` 或官方 `https://zcode.z.ai/remote` 配对链接，直接唤起 App 并自动解析凭据完成秒级配对，彻底免除扫码或复制粘贴。
 - **全场景机械级触觉反馈（Haptic Feedback）**：权限审批（允许/拒绝）、消息发送、会话中断、代码 Diff 复制触发饱满的系统触觉震动确认；快捷指令胶囊点击与悬浮回底触发细腻轻触震动回馈。
 - **单轮 Turn 变更文件聚合卡片（Sprint 3 第三步）**：自动将每一轮 Agent Turn 中执行的所有 Edit / Write 工具行汇聚为 `📦 本轮变更 · 共 N 个文件 (+A −B)` 汇总卡片，支持一键展开多文件代码 DiffBlock 进行一站式 Review（对标 GitHub PR Files Changed）。
@@ -55,7 +56,7 @@ ZCode 官方远程控制（`zcode.z.ai/remote`）的**原生安卓增强客户�
 - **执行模式安全选择（Sprint 2 / P0-B）**：新建会话与会话内顶栏均支持自由切换规划（plan）、构建（build）、全自动（yolo），**默认安全 build 模式**，彻底杜绝免审批漏洞；yolo 显式红底警示。
 - **前台长连接保活与终态通知（Sprint 1–2 / P0-A）**：`ConnectionService` 真正升级为 FGS `specialUse` 前台服务（进程级 `ConnectionScope` 保长连），锁屏或划掉后台持续存活；KICKED / AUTH_FAILED / PROTOCOL_MISMATCH 终态常驻通知提醒。
 - **强韧断网感知重连（Sprint 1）**：`NetworkGate` 常驻监听系统网络，断网立即重置并挂起，网络恢复即刻重连（事件链全程 <9s）。
-- **完整回归测试保护网（Sprint 6）**：VQL 二进制编解码金标准双向对拍测试（Python↔Kotlin 共享 fixture）、24 项纯函数单测全绿、GitHub Actions CI 持续集成。
+- **完整回归测试保护网（Sprint 6）**：VQL 二进制编解码金标准双向对拍测试（Python↔Kotlin 共享 fixture）、25 项纯函数单测全绿、GitHub Actions CI 持续集成。
 - **桌面 Widget**：主屏卡片实时显示待处理总数（审批 + 表单交互），点按直达 App；连接断开时明示「未连接」。
 - **可靠连接**：完整官方握手（HMAC proof）、心跳、指数退避重连、断线出站缓冲，单端在线互踢提示。
 
@@ -78,7 +79,7 @@ ZCode 官方远程控制（`zcode.z.ai/remote`）的**原生安卓增强客户�
 | Sprint 0–3/6 P0结清与功能收官 | 三个 P0 缺陷结清、Diff 视图、最近文件只读预览、前台服务保活、VQL 对拍与 23 项单测回归网、真机端到端全通 | ✅ 完成（v0.5.0-beta6，2026-10-05） |
 | Sprint 4–5 原生交互深度落地 | 通知栏 RemoteInput 内联回复、系统级 Share Sheet 分享接入、智能贴底与快捷指令胶囊栏、真机端到端全通 | ✅ 完成（v0.5.0-beta8，2026-10-05） |
 | Sprint 3 第三步 / Turn 变更聚合 | 会话流单轮 Turn 变更文件汇总卡片（Turn Diff Summary）、多文件一站式 Review、24 项单测全绿、真机实测全通 | ✅ 完成（v0.5.0-beta9，2026-10-05） |
-| Sprint 5 移动原生能力深化 | 配对链接 Deep Link 唤起、系统级触觉震动反馈、Share Sheet 接入、24 项单测全绿、真机端到端全通 | ✅ 完成（v0.5.0-beta10，2026-10-05） |
+| Sprint 5 移动原生与离线能力闭环 | 会话离线持久化秒开（Offline First）、配对链接 Deep Link 唤起、系统级触觉震动反馈、Share Sheet 接入、25 项单测全绿 | ✅ 完成（v0.5.0-beta11，2026-10-05） |
 | ~~M4/M5~~ | ~~VPS 备用 Runner、E2E 高级模式~~ | ❌ 已取消（2026-09-30 决策：单人自用下成本收益不划算，详见 HANDOVER） |
 
 ### 接力开发 / Handover
@@ -88,7 +89,7 @@ ZCode 官方远程控制（`zcode.z.ai/remote`）的**原生安卓增强客户�
 ### 安装包 / Releases
 
 签名 APK 从 [GitHub Releases](https://github.com/wjf1/zcode-remote-app/releases) 下载
-（如 `ZCodeRemote-0.5.0-beta10.apk` 或 releases 挂载的 `app-release.apk`，minSdk 31，Android 12+）。
+（如 `ZCodeRemote-0.5.0-beta11.apk` 或 releases 挂载的 `app-release.apk`，minSdk 31，Android 12+）。
 
 ### 快速开始
 
@@ -149,6 +150,7 @@ A **native Android client** for the official ZCode Remote Control relay (`zcode.
 - **Send & Stop**: Pill-shaped floating composer sends prompts; morphing Stop button interrupts running turns.
 - **Chunked Attachments**: Pick files (≤20 MiB) in conversation, chunked stream upload, sent via official `sendText` attachment path.
 - **Voice Input**: Tap-to-talk speech recognition with live partial results appended to drafts.
+- **Offline-First Session Cache & Instant Launch (Sprint 5)**: `SessionCacheStore` local atomic persistence renders the cached session list on frame 0 (0ms instant cold launch), completely eliminating blank screens or handshake lag; updates asynchronously upon relay ready.
 - **Pairing URL Deep Link Integration (Sprint 5)**: Tap `zcode://pair` or official `https://zcode.z.ai/remote` pairing URLs in external browsers or chats to wake the app and pair instantly with zero scanning or manual copy-pasting.
 - **Full Tactile Haptic Feedback**: Tactile vibration confirmation for approvals (allow/deny), prompt sends, turn stops, and diff copying, plus crisp feedback on action chips and scroll-to-bottom buttons.
 - **Notification RemoteInput Inline Reply (Sprint 4)**: Direct pull-down inline text reply within system notifications for interactive prompts without needing to unlock into the app.
@@ -161,7 +163,7 @@ A **native Android client** for the official ZCode Remote Control relay (`zcode.
 - **Safe Execution Mode Selector (Sprint 2 / P0-B)**: Choose between plan, build, or yolo during session creation or directly in the top bar. **Defaults to safe build mode**; yolo mode clearly displays red hazard indicators.
 - **Foreground Service Keep-Alive & Terminal Notifications (Sprint 1–2 / P0-A)**: `ConnectionService` promoted to a real `specialUse` Foreground Service with process-level `ConnectionScope` singleton to keep connections alive across lock-screen and task killing; persistent system notifications for KICKED / AUTH_FAILED / PROTOCOL_MISMATCH.
 - **Resilient Network-Aware Reconnection (Sprint 1)**: `NetworkGate` actively monitors network connectivity via `ConnectivityManager`, instantly resetting on connection loss and reconnecting in <9s upon network availability.
-- **Regression Safety Net (Sprint 6)**: Bi-directional VQL binary codec golden fixture tests (Python↔Kotlin shared vectors), 24 pure-function unit tests, and GitHub Actions CI automation.
+- **Regression Safety Net (Sprint 6)**: Bi-directional VQL binary codec golden fixture tests (Python↔Kotlin shared vectors), 25 pure-function unit tests, and GitHub Actions CI automation.
 - **Home-Screen Widget**: Live card showing total pending items, tap to jump into the app.
 - **Reliable Connectivity**: HMAC handshake proof, 30s heartbeat, exponential backoff, and offline outbound queue.
 
@@ -178,13 +180,13 @@ A **native Android client** for the official ZCode Remote Control relay (`zcode.
 | Sprint 0–3/6 P0 Fixes & Feature Completion | Three P0 bugs resolved, Diff view, Recent Files preview, FGS keep-alive, VQL fixtures, 23 unit tests, real-device E2E verified | ✅ Done (v0.5.0-beta6, 2026-10-05) |
 | Sprint 4–5 Native System Interactions | Notification RemoteInput inline reply, Share Sheet receiver, smart auto-scroll & action chips, real-device verified | ✅ Done (v0.5.0-beta8, 2026-10-05) |
 | Sprint 3 Step 3 / Turn Diff Summary | In-session turn changes aggregation review card, multi-file unified diff inspection, 24 unit tests, verified on real device | ✅ Done (v0.5.0-beta9, 2026-10-05) |
-| Sprint 5 Deep System Integration | Pairing URL Deep Links, full tactile haptic feedback, Share Sheet receiver, 24 unit tests, verified on real device | ✅ Done (v0.5.0-beta10, 2026-10-05) |
+| Sprint 5 Offline-First & System Integration | Instant launch session cache, Pairing Deep Links, full tactile haptics, Share Sheet receiver, 25 unit tests | ✅ Done (v0.5.0-beta11, 2026-10-05) |
 | ~~M4/M5~~ | ~~VPS backup runner, E2E advanced mode~~ | ❌ Cancelled (2026-09-30: cost/benefit not worth it for single-user, see HANDOVER) |
 
 ### Releases
 
 Download signed APKs from [GitHub Releases](https://github.com/wjf1/zcode-remote-app/releases)
-(e.g., `ZCodeRemote-0.5.0-beta10.apk` or attached `app-release.apk`, minSdk 31, Android 12+).
+(e.g., `ZCodeRemote-0.5.0-beta11.apk` or attached `app-release.apk`, minSdk 31, Android 12+).
 
 ### Quick Start
 

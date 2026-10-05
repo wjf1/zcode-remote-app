@@ -2,6 +2,8 @@ package com.zcode.remote.relay
 
 import com.zcode.remote.AppViewModel
 import com.zcode.remote.storage.PairedDevice
+import kotlinx.serialization.decodeFromString
+import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.JsonNull
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
@@ -177,5 +179,41 @@ class PureFunctionsTest {
         assertEquals(2, s.diffs.size)
         assertTrue(s.totalAdded > 0)
         assertTrue(s.totalRemoved > 0)
+    }
+
+    // ---------- SessionItem 序列化与离线缓存 ----------
+
+    @Test
+    fun sessionItemSerializationRoundtrip() {
+        val original = listOf(
+            SessionItem(
+                taskId = "sess_001",
+                title = "测试会话1",
+                displayStatus = "running",
+                workspacePath = "F:/project",
+                workspaceLabel = "project",
+                provider = "glm",
+                updatedAt = 1_700_000_000_000L,
+                archived = false
+            ),
+            SessionItem(
+                taskId = "sess_002",
+                title = "测试会话2",
+                displayStatus = "idle",
+                workspacePath = null,
+                workspaceLabel = null,
+                provider = null,
+                updatedAt = null,
+                archived = true
+            )
+        )
+        val jsonStr = kotlinx.serialization.json.Json.encodeToString(original)
+        val decoded = kotlinx.serialization.json.Json.decodeFromString<List<SessionItem>>(jsonStr)
+        assertEquals(original, decoded)
+        assertEquals(2, decoded.size)
+        assertEquals("sess_001", decoded[0].taskId)
+        assertEquals(true, decoded[0].isRunning)
+        assertEquals(false, decoded[0].archived)
+        assertEquals(true, decoded[1].archived)
     }
 }
