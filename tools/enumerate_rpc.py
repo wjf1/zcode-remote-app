@@ -48,9 +48,27 @@ def main():
     p = Probe(sid, phash, mid)
     p.open()
     if not p.auth():
-        # 同 deviceSid 的手机 App 在线时 probe 拿到 waiting——实测「matched 是否为开桥硬前提」：
-        # terminal 身份（auth_ack + terminal_sid）已建立，继续尝试 bootstrap，失败即记录该边界。
-        print("[warn] auth 未达 matched（同 sid 手机端在线？）——继续以 waiting 尝试探测\n")
+        # App 同款补救：auth_ack(waiting) 可能只是旧 terminal 槽未释放（force-stop 后 TCP
+        # 断开检测延迟）——中继不推送 pair_status 变化，主动发 pair_status_query 轮询。
+        import time as _t
+        matched = False
+        for _ in range(6):
+            _t.sleep(2)
+            try:
+                p.ws.send(json.dumps({"type": "pair_status_query", "device_sid": sid,
+                                      "client_ts": int(_t.time() * 1000)}))
+                f = p.recv(4)
+            except Exception:  # noqa: BLE001
+                f = None
+            if f and f.get("pair_status") == "matched":
+                print("[probe] 轮询后 matched\n")
+                matched = True
+                break
+            if f and f.get("type") == "error":
+                print(f"[probe] error: {f.get('code')} {f.get('message')}\n")
+                break
+        if not matched:
+            print("[warn] 轮询后仍 waiting——继续尝试 bootstrap（预期失败，记录边界）\n")
     boot = p.bootstrap()
     if not boot:
         print("bootstrap 无应答")

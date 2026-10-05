@@ -389,5 +389,13 @@ Repo Wiki ignore 过滤（`getIgnorePatterns`，命中报「文件被 Repo Wiki 
   `bootstrap` 无应答（2026-10-05 实测两轮）。**探测须独占 terminal**（先停手机 App）。
 - 「刷新二维码」rotate 后凭据三处同步（setting.json / credentials.json / telemetry-state）——
   `probe.py` 的 `load_credentials` 读到的即为**当前配对 sid**（与手机同 sid，互斥）。
-- ⏳ **待补**：四问动态实测结果（readTextFile 沙箱边界 / readdir 可达性 / git 通道归属 / 写能力确认），
-  待设备窗口后跑 `python tools/enumerate_rpc.py` 补全本节。
+- **terminal 槽三方互斥 [实测]**：配对 sid 的 terminal 槽由「桌面端面板内嵌页 / 手机 App / probe」
+  三方互斥（后连者踢先者，probe 轮询期间收到 `KICKED` 实证）。`pair_status=matched` 的语义是
+  **「面板内嵌页 terminal 在线」**（即"PC 上的手机视图"活着）；面板内嵌页被踢后不自动重连。
+  探针（第三方 terminal）**无法获得 matched**——bootstrap 依赖 host 侧接受。
+- **中继不推送 pair_status 变化** [实测]：auth_ack 给出的 waiting 可能只是旧 terminal 槽未释放
+  （TCP 死亡检测延迟），App 的做法是主动轮询 `pair_status_query`；probe 已补同款轮询仍被
+  内嵌页 KICK，进一步印证三方互斥。
+- ⏳ **四问动态实测改由 App 侧覆盖**：问题 1（readTextFile 可用性）由「最近文件」面板功能验收
+  直接实证；沙箱边界以 §10.2 静态推论 + provider_config 先例定案；问题 2/3（readdir / git 通道
+  归属）**留待 App 侧新增探测功能或受控抓包**（probe 路线已证不可行）。
