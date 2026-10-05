@@ -43,6 +43,10 @@ ZCode 官方远程控制（`zcode.z.ai/remote`）的**原生安卓增强客户�
 - **发送消息与停止**：会话页底部悬浮药丸输入栏直接向桌面端发消息；会话运行中显示平滑变形的「停止」按钮，一键中断。
 - **附件上传**：会话页选择文件（≤20MiB）→ 分片上传 → 随消息发送，桌面端模型可直接读取内容；走官方 Web 同款 `sendText` 附件链路。
 - **语音输入**：输入栏 🎤 系统语音识别转文字（识别中实时上屏），一键追加到消息草稿，零协议改动。
+- **通知栏 RemoteInput 直接回复（Sprint 4）**：遇到提问或表单交互时，锁屏状态下收到通知可直接下拉展开文本框输入并一键提交，全程免解锁进 App。
+- **系统级 Share Sheet 分享接入（Sprint 5）**：外部浏览器、文件管理器等 App 点击「分享」至 ZCode Remote，自动填入当前会话输入草稿或解析加入待发附件。
+- **常用快捷指令胶囊栏**：输入栏上方提供「继续」、「运行测试验证」、「修复该问题」等横向滚动快捷胶囊，单指轻触快速填入，大幅降低移动端打字成本。
+- **会话流智能贴底与悬浮回底**：动态感知视口位置，用户主动上翻查阅历史或代码 Diff 时不再被新行强拉贴底打断，并优雅弹出悬浮「回到底部 ↓」胶囊按钮一键平滑定位。
 - **最近文件与只读代码预览（Sprint 3）**：顶栏 📁 图标动态汇总本会话涉及的文件，点开 ModalBottomSheet 面板浏览文件清单；点选文件经 `file.readTextFile` 实时拉取并等宽展示正文，支持横向滚动与 20KB 截断保护，纯只读无写路径。
 - **工具调用 Diff 差异高亮（Sprint 3）**：Edit / Write / MultiEdit 工具行纯客户端 Myers 算法计算行级 diff，折叠摘要展示 `📄 文件名 +N −M`，展开直观呈现红绿增删与「⧉ 复制」unified 格式文本。
 - **执行模式安全选择（Sprint 2 / P0-B）**：新建会话与会话内顶栏均支持自由切换规划（plan）、构建（build）、全自动（yolo），**默认安全 build 模式**，彻底杜绝免审批漏洞；yolo 显式红底警示。
@@ -69,6 +73,7 @@ ZCode 官方远程控制（`zcode.z.ai/remote`）的**原生安卓增强客户�
 | M3+ 交互增强 | 发送/停止、表单类交互应答、多会话看板与控制权提示、附件上传（全链路实测）、语音输入、桌面 Widget、会话搜索 | ✅ 协议层端到端验收通过 |
 | M3++ 移动端全面重构 | 底部 3-Tab 移动架构、官方 ZCode 设计系统对齐（zai-dark/zai-light）、集中待办看板、独立设置中心、原生新建会话、会话内模型切换与审批修复 | ✅ 完成（v0.5.0-beta5，2026-10-01） |
 | Sprint 0–3/6 P0结清与功能收官 | 三个 P0 缺陷结清、Diff 视图、最近文件只读预览、前台服务保活、VQL 对拍与 23 项单测回归网、真机端到端全通 | ✅ 完成（v0.5.0-beta6，2026-10-05） |
+| Sprint 4–5 原生交互深度落地 | 通知栏 RemoteInput 内联回复、系统级 Share Sheet 分享接入、智能贴底与快捷指令胶囊栏、真机端到端全通 | ✅ 完成（v0.5.0-beta8，2026-10-05） |
 | ~~M4/M5~~ | ~~VPS 备用 Runner、E2E 高级模式~~ | ❌ 已取消（2026-09-30 决策：单人自用下成本收益不划算，详见 HANDOVER） |
 
 ### 接力开发 / Handover
@@ -78,7 +83,7 @@ ZCode 官方远程控制（`zcode.z.ai/remote`）的**原生安卓增强客户�
 ### 安装包 / Releases
 
 签名 APK 从 [GitHub Releases](https://github.com/wjf1/zcode-remote-app/releases) 下载
-（如 `ZCodeRemote-0.5.0-beta6.apk` 或 releases 挂载的 `app-release.apk`，minSdk 31，Android 12+）。
+（如 `ZCodeRemote-0.5.0-beta8.apk` 或 releases 挂载的 `app-release.apk`，minSdk 31，Android 12+）。
 
 ### 快速开始
 
@@ -139,6 +144,10 @@ A **native Android client** for the official ZCode Remote Control relay (`zcode.
 - **Send & Stop**: Pill-shaped floating composer sends prompts; morphing Stop button interrupts running turns.
 - **Chunked Attachments**: Pick files (≤20 MiB) in conversation, chunked stream upload, sent via official `sendText` attachment path.
 - **Voice Input**: Tap-to-talk speech recognition with live partial results appended to drafts.
+- **Notification RemoteInput Inline Reply (Sprint 4)**: Direct pull-down inline text reply within system notifications for interactive prompts without needing to unlock into the app.
+- **System Share Sheet Integration (Sprint 5)**: Receive shared text or file attachments from external apps (browsers, file explorers), auto-filling drafts or attachment queues.
+- **Quick Action Chips Bar**: One-tap quick actions ("继续", "运行测试验证", etc.) above composer to dramatically reduce typing friction on mobile.
+- **Smart Auto-Scroll & Floating Jump-to-Bottom**: Viewport-aware auto-scroll that preserves your reading position when reading history or code diffs, accompanied by a floating "Jump to Bottom" pill.
 - **Recent Files & Read-Only Code Preview (Sprint 3)**: Dynamic top bar 📁 pill aggregates touched files in the active session; tap to open a ModalBottomSheet file list. Tapping any file invokes `file.readTextFile` RPC to fetch and render code in monospace with horizontal scrolling and 20KB truncation guard (strictly read-only).
 - **In-Tool Diff Highlighting (Sprint 3)**: Client-side Myers line diff calculation for Edit / Write / MultiEdit tool rows, showing summary `📄 filename +N −M` and expanding into red/green unified diff blocks with one-tap clipboard copy.
 - **Safe Execution Mode Selector (Sprint 2 / P0-B)**: Choose between plan, build, or yolo during session creation or directly in the top bar. **Defaults to safe build mode**; yolo mode clearly displays red hazard indicators.
@@ -159,12 +168,13 @@ A **native Android client** for the official ZCode Remote Control relay (`zcode.
 | M3+ interactions | Send & stop, form-style interaction responses, multi-session board, attachments, voice input, home-screen widget, search | ✅ E2E verified at protocol level |
 | M3++ Mobile UI/UX Overhaul | Modern 3-Tab architecture, official ZCode design system alignment (zai-dark/zai-light), dedicated inbox, native createSession, in-session model switching, and approval fixes | ✅ Done (v0.5.0-beta5, 2026-10-01) |
 | Sprint 0–3/6 P0 Fixes & Feature Completion | Three P0 bugs resolved, Diff view, Recent Files preview, FGS keep-alive, VQL fixtures, 23 unit tests, real-device E2E verified | ✅ Done (v0.5.0-beta6, 2026-10-05) |
+| Sprint 4–5 Native System Interactions | Notification RemoteInput inline reply, Share Sheet receiver, smart auto-scroll & action chips, real-device verified | ✅ Done (v0.5.0-beta8, 2026-10-05) |
 | ~~M4/M5~~ | ~~VPS backup runner, E2E advanced mode~~ | ❌ Cancelled (2026-09-30: cost/benefit not worth it for single-user, see HANDOVER) |
 
 ### Releases
 
 Download signed APKs from [GitHub Releases](https://github.com/wjf1/zcode-remote-app/releases)
-(e.g., `ZCodeRemote-0.5.0-beta6.apk` or attached `app-release.apk`, minSdk 31, Android 12+).
+(e.g., `ZCodeRemote-0.5.0-beta8.apk` or attached `app-release.apk`, minSdk 31, Android 12+).
 
 ### Quick Start
 

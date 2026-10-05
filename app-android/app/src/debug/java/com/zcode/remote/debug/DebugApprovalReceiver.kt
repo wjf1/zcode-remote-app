@@ -4,25 +4,46 @@ import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
 import com.zcode.remote.notify.ApprovalNotifier
+import com.zcode.remote.notify.ElicitationNotifier
 import com.zcode.remote.relay.ApprovalOption
 import com.zcode.remote.relay.PendingApproval
+import com.zcode.remote.relay.PendingElicitation
 
 /**
- * 仅 debug 构建存在：注入一条假的待审批，用来在没有真实审批请求时验证
- * 通知渲染、按钮回调、以及"连接不在时不能假装批准"这条路径。
+ * 仅 debug 构建存在：注入一条假的待审批或表单交互，用来在没有真实请求时验证
+ * 通知渲染、按钮回调、RemoteInput 内联回复以及"连接不在时不能假装批准"这条路径。
  *
  *   adb shell am broadcast -n com.zcode.remote/.debug.DebugApprovalReceiver \
  *        -a com.zcode.remote.action.DEBUG_APPROVAL
+ *   adb shell am broadcast -n com.zcode.remote/.debug.DebugApprovalReceiver \
+ *        -a com.zcode.remote.action.DEBUG_ELICITATION
  *   adb shell am broadcast -n com.zcode.remote/.debug.DebugApprovalReceiver \
  *        -a com.zcode.remote.action.DEBUG_APPROVAL_CLEAR
  */
 class DebugApprovalReceiver : BroadcastReceiver() {
     override fun onReceive(context: Context, intent: Intent) {
         when (intent.action) {
-            ACTION_CLEAR -> ApprovalNotifier.clearAll(context)
+            ACTION_CLEAR -> {
+                ApprovalNotifier.clearAll(context)
+                ElicitationNotifier.clearAll(context)
+            }
+            ACTION_ELICITATION -> ElicitationNotifier.sync(context, fakeElicitation())
             else -> ApprovalNotifier.sync(context, fake())
         }
     }
+
+    private fun fakeElicitation(): List<PendingElicitation> = listOf(
+        PendingElicitation(
+            interactionId = "el_debug_001",
+            toolName = "AskUserQuestion",
+            prompt = "测试提问：请补充当前任务的验收标准或参数",
+            questions = emptyList(),
+            freeText = true,
+            plan = null,
+            autoResolveAt = null,
+            sessionId = "sess_debug",
+        )
+    )
 
     private fun fake(): List<PendingApproval> = listOf(
         PendingApproval(
@@ -59,6 +80,7 @@ class DebugApprovalReceiver : BroadcastReceiver() {
 
     companion object {
         const val ACTION_INJECT = "com.zcode.remote.action.DEBUG_APPROVAL"
+        const val ACTION_ELICITATION = "com.zcode.remote.action.DEBUG_ELICITATION"
         const val ACTION_CLEAR = "com.zcode.remote.action.DEBUG_APPROVAL_CLEAR"
     }
 }

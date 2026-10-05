@@ -21,7 +21,8 @@
   [v0.4.0-beta6](https://github.com/wjf1/zcode-remote-app/releases/tag/v0.4.0-beta6)（排版全面对齐桌面版+版本展示与更新闭环，versionCode 10）→
   [v0.5.0-beta1…beta5](https://github.com/wjf1/zcode-remote-app/releases/tag/v0.5.0-beta5)（3-Tab 架构重构 + 模型思考档位链路，versionCode 15）→
   [v0.5.0-beta6](https://github.com/wjf1/zcode-remote-app/releases/tag/v0.5.0-beta6)（三个 P0 缺陷结清 + 最近文件只读预览 + 工具调用 Diff 视图，versionCode 16）→
-  [v0.5.0-beta7](https://github.com/wjf1/zcode-remote-app/releases/tag/v0.5.0-beta7)（**当前**，会话流智能贴底 + 悬浮「回到底部」+ 输入栏快捷指令胶囊，versionCode 17）。
+  [v0.5.0-beta7](https://github.com/wjf1/zcode-remote-app/releases/tag/v0.5.0-beta7)（会话流智能贴底 + 悬浮「回到底部」+ 输入栏快捷指令胶囊，versionCode 17）→
+  [v0.5.0-beta8](https://github.com/wjf1/zcode-remote-app/releases/tag/v0.5.0-beta8)（**当前**，系统通知栏 RemoteInput 内联快捷回复 + 系统级 Share Sheet 分享接入，versionCode 18）。
 - **2026-09-29 增量（本轮）**：P0-1 发送/停止 ✅、P1-1 表单应答 ✅、P1-2 多会话看板 ✅、
   P1-4 协议常量结清 ✅、技术债清理 ✅——均已构建通过并推送（提交见 `git log`）。
 - **2026-09-29 二轮**：**X-1 keystore 结清**（实测与发布 APK 同指纹，见下）、
@@ -187,7 +188,7 @@ ADB -s <serial> shell am broadcast -n com.zcode.remote/.debug.DebugApprovalRecei
 
 版本序列：`v0.2.0-m2` → `v0.2.1-m2b` → `v0.2.2-m3a` → `v0.2.3-m3b` → `v0.3.0-m3` →
 `v0.4.0-beta1…beta6`（发版内测 → 真机修复 → 16KB 对齐 → 互踢修复 → 扫码重构 → 排版对齐）→
-`v0.5.0-beta1…beta5`（模型档位链路，versionCode 15）→ `v0.5.0-beta6`（P0 结清 + 最近文件 + Diff 视图，versionCode 16）→ `v0.5.0-beta7`（**当前**，会话流智能贴底 + 悬浮「回到底部」+ 输入栏快捷指令胶囊，versionCode 17）。
+`v0.5.0-beta1…beta5`（模型档位链路，versionCode 15）→ `v0.5.0-beta6`（P0 结清 + 最近文件 + Diff 视图，versionCode 16）→ `v0.5.0-beta7`（智能贴底 + 快捷胶囊，versionCode 17）→ `v0.5.0-beta8`（**当前**，系统通知栏 RemoteInput 内联快捷回复 + 系统级 Share Sheet 分享接入，versionCode 18）。
 
 ## 5. 关键技术结论（浓缩坑清单，动手前必读）
 
@@ -228,8 +229,8 @@ P1-2 多会话看板、P1-4 协议常量结清、P1-3 附件+语音、E-1 权威
 | **P0-2** | 日常使用观察（3 天）：锁屏通知可达性、HyperOS 杀后台 30min 后审批可达 | ⏳ 待观察（前台服务实测运行中） |
 | O-1 | 锁屏通知建议手动确认「设置→通知→锁屏通知」已开 | ⏳ 用户侧 |
 | O-2 | 桌面 Widget 拖到桌面看渲染；会话搜索/主题切换肉眼确认 | ⏳ 用户侧 |
-| Sprint 4 | 通知层升级：RemoteInput 内联回复、审批专用高重要性渠道（治 HyperOS 折叠） | ⬜ 后续接力 |
-| Sprint 5 | Room 缓存（离线可读/秒开）+ share sheet + 配对链接 VIEW deep link + 快捷指令 chips | ⬜ 后续接力 |
+| Sprint 4 | 通知层升级：RemoteInput 内联回复（✅ 2026-10-05 完成并真机实测）、审批专用高重要性渠道 | ✅ 核心完成（v0.5.0-beta8） |
+| Sprint 5 | 系统增强：Share Sheet 分享接收（✅ 2026-10-05 完成）+ 快捷指令 chips（✅ 已完成）+ Room 缓存 | 🔨 进行中（部分完成） |
 | Sprint 7 | 凭据生命周期与自建中继 + E2EE | ⬜ 需决策 |
 
 **可选增强（非阻塞，按需启动）**：
@@ -285,8 +286,8 @@ RemoteInput 全仓 0 命中）。总体判断：**功能面已超出对标官方
 | Sprint 2 | **P0-B** 执行模式选择器（plan/build/yolo，默认 build）+ 会话页模式胶囊（`setMode` 仅对新 turn 生效须如实提示）+ KICKED/AUTH_FAILED/PROTOCOL_MISMATCH 三种终态常驻通知 | 🔨 本轮 |
 | Sprint 3 第一步 | diff 视图（纯客户端解析写类工具 `inputText`/`raw` 的 old/new → unified diff 红绿渲染，零协议零 RPC 可离线开发） | ✅ 2026-10-05 真机验收完成 |
 | Sprint 3 第二步 | 只读文件能力——剧本 B「最近文件」面板（`SessionFiles` 从工具调用行抽路径去重 + 顶栏 📁 入口 + ModalBottomSheet 文件列表 + `file.readTextFile` 预览，零新协议） | ✅ 2026-10-05 真机端到端验收全通 |
-| Sprint 4 | 通知层升级：RemoteInput 内联回复、审批专用高重要性渠道（治 HyperOS 折叠） | ⬜ 后续接力 |
-| Sprint 5 | Room 缓存（离线可读/秒开）+ share sheet + 配对链接 VIEW deep link + 快捷指令 chips | ⬜ 后续接力 |
+| Sprint 4 | 通知层升级：RemoteInput 内联回复（✅ 2026-10-05 完成并真机实测）、审批专用高重要性渠道 | ✅ 核心完成（v0.5.0-beta8） |
+| Sprint 5 | 系统增强：Share Sheet 分享接收（✅ 2026-10-05 完成）+ 快捷指令 chips（✅ 已完成）+ Room 缓存 | 🔨 进行中（部分完成） |
 | Sprint 6 | 回归网：VQL 金标准对拍测试（Kotlin↔Python 共享 fixture）+ 纯函数单测（23 项全绿，2026-10-02）+ GitHub Actions + `build.sh` 去硬编码路径 | ✅ 2026-10-02 |
 | Sprint 7 | 凭据生命周期（一次性配对/可吊销/生物识别）与自建中继 + E2EE——**独立决策不随本轮**，需用户拍板 | ⬜ 需决策 |
 

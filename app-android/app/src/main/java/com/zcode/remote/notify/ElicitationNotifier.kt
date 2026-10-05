@@ -33,9 +33,19 @@ object ElicitationBridge {
 class ElicitationReceiver : BroadcastReceiver() {
     override fun onReceive(context: Context, intent: Intent) {
         val interactionId = intent.getStringExtra(EXTRA_INTERACTION) ?: return
-        val answerJson = intent.getStringExtra(EXTRA_ANSWER) ?: return
-        val ok = ElicitationBridge.dispatch(interactionId, answerJson)
         val nm = context.getSystemService(NotificationManager::class.java)
+
+        val answerJson: String? = when (intent.action) {
+            ACTION_REPLY_TEXT -> {
+                val results = android.app.RemoteInput.getResultsFromIntent(intent)
+                val text = results?.getCharSequence(KEY_TEXT_REPLY)?.toString()?.trim()
+                if (text.isNullOrBlank()) null else """{"freeText":${ElicitationNotifier.quote(text)}}"""
+            }
+            else -> intent.getStringExtra(EXTRA_ANSWER)
+        }
+
+        if (answerJson == null) return
+        val ok = ElicitationBridge.dispatch(interactionId, answerJson)
         nm.cancel(ElicitationNotifier.notifId(interactionId))
         if (!ok) {
             nm.notify(
@@ -43,7 +53,7 @@ class ElicitationReceiver : BroadcastReceiver() {
                 Notification.Builder(context, ElicitationNotifier.CH_ELICITATIONS)
                     .setSmallIcon(R.drawable.ic_launcher)
                     .setContentTitle("ZCode Remote 未连接")
-                    .setContentText("这条回答没发出去，打开 App 重新处理")
+                    .setContentText("回复未发出去，打开 App 重新处理")
                     .setAutoCancel(true)
                     .build()
             )
@@ -52,8 +62,10 @@ class ElicitationReceiver : BroadcastReceiver() {
 
     companion object {
         const val ACTION_RESOLVE = "com.zcode.remote.action.RESOLVE_ELICITATION"
+        const val ACTION_REPLY_TEXT = "com.zcode.remote.action.REPLY_ELICITATION_TEXT"
         const val EXTRA_INTERACTION = "interactionId"
         const val EXTRA_ANSWER = "answerJson"
+        const val KEY_TEXT_REPLY = "key_text_reply"
     }
 }
 
@@ -124,9 +136,31 @@ object ElicitationNotifier {
         }
 
         // 只对「答案能被一个动作完整表达」的形态给快捷按钮，其余引导进 App
+        // 自由文本 / 开放式提问支持通知栏 RemoteInput 直接内联回复（Sprint 4）
+        if (el.freeText || el.questions.isEmpty()) {
+            val remoteInput = android.app.RemoteInput.Builder(ElicitationReceiver.KEY_TEXT_REPLY)
+                .setLabel("输入回复内容…")
+                .build()
+            val replyIntent = Intent(ElicitationReceiver.ACTION_REPLY_TEXT)
+                .setClass(context, ElicitationReceiver::class.java)
+                .putExtra(ElicitationReceiver.EXTRA_INTERACTION, el.interactionId)
+            val replyPendingIntent = PendingIntent.getBroadcast(
+                context,
+                notifId(el.interactionId) + 99,
+                replyIntent,
+                PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_MUTABLE,
+            )
+            val replyAction = Notification.Action.Builder(
+                null, "直接回复", replyPendingIntent
+            ).addRemoteInput(remoteInput).build()
+            b.addAction(replyAction)
+        }
+
         val quick = quickActions(el)
         if (quick.isEmpty()) {
-            b.addAction(Notification.Action.Builder(null, "打开 App 处理", contentIntent).build())
+            if (!el.freeText && el.questions.isNotEmpty()) {
+                b.addAction(Notification.Action.Builder(null, "打开 App 处理", contentIntent).build())
+            }
         } else {
             quick.forEachIndexed { i, (label, answerJson) ->
                 b.addAction(
@@ -155,7 +189,7 @@ object ElicitationNotifier {
         return emptyList()
     }
 
-    private fun quote(v: String): String =
+    fun quote(v: String): String =
         "\"" + v.replace("\\", "\\\\").replace("\"", "\\\"") + "\""
 
     private fun actionIntent(

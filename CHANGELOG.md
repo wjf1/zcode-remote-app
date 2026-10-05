@@ -1,5 +1,20 @@
 # 变更记录 / Changelog
 
+## v0.5.0-beta8（2026-10-05）· 系统通知栏 RemoteInput 内联快捷回复与 Share Sheet 接收
+
+**里程碑：打通 Android 原生核心能力 —— 支持在系统通知栏直接拉开打字回复并一键提交（RemoteInput）；支持接收系统级分享（Share Sheet）的外部文本与文件附件，无缝填入输入草稿。**
+
+### 新增
+- **系统通知栏 RemoteInput 内联回复（Sprint 4 核心）**：`ElicitationNotifier` 为支持自由文本应答的提问与交互装配 `android.app.RemoteInput` 动作；用户可在下拉通知栏直接打字回复并通过广播一键发送至桌面端，全程无需解锁进入 App。
+- **系统级 Share Sheet 分享接入（Sprint 5 核心）**：`AndroidManifest.xml` 与 `MainActivity` 注册并处理 `android.intent.action.SEND` 意图，支持接收外部应用分享的文本（自动填充为输入草稿）与文件附件（自动解析加入待发附件）。
+
+### 变更与验证状态
+- **真机端到端实测 PASS（小米 15 Pro / HyperOS）**：
+  1. 模拟系统文本分享意图（`android.intent.action.SEND`），会话输入框精准捕获并填充分享内容。
+  2. 注入表单交互广播，通知栏成功弹出携带 `RemoteInput` 的高优先级常驻通知。
+  3. 23 项 JVM 单元测试与构建全绿。
+- `versionName 0.5.0-beta8` / `versionCode 18`。
+
 ## v0.5.0-beta7（2026-10-05）· 会话流智能贴底与输入栏快捷指令胶囊
 
 **里程碑：解决真机实测反馈的高频交互痛点 —— 会话流上翻浏览不再被新行强拉贴底、悬浮「回到底部」一键平滑定位；新增输入栏快捷指令胶囊栏，大幅降低移动端打字成本。**

@@ -1,5 +1,6 @@
 package com.zcode.remote
 
+import android.content.Intent
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.BackHandler
@@ -31,10 +32,20 @@ import com.zcode.remote.ui.theme.ZCodeTheme
 import com.zcode.remote.ui.theme.ZCodeTokens
 
 class MainActivity : ComponentActivity() {
+    private var appVm: AppViewModel? = null
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        handleShareIntent(intent)
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContent {
             val vm: AppViewModel = viewModel()
+            appVm = vm
+            LaunchedEffect(Unit) { handleShareIntent(intent) }
             ZCodeTheme(forceDark = when (vm.themeMode) {
                 "dark" -> true
                 "light" -> false
@@ -271,6 +282,32 @@ class MainActivity : ComponentActivity() {
                             }
                         }
                     }
+                }
+            }
+        }
+    }
+
+    private fun handleShareIntent(intent: Intent?) {
+        if (intent == null || intent.action != Intent.ACTION_SEND) return
+        val vm = appVm ?: return
+        val type = intent.type ?: return
+        if (type.startsWith("text/")) {
+            val text = intent.getStringExtra(Intent.EXTRA_TEXT) ?: ""
+            if (text.isNotBlank()) {
+                vm.updatePromptDraft(text)
+                android.widget.Toast.makeText(this, "已填充分享文本到输入草稿", android.widget.Toast.LENGTH_SHORT).show()
+            }
+        } else {
+            val uri = if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.TIRAMISU) {
+                intent.getParcelableExtra(Intent.EXTRA_STREAM, android.net.Uri::class.java)
+            } else {
+                @Suppress("DEPRECATION")
+                intent.getParcelableExtra<android.net.Uri>(Intent.EXTRA_STREAM)
+            }
+            if (uri != null) {
+                inspectAttachment(this, uri)?.let { (name, mime, size) ->
+                    vm.addAttachment(uri, name, mime, size)
+                    android.widget.Toast.makeText(this, "已添加分享附件: $name", android.widget.Toast.LENGTH_SHORT).show()
                 }
             }
         }

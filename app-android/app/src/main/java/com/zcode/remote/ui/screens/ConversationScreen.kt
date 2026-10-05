@@ -811,7 +811,7 @@ private fun SessionFilesPanel(
     }
 }
 
-private fun inspectAttachment(context: Context, uri: Uri): Triple<String, String, Long>? {
+internal fun inspectAttachment(context: Context, uri: Uri): Triple<String, String, Long>? {
     var name = "attachment"
     var size = -1L
     runCatching {
