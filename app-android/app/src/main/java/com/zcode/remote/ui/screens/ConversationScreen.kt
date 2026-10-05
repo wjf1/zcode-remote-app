@@ -16,11 +16,14 @@ import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -38,6 +41,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.zcode.remote.AppViewModel
 import com.zcode.remote.relay.ApprovalOption
 import com.zcode.remote.relay.ConversationChannel
 import com.zcode.remote.relay.ConversationRow
@@ -52,6 +56,7 @@ import kotlinx.coroutines.delay
  * 沉浸式会话详情与对话控制台
  * 对标官方 ZCode 桌面端排版与交互规范，支持流式渲染、官方同款思考过程与工具调用。
  */
+@OptIn(androidx.compose.material3.ExperimentalMaterial3Api::class)
 @Composable
 fun ConversationScreen(
     title: String,
@@ -92,10 +97,17 @@ fun ConversationScreen(
     currentSessionMode: String? = null,
     /** 切换执行模式（协议语义：仅对下一轮 agent turn 生效）。 */
     onSwitchMode: (String) -> Unit = {},
+    /** 剧本 B「最近文件」：本会话文件预览状态与操作（AppViewModel 持有状态）。 */
+    filePreview: AppViewModel.FilePreview? = null,
+    onPreviewFile: (String) -> Unit = {},
+    onDismissFilePreview: () -> Unit = {},
     onBack: () -> Unit,
 ) {
     val listState = rememberLazyListState()
     val headerCount = if (rows.isEmpty()) 0 else 1
+    // 剧本 B「最近文件」：从会话行派生文件清单（纯客户端零协议）
+    val sessionFiles = remember(rows) { com.zcode.remote.relay.SessionFiles.extract(rows) }
+    var showFiles by remember { mutableStateOf(false) }
 
     // 进入会话页即刷新一次模型目录（PC 端新增/删除模型后回到 APP 即可看到最新列表）
     LaunchedEffect(Unit) { onLoadModels() }
@@ -167,6 +179,32 @@ fun ConversationScreen(
                     color = if (status is ConversationChannel.Status.Failed) MaterialTheme.colorScheme.error
                     else MaterialTheme.colorScheme.onSurfaceVariant,
                 )
+            }
+
+            // 顶栏右侧：最近文件入口（剧本 B）——显示本会话涉及的文件数，点开列表面板
+            if (sessionFiles.isNotEmpty()) {
+                Surface(
+                    onClick = { showFiles = true },
+                    shape = RoundedCornerShape(14.dp),
+                    color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.6f),
+                    border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
+                    modifier = Modifier.height(28.dp)
+                ) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        modifier = Modifier.padding(horizontal = 8.dp)
+                    ) {
+                        Text(
+                            text = "📁 ${sessionFiles.size}",
+                            style = MaterialTheme.typography.labelSmall.copy(
+                                fontWeight = FontWeight.SemiBold, fontSize = 11.sp
+                            ),
+                            color = MaterialTheme.colorScheme.primary,
+                            maxLines = 1
+                        )
+                    }
+                }
+                Spacer(Modifier.width(6.dp))
             }
 
             // 顶栏右侧：执行模式胶囊（P0-B）—— 当前模式常驻可见，yolo 红底警示；点击弹出切换菜单
@@ -432,6 +470,19 @@ fun ConversationScreen(
             onStop = onStop,
             onPick = { filePicker.launch(arrayOf("*/*")) },
         )
+
+        // 5. 「最近文件」面板（剧本 B）：列表 → 点选 → readTextFile 预览
+        if (showFiles) {
+            ModalBottomSheet(onDismissRequest = { showFiles = false }) {
+                SessionFilesPanel(
+                    files = sessionFiles,
+                    preview = filePreview,
+                    onPreview = onPreviewFile,
+                    onDismissPreview = onDismissFilePreview,
+                    onClose = { showFiles = false },
+                )
+            }
+        }
     }
 }
 
@@ -524,6 +575,126 @@ private fun modeDisplayName(m: String): String = when (m) {
     "build" -> "构建 build（工具调用需审批）"
     "yolo" -> "全自动 yolo（免审批）"
     else -> m
+}
+
+/**
+ * 「最近文件」面板（Sprint 3 第二步·剧本 B）：本会话涉及的文件列表 → 点选 →
+ * `file.readTextFile` 预览（~ 路径经 resolvePath 展开）。只读，无任何写路径（§8 红线）。
+ */
+@Composable
+private fun SessionFilesPanel(
+    files: List<com.zcode.remote.relay.SessionFiles.Entry>,
+    preview: AppViewModel.FilePreview?,
+    onPreview: (String) -> Unit,
+    onDismissPreview: () -> Unit,
+    onClose: () -> Unit,
+) {
+    var selected by remember { mutableStateOf<String?>(null) }
+
+    Column(Modifier.fillMaxWidth().padding(horizontal = 8.dp).heightIn(max = 540.dp)) {
+        Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
+            if (selected != null) {
+                TextButton(onClick = { onDismissPreview(); selected = null }) { Text("← 文件列表") }
+            } else {
+                Text(
+                    "本会话涉及的文件",
+                    style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.Bold),
+                    modifier = Modifier.weight(1f)
+                )
+            }
+            TextButton(onClick = { onDismissPreview(); onClose() }) { Text("关闭") }
+        }
+
+        when {
+            selected == null -> {
+                if (files.isEmpty()) {
+                    Text(
+                        "本会话暂无文件操作记录（Edit / Write / Read 等工具调用后会出现在这里）",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.padding(vertical = 24.dp)
+                    )
+                } else {
+                    LazyColumn {
+                        items(files.size) { idx ->
+                            val f = files[idx]
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clickable { selected = f.path; onPreview(f.path) }
+                                    .padding(vertical = 8.dp, horizontal = 4.dp)
+                            ) {
+                                Column(Modifier.weight(1f)) {
+                                    Text(
+                                        f.path.substringAfterLast('/').substringAfterLast('\\'),
+                                        style = MaterialTheme.typography.bodySmall.copy(fontWeight = FontWeight.SemiBold),
+                                        maxLines = 1, overflow = TextOverflow.Ellipsis
+                                    )
+                                    Text(
+                                        f.path,
+                                        style = MaterialTheme.typography.labelSmall.copy(
+                                            fontFamily = FontFamily.Monospace, fontSize = 10.sp
+                                        ),
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                        maxLines = 1, overflow = TextOverflow.Ellipsis
+                                    )
+                                }
+                                Text(
+                                    f.toolName,
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = MaterialTheme.colorScheme.tertiary
+                                )
+                            }
+                            HorizontalDivider()
+                        }
+                    }
+                }
+            }
+
+            else -> when (val p = preview) {
+                is AppViewModel.FilePreview.Loading -> Row(
+                    modifier = Modifier.fillMaxWidth().padding(24.dp),
+                    horizontalArrangement = Arrangement.Center
+                ) { CircularProgressIndicator(Modifier.size(28.dp)) }
+
+                is AppViewModel.FilePreview.Loaded -> Column {
+                    Text(
+                        p.path,
+                        style = MaterialTheme.typography.labelSmall.copy(
+                            fontFamily = FontFamily.Monospace, fontSize = 10.sp
+                        ),
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        maxLines = 2, overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier.padding(bottom = 6.dp)
+                    )
+                    Surface(
+                        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f),
+                        shape = RoundedCornerShape(6.dp),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        val scroll = rememberScrollState()
+                        Text(
+                            p.content.take(20_000),
+                            style = MaterialTheme.typography.bodySmall.copy(
+                                fontFamily = FontFamily.Monospace, fontSize = 11.sp, lineHeight = 15.sp
+                            ),
+                            modifier = Modifier.padding(8.dp).horizontalScroll(scroll).heightIn(max = 380.dp)
+                        )
+                    }
+                }
+
+                is AppViewModel.FilePreview.Failed -> Text(
+                    "读取失败：${p.message}\n\n$p.path",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.error,
+                    modifier = Modifier.padding(vertical = 16.dp)
+                )
+
+                null -> Unit
+            }
+        }
+    }
 }
 
 private fun inspectAttachment(context: Context, uri: Uri): Triple<String, String, Long>? {

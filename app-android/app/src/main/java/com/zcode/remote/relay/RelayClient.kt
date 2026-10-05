@@ -103,12 +103,23 @@ class RelayClient(
     /** 终态失败（互踢/配对失效/协议不匹配）：不参与自动重连，等用户手动恢复。 */
     @Volatile private var terminalFailed = false
     @Volatile private var reconnectAttempt = 0
+    /**
+     * 连接代次（2026-10-05 竞态修复）：旧 socket 的 onFailure/onClosed 可能迟到到新连接
+     * 建立之后才触发（真机实证 OkHttp 失败回调可延迟数秒冒出），会穿过防重入守卫错误调度
+     * 重连、断掉健康连接。每次 connect() 递增代次，所有回调与重连调度携带并校验。
+     */
+    @Volatile private var generation = 0
 
     fun connect() {
         manuallyClosed = false
         terminalFailed = false
         _state.value = RelayState.Connecting
         startPump()
+        // 显式 connect 即作废一切挂起的重连调度与旧 socket（其迟到回调由代次守卫拦截）
+        reconnectJob?.cancel(); reconnectJob = null
+        generation += 1
+        val myGen = generation
+        runCatching { socket?.cancel() }
         // 官方终端会追加 mid 参数（PROTOCOL.md 3 节）；主机在线时中继强制校验，缺失直接 AUTH_FAILED
         val wsUrl = relayWsUrlOverride ?: device.relayWsUrl
         val url = wsUrl +
@@ -120,7 +131,7 @@ class RelayClient(
             .url(url)
             .header("Origin", origin)
             .build()
-        socket = client.newWebSocket(request, listener)
+        socket = client.newWebSocket(request, makeListener(myGen))
     }
 
     fun close() {
@@ -151,14 +162,19 @@ class RelayClient(
         return send(wrapped)
     }
 
-    private val listener = object : WebSocketListener() {
+    /** 每次连接独立 listener：回调首行校验代次，旧 socket 的迟到回调一律丢弃。 */
+    private fun makeListener(gen: Int): WebSocketListener = object : WebSocketListener() {
+        private fun stale(): Boolean = gen != generation
+
         override fun onOpen(webSocket: WebSocket, response: Response) {
+            if (stale()) return
             ZLog.i(TAG, "ws open http=${response.code}")
             _state.value = RelayState.Authenticating
             send(RelayProtocol.authInit(device.deviceSid, appVersion))
         }
 
         override fun onMessage(webSocket: WebSocket, text: String) {
+            if (stale()) return
             ZLog.i(TAG, "ws recv $text")
             val frame = runCatching { RelayProtocol.parse(text) }.getOrNull() ?: return
             when (RelayProtocol.typeOf(frame)) {
@@ -208,12 +224,14 @@ class RelayClient(
         }
 
         override fun onFailure(webSocket: WebSocket, t: Throwable, response: Response?) {
+            if (stale()) return
             ZLog.w(TAG, "ws failure", t)
             if (manuallyClosed) return
             scheduleReconnect()
         }
 
         override fun onClosed(webSocket: WebSocket, code: Int, reason: String) {
+            if (stale()) return
             ZLog.i(TAG, "ws closed code=$code")
             if (!manuallyClosed) scheduleReconnect()
         }
@@ -257,10 +275,15 @@ class RelayClient(
         val delayMs = 3000L * (1L shl minOf(reconnectAttempt, 4))  // 3s,6s,12s,24s,48s 封顶
         reconnectAttempt++
         reconnectJob = io.launch {
+            val myGen = generation
             // 挂起点：注入 NetworkGate 后，无网时等网络恢复即刻重连，而非空转到下一轮退避
             ZLog.i(TAG, "reconnect: 调度 attempt=$reconnectAttempt 退避 ${delayMs}ms")
             runCatching { networkWait(delayMs) }
                 .onFailure { ZLog.w(TAG, "reconnect: networkWait 异常", it) }
+            if (myGen != generation) {
+                ZLog.i(TAG, "reconnect: 代次已变（期间发生显式 connect），作废本次调度")
+                return@launch
+            }
             if (!manuallyClosed && !terminalFailed) {
                 ZLog.i(TAG, "reconnect: 放行，执行 connect()")
                 connect()

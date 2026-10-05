@@ -258,6 +258,67 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
     private var client: RelayClient?
         get() = ConnectionScope.client
         set(value) { ConnectionScope.client = value }
+
+    // ---- 会话文件预览（Sprint 3 第二步·剧本 B「最近文件」）----
+    // 纯派生状态（点击触发，不在 init 路径），但统一放顶部区避免初始化顺序坑。
+    sealed interface FilePreview {
+        data object Loading : FilePreview
+        data class Loaded(val path: String, val content: String) : FilePreview
+        data class Failed(val path: String, val message: String) : FilePreview
+    }
+
+    var filePreview by mutableStateOf<FilePreview?>(null)
+        private set
+
+    /** 预览一个文件：~ 开头先经 resolvePath 展开（provider_config 链路同款），再 readTextFile。 */
+    fun previewSessionFile(path: String) {
+        filePreview = FilePreview.Loading
+        readRemoteTextFile(path) { r ->
+            viewModelScope.launch {
+                filePreview = r.fold(
+                    onSuccess = { FilePreview.Loaded(path, it) },
+                    onFailure = { FilePreview.Failed(path, it.message ?: "读取失败") },
+                )
+            }
+        }
+    }
+
+    fun dismissFilePreview() { filePreview = null }
+
+    private fun readRemoteTextFile(path: String, onResult: (Result<String>) -> Unit) {
+        val ch = channel ?: run { onResult(Result.failure(IllegalStateException("连接尚未就绪"))); return }
+        fun doRead(p: String) {
+            ch.call(RpcChannel.CHANNEL_FILE, "readTextFile", listOf(mapOf("path" to p))) { r ->
+                viewModelScope.launch {
+                    when (r) {
+                        is RpcChannel.RpcReply.Err ->
+                            onResult(Result.failure(IllegalStateException(r.message)))
+                        is RpcChannel.RpcReply.Ok -> {
+                            val content = runCatching {
+                                r.data?.jsonObject?.get("content")?.jsonPrimitive?.content
+                            }.getOrNull()
+                            if (content != null) onResult(Result.success(content))
+                            else onResult(Result.failure(IllegalStateException("响应缺少 content 字段")))
+                        }
+                    }
+                }
+            }
+        }
+        if (path.startsWith("~")) {
+            ch.call(RpcChannel.CHANNEL_FILE, "resolvePath", listOf(mapOf("path" to path))) { r1 ->
+                viewModelScope.launch {
+                    val real = when (r1) {
+                        is RpcChannel.RpcReply.Ok ->
+                            runCatching { r1.data?.jsonPrimitive?.content }.getOrNull()
+                                ?: runCatching { r1.data?.jsonObject?.get("path")?.jsonPrimitive?.content }.getOrNull()
+                                ?: path
+                        else -> path
+                    }
+                    doRead(real)
+                }
+            }
+        } else doRead(path)
+    }
     private var channel: RpcChannel?
         get() = ConnectionScope.channel
         set(value) { ConnectionScope.channel = value }

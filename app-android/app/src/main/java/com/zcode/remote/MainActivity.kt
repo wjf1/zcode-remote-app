@@ -110,6 +110,9 @@ class MainActivity : ComponentActivity() {
                                     }
                                 }
                             },
+                            filePreview = vm.filePreview,
+                            onPreviewFile = { vm.previewSessionFile(it) },
+                            onDismissFilePreview = { vm.dismissFilePreview() },
                             onBack = { opened = null },
                         )
 

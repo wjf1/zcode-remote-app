@@ -325,8 +325,8 @@ RemoteInput 全仓 0 命中）。总体判断：**功能面已超出对标官方
 |---|---|---|
 | RPC 能力探测系统方法：从 `research/asar/` 静态枚举全部 channel/method + 对 file/git/workspace 类方法逐个实测 | 并入 Sprint 3 第二步前置 | 必须回答四个问题：`readTextFile` 路径边界（能否读工作区外/~/.ssh）？有无目录列举方法？有无 git/命令通道（有则 diff 直接走 `git diff`）？有无**写**能力（安全边界决定性事实）？ |
 | 剧本 B「最近文件」面板：从会话流工具调用参数抽已读/已写文件路径，做可跳转面板 | **Sprint 3 第二步优先形态** | 比通用目录浏览器更贴"看 Agent 刚改了什么"的场景，且不依赖目录列举能力；剧本 A（目录树浏览器）降为二期 |
-| W4.7 分片重组与水位 ack 交互审查：`ack(N)` 隐含 N 以下全收，而 `trimFragmentBuffers` 会丢最小 seq 未完成碎片 | 新增可靠性待办（P1） | 可能静默丢消息——三份文档中唯一指出此点；用 >1MiB 多分片消息构造用例验证 |
-| 迟到 onFailure 竞态 | 新增可靠性待办（P1） | 重连复用同一 RelayClient 实例时，旧 socket 的迟到 `onFailure` 会穿过防重入守卫（此时无重连在跑）错误调度重连、断掉健康连接；修复取 epoch/cancel 旧 socket 思路（connect() 先 `socket?.cancel()` + listener 捕获代次） |
+| W4.7 分片重组与水位 ack 交互审查：`ack(N)` 隐含 N 以下全收，而 `trimFragmentBuffers` 会丢最小 seq 未完成碎片 | ✅ 已审查（2026-10-05） | **结论：正常路径安全**——WS 帧严格有序，同一时刻最多 1 条未完成分片消息，`fragmentBuffers.size > 8` 触发条件实际不可达，水位 ack 不会覆盖未 ack 消息。理论边界：CRC/size 校验失败的已集齐消息被静默丢弃（水位被后续 ack 覆盖）——传输层损坏才触发，CRC 本身即双保险设计，留档不改。单测需解耦 android.util.Base64，收益低于成本 |
+| 迟到 onFailure 竞态 | ✅ 已修复（2026-10-05） | RelayClient 引入连接代次（generation）：connect() 先 cancel 旧 socket + 作废挂起重连调度，所有回调与调度携带并校验代次——旧 socket 迟到回调一律丢弃，不再可能断掉健康连接 |
 | 会话内变更面板：聚合"本 turn 改了哪些文件"，点进看 diff | Sprint 3 第三步候选 | diff 能力真正的高频入口，比通用 Git 浏览器价值高 |
 | v1.0 判停线 | 里程碑定义 | 回归网（Sprint 6）+ 三天真机观察通过即可发 v1.0；之后均为 v1.1 增量，不构成发布阻塞 |
 | 小 bug：检查更新 `hasNew` 用字符串不等判断 | ✅ 已修 | 远端旧版本会误报"有新版本"；改语义化比较（数字段逐位 + prerelease 规则）+ 8 项单测 |

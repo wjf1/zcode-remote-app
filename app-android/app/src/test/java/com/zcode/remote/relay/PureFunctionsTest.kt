@@ -113,6 +113,38 @@ class PureFunctionsTest {
         assertEquals(false, AppViewModel.isNewerVersion("0.5.0-beta10", "0.5.0-beta9"))
     }
 
+    // ---------- SessionFiles（剧本 B「最近文件」）----------
+
+    private fun toolRow(rowId: Int, tool: String, input: String) = ConversationRow(
+        rowId = rowId, kind = "toolCall", toolName = tool, inputText = input,
+    )
+
+    @Test
+    fun extractPathFromWriteLikeTools() {
+        assertEquals(
+            "F:/x/a.kt",
+            SessionFiles.extractPath("""{"file_path":"F:/x/a.kt","old_string":"a","new_string":"b"}"""),
+        )
+        assertEquals("~/.zcode/v2/c.json", SessionFiles.extractPath("""{"path":"~/.zcode/v2/c.json"}"""))
+        assertNull(SessionFiles.extractPath("""{"command":"ls"}"""))          // Bash 无路径字段
+        assertNull(SessionFiles.extractPath("not json"))                       // 非 JSON
+        assertNull(SessionFiles.extractPath(null))
+    }
+
+    @Test
+    fun extractDedupesByPathWithLatestFirst() {
+        val rows = listOf(
+            toolRow(1, "Read", """{"file_path":"F:/x/one.kt"}"""),
+            toolRow(2, "Bash", """{"command":"echo hi"}"""),                   // 应跳过
+            toolRow(3, "Write", """{"file_path":"F:/x/two.kt"}"""),
+            toolRow(4, "Edit", """{"file_path":"F:/x/one.kt"}"""),             // one.kt 再次出现 → 置顶
+        )
+        val files = SessionFiles.extract(rows)
+        assertEquals(listOf("F:/x/one.kt", "F:/x/two.kt"), files.map { it.path })
+        assertEquals(4, files[0].rowId)                                        // 保留最近操作行
+        assertEquals(2, files.size)
+    }
+
     // ---------- PairedDevice.relayWsUrl ----------
 
     @Test
