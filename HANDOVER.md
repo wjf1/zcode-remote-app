@@ -18,7 +18,9 @@
   [v0.4.0-beta3](https://github.com/wjf1/zcode-remote-app/releases/tag/v0.4.0-beta3)（16KB 页对齐修复）→
   [v0.4.0-beta4](https://github.com/wjf1/zcode-remote-app/releases/tag/v0.4.0-beta4)（互踢死循环修复）→
   [v0.4.0-beta5](https://github.com/wjf1/zcode-remote-app/releases/tag/v0.4.0-beta5)（相机扫码重构与修复）→
-  [v0.4.0-beta6](https://github.com/wjf1/zcode-remote-app/releases/tag/v0.4.0-beta6)（**当前**，排版全面对齐桌面版+版本展示与更新闭环，versionCode 10）。
+  [v0.4.0-beta6](https://github.com/wjf1/zcode-remote-app/releases/tag/v0.4.0-beta6)（排版全面对齐桌面版+版本展示与更新闭环，versionCode 10）→
+  [v0.5.0-beta1…beta5](https://github.com/wjf1/zcode-remote-app/releases/tag/v0.5.0-beta5)（3-Tab 架构重构 + 模型思考档位链路，versionCode 15）→
+  [v0.5.0-beta6](https://github.com/wjf1/zcode-remote-app/releases/tag/v0.5.0-beta6)（**当前**，三个 P0 缺陷结清 + 最近文件只读预览 + 工具调用 Diff 视图 + Sprint 0–3/6 真机全通收官，versionCode 16）。
 - **2026-09-29 增量（本轮）**：P0-1 发送/停止 ✅、P1-1 表单应答 ✅、P1-2 多会话看板 ✅、
   P1-4 协议常量结清 ✅、技术债清理 ✅——均已构建通过并推送（提交见 `git log`）。
 - **2026-09-29 二轮**：**X-1 keystore 结清**（实测与发布 APK 同指纹，见下）、
@@ -180,12 +182,11 @@ ADB -s <serial> shell am broadcast -n com.zcode.remote/.debug.DebugApprovalRecei
 | rpc-frame 分片重组（CRC32+messageBytes 双校验） | ✅（多分片实环境未现，直通路径 190 帧无回归） | `relay/RpcChannel.kt` |
 | 线路切换（主线/备线/自定义，Origin 同源推导）+ 主题三模式 | ✅ 实测 | `storage/SettingsStore.kt` `ui/theme/Theme.kt` `HomeScreen.kt` |
 | 保活引导页 / debug 注入 receiver | ✅ | `ui/screens/KeepAliveGuideScreen.kt` `app/src/debug/` |
-| 前台服务 | ⚠️ **占位死代码**（2026-10-02 审查证实：`start()/stop()` 全仓无调用者，连接实际绑定 Activity 生命周期）→ Sprint 1 P0-A 迁移 | `service/ConnectionService.kt` |
+| 前台服务 | ✅ 实测（FGS specialUse + 进程级 ConnectionScope 单例，断网重连与保活全通） | `service/ConnectionService.kt` |
 
 版本序列：`v0.2.0-m2` → `v0.2.1-m2b` → `v0.2.2-m3a` → `v0.2.3-m3b` → `v0.3.0-m3` →
 `v0.4.0-beta1…beta6`（发版内测 → 真机修复 → 16KB 对齐 → 互踢修复 → 扫码重构 → 排版对齐）→
-`v0.5.0-beta1…beta5`（模型档位链路，versionCode 15）→ **master：Sprint 0–6 + 真机验收修复（2026-10-02 起，
-未发版；发版时升 versionName/versionCode，判停线见 §6.1）**。
+`v0.5.0-beta1…beta5`（模型档位链路，versionCode 15）→ `v0.5.0-beta6`（**当前**，三个 P0 缺陷结清 + 最近文件只读预览 + 工具调用 Diff 视图 + Sprint 0–3/6 真机全通收官，versionCode 16）。
 
 ## 5. 关键技术结论（浓缩坑清单，动手前必读）
 
@@ -216,16 +217,19 @@ P1-2 多会话看板、P1-4 协议常量结清、P1-3 附件+语音、E-1 权威
 会话列表/多机/设置、会话流渲染、发送消息端到端、附件全链路（桌面端 Begin/Chunk/Commit 实证）、
 停止按钮、**审批端到端**（真实审批→手机通知→Allow once→accepted→消解，两条实证）、语音按钮降级。
 
-**待办总览（2026-10-02 更新——下方旧结论「无开发阻塞项」已被审查推翻，见 §6.1）**：
+**待办总览（2026-10-05 收官更新）**：
 
 | 项 | 内容 | 状态 |
 |---|---|---|
-| **P0-A/B/C** | 前台服务死代码 / 新建会话硬编码 YOLO / release 明文日志（2026-10-02 审查实证） | 🔨 Sprint 1–2 开发中 |
-| **P0-2** | 日常使用观察（3 天）：锁屏通知可达性、HyperOS 杀后台 30min 后审批可达 | ⏳ 待观察（依赖 P0-A 修复后重测） |
+| **P0-A/B/C** | 前台服务死代码 / 新建会话硬编码 YOLO / release 明文日志（Sprint 1–2） | ✅ 全部结清并通过真机验收 |
+| **Sprint 3** | 工具调用 Diff 视图 + 最近文件面板与远程只读代码预览（`file.readTextFile`） | ✅ 全部结清并通过真机端到端验收 |
+| **Sprint 6** | 回归网：VQL 金标准对拍测试 + 23 项纯函数单测 + CI + build.sh 可移植化 | ✅ 全部结清，本地与 CI 全绿 |
+| **P0-2** | 日常使用观察（3 天）：锁屏通知可达性、HyperOS 杀后台 30min 后审批可达 | ⏳ 待观察（前台服务实测运行中） |
 | O-1 | 锁屏通知建议手动确认「设置→通知→锁屏通知」已开 | ⏳ 用户侧 |
 | O-2 | 桌面 Widget 拖到桌面看渲染；会话搜索/主题切换肉眼确认 | ⏳ 用户侧 |
-| D-1 | 会话流 `v4/conversation/frame` 二进制细节穷举（不影响功能，未知 op 有 Unknown 兜底） | ⬜ 按需，需受控抓包 |
-| P2-3 余项 | Wear OS 快捷审批（验收卡硬件）、小米推送（需开发者账号） | 按需/搁置 |
+| Sprint 4 | 通知层升级：RemoteInput 内联回复、审批专用高重要性渠道（治 HyperOS 折叠） | ⬜ 后续接力 |
+| Sprint 5 | Room 缓存（离线可读/秒开）+ share sheet + 配对链接 VIEW deep link + 快捷指令 chips | ⬜ 后续接力 |
+| Sprint 7 | 凭据生命周期与自建中继 + E2EE | ⬜ 需决策 |
 
 **可选增强（非阻塞，按需启动）**：
 - ~~审批乐观消解~~ → **✅ 已实现**（点批准本地先移除卡片、失败自动回滚，CHANGELOG 有记录）——

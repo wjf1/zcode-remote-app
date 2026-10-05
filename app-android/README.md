@@ -1,7 +1,19 @@
-# ZCode Remote（M1/M2 已完成并在模拟器实测通过）
+# ZCode Remote（v0.5.0-beta6 · M1-M3/Sprint 0–3/Sprint 6 全部完成并在小米 15 Pro 真机实测通过）
 
-小米 15 Pro 上的 ZCode 官方远程控制原生增强客户端。
-方案见 [../ZCode远程控制安卓APP方案.md](./ZCode远程控制安卓APP方案.md)（V0.2），协议见 [../PROTOCOL.md](./PROTOCOL.md)（v1.0，含真机实测修正）。
+小米 15 Pro（HyperOS 2 / Android 15+）上的 ZCode 官方远程控制原生增强客户端。
+方案见 [../ZCode远程控制安卓APP方案.md](./ZCode远程控制安卓APP方案.md)，协议见 [../PROTOCOL.md](./PROTOCOL.md)，交接计划见 [../HANDOVER.md](../HANDOVER.md)。
+
+## 真机实测验证状态（Sprint 0–3/6 全部通过，2026-10-05 小米 15 Pro 实测）
+
+在真机（小米 15 Pro，Serial: `9f6241b4`）完成全链路闭环验证：
+
+- **「最近文件」面板与远程代码预览（Sprint 3 第二步，PASS）**：动态从会话流工具调用行抽取文件路径去重，顶栏动态展示 📁 胶囊入口；ModalBottomSheet 展开文件列表，点选通过 `file.readTextFile` 实时获取并等宽渲染代码正文，横向滚动与 20KB 截断保护完全正常。
+- **工具调用 Diff 差异高亮（Sprint 3 第一步，PASS）**：`Edit` / `Write` 工具行纯客户端 Myers 算法计算行级差异，实时展示 `📄 文件名 +N −M`，展开直观呈现红（删）绿（增）行级对比与「⧉ 复制」unified 格式文本。
+- **P0-A 前台保活服务（PASS）**：`ConnectionService` 升级为真实 FGS（`specialUse` 类型 + 进程级 `ConnectionScope`），`dumpsys activity services` 确认 `isForeground=true`，锁屏与划掉任务长连不掉线。
+- **断网感知重连（PASS）**：`NetworkGate` 监听系统网络，断网立即重置并挂起，网络恢复即刻重连，全事件链 <9s。
+- **P0-B 安全执行模式（PASS）**：新建会话与顶栏模式胶囊支持 plan/build/yolo 切换，默认安全 build 模式，彻底杜绝免审批安全漏洞。
+- **P0-C 日志脱敏与 R8（PASS）**：ZLog 统一门控，release 包 dex 日志敏感字符串归零。
+- **回归保护网（Sprint 6，PASS）**：23 项纯函数测试与 VQL 二进制编解码金标准对拍测试全部通过，CI 流程正常。
 
 ## 实测验证状态（M2 端到端验收通过，2026-09-28）
 
