@@ -22,7 +22,8 @@
   [v0.5.0-beta1…beta5](https://github.com/wjf1/zcode-remote-app/releases/tag/v0.5.0-beta5)（3-Tab 架构重构 + 模型思考档位链路，versionCode 15）→
   [v0.5.0-beta6](https://github.com/wjf1/zcode-remote-app/releases/tag/v0.5.0-beta6)（三个 P0 缺陷结清 + 最近文件只读预览 + 工具调用 Diff 视图，versionCode 16）→
   [v0.5.0-beta7](https://github.com/wjf1/zcode-remote-app/releases/tag/v0.5.0-beta7)（会话流智能贴底 + 悬浮「回到底部」+ 输入栏快捷指令胶囊，versionCode 17）→
-  [v0.5.0-beta8](https://github.com/wjf1/zcode-remote-app/releases/tag/v0.5.0-beta8)（**当前**，系统通知栏 RemoteInput 内联快捷回复 + 系统级 Share Sheet 分享接入，versionCode 18）。
+  [v0.5.0-beta8](https://github.com/wjf1/zcode-remote-app/releases/tag/v0.5.0-beta8)（系统通知栏 RemoteInput 内联快捷回复 + 系统级 Share Sheet 分享接入，versionCode 18）→
+  [v0.5.0-beta9](https://github.com/wjf1/zcode-remote-app/releases/tag/v0.5.0-beta9)（**当前**，单轮 Turn 变更文件聚合面板 Turn Diff Summary，versionCode 19）。
 - **2026-09-29 增量（本轮）**：P0-1 发送/停止 ✅、P1-1 表单应答 ✅、P1-2 多会话看板 ✅、
   P1-4 协议常量结清 ✅、技术债清理 ✅——均已构建通过并推送（提交见 `git log`）。
 - **2026-09-29 二轮**：**X-1 keystore 结清**（实测与发布 APK 同指纹，见下）、
@@ -188,7 +189,7 @@ ADB -s <serial> shell am broadcast -n com.zcode.remote/.debug.DebugApprovalRecei
 
 版本序列：`v0.2.0-m2` → `v0.2.1-m2b` → `v0.2.2-m3a` → `v0.2.3-m3b` → `v0.3.0-m3` →
 `v0.4.0-beta1…beta6`（发版内测 → 真机修复 → 16KB 对齐 → 互踢修复 → 扫码重构 → 排版对齐）→
-`v0.5.0-beta1…beta5`（模型档位链路，versionCode 15）→ `v0.5.0-beta6`（P0 结清 + 最近文件 + Diff 视图，versionCode 16）→ `v0.5.0-beta7`（智能贴底 + 快捷胶囊，versionCode 17）→ `v0.5.0-beta8`（**当前**，系统通知栏 RemoteInput 内联快捷回复 + 系统级 Share Sheet 分享接入，versionCode 18）。
+`v0.5.0-beta1…beta5`（模型档位链路，versionCode 15）→ `v0.5.0-beta6`（P0 结清 + 最近文件 + Diff 视图，versionCode 16）→ `v0.5.0-beta7`（智能贴底 + 快捷胶囊，versionCode 17）→ `v0.5.0-beta8`（通知栏 RemoteInput + Share Sheet，versionCode 18）→ `v0.5.0-beta9`（**当前**，单轮 Turn 变更文件聚合面板 Turn Diff Summary，versionCode 19）。
 
 ## 5. 关键技术结论（浓缩坑清单，动手前必读）
 
@@ -335,7 +336,7 @@ RemoteInput 全仓 0 命中）。总体判断：**功能面已超出对标官方
 | 剧本 B「最近文件」面板：从会话流工具调用参数抽已读/已写文件路径，做可跳转面板 | **Sprint 3 第二步优先形态** | 比通用目录浏览器更贴"看 Agent 刚改了什么"的场景，且不依赖目录列举能力；剧本 A（目录树浏览器）降为二期 |
 | W4.7 分片重组与水位 ack 交互审查：`ack(N)` 隐含 N 以下全收，而 `trimFragmentBuffers` 会丢最小 seq 未完成碎片 | ✅ 已审查（2026-10-05） | **结论：正常路径安全**——WS 帧严格有序，同一时刻最多 1 条未完成分片消息，`fragmentBuffers.size > 8` 触发条件实际不可达，水位 ack 不会覆盖未 ack 消息。理论边界：CRC/size 校验失败的已集齐消息被静默丢弃（水位被后续 ack 覆盖）——传输层损坏才触发，CRC 本身即双保险设计，留档不改。单测需解耦 android.util.Base64，收益低于成本 |
 | 迟到 onFailure 竞态 | ✅ 已修复（2026-10-05） | RelayClient 引入连接代次（generation）：connect() 先 cancel 旧 socket + 作废挂起重连调度，所有回调与调度携带并校验代次——旧 socket 迟到回调一律丢弃，不再可能断掉健康连接 |
-| 会话内变更面板：聚合"本 turn 改了哪些文件"，点进看 diff | Sprint 3 第三步候选 | diff 能力真正的高频入口，比通用 Git 浏览器价值高 |
+| 会话内变更面板：聚合"本 turn 改了哪些文件"，点进看 diff | ✅ 已完成（v0.5.0-beta9） | TurnChanges.aggregate + TurnChangesCard 挂载，真机实测 PASS，24 项单测全绿 |
 | v1.0 判停线 | 里程碑定义 | 回归网（Sprint 6）+ 三天真机观察通过即可发 v1.0；之后均为 v1.1 增量，不构成发布阻塞 |
 | 小 bug：检查更新 `hasNew` 用字符串不等判断 | ✅ 已修 | 远端旧版本会误报"有新版本"；改语义化比较（数字段逐位 + prerelease 规则）+ 8 项单测 |
 | HANDOVER 文档卫生：P1-4 重复标题、§4 版本序列滞后于 §1 | ✅ 已修 | |

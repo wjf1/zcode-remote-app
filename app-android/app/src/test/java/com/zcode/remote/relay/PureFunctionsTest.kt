@@ -115,7 +115,7 @@ class PureFunctionsTest {
 
     // ---------- SessionFiles（剧本 B「最近文件」）----------
 
-    private fun toolRow(rowId: Int, tool: String, input: String) = ConversationRow(
+    private fun toolRow(rowId: Int, tool: String, input: String? = null) = ConversationRow(
         rowId = rowId, kind = "toolCall", toolName = tool, inputText = input,
     )
 
@@ -153,5 +153,29 @@ class PureFunctionsTest {
         assertEquals("wss://zcode.z.ai/ws", zai.relayWsUrl)
         val backup = PairedDevice("sid", "hash", null, null, "https://zcode.chatglm.site/remote/v4")
         assertEquals("wss://zcode.chatglm.site/ws", backup.relayWsUrl)
+    }
+
+    // ---------- TurnChanges.aggregate ----------
+
+    @Test
+    fun turnChangesAggregatesWriteToolsInSameTurn() {
+        val rows = listOf(
+            toolRow(1, "userInput", null).copy(kind = "userInput", turnId = "turn_1"),
+            toolRow(2, "Edit", """{"file_path":"F:/x/a.kt","old_string":"foo","new_string":"bar"}""").copy(turnId = "turn_1"),
+            toolRow(3, "Bash", """{"command":"ls"}""").copy(turnId = "turn_1"),
+            toolRow(4, "Write", """{"file_path":"F:/x/b.txt","content":"hello\nworld"}""").copy(turnId = "turn_1"),
+            toolRow(5, "userInput", null).copy(kind = "userInput", turnId = "turn_2"),
+            toolRow(6, "Bash", """{"command":"git status"}""").copy(turnId = "turn_2"),
+        )
+        val summaries = TurnChanges.aggregate(rows)
+        // 只有 turn_1 包含写工具，且挂载在最后一个写操作 rowId=4 上
+        assertEquals(1, summaries.size)
+        val s = summaries[4]!!
+        assertEquals("turn_1", s.turnKey)
+        assertEquals(4, s.lastRowId)
+        assertEquals(2, s.fileCount)
+        assertEquals(2, s.diffs.size)
+        assertTrue(s.totalAdded > 0)
+        assertTrue(s.totalRemoved > 0)
     }
 }

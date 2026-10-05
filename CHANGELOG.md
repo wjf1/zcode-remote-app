@@ -1,5 +1,20 @@
 # 变更记录 / Changelog
 
+## v0.5.0-beta9（2026-10-05）· 单轮 Turn 变更文件聚合面板（Turn Diff Summary）
+
+**里程碑：实现 Sprint 3 第三步收官 —— 会话流内单轮 Turn 文件变更一站式聚合 Review（对标 GitHub PR Files Changed），彻底免除逐个翻找与展开工具行的繁琐操作。**
+
+### 新增
+- **单轮 Turn 变更聚合算法（`TurnChanges.kt`）**：纯客户端零协议零 RPC，按会话 Turn 边界自动归集该轮执行的所有 Edit / Write 工具行，聚合统计修改文件总数、总新增行、总删除行，并挂载于该轮最后一个写操作之后。配齐独立纯函数单测（24 项单测全绿）。
+- **本轮变更 Review 卡片组件（`TurnChangesCard.kt`）**：会话内自动呈现 `📦 本轮变更 · 共 N 个文件 (+A −B) [查看变更]`，支持一键平铺该轮修改的全部文件 DiffBlock，快速对比各文件红绿差异与一键复制 unified diff。
+
+### 变更与验证状态
+- **真机端到端实测 PASS（小米 15 Pro / HyperOS）**：
+  1. 动态写操作执行后，会话流精准挂载 `📦 本轮变更` 卡片，准确统计并高亮多文件变更摘要。
+  2. 点击「查看变更」平滑展开多文件差异比对与复制功能。
+  3. 24 项 JVM 单元测试与 Release 构建全绿。
+- `versionName 0.5.0-beta9` / `versionCode 19`。
+
 ## v0.5.0-beta8（2026-10-05）· 系统通知栏 RemoteInput 内联快捷回复与 Share Sheet 接收
 
 **里程碑：打通 Android 原生核心能力 —— 支持在系统通知栏直接拉开打字回复并一键提交（RemoteInput）；支持接收系统级分享（Share Sheet）的外部文本与文件附件，无缝填入输入草稿。**

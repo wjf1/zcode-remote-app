@@ -108,6 +108,8 @@ fun ConversationScreen(
     val headerCount = if (rows.isEmpty()) 0 else 1
     // 剧本 B「最近文件」：从会话行派生文件清单（纯客户端零协议）
     val sessionFiles = remember(rows) { com.zcode.remote.relay.SessionFiles.extract(rows) }
+    // Sprint 3 第三步：从会话行按 Turn 聚合文件写操作 Diff
+    val turnSummaries = remember(rows) { com.zcode.remote.relay.TurnChanges.aggregate(rows) }
     var showFiles by remember { mutableStateOf(false) }
 
     // 进入会话页即刷新一次模型目录（PC 端新增/删除模型后回到 APP 即可看到最新列表）
@@ -452,7 +454,15 @@ fun ConversationScreen(
                             textAlign = androidx.compose.ui.text.style.TextAlign.Center,
                         )
                     }
-                    items(rows, key = { it.rowId }) { row -> RowItem(row) }
+                    items(rows, key = { it.rowId }) { row ->
+                        RowItem(row)
+                        turnSummaries[row.rowId]?.let { summary ->
+                            com.zcode.remote.ui.components.TurnChangesCard(
+                                summary = summary,
+                                modifier = Modifier.padding(vertical = 4.dp)
+                            )
+                        }
+                    }
                 }
 
                 // 悬浮「回到底部」胶囊按钮（仅在用户主动上翻查阅历史且列表有内容时展示）
