@@ -22,8 +22,8 @@ android {
         applicationId = "com.zcode.remote"
         minSdk = 31
         targetSdk = 35
-        versionCode = 15
-        versionName = "0.5.0-beta5"
+        versionCode = 16
+        versionName = "0.5.0-beta6"
     }
 
     signingConfigs {
