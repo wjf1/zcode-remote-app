@@ -165,7 +165,7 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
 
                 val curVer = BuildConfig.VERSION_NAME.removePrefix("v").trim()
                 val remoteVer = tagName.removePrefix("v").trim()
-                val hasNew = remoteVer.isNotBlank() && remoteVer != curVer
+                val hasNew = remoteVer.isNotBlank() && isNewerVersion(curVer, remoteVer)
 
                 updateState = UpdateState.Success(
                     UpdateInfo(
@@ -1398,5 +1398,42 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
      */
     override fun onCleared() { super.onCleared() }
 
-    companion object { private const val TAG = "AppViewModel" }
+    companion object {
+        private const val TAG = "AppViewModel"
+
+        /**
+         * 语义化版本比较（检查更新用，2026-10-05 修）：原实现用字符串不等判断——
+         * 远端旧版本（0.4.0 < 0.5.0-beta5）会误报"有新版本"。规则按 semver 直觉：
+         * 数字段逐位比较；核心版本相等时，remote 无 prerelease 且 current 有 → newer；
+         * prerelease 之间按「字母前缀 + 数字」比较（beta10 > beta9，字典序会错）。
+         */
+        internal fun isNewerVersion(current: String, remote: String): Boolean {
+            fun coreOf(v: String): List<Int> =
+                v.substringBefore('-').split('.').map { it.filter { c -> c.isDigit() }.toIntOrNull() ?: 0 }
+            fun preOf(v: String): String = v.substringAfter('-', "")
+            fun preKey(p: String): Pair<String, Int> {
+                val digits = p.takeLastWhile { it.isDigit() }
+                return p.dropLast(digits.length) to (digits.toIntOrNull() ?: 0)
+            }
+            val cCore = coreOf(current)
+            val rCore = coreOf(remote)
+            for (i in 0 until maxOf(cCore.size, rCore.size)) {
+                val c = cCore.getOrElse(i) { 0 }
+                val r = rCore.getOrElse(i) { 0 }
+                if (r != c) return r > c
+            }
+            val cPre = preOf(current)
+            val rPre = preOf(remote)
+            return when {
+                rPre.isEmpty() && cPre.isNotEmpty() -> true   // 同核心版本，remote 是正式版、current 是预发布
+                rPre.isNotEmpty() && cPre.isEmpty() -> false
+                rPre.isNotEmpty() && cPre.isNotEmpty() -> {
+                    val rk = preKey(rPre)
+                    val ck = preKey(cPre)
+                    if (rk.first != ck.first) rk.first > ck.first else rk.second > ck.second
+                }
+                else -> false
+            }
+        }
+    }
 }

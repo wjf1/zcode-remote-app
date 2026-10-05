@@ -183,8 +183,9 @@ ADB -s <serial> shell am broadcast -n com.zcode.remote/.debug.DebugApprovalRecei
 | 前台服务 | ⚠️ **占位死代码**（2026-10-02 审查证实：`start()/stop()` 全仓无调用者，连接实际绑定 Activity 生命周期）→ Sprint 1 P0-A 迁移 | `service/ConnectionService.kt` |
 
 版本序列：`v0.2.0-m2` → `v0.2.1-m2b` → `v0.2.2-m3a` → `v0.2.3-m3b` → `v0.3.0-m3` →
-`v0.4.0-beta1`（发版收官内测）→ `v0.4.0-beta2`（真机验收问题修复）→ **`v0.4.0-beta3`（当前，versionName 0.4.0-beta3 /
-versionCode 7，16KB 页对齐修复）**。
+`v0.4.0-beta1…beta6`（发版内测 → 真机修复 → 16KB 对齐 → 互踢修复 → 扫码重构 → 排版对齐）→
+`v0.5.0-beta1…beta5`（模型档位链路，versionCode 15）→ **master：Sprint 0–6 + 真机验收修复（2026-10-02 起，
+未发版；发版时升 versionName/versionCode，判停线见 §6.1）**。
 
 ## 5. 关键技术结论（浓缩坑清单，动手前必读）
 
@@ -317,6 +318,26 @@ RemoteInput 全仓 0 命中）。总体判断：**功能面已超出对标官方
 - HyperOS 的 `cmd connectivity airplane-mode enable` 不一定真断 Wi-Fi（记忆用户偏好）；断网验收用 `svc wifi disable && svc data disable` 才可靠。
 - 会话运行中用 uiautomator 浏览历史行会被贴底打断——验收操作要原子化（滚动+定位+点击+验证在一条命令内完成）。
 
+**《八周计划》（千问work，2026-10-05 评审）的吸收项**——该文档与本计划覆盖同一批事实（约 2/3 重叠，
+重叠部分已全部完成并真机验收），以下为经甄别后并入的增量：
+
+| 吸收项 | 去向 | 说明 |
+|---|---|---|
+| RPC 能力探测系统方法：从 `research/asar/` 静态枚举全部 channel/method + 对 file/git/workspace 类方法逐个实测 | 并入 Sprint 3 第二步前置 | 必须回答四个问题：`readTextFile` 路径边界（能否读工作区外/~/.ssh）？有无目录列举方法？有无 git/命令通道（有则 diff 直接走 `git diff`）？有无**写**能力（安全边界决定性事实）？ |
+| 剧本 B「最近文件」面板：从会话流工具调用参数抽已读/已写文件路径，做可跳转面板 | **Sprint 3 第二步优先形态** | 比通用目录浏览器更贴"看 Agent 刚改了什么"的场景，且不依赖目录列举能力；剧本 A（目录树浏览器）降为二期 |
+| W4.7 分片重组与水位 ack 交互审查：`ack(N)` 隐含 N 以下全收，而 `trimFragmentBuffers` 会丢最小 seq 未完成碎片 | 新增可靠性待办（P1） | 可能静默丢消息——三份文档中唯一指出此点；用 >1MiB 多分片消息构造用例验证 |
+| 迟到 onFailure 竞态 | 新增可靠性待办（P1） | 重连复用同一 RelayClient 实例时，旧 socket 的迟到 `onFailure` 会穿过防重入守卫（此时无重连在跑）错误调度重连、断掉健康连接；修复取 epoch/cancel 旧 socket 思路（connect() 先 `socket?.cancel()` + listener 捕获代次） |
+| 会话内变更面板：聚合"本 turn 改了哪些文件"，点进看 diff | Sprint 3 第三步候选 | diff 能力真正的高频入口，比通用 Git 浏览器价值高 |
+| v1.0 判停线 | 里程碑定义 | 回归网（Sprint 6）+ 三天真机观察通过即可发 v1.0；之后均为 v1.1 增量，不构成发布阻塞 |
+| 小 bug：检查更新 `hasNew` 用字符串不等判断 | ✅ 已修 | 远端旧版本会误报"有新版本"；改语义化比较（数字段逐位 + prerelease 规则）+ 8 项单测 |
+| HANDOVER 文档卫生：P1-4 重复标题、§4 版本序列滞后于 §1 | ✅ 已修 | |
+| 删零引用依赖 navigation-compose / datastore-preferences / security-crypto(alpha) + CredentialStore 死代码 | ✅ 已删 | import 级零引用验证后删除 |
+
+**该文档评审后不建议吸收**（留档备查）：W4 的 epoch/原子化整体重构（ConnectionScope 方案下连接实例
+随创建销毁，其要解的问题域大半不存在，仅取上述竞态修复）；W5 文档拆四份（大动作中等收益，可选做
+仓库根薄版 AGENTS.md）；W8.4 AGP 升级（有保护网后可做但非必要）；Wear OS / 小米推送（可达性已被
+真机验收部分回答：前台服务 + NetworkGate 下断网重连 <9s，继续观察 P0-2 再定）。
+
 **明确不做（沿用审查结论）**：iOS/跨端重写、手机端完整 Git 写操作（只读 diff，写操作交给 Agent）、
 FCM/小米推送主通道（IM Bot 通道兜底另议）、追功能广度（多供应商面板/Marketplace/RBAC）。
 
@@ -394,11 +415,6 @@ FCM/小米推送主通道（IM Bot 通道兜底另议）、追功能广度（多
      `openStream + totalBytes` 签名，两遍流（sha256 → 分片），内存峰值一倍分片；
      选中后文件被移删会在上传时报错（行为变化见 CHANGELOG 六轮）。
 
-### P1-4 协议【待验证】项补全（PROTOCOL.md §8 列表）
-
-- `maxPhysicalFrameBytes` 阈值、PC 侧 meta 字段、心跳间隔分配。方法：`tools/probe.py` 受控实验 + host-index 搜索定位常量，结论回写 PROTOCOL.md。
-- **预估**：0.5 天。
-
 ### P2-1 M4：VPS 备用 Runner（❌ 2026-09-30 用户决策取消）
 
 > 以下为原设计记录，仅作历史参考，不再开发。取消原因：实用收益（PC 关机场景）与安全收益
@@ -465,3 +481,6 @@ FCM/小米推送主通道（IM Bot 通道兜底另议）、追功能广度（多
 - 起后台进程用工具的 run_in_background，禁止裸 `&`/`nohup`（会杀 agent host）。
 - **「协议做不到」类结论必须标注依据**（bundle 静态分析 or 真机实测），两者冲突以实测为准并回改文档
   （2026-10-02 新增，教训见 §6.0 勘误）。
+- **App 侧永不提供文件写能力**（2026-10-05 采纳自八周计划评审）：远程读文件（`file.readTextFile`）
+  只为查看 Agent 产物；写路径等价于把整台桌面交给手机——配对链接一旦泄露即远程任意写。
+  若确有需求，单独走一轮安全评审再排期。

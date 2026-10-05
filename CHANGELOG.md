@@ -28,6 +28,7 @@
 - **release 开启 R8 + 资源收缩**：补建 `proguard-rules.pro`（`assumenosideeffects` 编译期剥离 `Log.v/d/i/w` 调用含字符串参数，与 ZLog 门控双保险）；自家代码本轮保守 keep（混淆改名待真机冒烟后放开）。
 
 ### 变更与验证状态
+- **《八周计划》评审吸收（2026-10-05）**：经甄别并入 9 项增量——RPC 能力探测系统方法与剧本 B「最近文件」面板并入 Sprint 3 第二步；分片重组/水位 ack 交互审查与迟到 onFailure 竞态立为 P1 待办；「文件写能力永不提供」写入 §8 红线；v1.0 判停线入里程碑定义。随即落地：修复检查更新版本比较 bug（字符串不等→语义化比较 + 8 项单测，远端旧版本曾误报"有新版本"）；删除三个零引用依赖（navigation-compose/datastore-preferences/security-crypto，import 级验证）与 CredentialStore 死代码；HANDOVER 文档卫生（P1-4 重复标题、§4 版本序列滞后）。不建议吸收部分（W4 epoch 整改/W5 拆文档/W8.4 AGP 升级等）已留档 HANDOVER §6.1。
 - **真机验收（2026-10-05，小米 15 Pro / Android 17）**：连接链路 matched、P0-A 前台服务（specialUse 位实证）、② 断网感知重连事件链 <9s、④ 审批推送端到端（通知→审批卡→允许一次→RPC 放行→乐观消解）、⑤ 模式胶囊常驻+切换、⑥ KICKED 终态通知、P0-C debug 日志——**全部 PASS**（明细见 HANDOVER §6.1 验收表）。release logcat 为静态已验跳过；划掉任务 30min 观察归入 P0-2。
 - **真机验收驱动的修复**：① `sessionModeOverride` 初始化顺序 NPE（启动即崩）；② 补 `ACCESS_NETWORK_STATE` 权限（缺失时 NetworkGate 静默失效）；③ NetworkGate 重构为常驻网络监控（OkHttp 断网回调延迟到恢复才冒出 + 退避烧满导致的"假死"，onLost 立即断 socket 重连 / onAvailable 即刻放行）；④ 执行模式与订阅模式撞名修正（ModeChip 曾错显 snapshot，改用 readWorkspaceState 的 settings.mode.current）；⑤ RelayClient 重连防重入守卫与跳过原因日志。
 - **build.sh 可移植化（Sprint 6）**：仓库根改由 `${BASH_SOURCE[0]}` 推导、JDK/SDK/Gradle 依次回退到「仓库 toolchain/ → 环境变量 → PATH」——clone 到任意目录、任意机器 `./build.sh` 直接可构建（此前必须放在 `F:/AI/Zcode/zcode-remote-app` 才行）。

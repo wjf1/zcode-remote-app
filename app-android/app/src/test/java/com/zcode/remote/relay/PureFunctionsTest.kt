@@ -1,5 +1,6 @@
 package com.zcode.remote.relay
 
+import com.zcode.remote.AppViewModel
 import com.zcode.remote.storage.PairedDevice
 import kotlinx.serialization.json.JsonNull
 import kotlinx.serialization.json.buildJsonObject
@@ -92,6 +93,24 @@ class PureFunctionsTest {
         )
         // 无斜杠：回退默认 provider "glm"（官方 pf() 兜底）
         assertEquals("glm" to "deepseek-v4.1", WorkspaceConfigChannel.splitModelValue("deepseek-v4.1"))
+    }
+
+    // ---------- AppViewModel.isNewerVersion（检查更新）----------
+
+    @Test
+    fun versionComparisonSemantics() {
+        // 原 bug 场景：远端是旧版本，字符串不等判断会误报"有新版本"
+        assertEquals(false, AppViewModel.isNewerVersion("0.5.0-beta5", "0.4.0-beta6"))
+        assertEquals(false, AppViewModel.isNewerVersion("0.5.0-beta5", "0.5.0-beta5"))
+        // 正常升级
+        assertEquals(true, AppViewModel.isNewerVersion("0.5.0-beta5", "0.5.0-beta6"))
+        assertEquals(true, AppViewModel.isNewerVersion("0.5.0-beta5", "0.6.0-beta1"))
+        // 同核心版本：remote 正式版 > current 预发布；反之不然
+        assertEquals(true, AppViewModel.isNewerVersion("0.5.0-beta5", "0.5.0"))
+        assertEquals(false, AppViewModel.isNewerVersion("0.5.0", "0.5.0-beta5"))
+        // prerelease 数字感知（字典序会把 beta10 排在 beta9 前）
+        assertEquals(true, AppViewModel.isNewerVersion("0.5.0-beta9", "0.5.0-beta10"))
+        assertEquals(false, AppViewModel.isNewerVersion("0.5.0-beta10", "0.5.0-beta9"))
     }
 
     // ---------- PairedDevice.relayWsUrl ----------
