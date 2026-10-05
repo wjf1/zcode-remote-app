@@ -7,6 +7,7 @@
 随后补齐 Sprint 6 回归网（23 项 JVM 测试全绿 + CI + 构建脚本可移植化）。**
 
 ### 新增
+- **「最近文件」面板与只读预览（Sprint 3 第二步·剧本 B）**：`relay/SessionFiles.kt` 从会话流工具调用行（Edit/Write/Read/MultiEdit）纯客户端抽取文件路径去重，最近操作优先。会话页顶栏新增 `📁` 入口（动态展示文件数），点开为 `ModalBottomSheet` 列表（短文件名 + 完整路径 + 工具标签），点击条目通过 `file.readTextFile` RPC 读取远程文件正文（`~` 路径经 `resolvePath` 展开），等宽代码块展示、横向滚动、20k 截断，纯只读无写路径。4 项纯函数单测覆盖。
 - **VQL 金标准对拍测试（Sprint 6）**：新增 `tools/gen_vql_fixtures.py`（Python 侧独立编解码实现）生成 20 个共享向量 + 2 个多值流（`app/src/test/resources/vql_fixtures.json`），Kotlin `Vql.kt` 对每个向量做「编码字节级一致 + 解码语义一致 + 偏移推进一致」双向对拍——协议上游一变，CI 先红。
 - **纯函数单测（Sprint 6）**：`ToolDiffParser`/Myers diff（含交换型修改回溯、空文件 `"".lines()` 规范化、超 4000 行降级、重建校验）、`ConversationRow.from`（字段映射 + raw 整包保留 + 缺 rowId/kind 拒解）、`ApprovalOption.sortKey`（渲染顺序全分支）、`splitModelValue`（$variant 剥离 + 无斜杠回退）、`PairedDevice.relayWsUrl`（线路分派）。23 项测试全绿；QrParser 依赖 `android.net.Uri` 不入 JVM 测试（真机验收覆盖）。
 - **GitHub Actions CI（Sprint 6）**：`.github/workflows/ci.yml` —— Ubuntu runner 上跑 `gen_vql_fixtures.py → testDebugUnitTest → assembleDebug`，纯 JVM 无需真机。
@@ -29,7 +30,11 @@
 
 ### 变更与验证状态
 - **《八周计划》评审吸收（2026-10-05）**：经甄别并入 9 项增量——RPC 能力探测系统方法与剧本 B「最近文件」面板并入 Sprint 3 第二步；分片重组/水位 ack 交互审查与迟到 onFailure 竞态立为 P1 待办；「文件写能力永不提供」写入 §8 红线；v1.0 判停线入里程碑定义。随即落地：修复检查更新版本比较 bug（字符串不等→语义化比较 + 8 项单测，远端旧版本曾误报"有新版本"）；删除三个零引用依赖（navigation-compose/datastore-preferences/security-crypto，import 级验证）与 CredentialStore 死代码；HANDOVER 文档卫生（P1-4 重复标题、§4 版本序列滞后）。不建议吸收部分（W4 epoch 整改/W5 拆文档/W8.4 AGP 升级等）已留档 HANDOVER §6.1。
-- **真机验收（2026-10-05，小米 15 Pro / Android 17）**：连接链路 matched、P0-A 前台服务（specialUse 位实证）、② 断网感知重连事件链 <9s、④ 审批推送端到端（通知→审批卡→允许一次→RPC 放行→乐观消解）、⑤ 模式胶囊常驻+切换、⑥ KICKED 终态通知、P0-C debug 日志——**全部 PASS**（明细见 HANDOVER §6.1 验收表）。release logcat 为静态已验跳过；划掉任务 30min 观察归入 P0-2。
+- **真机验收（2026-10-05，小米 15 Pro / Android 17）**：连接链路 matched、P0-A 前台服务（specialUse 位实证）、② 断网感知重连事件链 <9s、④ 审批推送端到端（通知→审批卡→允许一次→RPC 放行→乐观消解）、⑤ 模式胶囊常驻+切换、⑥ KICKED 终态通知、P0-C debug 日志——**全部 PASS**（明细见 HANDOVER §6.1 验收表）。新增 **Sprint 3 真机端到端验收全通**：
+  - **「最近文件」面板与只读预览（剧本 B）PASS**：动态捕获会话流工具调用行文件（实测 8 个），顶栏 `📁 8` 实时渲染；ModalBottomSheet 列表点选通过 `file.readTextFile` 实时获取并等宽渲染代码正文，横向滚动与「← 文件列表」/「关闭」交互正常。
+  - **工具调用 Diff 视图直接实证 PASS**：实测会话流中的真实 `Edit` 调用行（`zd_test.txt`），`ToolDiffParser` 解析出 `+1 −1`，真机直接渲染折叠摘要 `📄 F:/AI/Zcode/zd_test.txt +1 −1`，展开后行级 Myers 红绿 diff 与 `⧉ 复制` unified 文本功能验证通过。
+  - **审批广播与通知栏复验 PASS**：`DebugApprovalReceiver` 广播注入双审批测试项，系统通知栏 `approvals` 渠道 HIGH（importance=4）横幅与 actions 按钮正常，`DEBUG_APPROVAL_CLEAR` 正常撤销；`ApprovalsTab` 集中看板空状态展示正常。
+  release logcat 为静态已验跳过；划掉任务 30min 观察归入 P0-2。
 - **真机验收驱动的修复**：① `sessionModeOverride` 初始化顺序 NPE（启动即崩）；② 补 `ACCESS_NETWORK_STATE` 权限（缺失时 NetworkGate 静默失效）；③ NetworkGate 重构为常驻网络监控（OkHttp 断网回调延迟到恢复才冒出 + 退避烧满导致的"假死"，onLost 立即断 socket 重连 / onAvailable 即刻放行）；④ 执行模式与订阅模式撞名修正（ModeChip 曾错显 snapshot，改用 readWorkspaceState 的 settings.mode.current）；⑤ RelayClient 重连防重入守卫与跳过原因日志。
 - **build.sh 可移植化（Sprint 6）**：仓库根改由 `${BASH_SOURCE[0]}` 推导、JDK/SDK/Gradle 依次回退到「仓库 toolchain/ → 环境变量 → PATH」——clone 到任意目录、任意机器 `./build.sh` 直接可构建（此前必须放在 `F:/AI/Zcode/zcode-remote-app` 才行）。
 - 文档：HANDOVER §4 / §6.0 失效结论勘误（前台服务死代码、文件浏览「无落点」被实测推翻、乐观消解已实现）；新增 §6.1 计划评审结论与 Sprint 0–7 排期 + 真机验收结果表 + 接手必读环境注意事项（注入 sid 教训 / Clash fake-ip 掐 TLS / svc 断网验收法）；§8 新增「协议做不到类结论须标注静态分析/实测依据」红线。

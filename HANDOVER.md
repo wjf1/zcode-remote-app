@@ -278,8 +278,8 @@ RemoteInput 全仓 0 命中）。总体判断：**功能面已超出对标官方
 | Sprint 0 | 文档清账：修正本文失效结论（§4 / §6.0）+ 新增「静态分析 vs 实测」标注规则 | ✅ 2026-10-02 |
 | Sprint 1 | **P0-A** 连接迁入进程级 `ConnectionScope` + FGS `specialUse`/`onTimeout`；**P0-C** `ZLog` 门控 + R8 + 补建 proguard 剥离日志；**B组** `NetworkCallback` / 入站流 `SUSPEND` / `appVersion` 改取 `BuildConfig.VERSION_NAME` | 🔨 本轮 |
 | Sprint 2 | **P0-B** 执行模式选择器（plan/build/yolo，默认 build）+ 会话页模式胶囊（`setMode` 仅对新 turn 生效须如实提示）+ KICKED/AUTH_FAILED/PROTOCOL_MISMATCH 三种终态常驻通知 | 🔨 本轮 |
-| Sprint 3 第一步 | diff 视图（纯客户端解析写类工具 `inputText`/`raw` 的 old/new → unified diff 红绿渲染，零协议零 RPC 可离线开发） | 🔨 本轮 |
-| Sprint 3 第二步 | 只读文件能力——**探测已完成（2026-10-05）**：静态枚举落 PROTOCOL.md §10（file 方法族含 readFileRange 分段读、路径 resolve 语义推论、无写方法）；实测边界确认 **matched 是开桥硬前提**（同 sid 双 terminal 后连者仅 waiting）；「最近文件」面板（剧本 B）确认为优先形态，**四问动态实测待手机让出 terminal 后跑 `tools/enumerate_rpc.py` 补 §10.4** | 🔨 静态完成 |
+| Sprint 3 第一步 | diff 视图（纯客户端解析写类工具 `inputText`/`raw` 的 old/new → unified diff 红绿渲染，零协议零 RPC 可离线开发） | ✅ 2026-10-05 真机验收完成 |
+| Sprint 3 第二步 | 只读文件能力——剧本 B「最近文件」面板（`SessionFiles` 从工具调用行抽路径去重 + 顶栏 📁 入口 + ModalBottomSheet 文件列表 + `file.readTextFile` 预览，零新协议） | ✅ 2026-10-05 真机端到端验收全通 |
 | Sprint 4 | 通知层升级：RemoteInput 内联回复、审批专用高重要性渠道（治 HyperOS 折叠） | ⬜ 后续接力 |
 | Sprint 5 | Room 缓存（离线可读/秒开）+ share sheet + 配对链接 VIEW deep link + 快捷指令 chips | ⬜ 后续接力 |
 | Sprint 6 | 回归网：VQL 金标准对拍测试（Kotlin↔Python 共享 fixture）+ 纯函数单测（23 项全绿，2026-10-02）+ GitHub Actions + `build.sh` 去硬编码路径 | ✅ 2026-10-02 |
@@ -301,7 +301,9 @@ RemoteInput 全仓 0 命中）。总体判断：**功能面已超出对标官方
 | ⑤ 模式胶囊 | ✅ | 常驻显示（默认 build 兜底）→ 点击菜单三档 + yolo 警示 + §5.4 语义提示 → 选 plan 胶囊即变（setMode RPC 生效）→ 已切回 build |
 | ⑥ 终态通知 | ✅ | 被桌面端面板抢占 → 常驻通知「会话已在别处打开（与官方 Web 版互踢）」（terminal_state 渠道 HIGH） |
 | P0-C debug 日志 | ✅ | proof 本体不再输出（`auth proof computed` 仅元信息） |
-| diff 视图 | ✅（间接） | DiffBlock 渲染实证（展开 Edit 行出现独有「⧉ 复制」按钮）；+/− 行可视留档因会话运行中贴底打断，待 zd_test 会话 turn 恢复后补验；解析正确性由 23 项 JVM 单测覆盖 |
+| diff 视图 | ✅ | DiffBlock 渲染实证（`zd_test.txt` Edit 行解析 Myers diff，摘要 `📄 zd_test.txt +1 −1` 实时展示，行级红绿增删与「⧉ 复制」unified 文本直接实证）；23 项 JVM 单测全绿 |
+| 最近文件面板与只读预览 | ✅ | `SessionFiles` 动态抽行内文件（实测 8 个文件），顶栏 `📁 8` 动态更新；ModalBottomSheet 列表点选发起 `file.readTextFile`，返回正文等宽展示+横向滚动；「← 文件列表」/「关闭」交互正常 |
+| 审批广播与通知栏 | ✅ | `DebugApprovalReceiver` 注入双测试审批，`approvals` 渠道 HIGH（importance=4）常驻横幅与 actions 按钮正常，`DEBUG_APPROVAL_CLEAR` 正常撤销；`ApprovalsTab` 集中看板渲染正常 |
 | ③ release 包 logcat | ⏸ 静态已验 | dex 敏感字符串 5/5 归零（编译期确定性）；真机 release 需卸载重装+重新配对，成本大于收益，跳过 |
 | 划掉任务 30min 观察 | ⏳ | 归入 P0-2 日常观察（前台服务已实证运行，预期 PASS） |
 
