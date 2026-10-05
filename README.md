@@ -81,10 +81,12 @@ ZCode 官方远程控制（`zcode.z.ai/remote`）的**原生安卓增强客户�
 | Sprint 3 第三步 / Turn 变更聚合 | 会话流单轮 Turn 变更文件汇总卡片（Turn Diff Summary）、多文件一站式 Review、24 项单测全绿、真机实测全通 | ✅ 完成（v0.5.0-beta9，2026-10-05） |
 | Sprint 5 移动原生与离线能力闭环 | 会话列表与消息流双离线持久化秒开（Offline First）、配对链接 Deep Link 唤起、系统级触觉震动反馈、Share Sheet 接入、26 项单测全绿 | ✅ 完成（v0.5.0-beta12，2026-10-05） |
 | ~~M4/M5~~ | ~~VPS 备用 Runner、E2E 高级模式~~ | ❌ 已取消（2026-09-30 决策：单人自用下成本收益不划算，详见 HANDOVER） |
+| ~~Sprint 7~~ | ~~生物识别/凭据生命周期、自建中继 + E2EE~~ | ❌ 已取消（2026-10-05 用户决策：后续开发计划一律不做） |
+| **v1.0 判停** | **3 天日常使用观察（锁屏审批可达 / 杀后台 30min / 网络往返）** | ⏳ 进行中（唯一剩余事项） |
 
 ### 接力开发 / Handover
 
-剩余开发计划与交接文档见 [HANDOVER.md](HANDOVER.md)（自包含，面向 AI agent 直接接手）。
+**功能开发已结清（2026-10-05）**：Sprint 0–6 全部完成并真机验收，后续开发计划（Sprint 7 等）经决策取消。当前仅剩「3 天日常使用观察 → 发 v1.0」一步。交接文档见 [HANDOVER.md](HANDOVER.md)（自包含，面向 AI agent 直接接手）。
 
 ### 安装包 / Releases
 
@@ -182,6 +184,8 @@ A **native Android client** for the official ZCode Remote Control relay (`zcode.
 | Sprint 3 Step 3 / Turn Diff Summary | In-session turn changes aggregation review card, multi-file unified diff inspection, 24 unit tests, verified on real device | ✅ Done (v0.5.0-beta9, 2026-10-05) |
 | Sprint 5 Offline-First & System Integration | Instant-open session & message-row cache, Pairing Deep Links, full tactile haptics, Share Sheet receiver, 26 unit tests | ✅ Done (v0.5.0-beta12, 2026-10-05) |
 | ~~M4/M5~~ | ~~VPS backup runner, E2E advanced mode~~ | ❌ Cancelled (2026-09-30: cost/benefit not worth it for single-user, see HANDOVER) |
+| ~~Sprint 7~~ | ~~Biometric / credential lifecycle, self-hosted relay + E2EE~~ | ❌ Cancelled (2026-10-05: all future dev plans dropped by user decision) |
+| **v1.0 Judgment Line** | **3-day daily-use observation (lock-screen approval reachability / 30-min background kill / network round-trips)** | ⏳ In progress (only remaining item) |
 
 ### Releases
 
