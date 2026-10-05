@@ -245,6 +245,16 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
     // ---- 连接栈（Sprint 1 / P0-A）：实际持有方是进程级 ConnectionScope（由前台服务
     // ConnectionService 保护进程），下面是读写代理 —— ViewModel 重建/销毁不影响连接本体，
     // 既有引用点全部无需改动。
+    // ---- 执行模式（P0-B）----
+    // ⚠️ 相关 mutableState 必须声明在 init{connect()} 之前：connect 的状态收集会立即写它，
+    // Kotlin 属性按声明顺序初始化，放类尾会在首次 emit 时 NPE（真机验收 2026-10-05 实证）。
+    /** 用户在会话页手动切换后的执行模式乐观值（优先级最高）。 */
+    var sessionModeOverride by mutableStateOf<String?>(null)
+        private set
+    /** 工作区当前执行模式（readWorkspaceState 的 settings.mode.current；null=未读到，UI 兜底 build）。 */
+    var sessionModeFromWorkspace by mutableStateOf<String?>(null)
+        private set
+
     private var client: RelayClient?
         get() = ConnectionScope.client
         set(value) { ConnectionScope.client = value }
@@ -307,10 +317,13 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
             appVersion = BuildConfig.VERSION_NAME,
             relayWsUrlOverride = relayOverride(),
         )
-        // B 组：网络感知重连 —— 无网时挂起等恢复即刻重连，而非空转退避
+        // B 组：网络感知重连 —— 常驻监控：断网立即断 socket 调度重连（attempt 归零），
+        // 恢复即刻放行（不等 OkHttp 迟到的失败回调，真机实证其延迟到恢复才冒出）
         val cm = getApplication<Application>().getSystemService(ConnectivityManager::class.java)
         val gate = NetworkGate(cm)
+        gate.onLost = c::onNetworkLost
         c.networkWait = gate::waitBeforeReconnect
+        gate.startWatch()
         val ch = RpcChannel(c)
         val conv = ConversationChannel(ch)
         val sidx = SessionsIndexChannel(ch)
@@ -1069,6 +1082,11 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         conversation?.readWorkspaceState(ws) { res ->
             viewModelScope.launch {
                 res.onSuccess { state ->
+                    // 执行模式的权威来源（P0-B）：settings.mode.current——
+                    // 勿用订阅 ack 的 mode（那是订阅模式 snapshot/live，与执行模式撞名）
+                    state.currentMode?.takeIf { it.isNotBlank() }?.let {
+                        sessionModeFromWorkspace = it
+                    }
                     val list = state.available.map {
                         WorkspaceConfigChannel.ModelOption(
                             value = "${it.providerId}/${it.modelId}",
@@ -1349,10 +1367,6 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     // ---- 执行模式（P0-B）----
-
-    /** 用户在会话页手动切换后的执行模式乐观值（订阅 ack 的 mode 只在重订阅时更新）。 */
-    var sessionModeOverride by mutableStateOf<String?>(null)
-        private set
 
     /**
      * 切换当前会话执行模式（plan/build/yolo）。协议语义（§5.4）：仅对下一轮 agent turn 生效。

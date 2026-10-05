@@ -100,7 +100,9 @@ class MainActivity : ComponentActivity() {
                             onSwitchModelCustom = { id -> vm.switchCurrentSessionModelCustom(id) },
                             onLoadModels = { vm.loadWorkspaceModels() },
                             currentSessionMode = vm.sessionModeOverride
-                                ?: (vm.conversationStatus as? ConversationChannel.Status.Live)?.mode,
+                                ?: vm.sessionModeFromWorkspace,
+                            // ⚠️ 执行模式勿取 ConversationChannel.Status.Live.mode——那是订阅模式
+                            // （snapshot/live），与执行模式（plan/build/yolo）撞名（真机验收 2026-10-05 实证）
                             onSwitchMode = { m ->
                                 vm.setSessionMode(m) { err ->
                                     if (err != null) {

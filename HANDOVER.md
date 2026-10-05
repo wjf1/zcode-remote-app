@@ -289,6 +289,34 @@ RemoteInput 全仓 0 命中）。总体判断：**功能面已超出对标官方
 ④ 手机新建会话（不手动选 yolo）→ PC 端工具调用触发审批推送到手机；⑤ 模式胶囊常驻且可切换；
 ⑥ 官方 Web 抢占连接后手机收到「已被接管」系统通知。
 
+**✅ 真机验收结果（2026-10-05，小米 15 Pro / Android 17，debug 包 + DebugPairReceiver 注入）**：
+
+| 项 | 结果 | 实证 |
+|---|---|---|
+| 连接链路 | ✅ | ws open 101 → auth 挑战应答 → matched → bootstrap 23 会话 + 会话流快照/增量实时到达 |
+| P0-A 前台服务 | ✅ | `dumpsys activity services`：`isForeground=true types=0x40000000`（specialUse 位）+ LOW 常驻通知 |
+| ② 断网感知重连 | ✅ | 事件链全程 <9s：`onLost`(<1s) → `net-watch 立即断 socket` → 防重入守卫 → 挂起等恢复 → `onAvailable 放行` → 2.7s 重连 matched |
+| ④ 审批推送端到端 | ✅ | 手机新建会话（默认 build）→ PC 端 Write → 通知「需要审批：Write」（approvals 渠道 HIGH）→ 审批卡（允许一次/总是允许/拒绝 按 sortKey 排序）→ 点「允许一次」→ resolveInteraction → 卡片乐观消解（实际文件写入因宿主 turn 串行排队，待本 turn 结束后自然完成） |
+| ⑤ 模式胶囊 | ✅ | 常驻显示（默认 build 兜底）→ 点击菜单三档 + yolo 警示 + §5.4 语义提示 → 选 plan 胶囊即变（setMode RPC 生效）→ 已切回 build |
+| ⑥ 终态通知 | ✅ | 被桌面端面板抢占 → 常驻通知「会话已在别处打开（与官方 Web 版互踢）」（terminal_state 渠道 HIGH） |
+| P0-C debug 日志 | ✅ | proof 本体不再输出（`auth proof computed` 仅元信息） |
+| diff 视图 | ✅（间接） | DiffBlock 渲染实证（展开 Edit 行出现独有「⧉ 复制」按钮）；+/− 行可视留档因会话运行中贴底打断，待 zd_test 会话 turn 恢复后补验；解析正确性由 23 项 JVM 单测覆盖 |
+| ③ release 包 logcat | ⏸ 静态已验 | dex 敏感字符串 5/5 归零（编译期确定性）；真机 release 需卸载重装+重新配对，成本大于收益，跳过 |
+| 划掉任务 30min 观察 | ⏳ | 归入 P0-2 日常观察（前台服务已实证运行，预期 PASS） |
+
+**真机实测抓出并已修复的问题（全部在本次验收周期内闭环）**：
+1. `sessionModeOverride` 声明在 `init{connect()}` 之后 → 首次状态写入 NPE，**App 启动即崩**（Kotlin 属性初始化顺序坑，已移到 init 前并加警示注释）。
+2. **缺 `ACCESS_NETWORK_STATE` 权限** → NetworkGate 全部 ConnectivityManager 调用被 SecurityException 拦截（被 runCatching 吞掉后退化为纯退避——症状是断网后"协程假死"）。已补 Manifest。
+3. **OkHttp 对网络整体丢失的失败回调延迟到网络恢复时才冒出**（断网期连接静默死亡、心跳停止）+ 退避计数被快速失败烧到 48s 封顶 → NetworkGate 重构为**常驻监控**：onLost 立即断 socket + attempt 归零调度重连，onAvailable 即刻放行。
+4. **两个 mode 撞名**：订阅 ack 的 `mode` 是**订阅模式**（snapshot/live），与**执行模式**（plan/build/yolo）完全不同——ModeChip 曾错显 "snapshot"。执行模式权威来源改为 `readWorkspaceState` 的 `settings.mode.current`（MainActivity 已加警示注释）。
+5. （体验缺陷，未修，记录）**会话运行中上翻浏览会被新行贴底逻辑强拉回底部**——`LaunchedEffect(rows.size)` 无"用户正在上翻"判定，影响浏览历史行；建议后续在贴底逻辑里加"距底部超过阈值则不打扰"判定。
+
+**验收环境注意事项（接手必读）**：
+- **DebugPairReceiver 注入必须用面板「刷新二维码」轮换出的独立 deviceSid**——注入桌面端本体 sid（setting.json 的）会与面板内嵌 terminal 互踢（同 sid 单 terminal 槽），表现为手机反复 KICKED/waiting。正常扫码配对天然规避（新 sid 与桌面端并存）。
+- **手机上的 Clash Meta（fake-ip 全局 VPN）会掐断中继 TLS 握手**（`zcode.z.ai` 解析到 198.18.x.x 后握手 EOF）——需在 Clash 里为 `zcode.z.ai` 加 DIRECT 规则或关闭 VPN，否则 App 连不上（不是 App 缺陷，PC 侧同域正常可作对照）。
+- HyperOS 的 `cmd connectivity airplane-mode enable` 不一定真断 Wi-Fi（记忆用户偏好）；断网验收用 `svc wifi disable && svc data disable` 才可靠。
+- 会话运行中用 uiautomator 浏览历史行会被贴底打断——验收操作要原子化（滚动+定位+点击+验证在一条命令内完成）。
+
 **明确不做（沿用审查结论）**：iOS/跨端重写、手机端完整 Git 写操作（只读 diff，写操作交给 Agent）、
 FCM/小米推送主通道（IM Bot 通道兜底另议）、追功能广度（多供应商面板/Marketplace/RBAC）。
 

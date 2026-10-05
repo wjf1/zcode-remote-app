@@ -60,6 +60,21 @@ class RelayClient(
     @Volatile
     var networkWait: suspend (Long) -> Unit = { delayMs -> delay(delayMs) }
 
+    /**
+     * 网络丢失立即响应（NetworkGate 常驻监控转发）：不等 OkHttp 的迟到失败回调
+     * （真机实证其延迟到网络恢复才冒出），马上清 socket + 调度重连，attempt 归零
+     * ——网络丢失不是对端拒绝，恢复后应立即重连而非空烧退避。
+     */
+    fun onNetworkLost() {
+        if (manuallyClosed || terminalFailed) return
+        ZLog.i(TAG, "net-watch: 网络丢失，立即断开 socket 并调度重连")
+        stopHeartbeat()
+        runCatching { socket?.close(1000, "net-lost") }
+        socket = null
+        reconnectAttempt = 0
+        scheduleReconnect()
+    }
+
     private val _state = MutableStateFlow<RelayState>(RelayState.Idle)
     val state: StateFlow<RelayState> = _state
 
@@ -233,13 +248,25 @@ class RelayClient(
     private fun scheduleReconnect() {
         stopHeartbeat()
         if (manuallyClosed || terminalFailed) return
+        // onClosed/onFailure 可能双触发：已有一个重连调度在等网络时不再叠加
+        //（否则第二次 cancel 掉第一次的挂起点，造成竞态）
+        if (reconnectJob?.isActive == true) {
+            ZLog.i(TAG, "reconnect: 已有调度在等待（attempt=$reconnectAttempt），跳过重复调度")
+            return
+        }
         val delayMs = 3000L * (1L shl minOf(reconnectAttempt, 4))  // 3s,6s,12s,24s,48s 封顶
         reconnectAttempt++
-        reconnectJob?.cancel()
         reconnectJob = io.launch {
             // 挂起点：注入 NetworkGate 后，无网时等网络恢复即刻重连，而非空转到下一轮退避
+            ZLog.i(TAG, "reconnect: 调度 attempt=$reconnectAttempt 退避 ${delayMs}ms")
             runCatching { networkWait(delayMs) }
-            if (!manuallyClosed && !terminalFailed) connect()
+                .onFailure { ZLog.w(TAG, "reconnect: networkWait 异常", it) }
+            if (!manuallyClosed && !terminalFailed) {
+                ZLog.i(TAG, "reconnect: 放行，执行 connect()")
+                connect()
+            } else {
+                ZLog.i(TAG, "reconnect: 跳过重连（manuallyClosed=$manuallyClosed terminalFailed=$terminalFailed）")
+            }
         }
     }
 }

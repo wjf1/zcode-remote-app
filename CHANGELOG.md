@@ -28,9 +28,11 @@
 - **release 开启 R8 + 资源收缩**：补建 `proguard-rules.pro`（`assumenosideeffects` 编译期剥离 `Log.v/d/i/w` 调用含字符串参数，与 ZLog 门控双保险）；自家代码本轮保守 keep（混淆改名待真机冒烟后放开）。
 
 ### 变更与验证状态
+- **真机验收（2026-10-05，小米 15 Pro / Android 17）**：连接链路 matched、P0-A 前台服务（specialUse 位实证）、② 断网感知重连事件链 <9s、④ 审批推送端到端（通知→审批卡→允许一次→RPC 放行→乐观消解）、⑤ 模式胶囊常驻+切换、⑥ KICKED 终态通知、P0-C debug 日志——**全部 PASS**（明细见 HANDOVER §6.1 验收表）。release logcat 为静态已验跳过；划掉任务 30min 观察归入 P0-2。
+- **真机验收驱动的修复**：① `sessionModeOverride` 初始化顺序 NPE（启动即崩）；② 补 `ACCESS_NETWORK_STATE` 权限（缺失时 NetworkGate 静默失效）；③ NetworkGate 重构为常驻网络监控（OkHttp 断网回调延迟到恢复才冒出 + 退避烧满导致的"假死"，onLost 立即断 socket 重连 / onAvailable 即刻放行）；④ 执行模式与订阅模式撞名修正（ModeChip 曾错显 snapshot，改用 readWorkspaceState 的 settings.mode.current）；⑤ RelayClient 重连防重入守卫与跳过原因日志。
 - **build.sh 可移植化（Sprint 6）**：仓库根改由 `${BASH_SOURCE[0]}` 推导、JDK/SDK/Gradle 依次回退到「仓库 toolchain/ → 环境变量 → PATH」——clone 到任意目录、任意机器 `./build.sh` 直接可构建（此前必须放在 `F:/AI/Zcode/zcode-remote-app` 才行）。
-- 文档：HANDOVER §4 / §6.0 失效结论勘误（前台服务死代码、文件浏览「无落点」被实测推翻、乐观消解已实现）；新增 §6.1 计划评审结论与 Sprint 0–7 排期；§8 新增「协议做不到类结论须标注静态分析/实测依据」红线。
-- 验收状态：debug/release 构建 BUILD SUCCESSFUL；23 项 JVM 测试全绿；release dex 日志字符串剥离复检通过；**UI 与链路验收待真机（小米 15 Pro）**——清单见 HANDOVER §6.1。
+- 文档：HANDOVER §4 / §6.0 失效结论勘误（前台服务死代码、文件浏览「无落点」被实测推翻、乐观消解已实现）；新增 §6.1 计划评审结论与 Sprint 0–7 排期 + 真机验收结果表 + 接手必读环境注意事项（注入 sid 教训 / Clash fake-ip 掐 TLS / svc 断网验收法）；§8 新增「协议做不到类结论须标注静态分析/实测依据」红线。
+- 验收状态：debug/release 构建 BUILD SUCCESSFUL；23 项 JVM 测试全绿；release dex 日志字符串剥离复检通过；**UI 与链路验收已真机完成（见上）**，划掉任务 30min 日常观察归入 P0-2。
 
 ## v0.5.0-beta5（2026-10-01）· 会话内切换模型支持选档位 + 修复新会话草稿残留
 
