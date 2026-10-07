@@ -30,11 +30,32 @@ class ConversationChannel(private val rpc: RpcChannel) {
         data object Hello : Status
         data object Initialized : Status
         data class Live(val subscriptionId: String, val mode: String?, val logEpoch: String?) : Status
-        data class Failed(val reason: String) : Status
+
+        /**
+         * 失败态。`retryable` 标记「值得自动重订一次的瞬态失败」（目前仅握手超时），
+         * 供 AppViewModel 决定是否退避重试；协议层硬性拒绝（如 handshakeRequired）不可重试。
+         */
+        data class Failed(val reason: String, val retryable: Boolean = false) : Status
     }
 
     private val _status = MutableStateFlow<Status>(Status.Idle)
     val status: StateFlow<Status> = _status
+
+    /**
+     * 快照已对齐信号（B-1）：权威快照 `replaceAll` 落地后置位。
+     * 携带 seq/耗时而非一次性 Boolean，是为了让 C-3 的「细粒度同步态」在原形状上扩展，
+     * 不必二次改动状态机。
+     */
+    data class SnapshotAligned(
+        val sessionId: String,
+        val rowCount: Int,
+        val atElapsedMs: Long,
+        val seq: Long,
+    )
+
+    private var alignedSeq = 0L
+    private val _snapshotAligned = MutableStateFlow<SnapshotAligned?>(null)
+    val snapshotAligned: StateFlow<SnapshotAligned?> = _snapshotAligned
 
     /** 会话标题、阶段等快照元信息（UI 可用）。 */
     private val _meta = MutableStateFlow(ConversationMeta())
@@ -73,6 +94,13 @@ class ConversationChannel(private val rpc: RpcChannel) {
     private var subscriptionId: String? = null
     private var sessionId: String? = null
 
+    /**
+     * 握手代次（A-2）：每次 subscribe 递增。自动重订 / 切会话后，上一轮
+     * hello→initialize→subscribe 的迟到应答由代次守卫丢弃，避免旧握手覆盖新会话状态
+     * （沿用 RelayClient.generation 的既有写法，不另创机制）。
+     */
+    private var generation = 0
+
     /** 订阅目标（workspacePath/Identity）——发命令时要原样带上，服务端按它路由。 */
     private var subTarget: Map<String, Any>? = null
 
@@ -81,11 +109,15 @@ class ConversationChannel(private val rpc: RpcChannel) {
 
     /** 订阅指定会话，并把行写入 [store]。 */
     fun subscribe(workspacePath: String, workspaceIdentity: String?, session: String, store: RowStore) {
+        generation += 1
+        val gen = generation
         sessionId = session
         subscriptionId = null
         // 允许预加载离线缓存行：不强制即时 clear，待快照到达时由 replaceAll 平滑对齐权威状态
         _status.value = Status.Idle
         _interactions.value = emptyList()
+        // 上一次订阅的对齐信号作废（避免新会话首帧就被旧信号驱动定位）
+        _snapshotAligned.value = null
 
         val target = buildMap<String, Any> {
             put("workspacePath", workspacePath)
@@ -98,10 +130,18 @@ class ConversationChannel(private val rpc: RpcChannel) {
         listenId = rpc.listen(RpcChannel.CHANNEL_AGENT, "onDynamicConversationFrame", target)
 
         // 2) hello → 拿 protocolVersion / connectionId
-        rpc.call(RpcChannel.CHANNEL_AGENT, "helloConversationV4") { reply ->
+        //    A-2：三跳都必须带超时，否则单帧 201 丢失时连接健康也会永久停在「握手中…」。
+        rpc.call(RpcChannel.CHANNEL_AGENT, "helloConversationV4",
+            timeoutMs = HANDSHAKE_HELLO_TIMEOUT_MS) { reply ->
+            if (isStaleReply(gen, generation)) return@call
             when (reply) {
-                is RpcChannel.RpcReply.Err ->
-                    _status.value = Status.Failed("hello: ${reply.message}")
+                is RpcChannel.RpcReply.Err -> {
+                    ZLog.w(TAG, "hello 失败: ${reply.message}")
+                    _status.value = Status.Failed(
+                        handshakeFailureReason("握手", reply.message),
+                        retryable = isTransientHandshakeError(reply.message),
+                    )
+                }
                 is RpcChannel.RpcReply.Ok -> {
                     val o = reply.data.asObj()
                     val pv = o?.get("protocolVersion")?.let {
@@ -110,14 +150,14 @@ class ConversationChannel(private val rpc: RpcChannel) {
                         connectionId = o?.get("connectionId")?.let {
                             runCatching { it.jsonPrimitive.content }.getOrNull() })
                     _status.value = Status.Hello
-                    handshake(pv, target, session)
+                    handshake(gen, pv, target, session)
                 }
             }
         }
     }
 
     /** 3) initializeConversationV4(clientHello) → 4) subscribeConversationV4 */
-    private fun handshake(protocolVersion: Int, target: Map<String, Any>, session: String) {
+    private fun handshake(gen: Int, protocolVersion: Int, target: Map<String, Any>, session: String) {
         val clientHello = mapOf(
             "kind" to "clientHello",
             "protocolVersion" to protocolVersion,
@@ -125,19 +165,32 @@ class ConversationChannel(private val rpc: RpcChannel) {
             "clientKind" to "mobileApp",
             "appVersion" to APP_VERSION,
         )
-        rpc.call(RpcChannel.CHANNEL_AGENT, "initializeConversationV4", listOf(clientHello)) { reply ->
+        rpc.call(RpcChannel.CHANNEL_AGENT, "initializeConversationV4", listOf(clientHello),
+            timeoutMs = HANDSHAKE_INIT_TIMEOUT_MS) { reply ->
+            if (isStaleReply(gen, generation)) return@call
             if (reply is RpcChannel.RpcReply.Err) {
-                _status.value = Status.Failed("initialize: ${reply.message}")
+                ZLog.w(TAG, "initialize 失败: ${reply.message}")
+                _status.value = Status.Failed(
+                    handshakeFailureReason("初始化", reply.message),
+                    retryable = isTransientHandshakeError(reply.message),
+                )
                 return@call
             }
             _status.value = Status.Initialized
 
             val args = HashMap<String, Any>(target)
             args["sessionId"] = session
-            rpc.call(RpcChannel.CHANNEL_AGENT, "subscribeConversationV4", listOf(args)) { sub ->
+            rpc.call(RpcChannel.CHANNEL_AGENT, "subscribeConversationV4", listOf(args),
+                timeoutMs = HANDSHAKE_SUBSCRIBE_TIMEOUT_MS) { sub ->
+                if (isStaleReply(gen, generation)) return@call
                 when (sub) {
-                    is RpcChannel.RpcReply.Err ->
-                        _status.value = Status.Failed("subscribe: ${sub.message}")
+                    is RpcChannel.RpcReply.Err -> {
+                        ZLog.w(TAG, "subscribe 失败: ${sub.message}")
+                        _status.value = Status.Failed(
+                            handshakeFailureReason("订阅", sub.message),
+                            retryable = isTransientHandshakeError(sub.message),
+                        )
+                    }
                     is RpcChannel.RpcReply.Ok -> {
                         val ack = sub.data.asObj()?.get("ack")?.let {
                             runCatching { it.jsonObject }.getOrNull() }
@@ -184,7 +237,18 @@ class ConversationChannel(private val rpc: RpcChannel) {
             "snapshot" -> {
                 val snap = ConversationFrames.parseSnapshot(frame.payload) ?: return
                 store.replaceAll(snap.rows)
-                sessionId?.let { sid -> onRowsUpdated?.invoke(sid, snap.rows) }
+                sessionId?.let { sid ->
+                    onRowsUpdated?.invoke(sid, snap.rows)
+                    // B-1：权威快照落地即「已对齐」——UI 据此无条件定位到最新一行，
+                    // 覆盖「缓存行数 == 快照行数」时 rows.size 不变、旧触发器完全不跑的新失效路径。
+                    alignedSeq += 1
+                    _snapshotAligned.value = SnapshotAligned(
+                        sessionId = sid,
+                        rowCount = snap.rows.size,
+                        atElapsedMs = android.os.SystemClock.elapsedRealtime(),
+                        seq = alignedSeq,
+                    )
+                }
                 _interactions.value = snap.pendingInteractions
                 _elicitations.value = snap.elicitations
                 val control = snap.control
@@ -271,6 +335,9 @@ class ConversationChannel(private val rpc: RpcChannel) {
     }
 
     fun reset() {
+        // A-2：作废在途握手应答（迟到应答不得回写已重置的状态）
+        generation += 1
+        _snapshotAligned.value = null
         listenId = null
         subscriptionId = null
         sessionId = null
@@ -859,6 +926,18 @@ class ConversationChannel(private val rpc: RpcChannel) {
      * 内存峰值 = 一倍分片 + 64KiB hash 缓冲，不再整文件读进内存。
      * 流程 = 第一遍流式算 sha256 → begin → 单次开流顺序读满分片逐片上传。
      */
+    /**
+     * 上传句柄（A-1）：调用方（AppViewModel）在切会话 / 清空附件时据此终止在途上传，
+     * 避免上传完成后把文件回写进另一个会话的附件条。`abort()` 幂等，未开始的上传返回空实现。
+     */
+    interface UploadHandle { fun abort() }
+
+    private val NOOP_UPLOAD_HANDLE = object : UploadHandle { override fun abort() = Unit }
+
+    /**
+     * 上传一个附件（四步流程 begin/chunk/commit，协议见 PROTOCOL.md §6.6）。
+     * 返回值用于终止在途上传（A-1）。
+     */
     fun uploadAttachment(
         fileName: String,
         mime: String,
@@ -866,40 +945,51 @@ class ConversationChannel(private val rpc: RpcChannel) {
         openStream: () -> java.io.InputStream,
         onProgress: ((uploaded: Long, total: Long) -> Unit)? = null,
         onResult: (Result<AttachmentRef>) -> Unit,
-    ) {
+    ): UploadHandle {
         val session = sessionId
         val target = subTarget
         if (session == null || target == null) {
             onResult(Result.failure(IllegalStateException("未订阅会话，无法上传附件")))
-            return
+            return NOOP_UPLOAD_HANDLE
         }
         if (totalBytes <= 0L) {
             onResult(Result.failure(IllegalArgumentException("附件内容为空")))
-            return
+            return NOOP_UPLOAD_HANDLE
         }
         if (totalBytes > MAX_ATTACHMENT_BYTES) {
             onResult(Result.failure(IllegalArgumentException("附件超过 20MiB 上限")))
-            return
+            return NOOP_UPLOAD_HANDLE
         }
         val totalChunks = ((totalBytes + CHUNK_BYTES - 1) / CHUNK_BYTES).toInt()
         if (totalChunks > MAX_CHUNKS) {
             onResult(Result.failure(IllegalArgumentException("附件分片数超过上限")))
-            return
+            return NOOP_UPLOAD_HANDLE
         }
         val total = totalBytes
         val base = HashMap<String, Any>(target)
         base["sessionId"] = session
         base["uploadId"] = "upload-${UUID.randomUUID()}"
 
-        fun abort() {
-            rpc.call(RpcChannel.CHANNEL_AGENT, "attachmentAbortV4", listOf(HashMap(base))) {
-                ZLog.i(TAG, "attachmentAbort sent uploadId=${base["uploadId"]}")
+        // A-1：外部可终止标记。置位后一切在途回调（begin/chunk/commit 的应答）与后续分片
+        // 全部短路，且不再回写 onResult——否则切会话后旧上传仍会把结果投给新会话。
+        // 线程不变量：RpcChannel 的应答经 viewModelScope(Main.immediate) 分发、超时经 mainHandler，
+        // 故本标记与调用方 clearAttachments() 同在主线程，无需 @Volatile（若日后应答改到 IO 线程须加）。
+        var aborted = false
+        val handle = object : UploadHandle {
+            override fun abort() {
+                if (aborted) return
+                aborted = true
+                val abortedId = base["uploadId"]
+                rpc.call(RpcChannel.CHANNEL_AGENT, "attachmentAbortV4", listOf(HashMap(base))) {
+                    ZLog.i(TAG, "attachmentAbort sent uploadId=$abortedId")
+                }
             }
         }
 
         fun fail(message: String) {
+            if (aborted) return
             ZLog.w(TAG, "uploadAttachment 失败：$message")
-            abort()
+            handle.abort()
             onResult(Result.failure(IllegalStateException(message)))
         }
 
@@ -916,13 +1006,16 @@ class ConversationChannel(private val rpc: RpcChannel) {
             }
             md.digest().joinToString("") { "%02x".format(it) }
         }.getOrElse {
-            onResult(Result.failure(IllegalStateException("读取附件失败：${it.message}")))
-            return
+            if (!aborted) onResult(Result.failure(IllegalStateException("读取附件失败：${it.message}")))
+            return handle
         }
+        if (aborted) return handle
 
         // 注意：Kotlin 局部函数只能引用「已声明」的同层函数，故按依赖顺序声明。
         fun commit() {
+            if (aborted) return
             rpc.call(RpcChannel.CHANNEL_AGENT, "attachmentCommitV4", listOf(HashMap(base))) { reply ->
+                if (aborted) return@call
                 when (reply) {
                     is RpcChannel.RpcReply.Err -> fail("提交附件失败：${reply.message}")
                     is RpcChannel.RpcReply.Ok -> {
@@ -944,6 +1037,8 @@ class ConversationChannel(private val rpc: RpcChannel) {
             val buf = ByteArray(CHUNK_BYTES)
             fun closeQuietly() { runCatching { input?.close() } }
             fun next() {
+                // A-1：被外部终止后不再继续读流/发分片
+                if (aborted) { closeQuietly(); return }
                 if (index >= totalChunks) { closeQuietly(); commit(); return }
                 if (input == null) {
                     input = try {
@@ -977,6 +1072,7 @@ class ConversationChannel(private val rpc: RpcChannel) {
                 args["dataBase64"] = Base64.encodeToString(buf.copyOf(filled), Base64.NO_WRAP)
                 val sent = index
                 rpc.call(RpcChannel.CHANNEL_AGENT, "attachmentChunkV4", listOf(args)) { reply ->
+                    if (aborted) return@call
                     when (reply) {
                         is RpcChannel.RpcReply.Err -> fail("分片 $sent 上传失败：${reply.message}")
                         is RpcChannel.RpcReply.Ok -> {
@@ -1003,6 +1099,7 @@ class ConversationChannel(private val rpc: RpcChannel) {
         beginArgs["checksum"] = "sha256:" + digest
         ZLog.i(TAG, "attachmentBegin file=$fileName mime=$mime bytes=$total chunks=$totalChunks")
         rpc.call(RpcChannel.CHANNEL_AGENT, "attachmentBeginV4", listOf(beginArgs)) { reply ->
+            if (aborted) return@call
             when (reply) {
                 is RpcChannel.RpcReply.Err -> onResult(
                     Result.failure(IllegalStateException("附件上传初始化失败：${reply.message}")))
@@ -1020,6 +1117,7 @@ class ConversationChannel(private val rpc: RpcChannel) {
                 }
             }
         }
+        return handle
     }
 
 
@@ -1145,6 +1243,21 @@ class ConversationChannel(private val rpc: RpcChannel) {
          */
         private const val SEND_ACK_TIMEOUT_MS = 15_000L
 
+        /**
+         * A-2：握手三跳的超时阈值。
+         *
+         * **依据（T0 真机实测，2026-10-07，小米 15 Pro / Android 17，6 次冷启动样本）**：
+         * hello 132–211ms（median 140）、initialize 127–198ms（median 145）、
+         * subscribe 127–186ms（median 139）、ack→快照 99–141ms，整链路 512–740ms。
+         *
+         * 取值 = 实测最大值的约 **19 倍余量**：容得下弱网/拥塞下 10 倍级的 RTT 恶化，
+         * 又能把真实卡死稳稳压在验收要求的「10s 内给出可读失败」以内（首跳 4s 即报）。
+         * 统计口径与原始样本见 `体验提升任务书-v2.md` §9 与 `_tmp/t0_samples.txt`。
+         */
+        private const val HANDSHAKE_HELLO_TIMEOUT_MS = 4_000L
+        private const val HANDSHAKE_INIT_TIMEOUT_MS = 4_000L
+        private const val HANDSHAKE_SUBSCRIBE_TIMEOUT_MS = 5_000L
+
         /** host 常量 attachmentMaxBytes = 20MiB、attachmentUploadMaxChunks = 64。 */
         /** 与 host 常量 attachmentMaxBytes 一致（UI 选附件时同值校验）。 */
         internal const val MAX_ATTACHMENT_BYTES = 20 * 1024 * 1024
@@ -1152,5 +1265,44 @@ class ConversationChannel(private val rpc: RpcChannel) {
 
         /** 服务端命令 ack 中算成功三种状态（duplicate/noop 表示已被他处消解）。 */
         private val SUCCESS_STATUSES = setOf("accepted", "duplicate", "noop")
+
+        /**
+         * A-2：底层英文错误 → 用户可读中文。
+         * UI 直接展示该串，因此**不得**把 `timeout after 8000ms` / `bridge not ready`
+         * 这类裸英文原样透出（见任务书 §7 异常的 grep 断言）。
+         */
+        internal fun handshakeFailureReason(stage: String, message: String): String = when {
+            // 注意：CJK 字符是合法标识符字符，`$stage超时` 会被解析成变量名 `stage超时`，必须用 ${stage}
+            isTimeoutError(message) -> "${stage}超时，请检查网络后重试"
+            message.contains("bridge not ready") -> "通道尚未就绪，请稍后重试"
+            else -> "${stage}失败：$message"
+        }
+
+        /** 超时判定：只用于把 timeout 映射成「超时」措辞。 */
+        internal fun isTimeoutError(message: String): Boolean = message.startsWith("timeout")
+
+        /**
+         * 瞬态握手失败判定：是否值得自动重订一次。
+         *
+         * - `timeout…`：单帧 201 丢失（A-2 的场景）；
+         * - `bridge not ready`：工作区桥尚未就绪或正在重建 —— `RpcChannel` 在 `Opening` 期间
+         *   对任何 call 都立即回此错，属**瞬态**；
+         * - `bridge re-established`：桥重建导致旧请求作废。
+         *
+         * 真机反馈（2026-10-07）：旧判定只认 timeout，于是「中继显示已连接、会话却报
+         * `hello: bridge not ready`」时**永不自动恢复**，用户只能手动点重试或切会话。
+         * 本函数正是覆盖该情形。
+         */
+        internal fun isTransientHandshakeError(message: String): Boolean =
+            isTimeoutError(message) ||
+                message.contains("bridge not ready") ||
+                message.contains("bridge re-established")
+
+        /**
+         * A-2：迟到应答判定。切会话 / 自动重订后，上一轮握手（replyGeneration 已落后
+         * 于当前代次）的回调必须被丢弃，否则旧握手会覆盖新会话的状态。
+         */
+        internal fun isStaleReply(replyGeneration: Int, currentGeneration: Int): Boolean =
+            replyGeneration != currentGeneration
     }
 }

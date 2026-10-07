@@ -70,6 +70,9 @@ class RpcChannel(private val relay: RelayClient) {
     private val timeoutTasks = ConcurrentHashMap<Int, Runnable>()
     private val mainHandler = Handler(Looper.getMainLooper())
 
+    /** 桥握手看门狗令牌（仅 main 线程读写）：只有最新一次 openBridge 的看门狗有效。 */
+    private var bridgeOpenToken = 0
+
     /**
      * 桥重建 / 通道复位时，旧桥上的挂起请求永远等不到应答（新桥 ack 序列空间不同），
      * 必须逐个以错误收场，调用方（发送/审批/表单）才能复位 UI 状态。
@@ -100,7 +103,11 @@ class RpcChannel(private val relay: RelayClient) {
 
     // ---------- 开桥 ----------
 
-    fun openBridge(workspaceKey: String, taskId: String? = null) {
+    fun openBridge(workspaceKey: String, taskId: String? = null, attempt: Int = 1) {
+        // 令牌：连续多次 openBridge（如 workspace-list 帧连发）时，只有最后一次的看门狗有效，
+        // 避免多个看门狗互相触发重开形成放大风暴。openBridge 与看门狗同在 main 线程。
+        bridgeOpenToken += 1
+        val token = bridgeOpenToken
         val sid = "bridge-${UUID.randomUUID()}"
         _bridge.value = BridgeState.Opening
         val payload = buildJsonObject {
@@ -111,8 +118,34 @@ class RpcChannel(private val relay: RelayClient) {
             put("workspaceKey", workspaceKey)
             taskId?.let { put("taskId", it) }
         }
-        ZLog.i(TAG, "bridge-open ws=$workspaceKey sid=$sid")
+        ZLog.i(TAG, "bridge-open ws=$workspaceKey sid=$sid attempt=$attempt")
         relay.sendPayload(payload)
+        scheduleBridgeWatchdog(workspaceKey, taskId, attempt, token)
+    }
+
+    /**
+     * 桥握手看门狗（真机反馈修复，2026-10-07）。
+     *
+     * 缺陷：`openBridge` 只把状态置为 [BridgeState.Opening]，**没有任何超时或重开机制**
+     * （仅在收到新的 workspace-list 帧时才可能重开）。若 `workspace-bridge-ready` 帧丢失，
+     * 桥会**永久**停在 `Opening`，此时 [call]/[listen] 一律立刻回 `bridge not ready` ——
+     * 表现为「中继/设置显示已连接，会话页却一直报错且永不恢复」。
+     *
+     * 这里做有限次重开（间隔 [BRIDGE_OPEN_TIMEOUT_MS]，上限 [MAX_BRIDGE_OPEN_ATTEMPTS] 次），
+     * 用尽则显式置 [BridgeState.Failed]，把「静默卡死」变成「可见失败」。
+     */
+    private fun scheduleBridgeWatchdog(wsKey: String, taskId: String?, attempt: Int, token: Int) {
+        mainHandler.postDelayed({
+            if (token != bridgeOpenToken) return@postDelayed              // 已被更新的一次 open 取代
+            if (_bridge.value is BridgeState.Ready) return@postDelayed     // 已就绪，看门狗自动失效
+            if (attempt >= MAX_BRIDGE_OPEN_ATTEMPTS) {
+                ZLog.w(TAG, "bridge 握手重开已用尽（$attempt 次），置失败态（state=${_bridge.value}）")
+                _bridge.value = BridgeState.Failed("工作区桥未就绪（已重开 $attempt 次）")
+                return@postDelayed
+            }
+            ZLog.w(TAG, "bridge ${BRIDGE_OPEN_TIMEOUT_MS}ms 未就绪，重开 attempt=${attempt + 1} ws=$wsKey")
+            openBridge(wsKey, taskId, attempt + 1)
+        }, BRIDGE_OPEN_TIMEOUT_MS)
     }
 
     /** 由 AppViewModel 在收到 workspace-bridge-* 帧时调用。 */
@@ -371,6 +404,15 @@ class RpcChannel(private val relay: RelayClient) {
 
     companion object {
         private const val TAG = "RpcChannel"
+
+        /**
+         * 桥握手看门狗参数（2026-10-07 真机反馈修复）。
+         * 真机实测 `workspace-bridge-ready` 正常在 1s 内到达，故 6s 判定为「丢帧/未处理」足够保守；
+         * 最多重开 3 次（约 18s），用尽后置失败态而非静默卡在 Opening。
+         */
+        private const val BRIDGE_OPEN_TIMEOUT_MS = 6_000L
+        private const val MAX_BRIDGE_OPEN_ATTEMPTS = 3
+
         const val TYPE_PROMISE = 100
         const val TYPE_PROMISE_CANCEL = 101
         const val TYPE_EVENT_LISTEN = 102

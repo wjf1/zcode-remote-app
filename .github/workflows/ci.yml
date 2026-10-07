@@ -35,6 +35,11 @@ jobs:
         run: gradle testDebugUnitTest assembleDebug --console=plain
         working-directory: app-android
 
+      # 防呆：@Test 若被注释掉或与注释粘连，JUnit 会静默跳过、构建照样全绿
+      # （2026-10-07 实际发生过一次：测试数从 39 悄悄掉到 38）。做集合比对，丢用例即失败。
+      - name: 断言「声明的 @Test 全部被执行」
+        run: python tools/check_test_count.py
+
       - name: 汇总测试结果
         if: always()
         run: |

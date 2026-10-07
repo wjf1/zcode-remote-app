@@ -195,6 +195,16 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         private set
     var subscribedSessionId by mutableStateOf<String?>(null)
         private set
+
+    /** 最近一次订阅的会话条目（A-2 自动重订需要原始 workspacePath/sessionId）。 */
+    private var subscribedSession: SessionItem? = null
+
+    /**
+     * 握手自动重订计数（A-2）：每次新会话订阅归零；`Status.Live` 到达也归零。
+     * 上限 1 次——再失败即置 Failed 并把重试权交回用户（UI 重试入口）。
+     */
+    private var handshakeRetryCount = 0
+    private var handshakeRetryJob: kotlinx.coroutines.Job? = null
     /** 最近收到的 RPC 事件（原始 JSON，供 M2 阶段观测/渲染）。 */
     val rpcEvents = mutableStateListOf<String>()
 
@@ -208,6 +218,13 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         private set
     /** 向上翻页状态（加载中/hasMore/pulled）。 */
     var earlier by mutableStateOf(ConversationChannel.EarlierState())
+        private set
+
+    /**
+     * 当前会话的权威快照是否已落地（B-1）。UI 据此在「缓存行数 == 快照行数」
+     * （rows.size 不变、旧触发器完全不跑）时也能定位到最新一行。
+     */
+    var snapshotAligned by mutableStateOf<ConversationChannel.SnapshotAligned?>(null)
         private set
 
     // ---- 权限审批 ----
@@ -389,6 +406,8 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         val cm = getApplication<Application>().getSystemService(ConnectivityManager::class.java)
         val gate = NetworkGate(cm)
         gate.onLost = c::onNetworkLost
+        // 网络恢复：重置退避 + 取消已排队的退避等待并立即重连（否则恢复要白等一轮退避，实测 ~47s）
+        gate.onAvailable = c::onNetworkAvailable
         c.networkWait = gate::waitBeforeReconnect
         gate.startWatch()
         val ch = RpcChannel(c)
@@ -530,11 +549,17 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
                 // 模型目录订阅需要会话握手完成（真机实证：bridge Ready 即订会报
                 // fault.connection.handshakeRequired，Live 后才可用）
                 if (st is ConversationChannel.Status.Live) {
+                    handshakeRetryCount = 0
                     activeWorkspaceKey?.let { wcfg.subscribe(it, null) }
+                }
+                // A-2：握手瞬态失败（超时）→ 退避自动重订一次，避免永久停在「握手中…」
+                if (st is ConversationChannel.Status.Failed && st.retryable) {
+                    scheduleHandshakeRetry()
                 }
             }
         }
         viewModelScope.launch { conv.meta.collect { conversationMeta = it } }
+        viewModelScope.launch { conv.snapshotAligned.collect { snapshotAligned = it } }
         viewModelScope.launch { conv.earlier.collect { earlier = it } }
         viewModelScope.launch {
             conv.interactions.collect { refreshApprovals() }
@@ -647,7 +672,7 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
     fun resolve(approval: PendingApproval, option: ApprovalOption) {
         val conv = conversation ?: run {
             approvalFeedback = "连接已断开，未发出"
-            flash("连接已断开，未发出")
+            flash("连接已断开，未发出", FlashKind.Failure)
             return
         }
         val ws = activeWorkspaceKey ?: sessions.firstOrNull()?.workspacePath
@@ -661,21 +686,21 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
 
         conv.resolve(approval, option, fallbackWorkspacePath = ws) { r ->
             viewModelScope.launch {
-                val feedback = when (r) {
+                val (feedback, kind) = when (r) {
                     is ConversationChannel.ResolveResult.Accepted -> when (r.status) {
-                        "accepted" -> if (option.isAllow) "已批准" else "已拒绝"
-                        "duplicate" -> "已收到（重复提交，服务端只认第一次）"
-                        else -> "服务端已消解（可能桌面端先处理了）"
+                        "accepted" -> (if (option.isAllow) "已批准" else "已拒绝") to FlashKind.Info
+                        "duplicate" -> "已收到（重复提交，服务端只认第一次）" to FlashKind.Info
+                        else -> "服务端已消解（可能桌面端先处理了）" to FlashKind.Info
                     }
                     is ConversationChannel.ResolveResult.Failed -> {
                         // 失败回滚：放回审批列表中
                         taskApprovals[interId] = approval
                         refreshApprovals()
-                        "发送失败：${r.message}"
+                        "发送失败：${r.message}" to FlashKind.Failure
                     }
                 }
                 approvalFeedback = feedback
-                flash(feedback)
+                flash(feedback, kind)
                 ZLog.i(TAG, "resolve result=$r interaction=$interId feedback=$feedback")
             }
         }
@@ -696,12 +721,17 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
 
     private var feedbackJob: kotlinx.coroutines.Job? = null
 
-    private fun flash(msg: String) {
+    /**
+     * 反馈语义（B-3）：驻留时长由显式类型参数决定，取代原先按字符串前缀猜的白名单
+     * （旧写法每新增一档失败文案都得改白名单，且「附件上传失败」一直错落在 4s 档）。
+     */
+    enum class FlashKind { Info, Failure }
+
+    private fun flash(msg: String, kind: FlashKind = FlashKind.Info) {
         commandFeedback = msg
         feedbackJob?.cancel()
         // 失败类提示留 8s（4s 真机上易被错过，2026-09-30 验收发现）；成功提示仍 4s 免打扰
-        val ms = if (msg.startsWith("发送失败") || msg.startsWith("应答失败") ||
-            msg.startsWith("连接已断开")) 8_000L else 4_000L
+        val ms = flashDurationMs(kind)
         feedbackJob = viewModelScope.launch {
             kotlinx.coroutines.delay(ms)
             commandFeedback = null
@@ -715,7 +745,7 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         val content = promptDraft.trim()
         val atts = attachments.toList()
         if ((content.isEmpty() && atts.isEmpty()) || sending) return
-        val conv = conversation ?: run { flash("连接已断开，未发送"); return }
+        val conv = conversation ?: run { flash("连接已断开，未发送", FlashKind.Failure); return }
         sending = true
         conv.sendPrompt(content, atts) { r ->
             viewModelScope.launch {
@@ -726,7 +756,7 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
                         attachments.clear()
                         ZLog.i(TAG, "sendPrompt ok session=$subscribedSessionId atts=${atts.size}")
                     },
-                    onFailure = { flash("发送失败：${it.message}") },
+                    onFailure = { flash("发送失败：${it.message}", FlashKind.Failure) },
                 )
             }
         }
@@ -745,36 +775,71 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         val percent: Int get() = if (total <= 0) 0 else ((uploaded * 100) / total).toInt()
     }
 
+    /** 在途上传句柄（A-1）：切会话 / 清理附件时用于终止，防止跨会话回写。 */
+    private var attachUploadHandle: ConversationChannel.UploadHandle? = null
+
+    /**
+     * 附件上传成/败信号（B-3）：tick 每次自增，UI 侧以 `LaunchedEffect(tick)` 消费一次触觉。
+     * 上传完成是异步的（由 VM 驱动），Compose 侧拿不到点击上下文，故需要一条信号桥。
+     */
+    data class AttachmentFeedback(val ok: Boolean, val tick: Long)
+
+    var attachmentFeedback by mutableStateOf<AttachmentFeedback?>(null)
+        private set
+    private var attachmentFeedbackSeq = 0L
+
+    private fun signalAttachmentFeedback(ok: Boolean) {
+        attachmentFeedbackSeq += 1
+        attachmentFeedback = AttachmentFeedback(ok, attachmentFeedbackSeq)
+    }
+
     /**
      * 上传一个附件。走 conversation 通道的四步流程（begin/chunk/commit），
      * 成功后加入 [attachments]，UI 显示 chip，发送时随 sendPrompt 带走。
      * P2-3 流式改造：只持 uri，内容经 openStream 分片读（内存峰值一倍分片），
      * 不再整文件读进内存；选中后文件被移动/删除会在上传时报错提示。
+     *
+     * A-1：上传发起时把「发起会话」捕获进闭包，所有回调先校验会话归属——否则在途上传
+     * 完成后会把文件塞进用户已经切过去的另一个会话的附件条（数据正确性 + 隐私风险）。
      */
     fun addAttachment(uri: android.net.Uri, fileName: String, mime: String, size: Long) {
-        val conv = conversation ?: run { flash("连接已断开，无法上传"); return }
+        val conv = conversation ?: run { flash("连接已断开，无法上传", FlashKind.Failure); return }
         if (attachUpload != null) { flash("还有附件在上传中"); return }
         if (size > ConversationChannel.MAX_ATTACHMENT_BYTES) {
             flash("附件超过 20MiB 上限")
             return
         }
+        val originSession = subscribedSessionId
         attachUpload = AttachUpload(fileName, 0, size)
         val app = getApplication<android.app.Application>()
-        conv.uploadAttachment(fileName, mime, size,
+        attachUploadHandle = conv.uploadAttachment(fileName, mime, size,
             openStream = {
                 app.contentResolver.openInputStream(uri)
                     ?: throw IllegalStateException("无法打开所选文件（可能已被移动或删除）")
             },
-            onProgress = { up, total -> attachUpload = AttachUpload(fileName, up, total) },
+            onProgress = { up, total ->
+                // 切走会话后旧上传的进度不得再点亮新会话的进度条
+                if (uploadBelongsTo(originSession, subscribedSessionId)) {
+                    attachUpload = AttachUpload(fileName, up, total)
+                }
+            },
         ) { r ->
             viewModelScope.launch {
+                if (!uploadBelongsTo(originSession, subscribedSessionId)) {
+                    ZLog.i(TAG, "丢弃跨会话上传回调 origin=$originSession current=$subscribedSessionId")
+                    return@launch
+                }
                 attachUpload = null
                 r.fold(
                     onSuccess = {
                         attachments.add(it)
+                        signalAttachmentFeedback(ok = true)
                         flash("已添加附件 ${it.fileName}")
                     },
-                    onFailure = { flash("附件上传失败：${it.message}") },
+                    onFailure = {
+                        signalAttachmentFeedback(ok = false)
+                        flash("附件上传失败：${it.message}", FlashKind.Failure)
+                    },
                 )
             }
         }
@@ -785,20 +850,27 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     private fun clearAttachments() {
+        // A-1：切会话/清理时终止在途上传，避免其回调在别的会话里落地
+        attachUploadHandle?.abort()
+        attachUploadHandle = null
         attachments.clear()
         attachUpload = null
     }
 
     /** 停止当前运行（envelope `stop` 命令，官方 web 同款）。 */
     fun stopSession() {
-        val conv = conversation ?: run { flash("连接已断开，未发送"); return }
+        val conv = conversation ?: run { flash("连接已断开，未发送", FlashKind.Failure); return }
         conv.stop { r ->
             viewModelScope.launch {
                 flash(
                     when (r) {
                         is ConversationChannel.ResolveResult.Accepted -> "已请求停止"
                         is ConversationChannel.ResolveResult.Failed -> "停止失败：${r.message}"
-                    }
+                    },
+                    when (r) {
+                        is ConversationChannel.ResolveResult.Accepted -> FlashKind.Info
+                        is ConversationChannel.ResolveResult.Failed -> FlashKind.Failure
+                    },
                 )
                 ZLog.i(TAG, "stop result=$r")
             }
@@ -813,7 +885,7 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
      * 同时附 answers:{问题文本: "合并答案"} 便于桌面端日志可读。
      */
     fun answerElicitation(el: PendingElicitation, answers: Map<Int, List<String>>) {
-        val conv = conversation ?: run { flash("连接已断开，未发送"); return }
+        val conv = conversation ?: run { flash("连接已断开，未发送", FlashKind.Failure); return }
         val ws = activeWorkspaceKey ?: sessions.firstOrNull()?.workspacePath
         val interId = el.interactionId
 
@@ -850,7 +922,7 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
 
     /** 拒绝表单/计划。 */
     fun declineElicitation(el: PendingElicitation) {
-        val conv = conversation ?: run { flash("连接已断开，未发送"); return }
+        val conv = conversation ?: run { flash("连接已断开，未发送", FlashKind.Failure); return }
         val ws = activeWorkspaceKey ?: sessions.firstOrNull()?.workspacePath
         val interId = el.interactionId
 
@@ -865,7 +937,7 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
 
     /** 计划批准（plan_approval）。 */
     fun approveElicitationPlan(el: PendingElicitation) {
-        val conv = conversation ?: run { flash("连接已断开，未发送"); return }
+        val conv = conversation ?: run { flash("连接已断开，未发送", FlashKind.Failure); return }
         val ws = activeWorkspaceKey ?: sessions.firstOrNull()?.workspacePath
         val interId = el.interactionId
 
@@ -880,7 +952,7 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
 
     /** 自由文本应答（无 questions 的 userInput 条目，freeText=true）。 */
     fun answerElicitationFreeText(el: PendingElicitation, text: String) {
-        val conv = conversation ?: run { flash("连接已断开，未发送"); return }
+        val conv = conversation ?: run { flash("连接已断开，未发送", FlashKind.Failure); return }
         val ws = activeWorkspaceKey ?: sessions.firstOrNull()?.workspacePath
         val interId = el.interactionId
 
@@ -900,7 +972,7 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
                 is ConversationChannel.ResolveResult.Failed -> {
                     taskElicitations[el.interactionId] = el
                     refreshElicitations()
-                    flash("应答失败：${r.message}")
+                    flash("应答失败：${r.message}", FlashKind.Failure)
                 }
             }
         }
@@ -922,12 +994,11 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
 
     private fun flashResolve(r: ConversationChannel.ResolveResult, okText: String) {
         viewModelScope.launch {
-            flash(
-                when (r) {
-                    is ConversationChannel.ResolveResult.Accepted -> okText
-                    is ConversationChannel.ResolveResult.Failed -> "应答失败：${r.message}"
-                }
-            )
+            when (r) {
+                is ConversationChannel.ResolveResult.Accepted -> flash(okText)
+                is ConversationChannel.ResolveResult.Failed ->
+                    flash("应答失败：${r.message}", FlashKind.Failure)
+            }
         }
     }
 
@@ -940,7 +1011,11 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
     private fun subscribeConversation(s: SessionItem) {
         val conv = conversation ?: return
         val ws = s.workspacePath ?: activeWorkspaceKey ?: return
+        subscribedSession = s
         subscribedSessionId = s.taskId
+        // A-2：新会话订阅重置自动重订预算
+        handshakeRetryJob?.cancel(); handshakeRetryJob = null
+        handshakeRetryCount = 0
         clearAttachments()   // 附件与会话绑定，切会话即清空
 
         // Sprint 5 离线缓存秒开：点击会话卡片首帧立即同步呈现历史消息行
@@ -958,6 +1033,50 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
             session = s.taskId,
             store = rowStore,
         )
+    }
+
+    /**
+     * A-2：握手超时等瞬态失败后的自动重订（退避 1s → 2s，上限 1 次）。
+     *
+     * 只重发订阅，不重载离线缓存、不清附件——那些是「进入会话」的一次性副作用。
+     * 再失败则停在 Failed，重试权交回用户（见 [retrySubscribe]）。
+     */
+    private fun scheduleHandshakeRetry() {
+        val s = subscribedSession ?: return
+        if (handshakeRetryCount >= MAX_HANDSHAKE_RETRIES) {
+            ZLog.w(TAG, "握手自动重订已用尽（$handshakeRetryCount 次），停在失败态等用户重试")
+            return
+        }
+        handshakeRetryCount += 1
+        val delayMs = if (handshakeRetryCount == 1) 1_000L else 2_000L
+        ZLog.i(TAG, "握手失败，${delayMs}ms 后自动重订（第 $handshakeRetryCount 次）")
+        handshakeRetryJob?.cancel()
+        handshakeRetryJob = viewModelScope.launch {
+            kotlinx.coroutines.delay(delayMs)
+            // 期间用户可能已切走会话，此时重订无意义
+            if (subscribedSessionId != s.taskId) return@launch
+            val conv = conversation ?: return@launch
+            val ws = s.workspacePath ?: activeWorkspaceKey ?: return@launch
+            ZLog.i(TAG, "自动重订 session=${s.taskId}")
+            conv.subscribe(ws, null, s.taskId, rowStore)
+        }
+    }
+
+    /** 用户手动重试订阅（A-2 的 UI 重试入口）：重置重订预算后重新发起订阅。 */
+    fun retrySubscribe() {
+        val s = subscribedSession ?: return
+        handshakeRetryJob?.cancel(); handshakeRetryJob = null
+        handshakeRetryCount = 0
+        val conv = conversation ?: run {
+            flash("连接已断开，无法重试", FlashKind.Failure)
+            return
+        }
+        val ws = s.workspacePath ?: activeWorkspaceKey ?: run {
+            flash("未定位到工作区，无法重试", FlashKind.Failure)
+            return
+        }
+        ZLog.i(TAG, "用户重试订阅 session=${s.taskId}")
+        conv.subscribe(ws, null, s.taskId, rowStore)
     }
 
     /** 手动订阅指定会话（UI 点击会话卡片时调用）。 */
@@ -1300,7 +1419,7 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
      * 成功后服务端广播 state.updated 增量帧，顶栏模型回显即时更新。
      */
     fun switchCurrentSessionModel(modelOption: WorkspaceConfigChannel.ModelOption) {
-        val conv = conversation ?: run { flash("连接尚未就绪"); return }
+        val conv = conversation ?: run { flash("连接尚未就绪", FlashKind.Failure); return }
         val (pid, mid) = WorkspaceConfigChannel.splitModelValue(modelOption.value)
         // 用户选了档位就用选的，否则按该模型自动挑一个合法档位，避免 registry 校验失败
         val thought = modelOption.thought ?: pickReasoningLevel(pid, mid)
@@ -1308,7 +1427,7 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
             viewModelScope.launch {
                 result.fold(
                     onSuccess = { flash("模型已切换为 $mid" + (thought?.let { " · $it" } ?: "")) },
-                    onFailure = { flash("切换模型失败: ${it.message}") }
+                    onFailure = { flash("切换模型失败: ${it.message}", FlashKind.Failure) }
                 )
             }
         }
@@ -1316,13 +1435,13 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
 
     /** 手动输入模型 ID 切换。 */
     fun switchCurrentSessionModelCustom(modelId: String, providerId: String? = null) {
-        val conv = conversation ?: run { flash("连接尚未就绪"); return }
+        val conv = conversation ?: run { flash("连接尚未就绪", FlashKind.Failure); return }
         val pid = providerId ?: conversationMeta.provider ?: "glm"
         conv.switchModelConfig(provider = pid, model = modelId.trim(), thought = pickReasoningLevel(pid, modelId.trim())) { result ->
             viewModelScope.launch {
                 result.fold(
                     onSuccess = { flash("模型已切换为 $modelId") },
-                    onFailure = { flash("切换模型失败: ${it.message}") }
+                    onFailure = { flash("切换模型失败: ${it.message}", FlashKind.Failure) }
                 )
             }
         }
@@ -1368,6 +1487,8 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
                         // 若删除的是当前订阅中的会话，复位订阅与草稿状态
                         if (subscribedSessionId == item.taskId) {
                             subscribedSessionId = null
+                            subscribedSession = null
+                            handshakeRetryCount = 0
                             rowStore.clear()
                             promptDraft = ""
                             attachments.clear()
@@ -1380,7 +1501,7 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
                     }
                     is RpcChannel.RpcReply.Err -> {
                         ZLog.w(TAG, "deleteTask 失败: ${reply.message}")
-                        flash("删除会话失败: ${reply.message}")
+                        flash("删除会话失败: ${reply.message}", FlashKind.Failure)
                         onResult(false, reply.message)
                     }
                 }
@@ -1416,6 +1537,10 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         conversation = null
         sessionsIndex = null
         workspaceConfig = null
+        // A-2：连接没了，作废在途的握手自动重订与重试上下文
+        handshakeRetryJob?.cancel(); handshakeRetryJob = null
+        handshakeRetryCount = 0
+        subscribedSession = null
         // 连接没了就没人能应答：摘掉桥并撤掉通知，避免用户点了个"假批准"
         ApprovalBridge.handler = null
         ElicitationBridge.handler = null
@@ -1440,6 +1565,7 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         rpcEvents.clear()
         rows.clear()
         subscribedSessionId = null
+        subscribedSession = null
     }
 
     /** 连接终态通知的短标题（Sprint 2 / A 组）。 */
@@ -1484,6 +1610,20 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
 
     companion object {
         private const val TAG = "AppViewModel"
+
+        /**
+         * 上传回调的会话归属判定（A-1）。仅当发起上传时的会话仍是当前打开的会话时才允许
+         * 回写 VM 状态；任一侧为空（未订阅 / 已断开）一律判「不属于」并丢弃回调。
+         */
+        internal fun uploadBelongsTo(originSession: String?, currentSession: String?): Boolean =
+            originSession != null && originSession == currentSession
+
+        /** 反馈横幅驻留时长（B-3）：失败 8s（4s 真机上易被错过），成功/提示 4s。 */
+        internal fun flashDurationMs(kind: FlashKind): Long =
+            if (kind == FlashKind.Failure) 8_000L else 4_000L
+
+        /** 握手自动重订次数上限（A-2）：1 次。再失败即交回用户手动重试。 */
+        private const val MAX_HANDSHAKE_RETRIES = 1
 
         /**
          * 语义化版本比较（检查更新用，2026-10-05 修）：原实现用字符串不等判断——

@@ -2,12 +2,16 @@ package com.zcode.remote.relay
 
 import com.zcode.remote.AppViewModel
 import com.zcode.remote.storage.PairedDevice
+import com.zcode.remote.ui.screens.ConversationScrollPolicy
 import kotlinx.serialization.decodeFromString
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.JsonNull
+import kotlinx.serialization.json.addJsonObject
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
+import kotlinx.serialization.json.putJsonArray
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -250,5 +254,194 @@ class PureFunctionsTest {
         val snapshot = store.snapshot()
         assertEquals(2, snapshot.size)
         assertEquals(decoded, snapshot)
+    }
+
+    // ---------- userInput 行的附件回显（会话流附件 chip 渲染的数据来源）----------
+
+    @Test
+    fun conversationRowParsesAttachments() {
+        // 形状取自真机缓存里的真实样本（见 CHANGELOG：master-plan-v1.1.md / 39733 bytes）
+        val o = buildJsonObject {
+            put("rowId", 282)
+            put("kind", "userInput")
+            put("origin", "realUser")
+            put("text", "针对 https://github.com/wjf1/zcode-dotfiles 的优化提升方案")
+            putJsonArray("attachments") {
+                addJsonObject {
+                    put("ref", "zcode-artifact://sess_x/tool-result-y")
+                    put("fileName", "master-plan-v1.1.md")
+                    put("mime", "text/plain")
+                    put("bytes", 39_733)
+                }
+            }
+        }
+        val row = ConversationRow.from(o)!!
+        assertEquals(1, row.attachments.size)
+        assertEquals("master-plan-v1.1.md", row.attachments[0].fileName)
+        assertEquals("text/plain", row.attachments[0].mime)
+        assertEquals(39_733L, row.attachments[0].bytes)
+        assertEquals("zcode-artifact://sess_x/tool-result-y", row.attachments[0].ref)
+    }
+
+    @Test
+    fun conversationRowAttachmentParsingIsFaultTolerant() {
+        // 无附件字段 → 空列表（绝大多数行）
+        val plain = ConversationRow.from(buildJsonObject { put("rowId", 1); put("kind", "userInput") })!!
+        assertTrue(plain.attachments.isEmpty())
+        // attachments 不是数组 → 容错为空，不抛异常
+        val notArray = ConversationRow.from(
+            buildJsonObject { put("rowId", 2); put("kind", "userInput"); put("attachments", "oops") },
+        )!!
+        assertTrue(notArray.attachments.isEmpty())
+        // 数组里混入垃圾元素 → 跳过垃圾、保留合法项
+        val mixed = ConversationRow.from(
+            buildJsonObject {
+                put("rowId", 3); put("kind", "userInput")
+                putJsonArray("attachments") {
+                    addJsonObject { put("fileName", "ok.txt") }
+                    addJsonObject { /* 全空，应丢弃 */ }
+                }
+            },
+        )!!
+        assertEquals(1, mixed.attachments.size)
+        assertEquals("ok.txt", mixed.attachments[0].fileName)
+    }
+
+    // ---------- A-1：上传回调的会话归属判定 ----------
+
+    @Test
+    fun uploadBelongsToSession() {
+        // 同会话：允许回写
+        assertTrue(AppViewModel.uploadBelongsTo("sess_A", "sess_A"))
+        // 跨会话：必须丢弃（否则 A 的在途上传会把文件注入 B 的附件条）
+        assertFalse(AppViewModel.uploadBelongsTo("sess_A", "sess_B"))
+        // 发起时未订阅 / 当前已断开：一律丢弃
+        assertFalse(AppViewModel.uploadBelongsTo(null, "sess_A"))
+        assertFalse(AppViewModel.uploadBelongsTo("sess_A", null))
+        assertFalse(AppViewModel.uploadBelongsTo(null, null))
+    }
+
+    // ---------- B-3：反馈横幅时长档位（显式类型，不再靠字符串前缀猜）----------
+
+    @Test
+    fun flashDurationByKind() {
+        assertEquals(8_000L, AppViewModel.flashDurationMs(AppViewModel.FlashKind.Failure))
+        assertEquals(4_000L, AppViewModel.flashDurationMs(AppViewModel.FlashKind.Info))
+    }
+
+    // ---------- A-2：握手失败文案与迟到应答判定 ----------
+
+    @Test
+    fun handshakeFailureReasonIsReadableChinese() {
+        val timeout = ConversationChannel.handshakeFailureReason("握手", "timeout after 8000ms")
+        assertEquals("握手超时，请检查网络后重试", timeout)
+        // 裸英文串不得透出到 UI（任务书 §7 异常的 grep 断言）
+        assertFalse(timeout.contains("timeout after"))
+        assertEquals(
+            "通道尚未就绪，请稍后重试",
+            ConversationChannel.handshakeFailureReason("订阅", "bridge not ready"),
+        )
+        // 非超时类失败保留服务端原文，便于定位
+        assertTrue(
+            ConversationChannel.handshakeFailureReason("订阅", "fault.connection.handshakeRequired")
+                .contains("handshakeRequired"),
+        )
+    }
+
+    @Test
+    fun isTimeoutErrorOnlyMatchesTimeout() {
+        assertTrue(ConversationChannel.isTimeoutError("timeout after 8000ms"))
+        assertFalse(ConversationChannel.isTimeoutError("bridge not ready"))
+        assertFalse(ConversationChannel.isTimeoutError("fault.connection.handshakeRequired"))
+    }
+
+    @Test
+    fun transientHandshakeErrorCoversBridgeNotReady() {
+        // 超时（A-2 场景）
+        assertTrue(ConversationChannel.isTransientHandshakeError("timeout after 4000ms"))
+        // 桥未就绪：真机反馈的「中继已连接、会话却报 hello: bridge not ready 且永不恢复」根因
+        assertTrue(ConversationChannel.isTransientHandshakeError("bridge not ready"))
+        // 桥重建导致旧请求作废
+        assertTrue(ConversationChannel.isTransientHandshakeError("bridge re-established"))
+        // 协议层硬性拒绝：重试无意义，不得被判为瞬态
+        assertFalse(ConversationChannel.isTransientHandshakeError("fault.connection.handshakeRequired"))
+        assertFalse(ConversationChannel.isTransientHandshakeError("subscribe ack 缺少 subscriptionId"))
+    }
+
+    // ---------- 重连退避（网络恢复须能重置，见 NetworkGate / RelayClient.onNetworkAvailable）----------
+
+    @Test
+    fun reconnectBackoffIsExponentialAndCapped() {
+        assertEquals(3_000L, reconnectBackoffMs(0))
+        assertEquals(6_000L, reconnectBackoffMs(1))
+        assertEquals(12_000L, reconnectBackoffMs(2))
+        assertEquals(24_000L, reconnectBackoffMs(3))
+        assertEquals(48_000L, reconnectBackoffMs(4))
+        // 封顶：更大的 attempt 不再增长（真机实测旧实现会烧到 48s 后白等一整轮）
+        assertEquals(48_000L, reconnectBackoffMs(5))
+        assertEquals(48_000L, reconnectBackoffMs(50))
+    }
+
+    @Test
+    fun staleReplyDetection() {
+        // 同代次：本轮握手的应答，正常处理
+        assertFalse(ConversationChannel.isStaleReply(3, 3))
+        // 旧代次：切会话 / 自动重订后的迟到应答，必须丢弃
+        assertTrue(ConversationChannel.isStaleReply(2, 3))
+    }
+
+    // ---------- B-1：进会话定位 / 对齐 / 增量跟随的条件判定 ----------
+
+    private fun pin(
+        trigger: ConversationScrollPolicy.Trigger,
+        rowCount: Int = 10,
+        paginationInFlight: Boolean = false,
+        alreadyPinned: Boolean = false,
+        userScrolledAway: Boolean = false,
+    ) = ConversationScrollPolicy.shouldPinToLatest(
+        trigger, rowCount, paginationInFlight, alreadyPinned, userScrolledAway,
+    )
+
+    @Test
+    fun scrollPolicyEnterPinsOnce() {
+        // 进会话（有缓存 / 无缓存的区别只体现在首帧行数，判定一致）：必须定位
+        assertTrue(pin(ConversationScrollPolicy.Trigger.Enter))
+        // 已定位过不重复（否则每次重组都强拉回底部）
+        assertFalse(pin(ConversationScrollPolicy.Trigger.Enter, alreadyPinned = true))
+        // 尚无行时无目标可滚
+        assertFalse(pin(ConversationScrollPolicy.Trigger.Enter, rowCount = 0))
+    }
+
+    @Test
+    fun scrollPolicySnapshotAlignedAlwaysPins() {
+        // 「缓存行数 == 快照行数」时 rowCount 不变，仍必须定位 —— 旧 rows.size 触发器的失效路径
+        assertTrue(pin(ConversationScrollPolicy.Trigger.SnapshotAligned, alreadyPinned = true))
+    }
+
+    @Test
+    fun scrollPolicyDeltaFollowsWhileNotScrolledAway() {
+        // 意图锁未置位（用户想待在底部）→ 持续跟随
+        assertTrue(pin(ConversationScrollPolicy.Trigger.Delta, alreadyPinned = true))
+        // 尚未定位过 → 交给 Enter 处理，增量不抢跑（避免进会话瞬间重复滚动）
+        assertFalse(pin(ConversationScrollPolicy.Trigger.Delta, alreadyPinned = false))
+        // 关键回归：跟随判定**不得**再掺入「离底部多远」的几何条件 ——
+        // 那会导致「点回到底部」的滚动动画与新增行竞态时视口卡在半路（真机实测，2026-10-07）
+        assertTrue(pin(ConversationScrollPolicy.Trigger.Delta, alreadyPinned = true))
+    }
+
+    @Test
+    fun scrollPolicyBlocksDuringPagination() {
+        // 翻页 / 锚点恢复进行中：任何触发都不得强拉回底部
+        for (t in ConversationScrollPolicy.Trigger.values()) {
+            assertFalse("trigger=$t 在翻页中不应滚动", pin(t, paginationInFlight = true))
+        }
+    }
+
+    @Test
+    fun scrollPolicyRespectsUserScrollUp() {
+        // 用户主动上翻查阅历史：所有触发都不打断（只有拖回底部或点「回到底部」才解除）
+        for (t in ConversationScrollPolicy.Trigger.values()) {
+            assertFalse("trigger=$t 在用户上翻时不应强拉", pin(t, alreadyPinned = true, userScrolledAway = true))
+        }
     }
 }

@@ -104,6 +104,12 @@ fun ConversationScreen(
     filePreview: AppViewModel.FilePreview? = null,
     onPreviewFile: (String) -> Unit = {},
     onDismissFilePreview: () -> Unit = {},
+    /** B-1：权威快照是否已落地（含 seq，用于「缓存行数 == 快照行数」时仍能定位最新行）。 */
+    snapshotAligned: ConversationChannel.SnapshotAligned? = null,
+    /** B-3：附件上传成/败信号（tick 变化触发一次触觉）。 */
+    attachmentFeedback: AppViewModel.AttachmentFeedback? = null,
+    /** A-2：握手失败后用户手动重试订阅。 */
+    onRetrySubscribe: () -> Unit = {},
     onBack: () -> Unit,
 ) {
     val listState = rememberLazyListState()
@@ -119,6 +125,15 @@ fun ConversationScreen(
 
     val haptic = LocalHapticFeedback.current
     val coroutineScope = rememberCoroutineScope()
+
+    // B-3：附件上传成/败触觉。上传完成是 VM 侧异步驱动的，Compose 没有点击上下文，
+    // 故由 attachmentFeedback.tick 变化触发一次（沿用本文件既有的 LocalHapticFeedback 路径）。
+    LaunchedEffect(attachmentFeedback?.tick) {
+        val fb = attachmentFeedback ?: return@LaunchedEffect
+        haptic.performHapticFeedback(
+            if (fb.ok) HapticFeedbackType.LongPress else HapticFeedbackType.TextHandleMove
+        )
+    }
     // 智能贴底状态：用户是否在列表底部附近（距离末尾 <= 2 项，或无法向前滚动）
     val isNearBottom by remember {
         derivedStateOf {
@@ -133,24 +148,96 @@ fun ConversationScreen(
     }
 
     var anchorRowId by remember { mutableStateOf<Int?>(null) }
-    LaunchedEffect(rows.size) {
-        val anchor = anchorRowId
-        if (anchor != null) {
-            val idx = rows.indexOfFirst { it.rowId == anchor }
-            if (idx >= 0) listState.scrollToItem(idx + headerCount)
-            anchorRowId = null
-        } else if (isNearBottom) {
-            // 仅当用户处于底部附近时自动平滑贴底；上翻查阅历史或 diff 时不强拉打断
-            if (rows.isNotEmpty()) listState.animateScrollToItem(rows.lastIndex + headerCount)
+    // B-1：本会话是否已执行过「进会话定位」（外层 key(taskId) 重建后自动归零）
+    var pinnedThisSession by remember { mutableStateOf(false) }
+    // B-1：用户是否已**主动**上翻离开底部（查阅历史）。程序化滚动不产生
+    // DragInteraction，故这是区分「用户上翻」与「刚进入时列表停在顶部」的唯一可靠信号。
+    // 不用「离底部多少项」判断——真机实测证明那样会在滚动动画与新增行竞态时卡在半路。
+    var userScrolledAway by remember { mutableStateOf(false) }
+
+    // B-1：显式「回到底部」跳转进行中。跳转期间必须**禁止翻页触发**，否则：
+    // 在顶部点跳转 → 翻页同时触发并把锚点记为「列表首行」→ 加载更早历史后锚点恢复
+    // 把视口从底部拽回中段，显式跳转被覆盖（真机实测 + 诊断日志，2026-10-07）。
+    var jumpingToBottom by remember { mutableStateOf(false) }
+    LaunchedEffect(listState) {
+        listState.interactionSource.interactions.collect { i ->
+            if (i is androidx.compose.foundation.interaction.DragInteraction.Start) userScrolledAway = true
+        }
+    }
+    // 用户自己拖回底部后，恢复自动跟随
+    LaunchedEffect(isNearBottom) { if (isNearBottom) userScrolledAway = false }
+
+    // B-1 决策输入：翻页/锚点恢复进行中时，任何自动定位都必须让位，
+    // 否则刚加载进来的更早历史会被立刻拉回底部（把翻页体验改坏）。
+    val paginationInFlight = earlier.loading || anchorRowId != null
+
+    // 1) 进会话定位：有缓存（首帧即有行）与无缓存（等缓存/快照填行）两条时序都覆盖。
+    //    声明在翻页效应之前，保证同一帧内先定位再评估翻页条件。
+    LaunchedEffect(rows.isNotEmpty()) {
+        if (ConversationScrollPolicy.shouldPinToLatest(
+                ConversationScrollPolicy.Trigger.Enter, rows.size, paginationInFlight,
+                pinnedThisSession, userScrolledAway,
+            )
+        ) {
+            listState.scrollToItem(rows.lastIndex + headerCount)
+            pinnedThisSession = true
         }
     }
 
+    // 2) 快照对齐定位：覆盖「缓存行数 == 快照行数」这条 rows.size 不变、
+    //    旧 LaunchedEffect(rows.size) 完全不触发的新失效路径。
+    LaunchedEffect(snapshotAligned?.seq) {
+        if (snapshotAligned == null) return@LaunchedEffect
+        if (ConversationScrollPolicy.shouldPinToLatest(
+                ConversationScrollPolicy.Trigger.SnapshotAligned, rows.size, paginationInFlight,
+                pinnedThisSession, userScrolledAway,
+            )
+        ) {
+            listState.scrollToItem(rows.lastIndex + headerCount)
+            pinnedThisSession = true
+        }
+    }
+
+    // 3) 流式增量跟随：以「末行 rowId + 文本长度」为键 —— 流式 appendText 只替换单行、
+    //    size 不变，故不能再用 rows.size 作触发键。只要用户未主动上翻就持续跟随。
+    val lastRowKey = rows.lastOrNull()?.let { it.rowId to (it.text?.length ?: -1) }
+    LaunchedEffect(lastRowKey) {
+        if (lastRowKey == null) return@LaunchedEffect
+        if (ConversationScrollPolicy.shouldPinToLatest(
+                ConversationScrollPolicy.Trigger.Delta, rows.size, paginationInFlight,
+                pinnedThisSession, userScrolledAway,
+            ) && rows.isNotEmpty()
+        ) {
+            listState.animateScrollToItem(rows.lastIndex + headerCount)
+        }
+    }
+
+    // B-1 诊断：把滚动决策的全部输入打到 debug 日志（release 被 R8 的 -assumenosideeffects 剥离）。
+    // 仅在状态跃迁时输出，不是每 delta 一行。B-1 的失效只能真机复现，这条是唯一的现场观测手段。
+    LaunchedEffect(rows.size, paginationInFlight, pinnedThisSession, userScrolledAway, isNearBottom, jumpingToBottom) {
+        com.zcode.remote.util.ZLog.d(
+            "ConvScreen",
+            "scroll决策 rows=${rows.size} pagination=$paginationInFlight pinned=$pinnedThisSession " +
+                "away=$userScrolledAway nearBottom=$isNearBottom jumping=$jumpingToBottom",
+        )
+    }
+
+    // 4) 翻页锚点恢复：独立于自动贴底，两类滚动互不打断。
+    LaunchedEffect(rows.size) {
+        val anchor = anchorRowId ?: return@LaunchedEffect
+        val idx = rows.indexOfFirst { it.rowId == anchor }
+        if (idx >= 0) listState.scrollToItem(idx + headerCount)
+        anchorRowId = null
+    }
+
     val loadGate = rememberUpdatedState(Triple(rows.size, earlier.hasMore, earlier.loading to earlier.pulled))
+    val jumping = rememberUpdatedState(jumpingToBottom)
     LaunchedEffect(listState) {
         snapshotFlow { listState.firstVisibleItemIndex }.collect { idx ->
             val (size, hasMore, loadingPulled) = loadGate.value
             val (loading, pulled) = loadingPulled
-            if (size > 0 && idx <= 2 && !loading && (hasMore || !pulled)) {
+            // jumping.value：显式跳转期间不翻页，避免锚点恢复覆盖跳转目标
+            if (size > 0 && idx <= 2 && !loading && !jumping.value && (hasMore || !pulled)) {
                 anchorRowId = rows.firstOrNull()?.rowId
                 onLoadEarlier()
             }
@@ -200,6 +287,29 @@ fun ConversationScreen(
                     color = if (status is ConversationChannel.Status.Failed) MaterialTheme.colorScheme.error
                     else MaterialTheme.colorScheme.onSurfaceVariant,
                 )
+            }
+
+            // A-2：握手失败后的显式重试入口。挂在顶栏而不是空态里——有离线缓存时
+            // rows 非空、走不到空态，只有这里能稳定触达（自动重订已用尽时才需要它）。
+            if (status is ConversationChannel.Status.Failed) {
+                Surface(
+                    onClick = onRetrySubscribe,
+                    shape = RoundedCornerShape(14.dp),
+                    color = MaterialTheme.colorScheme.errorContainer,
+                    modifier = Modifier.height(28.dp),
+                ) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        modifier = Modifier.padding(horizontal = 10.dp)
+                    ) {
+                        Text(
+                            text = "重试",
+                            style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.SemiBold),
+                            color = MaterialTheme.colorScheme.onErrorContainer,
+                        )
+                    }
+                }
+                Spacer(Modifier.width(6.dp))
             }
 
             // 顶栏右侧：最近文件入口（剧本 B）——显示本会话涉及的文件数，点开列表面板
@@ -478,8 +588,17 @@ fun ConversationScreen(
                     Surface(
                         onClick = {
                             haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                            // B-1：显式回到最新 = 解除「已上翻」意图锁，此后增量持续跟随
+                            userScrolledAway = false
+                            jumpingToBottom = true
                             coroutineScope.launch {
-                                listState.animateScrollToItem(rows.lastIndex + headerCount)
+                                try {
+                                    listState.animateScrollToItem(rows.lastIndex + headerCount)
+                                } finally {
+                                    // 丢弃跳转期间翻页逻辑可能设上的锚点（否则它随后会把视口拽回中段）
+                                    anchorRowId = null
+                                    jumpingToBottom = false
+                                }
                             }
                         },
                         shape = RoundedCornerShape(16.dp),
@@ -1174,6 +1293,8 @@ private fun ApprovalCard(
     a: PendingApproval,
     onResolve: (PendingApproval, ApprovalOption) -> Unit,
 ) {
+    // B-3：会话内审批按钮与 ApprovalsTab 保持一致，点击给一次触觉反馈
+    val haptic = LocalHapticFeedback.current
     Card(
         shape = RoundedCornerShape(12.dp),
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
@@ -1209,7 +1330,10 @@ private fun ApprovalCard(
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth().padding(top = 4.dp)) {
                 a.options.forEach { opt ->
                     Button(
-                        onClick = { onResolve(a, opt) },
+                        onClick = {
+                            haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                            onResolve(a, opt)
+                        },
                         modifier = Modifier.weight(1f).height(34.dp),
                         contentPadding = PaddingValues(0.dp),
                         colors = ButtonDefaults.buttonColors(
@@ -1234,12 +1358,65 @@ private fun ApprovalCard(
 
 @Composable
 private fun RowItem(row: ConversationRow) = when (row.kind) {
-    "userInput" -> Bubble(row.text.orEmpty(), isUser = true)
+    "userInput" -> UserBubble(row)
     "assistantText" -> Bubble(row.text.orEmpty(), isUser = false, streaming = row.isStreaming)
     "reasoning" -> ReasoningBlock(row)
     "toolCall" -> ToolCallCard(row)
     "turnHeader" -> TurnHeaderRow(row)
     else -> PlainRow(row)
+}
+
+/**
+ * 用户消息：附件 chip（若有）在气泡上方，整体右对齐。
+ *
+ * 附件来自服务端在 userInput 行的回显（`{ref, fileName, mime, bytes}`），
+ * 即「手机上选文件→发送」之后该消息在会话流里的呈现方式与官方客户端一致。
+ * 历史消息仅展示：`ref` 是 host 侧暂存引用而非工作区路径，故不做点击预览（见 [RowAttachment]）。
+ */
+@Composable
+private fun UserBubble(row: ConversationRow) {
+    Column(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalAlignment = Alignment.End,
+    ) {
+        row.attachments.forEach { a ->
+            Surface(
+                color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.6f),
+                shape = RoundedCornerShape(10.dp),
+                modifier = Modifier.padding(bottom = 4.dp),
+            ) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
+                ) {
+                    Icon(
+                        // 与输入栏附件 chip 保持同一图标（本工程只有 material-icons-core，
+                        // 无 Description / AttachFile 等扩展图标；C-3 已登记统一替换该图标）
+                        imageVector = Icons.Default.Share,
+                        contentDescription = "附件",
+                        tint = MaterialTheme.colorScheme.primary,
+                        modifier = Modifier.size(14.dp),
+                    )
+                    Text(
+                        text = a.fileName ?: "附件",
+                        style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.Medium),
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier.widthIn(max = 220.dp),
+                    )
+                    a.bytes?.takeIf { it > 0 }?.let { size ->
+                        Text(
+                            text = humanBytes(size),
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                }
+            }
+        }
+        Bubble(row.text.orEmpty(), isUser = true)
+    }
 }
 
 @Composable

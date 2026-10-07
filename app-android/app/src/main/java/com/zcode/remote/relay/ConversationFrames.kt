@@ -198,6 +198,22 @@ object ConversationFrames {
 }
 
 /**
+ * 行携带的附件。仅在 `userInput` 行出现（服务端回显），形状与官方 web `attachmentRef` 同形：
+ * `{ref, fileName, mime, bytes}` —— 依据 `PROTOCOL.md` §6.6 的实测结论，并由真机缓存里的
+ * 真实行数据复核（样本见 `CHANGELOG.md` 的 userInput 附件渲染条目）。
+ *
+ * [ref] 是 host 侧暂存引用（`zcode-artifact://…`），**不是**工作区文件路径，
+ * 故当前只用于展示，不可走 `file.readTextFile` 预览。
+ */
+@Serializable
+data class RowAttachment(
+    val ref: String? = null,
+    val fileName: String? = null,
+    val mime: String? = null,
+    val bytes: Long? = null,
+)
+
+/**
  * 会话行。角色由 [kind] 表达，没有统一的 role 字段。
  *
  * kind: userInput / assistantText / reasoning / toolCall / turnHeader / subagent / hookInvocation / timelineMarker
@@ -215,6 +231,8 @@ data class ConversationRow(
     val inputText: String? = null,
     val outputText: String? = null,
     val createdAt: Long? = null,
+    /** 该行携带的附件（userInput 行回显）。默认空 = 无附件。 */
+    val attachments: List<RowAttachment> = emptyList(),
     /**
      * 原始行对象。审批等结构化字段（选项数组、requestId 等）形态尚未穷举，
      * 这里保留整包避免二次改数据类——取值见 [com.zcode.remote.relay.PendingApproval]。
@@ -241,8 +259,30 @@ data class ConversationRow(
                 inputText = str("inputText"),
                 outputText = o["output"]?.let { runCatching { it.jsonObject["text"]?.jsonPrimitive?.content }.getOrNull() },
                 createdAt = o["createdAt"]?.let { runCatching { it.jsonPrimitive.longOrNull }.getOrNull() },
+                attachments = parseAttachments(o),
                 raw = o,
             )
+        }
+
+        /**
+         * 解析 `attachments`（仅 userInput 行会出现）。
+         * 形态未穷举且属协议逆向，故对非数组/非对象/字段缺失一律容错为空或跳过，
+         * 保证一条畸形行不会让整帧解析失败。
+         */
+        private fun parseAttachments(o: JsonObject): List<RowAttachment> {
+            val arr = o["attachments"]?.let { runCatching { it.jsonArray }.getOrNull() } ?: return emptyList()
+            return arr.mapNotNull { item ->
+                val ao = (item as? JsonObject) ?: return@mapNotNull null
+                fun s(k: String) = ao[k]?.let { runCatching { it.jsonPrimitive.content }.getOrNull() }
+                val att = RowAttachment(
+                    ref = s("ref"),
+                    fileName = s("fileName"),
+                    mime = s("mime"),
+                    bytes = ao["bytes"]?.let { runCatching { it.jsonPrimitive.longOrNull }.getOrNull() },
+                )
+                // 三项标识全空视为垃圾元素，丢弃
+                if (att.ref == null && att.fileName == null && att.mime == null) null else att
+            }
         }
     }
 }

@@ -56,7 +56,8 @@ ZCode 官方远程控制（`zcode.z.ai/remote`）的**原生安卓增强客户�
 - **执行模式安全选择（Sprint 2 / P0-B）**：新建会话与会话内顶栏均支持自由切换规划（plan）、构建（build）、全自动（yolo），**默认安全 build 模式**，彻底杜绝免审批漏洞；yolo 显式红底警示。
 - **前台长连接保活与终态通知（Sprint 1–2 / P0-A）**：`ConnectionService` 真正升级为 FGS `specialUse` 前台服务（进程级 `ConnectionScope` 保长连），锁屏或划掉后台持续存活；KICKED / AUTH_FAILED / PROTOCOL_MISMATCH 终态常驻通知提醒。
 - **强韧断网感知重连（Sprint 1）**：`NetworkGate` 常驻监听系统网络，断网立即重置并挂起，网络恢复即刻重连（事件链全程 <9s）。
-- **完整回归测试保护网（Sprint 6）**：VQL 二进制编解码金标准双向对拍测试（Python↔Kotlin 共享 fixture）、25 项纯函数单测全绿、GitHub Actions CI 持续集成。
+- **会话流附件 chip**：发送带附件的消息后，附件以 chip（图标 + 文件名 + 体积）显示在消息气泡上方，与官方客户端一致；附件字段随行缓存持久化，冷启动秒开时同样可见。
+- **完整回归测试保护网（Sprint 6 起持续扩充）**：VQL 二进制编解码金标准双向对拍测试（Python↔Kotlin 共享 fixture）、**43 项**纯函数与状态判定单测全绿、GitHub Actions CI 持续集成。
 - **桌面 Widget**：主屏卡片实时显示待处理总数（审批 + 表单交互），点按直达 App；连接断开时明示「未连接」。
 - **可靠连接**：完整官方握手（HMAC proof）、心跳、指数退避重连、断线出站缓冲，单端在线互踢提示。
 
@@ -80,18 +81,25 @@ ZCode 官方远程控制（`zcode.z.ai/remote`）的**原生安卓增强客户�
 | Sprint 4–5 原生交互深度落地 | 通知栏 RemoteInput 内联回复、系统级 Share Sheet 分享接入、智能贴底与快捷指令胶囊栏、真机端到端全通 | ✅ 完成（v0.5.0-beta8，2026-10-05） |
 | Sprint 3 第三步 / Turn 变更聚合 | 会话流单轮 Turn 变更文件汇总卡片（Turn Diff Summary）、多文件一站式 Review、24 项单测全绿、真机实测全通 | ✅ 完成（v0.5.0-beta9，2026-10-05） |
 | Sprint 5 移动原生与离线能力闭环 | 会话列表与消息流双离线持久化秒开（Offline First）、配对链接 Deep Link 唤起、系统级触觉震动反馈、Share Sheet 接入、26 项单测全绿 | ✅ 完成（v0.5.0-beta12，2026-10-05） |
+| 正确性缺陷修复补丁 | 上传跨会话附件注入（数据/隐私）、握手三跳无超时导致永久卡死、beta11/12 引入的贴底回归、触觉补漏与失败时长档位；43 项单测全绿 | ✅ 代码完成，A-2/B-1 真机 PASS（v0.5.0-beta13，2026-10-07） |
+| 会话流附件 chip | 发送带附件的消息后，附件 chip 显示在气泡上方（含体积、随行缓存持久化） | ✅ 代码 + 真机端到端 PASS（v0.5.0-beta14，2026-10-07） |
+| 连接层缺陷修复 | 桥握手无超时导致「已连接却永久卡在会话报错」、`bridge not ready` 未判可重试、网络恢复白等一整轮退避 | ✅ 代码 + 单测 + **真机 PASS：断网 80s→5s、150s→3s（旧版 ~47s）**（v0.5.0-beta15，2026-10-07） |
 | ~~M4/M5~~ | ~~VPS 备用 Runner、E2E 高级模式~~ | ❌ 已取消（2026-09-30 决策：单人自用下成本收益不划算，详见 HANDOVER） |
 | ~~Sprint 7~~ | ~~生物识别/凭据生命周期、自建中继 + E2EE~~ | ❌ 已取消（2026-10-05 用户决策：后续开发计划一律不做） |
-| **v1.0 判停** | **3 天日常使用观察（锁屏审批可达 / 杀后台 30min / 网络往返）** | ⏳ 进行中（唯一剩余事项） |
+| **v1.0 判停** | **3 天日常使用观察（锁屏审批可达 / 杀后台 30min / 网络往返）** | ⏳ 进行中（唯一剩余事项）；观察窗口因 beta13/14/15 补丁**已重置**，自真机验收通过日起重新计时 |
 
 ### 接力开发 / Handover
 
-**功能开发已结清（2026-10-05）**：Sprint 0–6 全部完成并真机验收，后续开发计划（Sprint 7 等）经决策取消。当前仅剩「3 天日常使用观察 → 发 v1.0」一步。交接文档见 [HANDOVER.md](HANDOVER.md)（自包含，面向 AI agent 直接接手）。
+**功能开发已结清（2026-10-05）**：Sprint 0–6 全部完成并真机验收，后续开发计划（Sprint 7 等）经决策取消。当前仅剩「3 天日常使用观察 → 发 v1.0」一步。
+
+**2026-10-07 补丁轮次（v0.5.0-beta13）**：按《体验提升任务书 v2》档 A/B 修复四项正确性/体验缺陷（上传跨会话附件注入、握手三跳无超时、beta11/12 引入的贴底回归、触觉补漏）。属维护与缺陷修复性质，不含新增功能；JVM 单测与构建已全绿，**真机验收待办**，并按仓库规则**重置 3 天观察窗口**。详见 [CHANGELOG.md](CHANGELOG.md) 与 [HANDOVER.md](HANDOVER.md)。
+
+交接文档见 [HANDOVER.md](HANDOVER.md)（自包含，面向 AI agent 直接接手）。
 
 ### 安装包 / Releases
 
 签名 APK 从 [GitHub Releases](https://github.com/wjf1/zcode-remote-app/releases) 下载
-（如 `ZCodeRemote-0.5.0-beta12.apk` 或 releases 挂载的 `app-release.apk`，minSdk 31，Android 12+）。
+（如 `ZCodeRemote-0.5.0-beta13.apk` 或 releases 挂载的 `app-release.apk`，minSdk 31，Android 12+）。
 
 ### 快速开始
 
@@ -165,7 +173,8 @@ A **native Android client** for the official ZCode Remote Control relay (`zcode.
 - **Safe Execution Mode Selector (Sprint 2 / P0-B)**: Choose between plan, build, or yolo during session creation or directly in the top bar. **Defaults to safe build mode**; yolo mode clearly displays red hazard indicators.
 - **Foreground Service Keep-Alive & Terminal Notifications (Sprint 1–2 / P0-A)**: `ConnectionService` promoted to a real `specialUse` Foreground Service with process-level `ConnectionScope` singleton to keep connections alive across lock-screen and task killing; persistent system notifications for KICKED / AUTH_FAILED / PROTOCOL_MISMATCH.
 - **Resilient Network-Aware Reconnection (Sprint 1)**: `NetworkGate` actively monitors network connectivity via `ConnectivityManager`, instantly resetting on connection loss and reconnecting in <9s upon network availability.
-- **Regression Safety Net (Sprint 6)**: Bi-directional VQL binary codec golden fixture tests (Python↔Kotlin shared vectors), 25 pure-function unit tests, and GitHub Actions CI automation.
+- **Attachment Chips in the Conversation Stream**: messages sent with attachments render a chip (icon + file name + size) above the message bubble, matching the official client; the attachment field rides along in the row cache so chips also show on instant-open cold starts.
+- **Regression Safety Net (since Sprint 6, continuously extended)**: Bi-directional VQL binary codec golden fixture tests (Python↔Kotlin shared vectors), **43** pure-function & state-decision unit tests, and GitHub Actions CI automation.
 - **Home-Screen Widget**: Live card showing total pending items, tap to jump into the app.
 - **Reliable Connectivity**: HMAC handshake proof, 30s heartbeat, exponential backoff, and offline outbound queue.
 
@@ -183,14 +192,20 @@ A **native Android client** for the official ZCode Remote Control relay (`zcode.
 | Sprint 4–5 Native System Interactions | Notification RemoteInput inline reply, Share Sheet receiver, smart auto-scroll & action chips, real-device verified | ✅ Done (v0.5.0-beta8, 2026-10-05) |
 | Sprint 3 Step 3 / Turn Diff Summary | In-session turn changes aggregation review card, multi-file unified diff inspection, 24 unit tests, verified on real device | ✅ Done (v0.5.0-beta9, 2026-10-05) |
 | Sprint 5 Offline-First & System Integration | Instant-open session & message-row cache, Pairing Deep Links, full tactile haptics, Share Sheet receiver, 26 unit tests | ✅ Done (v0.5.0-beta12, 2026-10-05) |
+| Correctness Bug-Fix Patch | Cross-session attachment injection (data/privacy), handshake deadlock from missing timeouts, beta11/12 auto-scroll regression, missing haptics & failure-banner duration; 43 unit tests green | ✅ Code complete, A-2/B-1 real-device PASS (v0.5.0-beta13, 2026-10-07) |
+| Attachment Chips in Conversation Stream | Chips (name + size, persisted with the row cache) rendered above the message bubble for messages sent with attachments | ✅ Code + real-device E2E PASS (v0.5.0-beta14, 2026-10-07) |
+| Connection-Layer Fixes | Bridge handshake had no timeout ("connected but session stuck on an error forever"), `bridge not ready` not treated as retryable, network recovery waiting out a full backoff round | ✅ Code + unit tests + **real-device PASS: 80s outage → 5s, 150s outage → 3s (was ~47s)** (v0.5.0-beta15, 2026-10-07) |
 | ~~M4/M5~~ | ~~VPS backup runner, E2E advanced mode~~ | ❌ Cancelled (2026-09-30: cost/benefit not worth it for single-user, see HANDOVER) |
 | ~~Sprint 7~~ | ~~Biometric / credential lifecycle, self-hosted relay + E2EE~~ | ❌ Cancelled (2026-10-05: all future dev plans dropped by user decision) |
-| **v1.0 Judgment Line** | **3-day daily-use observation (lock-screen approval reachability / 30-min background kill / network round-trips)** | ⏳ In progress (only remaining item) |
+| **v1.0 Judgment Line** | **3-day daily-use observation (lock-screen approval reachability / 30-min background kill / network round-trips)** | ⏳ In progress (only remaining item); window **reset** by the beta13/14/15 patches — restarts from real-device acceptance |
 
 ### Releases
 
 Download signed APKs from [GitHub Releases](https://github.com/wjf1/zcode-remote-app/releases)
-(e.g., `ZCodeRemote-0.5.0-beta12.apk` or attached `app-release.apk`, minSdk 31, Android 12+).
+(e.g., `ZCodeRemote-0.5.0-beta15.apk` or attached `app-release.apk`, minSdk 31, Android 12+).
+
+> **2026-10-07 patch rounds**: **beta13** fixed four correctness/UX defects per the *Experience Improvement Task Book v2* (grades A/B) — cross-session attachment injection, missing handshake timeouts, the beta11/12 auto-scroll regression, and missing haptics. **beta14** adds attachment chips in the conversation stream (a user-requested feature). **beta15** fixes three connection-layer defects: the bridge handshake had no timeout (session stuck on an error forever while the relay showed "connected"), `bridge not ready` was not treated as retryable, and network recovery waited out a full backoff round (~47s). JVM tests and build are green; beta15 recovery latency verified on device (80s→5s, 150s→3s vs ~47s before). See [CHANGELOG.md](CHANGELOG.md) and [HANDOVER.md](HANDOVER.md).
+
 
 ### Quick Start
 

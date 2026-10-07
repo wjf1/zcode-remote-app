@@ -40,6 +40,15 @@ sealed interface RelayState {
 
 enum class FailureReason { KICKED, AUTH_FAILED, DEVICE_OFFLINE, NETWORK, INTERNAL, PROTOCOL_MISMATCH }
 
+/**
+ * 重连退避（纯函数，便于 JVM 单测）：3s 起指数翻倍，48s 封顶。
+ *
+ * ⚠️ 退避**只应在「网络可用但对端拒绝/超时」时累积**。网络整体不可用时应由
+ * [NetworkGate] 挂起等待（不烧退避）、恢复后由 [RelayClient.onNetworkAvailable] 重置归零
+ * ——否则断网期会把退避烧到 48s 封顶，恢复后还要白等一轮（2026-10-07 真机实测 ~47s）。
+ */
+internal fun reconnectBackoffMs(attempt: Int): Long = 3000L * (1L shl minOf(attempt, 4))
+
 class RelayClient(
     private val device: com.zcode.remote.storage.PairedDevice,
     private val appVersion: String = "0.1.0",
@@ -73,6 +82,31 @@ class RelayClient(
         socket = null
         reconnectAttempt = 0
         scheduleReconnect()
+    }
+
+    /**
+     * 网络恢复立即重连（NetworkGate 常驻监控转发）。
+     *
+     * 2026-10-07 真机实测缺陷：断网期开烧的退避可达 48s 封顶，恢复后仍要把这轮退避烧完才重连
+     * （实测恢复耗时 ~47s，而基线为 `<9s`）。这里在**网络恢复的瞬间**重置退避、取消已排队的
+     * 退避等待并立刻重连——不再依赖「退避正好到期」。
+     */
+    fun onNetworkAvailable() {
+        if (manuallyClosed || terminalFailed) return
+        // 只在「WS 确实活着」的状态下不打断健康连接：Paired / WaitingPeer 都有 live socket。
+        // ⚠️ 不能把 Connecting 当作健康：socket 失败时 onFailure 只调度重连、**不改 _state**，
+        // 故 Connecting 会残留下来。若据此提前 return，「网络恢复即刻重连」就永远不生效
+        // ——真机实测（2026-10-07）：断网 150s 时恢复仍要等满 48s 退避，正是此处被挡。
+        when (_state.value) {
+            RelayState.Paired, RelayState.WaitingPeer -> return
+            else -> Unit
+        }
+        ZLog.i(TAG, "net-watch: 网络恢复，重置退避并立即重连")
+        reconnectAttempt = 0
+        // 掐断可能正在 sleep 的退避等待（最多 48s）：否则要白等到退避到期才重连。
+        // 被取消的调度由 scheduleReconnect 内的 `if (!isActive) return@launch` 保证不再 connect。
+        reconnectJob?.cancel(); reconnectJob = null
+        connect()
     }
 
     private val _state = MutableStateFlow<RelayState>(RelayState.Idle)
@@ -272,7 +306,7 @@ class RelayClient(
             ZLog.i(TAG, "reconnect: 已有调度在等待（attempt=$reconnectAttempt），跳过重复调度")
             return
         }
-        val delayMs = 3000L * (1L shl minOf(reconnectAttempt, 4))  // 3s,6s,12s,24s,48s 封顶
+        val delayMs = reconnectBackoffMs(reconnectAttempt)  // 3s,6s,12s,24s,48s 封顶
         reconnectAttempt++
         reconnectJob = io.launch {
             val myGen = generation
@@ -280,6 +314,13 @@ class RelayClient(
             ZLog.i(TAG, "reconnect: 调度 attempt=$reconnectAttempt 退避 ${delayMs}ms")
             runCatching { networkWait(delayMs) }
                 .onFailure { ZLog.w(TAG, "reconnect: networkWait 异常", it) }
+            // ⚠️ 必须显式判 isActive：上面的 runCatching 会把取消异常一并吞掉，此后协程虽已取消
+            // 仍会继续执行到 connect() —— 而 onNetworkAvailable 已在取消后自行重连，重复 connect
+            // 会造成双连接/代次错乱（真机修复 2026-10-07）。
+            if (!isActive) {
+                ZLog.i(TAG, "reconnect: 本次调度已被取消（网络恢复已直接重连），不再 connect")
+                return@launch
+            }
             if (myGen != generation) {
                 ZLog.i(TAG, "reconnect: 代次已变（期间发生显式 connect），作废本次调度")
                 return@launch

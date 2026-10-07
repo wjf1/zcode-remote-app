@@ -3,6 +3,8 @@ package com.zcode.remote.relay
 import android.net.ConnectivityManager
 import android.net.Network
 import android.net.NetworkCapabilities
+import android.os.Handler
+import android.os.Looper
 import com.zcode.remote.util.ZLog
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.suspendCancellableCoroutine
@@ -20,13 +22,20 @@ import kotlin.random.Random
  *
  * 因此本类做**常驻**网络监控（registerDefaultNetworkCallback）：
  * - onLost → 立即回调 [onLost]（RelayClient 马上断 socket + 调度重连，attempt 归零）；
- * - waitBeforeReconnect：退避后仍无网则挂起，onAvailable 即刻放行——恢复到重连零等待。
+ * - waitBeforeReconnect：**无网时直接挂起等待恢复**（不烧退避），网络恢复即刻放行；
+ * - onAvailable → 除放行挂起者外，另回调 [onAvailable]，让 RelayClient **重置退避并立即重连**
+ *   （2026-10-07 修复：旧实现是「先 delay 退避再判可用性」，断网期开烧的 48s 退避在恢复后
+ *   仍被烧完，实测恢复耗时 ~47s，与本节设计意图不符）。
  */
 class NetworkGate(private val cm: ConnectivityManager) {
 
     /** 网络丢失回调（由 RelayClient 注入：清理 socket 并调度重连）。 */
     @Volatile
     var onLost: (() -> Unit)? = null
+
+    /** 网络恢复回调（由 RelayClient 注入：重置退避并立即重连）。 */
+    @Volatile
+    var onAvailable: (() -> Unit)? = null
 
     @Volatile
     private var available: Boolean = probeNow()
@@ -37,15 +46,20 @@ class NetworkGate(private val cm: ConnectivityManager) {
     private val waiterLock = Any()
     private var waiter: (() -> Unit)? = null
 
+    /**
+     * 回调统一切到主线程派发：ConnectivityManager 的回调运行在**系统回调线程**，
+     * 而 `RelayClient` 的状态机（socket/reconnectJob 等非 volatile 字段）与 `connect()`
+     * 并非线程安全。挂起者的放行仍走原协程（io 线程），由 `RelayClient.onNetworkAvailable`
+     * 的双 connect 护栏负责二者不冲突。
+     */
+    private val mainHandler = Handler(Looper.getMainLooper())
+
     private val watcher = object : ConnectivityManager.NetworkCallback() {
         override fun onAvailable(network: Network) {
             ZLog.i(TAG, "gate: 网络恢复 onAvailable")
             available = true
-            val w = synchronized(waiterLock) { waiter }
-            if (w != null) {
-                synchronized(waiterLock) { waiter = null }
-                w()
-            }
+            resumeWaiter()
+            mainHandler.post { onAvailable?.invoke() }
         }
 
         override fun onLost(network: Network) {
@@ -53,7 +67,7 @@ class NetworkGate(private val cm: ConnectivityManager) {
             if (!probeNow()) {
                 ZLog.i(TAG, "gate: 网络丢失 onLost")
                 available = false
-                onLost?.invoke()
+                mainHandler.post { onLost?.invoke() }
             } else {
                 ZLog.i(TAG, "gate: 某条网络 lost，但仍有可用网络，忽略")
             }
@@ -68,11 +82,25 @@ class NetworkGate(private val cm: ConnectivityManager) {
         if (r.isFailure) ZLog.w(TAG, "gate: registerDefaultNetworkCallback 失败，退回纯退避语义")
     }
 
-    /** RelayClient.networkWait 注入点：退避 → 无网挂起等恢复 → 返回即重连。 */
+    /** RelayClient.networkWait 注入点：无网则挂起等恢复，有网则正常退避后重连。 */
     suspend fun waitBeforeReconnect(delayMs: Long) {
+        // 无网时退避毫无意义（对端根本没到不了）：直接挂起等恢复，省掉整段退避
+        if (!available && !probeNow()) {
+            ZLog.i(TAG, "gate: 无网，跳过退避 ${delayMs}ms 挂起等待恢复")
+            awaitNetwork()
+            ZLog.i(TAG, "gate: 网络恢复，放行重连")
+            return
+        }
         delay(delayMs + Random.nextLong(0, 1000))
         if (available || probeNow()) return
-        ZLog.i(TAG, "gate: 无网，挂起等待恢复")
+        ZLog.i(TAG, "gate: 退避后仍无网，挂起等待恢复")
+        awaitNetwork()
+        ZLog.i(TAG, "gate: 网络恢复，放行重连")
+    }
+
+    /** 挂起直到网络可用（已可用则立即返回）。 */
+    private suspend fun awaitNetwork() {
+        if (available) return
         suspendCancellableCoroutine { cont ->
             synchronized(waiterLock) {
                 waiter = { if (cont.isActive) cont.resume(Unit) }
@@ -86,7 +114,14 @@ class NetworkGate(private val cm: ConnectivityManager) {
                 cont.resume(Unit)
             }
         }
-        ZLog.i(TAG, "gate: 网络恢复，放行重连")
+    }
+
+    private fun resumeWaiter() {
+        val w = synchronized(waiterLock) { waiter }
+        if (w != null) {
+            synchronized(waiterLock) { waiter = null }
+            w()
+        }
     }
 
     private fun probeNow(): Boolean {

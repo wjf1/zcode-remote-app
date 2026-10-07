@@ -82,7 +82,10 @@ class MainActivity : ComponentActivity() {
                         )
 
                         // 3. 沉浸式会话详情页
-                        target != null -> ConversationScreen(
+                        // B-1：用会话 id 作 key —— listState / 滚动锚点 / 贴底标记不跨会话复用，
+                        // 否则「A 停在顶部 → 进 B」会沿用 A 的偏移量（进 B 不停在最新行）。
+                        target != null -> androidx.compose.runtime.key(target.taskId) {
+                            ConversationScreen(
                             title = vm.conversationMeta.title ?: target.title,
                             status = vm.conversationStatus,
                             meta = vm.conversationMeta,
@@ -129,8 +132,12 @@ class MainActivity : ComponentActivity() {
                             filePreview = vm.filePreview,
                             onPreviewFile = { vm.previewSessionFile(it) },
                             onDismissFilePreview = { vm.dismissFilePreview() },
+                            snapshotAligned = vm.snapshotAligned,
+                            attachmentFeedback = vm.attachmentFeedback,
+                            onRetrySubscribe = { vm.retrySubscribe() },
                             onBack = { opened = null },
-                        )
+                            )
+                        }
 
                         // 4. 底部 3-Tab 主工作台框架
                         else -> {

@@ -1,5 +1,165 @@
 # 变更记录 / Changelog
 
+## v0.5.0-beta15（2026-10-07）· 修复「已连接却永久卡在会话报错」与网络恢复慢（两个连接层缺陷）
+
+**起因（用户真机反馈）**：「设置里显示已连接，但会话页持续报 `异常：hello: bridge not ready`，永不恢复」；以及此前实测的「断网 90s 后恢复耗时 ~47s，而基线是 `<9s`」。两个问题都在连接层，一并修掉。
+
+### 修复
+- **桥握手无超时 → 永久卡在 `Opening`（用户反馈的直接根因）**：`RpcChannel.openBridge` 此前只把状态置为 `Opening` 并发出 `workspace-bridge-open`，**没有任何超时或重开机制**；一旦 `workspace-bridge-ready` 帧丢失，桥会**永久**停在 `Opening`，此时 `call`/`listen` 一律立刻回 `bridge not ready` —— 于是「中继/设置显示已连接，会话页却一直报错且永不恢复」。
+  修法：新增**桥握手看门狗**——`Opening` 超过 6s 未就绪即重开，最多 3 次（约 18s）；用尽后显式置 `BridgeState.Failed("工作区桥未就绪（已重开 N 次）")`，把「静默卡死」变成「可见失败」。看门狗用令牌（`bridgeOpenToken`）保证只有最新一次 open 的看门狗有效，避免 workspace-list 帧连发时多个看门狗互相触发形成放大风暴。
+- **`bridge not ready` 未被判定为可重试 → 不自动恢复**：A-2 引入的自动重订此前只认 `timeout`，而桥未就绪属**瞬态**（`Opening` 期间的回错）。新增 `ConversationChannel.isTransientHandshakeError()`（覆盖 `timeout` / `bridge not ready` / `bridge re-established`）用于 `Status.Failed.retryable`；配合「桥变 Ready 时自动重订会话」的既有事件路径，此类失败现在会自愈。
+- **网络恢复要白等一整轮退避（实测 ~47s）**：`NetworkGate.waitBeforeReconnect` 的实现是**先 `delay(退避)` 再判可用性**——于是断网期开烧的退避（可达 48s 封顶）在网络已恢复后仍要被烧完，与本节注释宣称的设计意图（「无网时挂起而非空烧退避」）不符。
+  修法两处：① `waitBeforeReconnect` 改为**无网时直接挂起等待恢复、完全不烧退避**（有网才正常退避）；② 新增 `NetworkGate.onAvailable` 回调 + `RelayClient.onNetworkAvailable()`，在网络恢复的瞬间**重置退避计数、取消已排队的退避等待并立即重连**（已处于 `Paired`/正在连接时不打断健康连接）。VM 侧接线 `gate.onAvailable = c::onNetworkAvailable`。
+- **退避公式抽为纯函数 `reconnectBackoffMs(attempt)`**（3s 起指数翻倍、48s 封顶），使「退避语义」首次可被 JVM 单测守住。
+
+### 新增单测（+2 项，全仓 41 → 43 项）
+- `transientHandshakeErrorCoversBridgeNotReady`：超时 / 桥未就绪 / 桥重建均判瞬态；协议层硬性拒绝（`handshakeRequired`）不得判瞬态。
+- `reconnectBackoffIsExponentialAndCapped`：3/6/12/24/48s 序列与封顶。
+
+### 真机验证（2026-10-07 · 小米 15 Pro `9f6241b4`，Android 17 / HyperOS）
+
+| 项 | 结果 | 证据 |
+|---|---|---|
+| 健康路径非回归（看门狗不误触发） | ✅ PASS | 冷启动 `bridge=Closed → Opening → bridge-open attempt=1 → Ready` 仅 **127ms**；**全程无「未就绪/重开」日志** → 6s 看门狗无假阳性（约为实测值的 47 倍余量） |
+| **断网 80s 后恢复延迟** | ✅ PASS（修复前 3 个版本均 ~47s） | `恢复延迟 = 5 秒` |
+| **断网 150s 后恢复延迟** | ✅ PASS（同上） | `恢复延迟 = 3 秒`；日志顺序 `网络恢复 onAvailable → ws open`（236ms）→ `net-watch: 网络恢复，重置退避并立即重连` |
+| 恢复后会话重新对齐 | ✅ PASS | 恢复后 `subscribed sub=…` 且桥重新握手至 `Ready` |
+| 桥重开 3 次用尽后的可见失败（③） | ⚠️ **未能构造** | 需人为丢弃 `workspace-bridge-ready` 帧，从 App 外部无法制造；仅代码推理 + 健康路径非回归覆盖 |
+| 会话页不再出现永久 `bridge not ready`（①） | ⚠️ **间接覆盖** | 同一根因（桥无超时）已由看门狗 + `bridge not ready` 判可重试 + 桥 Ready 事件重订三重覆盖；未能在真机复现原始故障 |
+
+> **⚠️ 本轮修复被真机测量推翻过一次，记录如下（避免后人重犯）**
+>
+> 首版修复（「无网不烧退避」+「网络恢复重置退避」）在**断网 80s 时 PASS（5s）**，但**断网 150s 时 FAIL（46s）**。第二次测量暴露了两个我没预料到的前提：
+> 1. **`probeNow()` 假阳性**：进入飞行模式的瞬间 `activeNetwork` 仍短暂报告可用，导致 `NetworkGate.onLost` 走进「某条网络 lost，但仍有可用网络，忽略」分支 → **`available` 残留为 true** → 「无网不烧退避」的分支根本没走，退避照旧烧到 48s 封顶。
+> 2. **我自己的守卫挡了修复**：我原本在 `onNetworkAvailable` 里写 `Connecting -> return`（怕打断正在进行的连接），但 **`RelayClient.onFailure` 只调度重连、不改 `_state`**，于是状态会残留为 `Connecting` → 该守卫让「掐断退避」永远不生效。日志证据：恢复后仍多等 42s（恰好是那轮 48s 退避的剩余时间），且**完全没有** `net-watch:` 日志。
+>
+> 最终修法：`onNetworkAvailable` 只对 **`Paired` / `WaitingPeer`**（真正有 live socket 的状态）提前返回；其余一律「重置退避 → `cancel()` 掉正在 sleep 的退避 → 立即 `connect()`」，并给重连协程加 `if (!isActive) return@launch` 确保被取消的调度**不会**再 connect（否则双连接）。**教训：恢复路径不能依赖「失败路径并不维护」的状态标志。**
+>
+> 残留（已登记，未改）：`onLost` 里的 `probeNow()` 去抖守卫仍会在断网瞬间误判，使断网期继续空烧退避（只影响日志/耗电，**不再影响恢复延迟**，因为恢复已由 `onAvailable` 直接掐断）。改动它需先验证其原始理由（双网并存去抖），故本轮未动。
+
+### 验证状态
+- `gradle testDebugUnitTest assembleDebug` **BUILD SUCCESSFUL**；`tools/check_test_count.py` 核对 **声明 43 项 = 实际执行 43 项**，0 失败。
+- 恢复延迟实测脚本：`tools/net_recover_test.sh`（断网指定秒数 → 测量到 `ws open` 的延迟）。
+- `versionName 0.5.0-beta15` / `versionCode 25`。
+
+## v0.5.0-beta14（2026-10-07）· 会话流渲染用户消息的附件 chip
+
+**新增功能（用户直接提出，超出《体验提升任务书 v2》档 A/B 的缺陷修复范围，经用户拍板立项）**：此前在会话里发送带附件的消息后，附件在会话流中**不可见**——只能看到文本气泡，用户无从确认文件是否真的带上了。现在与官方客户端一致：附件以 chip 形式显示在消息气泡上方。
+
+### 新增
+- **`ConversationRow.attachments`**：解析 `userInput` 行的 `attachments` 字段（服务端回显）。元素类型 `RowAttachment(ref, fileName, mime, bytes)` 与官方 web `attachmentRef` 同形，字段可空、畸形数据容错（非数组 / 非法元素一律跳过，保证单条坏行不会让整帧解析失败）。
+- **会话流附件 chip**：`ConversationScreen` 新增 `UserBubble`，在用户消息气泡上方右对齐渲染附件 chip（图标 + 文件名 + 体积），与输入栏附件条共用同一套视觉语言与 `humanBytes` 格式化。历史消息只展示不可移除（`ref` 是 host 侧暂存引用，非工作区路径）。
+- **离线可见**：`attachments` 是 `ConversationRow` 的可序列化字段，随行缓存一起持久化，故冷启动秒开时也能显示附件（此前写入的旧缓存无此字段，会按空列表处理）。
+- **新工具 `tools/check_test_count.py` + CI 断言**：核对「声明的 `@Test`」与「实际执行的用例」是否一致，任何声明了却没跑（注解被注释掉/粘连、方法非 public）都会让 CI 变红。起因见下方踩坑第一条。
+
+### 依据与边界
+- **协议依据**：`PROTOCOL.md` §6.6 记录 `userInput` 行回显 `attachments`（2026-09-30 实测六项 PASS）；`research/CONVERSATION-PROTOCOL.md:182` 记录行 schema 含 `attachments?`。**本次以真机缓存中的真实行数据复核了该结论**（样本：`{ref: zcode-artifact://sess_…/tool-result-…, fileName: master-plan-v1.1.md, mime: text/plain, bytes: 39733}`），非仅依据文档。
+- **不需要改协议**：服务端已经把附件随行推回，本次纯客户端渲染。
+- **不做点击预览**：`attachmentRead` / `attachmentPreviewSource` 虽存在于 host 的 RPC 路由表（`research/FRAME-CODEC.md:353`），但协议字段未逆向、`ref` 也不是工作区路径，故本轮仅展示。若要支持点击查看，需单独立项。
+- **图标复用**：本工程仅依赖 material-icons-core（无 `Description` / `AttachFile` 等扩展图标），故与输入栏附件 chip 共用 `Icons.Default.Share`；`C-3` 已登记统一替换该图标。
+
+### 真机验证（2026-10-07 · 小米 15 Pro，Android 17 / HyperOS）
+完整走通用户真实路径（**非构造数据**）：推送测试文件 → App 内点附件按钮 → 系统选择器选中 → `attachmentBegin/Commit` 成功（`附件已提交 ref=zcode-artifact://…`，附件条显示 `zcode-att-verify.md` + `89B`）→ 输入文本并点发送 → 快照/增量返回该行。
+
+按 **y 坐标**断言 chip 落在会话流而非输入栏（输入栏 y≈2200+）：
+
+| 文本 | y | 归属 |
+|---|---|---|
+| `zcode-att-verify.md` | 1083 | 会话流内（chip） |
+| `89B` | 1083 | 同一 chip 的体积 |
+| `attachment-render-check` | 1361 | 紧邻下方的消息气泡 |
+
+即：chip 在气泡**上方**、右对齐，发送后输入栏不再残留 chip（附件被消费），与官方客户端呈现一致。
+
+新增单测 2 项（真实样本解析 + 畸形数据容错），全仓 **41 项**全绿。
+
+### 验证副作用（如实记录）
+验证时向真实会话 `sess_0f00b96b`（「zcode-dotfiles 优化方案可行性确认」）发送了一条测试消息（文本 `attachment-render-check` + 89 字节测试文件）。核对桌面端 `tasks-index`：该会话 `status=completed`、`updated_at` 未变化 → **未调度 agent 轮次、未消耗额度**。协议无「删除消息」操作，该行无法程序化清理。
+
+### 验证方法论补充（新增三条踩坑）
+- **`@Test` 被注释掉会导致测试静默消失（最严重的一条）**：beta13 轮次中，一次「删空行」的编辑把
+  `// ---------- 注释 ----------` 与 `@Test` 挤到同一行，注解落进行注释 → 方法从此没有注解 →
+  JUnit **静默跳过**、`BUILD SUCCESSFUL` 照常，测试数从 39 悄悄变成 38。**只有逐用例集合比对才能发现**
+  （按数量报警最容易漏，因为总数量级在那里）。已修复，并把集合比对固化为 `tools/check_test_count.py`
+  + CI 必跑步骤。**教训：任何「N 项单测全绿」的结论，必须同时确认 N == 实际执行的用例数。**
+- **`grep` 的 `.` 是任意字符**：用 `Icons.Default.Description` 作模式去搜现有用法，匹配到的其实全是 `contentDescription = …`，据此误判「该图标已被使用」。检索代码请用 `grep -F`。
+- **`adb shell` 侧的 `grep` 与引号转义不可靠**：`run-as … grep '"kind":"userInput"'` 因转义丢失而返回 0（假阴性），一度让人以为缓存里没有 `attachments`。**结论：跨 adb 做文本检索一律先把文件 pull 到本地再解析**（本次正是 pull 后才发现真实附件行）。
+
+### 验证状态
+- `gradle testDebugUnitTest assembleDebug` **BUILD SUCCESSFUL**；`tools/check_test_count.py` 核对 **声明 41 项 = 实际执行 41 项**（PureFunctions 24 + Vql 4 + ToolDiff 13），0 失败。
+- `versionName 0.5.0-beta14` / `versionCode 24`。
+
+## v0.5.0-beta13（2026-10-07）· 正确性缺陷修复（上传跨会话注入 / 握手超时 / 贴底回归）+ 触觉补漏
+
+**里程碑：按《体验提升任务书 v2》档 A/B 落地四项——修掉一个数据正确性与隐私缺陷（上传跨会话附件注入）、一个可永久卡死的握手缺陷（三跳无超时）、一个 beta11/12 引入的贴底功能回归，并补齐两处遗漏触觉。全部改动为维护与缺陷修复性质，不含新增功能。**
+
+> ⚠️ **验收状态：JVM 单测与构建全绿；真机验收已完成 A-2 / B-1 两项（含新增缺陷修复），B-3 与 A-1 的部分需人工复核** —— 见文末「真机验证记录（2026-10-07）」。真机验收全部通过前不打 tag、不推送。
+
+### 修复
+- **A-1 上传跨会话附件注入（数据正确性 + 隐私）**：会话 A 的在途上传完成后，文件会被塞进用户已切过去的会话 B 的附件条，用户可能在 B 里误发出去。修法三处：① 上传发起时捕获「发起会话」，`onProgress` 与完成回调统一用新抽出的纯函数 `AppViewModel.uploadBelongsTo` 校验归属，不匹配即丢弃回调；② `ConversationChannel.uploadAttachment` 改为返回可中止句柄 `UploadHandle`，内部以 `aborted` 标记短路一切在途回调（begin/chunk/commit 应答）与后续分片，且不再回写 `onResult`；③ `clearAttachments()` 终止在途上传（此前只清状态，在途上传会继续跑完）。
+- **A-2 握手三跳无超时 → 可永久卡死**：`helloConversationV4` / `initializeConversationV4` / `subscribeConversationV4` 三处此前均未传 `timeoutMs`（`RpcChannel` 默认 `null` = 无限等待），连接健康但某个 201 应答丢失时会话页**永久**停在「握手中…」。三跳现分别传 4s / 4s / 5s；失败原因经 `handshakeFailureReason` 映射为可读中文（不再透出 `timeout after 4000ms` 等裸英文串），并新增**一次**自动重订（退避 1s）。重订与切会话由新增的握手 `generation` 代次守卫丢弃迟到应答（`isStaleReply`，沿用 `RelayClient.generation` 既有写法）；自动重订用尽后停在失败态，顶栏给出「重试」入口（`AppViewModel.retrySubscribe`）。
+  - **阈值由 T0 真机实测校准**（原为 8s/8s/10s 占位）：6 次冷启动实测 hello 132–211ms、initialize 127–198ms、subscribe 127–186ms、ack→快照 99–141ms，整链路 512–740ms；取实测最大值的约 19 倍余量。采样脚本与统计见 `tools/t0_sample.sh`、`tools/t0_analyze.py`，原始样本 `_tmp/t0_samples.txt`。
+- **B-1 贴底回归（beta11/12 引入）**：自动贴底的唯一触发器是 `LaunchedEffect(rows.size)`，而 beta11/12 的缓存预加载 + 快照 `replaceAll` 在**缓存行数等于快照行数**时 `rows.size` 完全不变 → 连残缺贴底也不跑（比 beta8 更严重）。修法：① `MainActivity` 用 `key(taskId)` 包住 `ConversationScreen`，listState 与翻页锚点不再跨会话复用；② `ConversationChannel` 新增可扩展形状的「快照已对齐」信号 `SnapshotAligned(sessionId, rowCount, atElapsedMs, seq)`；③ 进会话首帧与对齐完成时无条件定位（不带动画）；④ 流式跟随改为以「末行 rowId + 文本长度」为键（流式 `appendText` 只替换单行、size 不变）；⑤ 定位条件抽为纯函数 `ConversationScrollPolicy.shouldPinToLatest`。
+- **B-1 追加修复：显式「回到底部」被翻页锚点恢复覆盖（真机验收中新发现）**：在列表**顶部**点「回到底部」时，翻页逻辑同时触发并把锚点记为「列表首行」，加载更早历史后锚点恢复把视口从中途拽回，**显式跳转被覆盖**、用户停在会话中段。修法：新增 `jumpingToBottom` 状态，跳转期间禁止翻页触发，跳转结束再丢弃可能残留的锚点。该缺陷同时存在于修复前版本（此前通过只是时序侥幸）。
+- **B-1 判定模型改为「意图锁」**：原用「距末尾 ≤2 项」判断要不要贴底（几何距离），改为显式意图锁 `userScrolledAway`——只有用户**主动拖动**才置位（程序化滚动不产生 `DragInteraction`），拖回底部或点「回到底部」即复位。同时补一条 debug 级滚动决策日志（`ConvScreen: scroll决策 …`，release 被 R8 剥离），作为 B-1 类失效在真机上的唯一现场观测手段。
+- **B-3 触觉补漏与失败时长档位**：补附件上传成/败触觉（经 `AttachmentFeedback` 信号桥接 VM→Compose，因上传完成是异步的）与会话内 `ApprovalCard` 按钮触觉（与 `ApprovalsTab` 对齐）。`flash()` 驻留时长由**显式类型参数** `FlashKind` 决定，取代原先「按字符串前缀猜」的白名单 —— 「附件上传失败」此前一直错落在 4s 档，现为 8s。
+
+### 变更
+- `ConversationChannel.Status.Failed` 新增 `retryable` 参数（默认 `false`，仅瞬态超时为 `true`），供上层决定是否退避重订。
+- 失败类反馈（发送失败 / 应答失败 / 连接已断开 / 停止失败 / 模型切换失败 / 删除失败 / 附件上传失败）统一 8s；成功与普通提示 4s。
+
+### 新增单测（声明 +10 项，全仓 29 → 39 项声明）
+> ⚠️ **勘误（beta14 轮次发现）**：其中 `uploadBelongsToSession` 因一次编辑把注释与 `@Test` 挤到同一行、
+> 注解落进行注释而**从未被执行**（JUnit 静默跳过，构建照样全绿）——本版实际执行为 38 项，非 39 项。
+> 已在 beta14 轮次修复，并新增 `tools/check_test_count.py` + CI 断言防复发。
+- `uploadBelongsToSession`：同会话 / 跨会话 / 发起端为空 / 当前端为空 四类归属判定。
+- `flashDurationByKind`：失败 8s、提示 4s 的时长契约。
+- `handshakeFailureReasonIsReadableChinese` / `isTimeoutErrorOnlyMatchesTimeout` / `staleReplyDetection`：可读文案、瞬态失败判定、迟到应答丢弃。
+- `scrollPolicy*` 5 项：进会话定位（含「无缓存」与「已定位不重复」）/ 快照对齐（含「行数不变」失效路径）/ 增量仅在已定位且近底部时跟随 / 翻页中全部阻断 / 用户上翻全部阻断。
+
+### 明确不做（沿用仓库既有决策）
+- **A-3 订阅监听泄漏（103 EventDispose 零调用）**：`research/CONVERSATION-PROTOCOL.md:34` 仅一行表项、**无 payload 字段规格**，属协议逆向；必须先真机 + 桌面端在线实测确认服务端是否认 103，本次未做。
+- **A-4 事件流缺口检测与自愈**：需改 `RpcChannel` 并发 buffer 策略（`DROP_OLDEST` → `SUSPEND`），任务书自标高危回归，且需真机复现「UI 长期落后」验证，本次未做。
+- **档 C（C-1~C-12 体验与性能重构）**：按 `HANDOVER.md` 授权边界全部 `[需立项]`，未获用户拍板不得开工。
+
+### 验证状态
+- `gradle testDebugUnitTest assembleDebug` **BUILD SUCCESSFUL**（声明 39 项 / 实际执行 38 项，0 失败；缺失原因见上方勘误，已于 beta14 修复）。
+- 安全核查：未引入 App 侧文件写路径（`HANDOVER §8` 红线）；UI 层 grep 断言无 `timeout after` / `bridge not ready` / `bridge re-established` 裸英文串；`proguard-rules.pro` 对 `ZLog` d/i/w 的 `-assumenosideeffects` 未变（release 仍剥离）。
+- `versionName 0.5.0-beta13` / `versionCode 23`。
+
+### 真机验证记录（2026-10-07 · 小米 15 Pro `9f6241b4`，Android 17 / HyperOS）
+
+**环境提示**：本机实测系统为 **Android 17**，而 `HANDOVER` 记录为 Android 15 —— 跨两个大版本。另：设备接入时需把 USB 用途切到「传输文件」才会暴露 ADB 接口（否则 Windows 只枚举为通用 `USBDevice`、adb 看不到设备）。
+
+| 项 | 结果 | 证据 |
+|---|---|---|
+| 握手正常路径回归（A-2 改动未破坏） | ✅ PASS | 冷启动三跳全成功 + `subscribed sub=…-N` + 快照落地；6 次采样整链路 512–740ms |
+| **A-2** 弱网触发超时 | ✅ PASS | 飞行模式 + 切会话 → `rpc timeout … helloConversationV4 after=4000ms`，**4.5s** 出可读失败（优于「10s 内」要求） |
+| **A-2** 可读中文原因 | ✅ PASS | 状态栏 `异常：握手超时，请检查网络后重试`（无裸英文） |
+| **A-2** 一次自动重订 | ✅ PASS | `握手失败，1000ms 后自动重订（第 1 次）` → `自动重订 session=…`（新 id，代次递增） |
+| **A-2** 重订上限与人工入口 | ✅ PASS | 重订后仍超时 → `握手自动重订已用尽（1 次），停在失败态等用户重试`，顶栏出现「重试」 |
+| **A-2** 网络恢复自动对齐 | ✅ PASS | 关飞行模式 → `ws open` → `auth_ack(matched)` → `subscribed sub=…-N` → `snapshot 60 行`，无需人工干预 |
+| **B-1** 进会话定位最新行（含「缓存行数==快照行数」失效路径） | ✅ PASS | 进会话后「回到底部」胶囊不可见（= 已在底部）；该会话缓存 60 行、快照 60 行，正是旧触发器完全不跑的路径 |
+| **B-1** 上翻不被强拉 | ✅ PASS | 上翻后胶囊出现；流式 delta 持续到达 15s 后胶囊仍在；诊断日志显示该期间 `away=true` → 增量跟随被正确阻断 |
+| **B-1** A 停顶部 → 进 B | ✅ PASS | A 停在顶部（胶囊可见）时切到 B → B 的胶囊不可见（`key(taskId)` 未复用 A 的偏移） |
+| **B-1** 点「回到底部」到达且不跳变 | ✅ PASS（含新增修复） | 修复前诊断日志：跳转瞬间 `pagination=true` → 视口被锚点恢复拽回中段；修复后 `jumping=true` 期间 `pagination=false`、`nearBottom=true`，12s 后仍保持底部 |
+| 单测/构建 | ✅ PASS（含勘误） | 声明 39 项、实际执行 38 项全绿（1 项注解被注释掉未执行，beta14 轮次发现并修复）、BUILD SUCCESSFUL |
+
+**待人工复核（自动化不可靠，见下）**
+- **B-3 触觉**：附件上传成/败、会话内审批按钮的震动反馈（触觉无外部可读接口，只能人工感知）。
+- **B-3 失败横幅 8s 停留**：时长契约已由 `flashDurationByKind` 单测锁定（Failure=8000/Info=4000）、调用点经 `FlashKind.Failure` 编译期检查；「肉眼停留 8s」建议人工确认一次。
+- **A-1 双会话切换不误注入**：需要真实选择本地文件（SAF 文件选择器），自动化脆弱；归属判定 `uploadBelongsTo` 已单测覆盖四类场景，但端到端建议人工走一遍。
+
+**顺带发现的既有缺陷（非本次改动引入，已登记 HANDOVER 待办）**
+- **重连退避在网络恢复时不被重置**：实测退避序列 3s→6s→12s→24s→48s（封顶 48s）。约 90 秒的飞行模式往返后，网络恢复时仍要等 48s 的退避到期才重连（实测恢复耗时 ~47s），而 `HANDOVER` 的基线是 `<9s`。直接影响 P0-2 观察清单第 4 项「飞行模式往返自动恢复（预期 <9s）」。
+
+**验证方法论教训（写下来避免重犯）**
+- 用「在整份 UI dump 里搜字符串」判断界面状态会**假阳性**：本会话的消息正文与 toolCall 的 `inputText`（即我们自己命令的源码）都会被渲染进会话行，里面自然包含「回到底部」「content-desc="回到底部"」等字面量。本次因此**误判两次**（一度以为存在两个不存在的 bug），直到改用「节点 text **整体**等于目标串」的判据才可靠。该方法已固化为 `tools/ui_check.py`。
+
+### 新增工具
+- `tools/t0_sample.sh` / `tools/t0_analyze.py`：T0 握手打点采样与按请求 id 精确配对统计。
+- `tools/ui_check.py`：B-1 真机断言助手（用整体相等判据规避自污染，见上）。
+
 ## v0.5.0-beta12（2026-10-05）· 会话消息流离线持久化（点进会话瞬间秒开）
 
 **里程碑：把离线缓存从「首页会话列表」延伸到「单个会话消息流」—— 点击任意会话卡片，首帧立即呈现该会话最近 200 行历史消息，无需等待订阅握手与快照回包；网络快照到达后由 `replaceAll` 平滑对齐权威状态。**
