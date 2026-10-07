@@ -2,8 +2,8 @@
 
 > ## ✅ 项目状态（2026-10-05）：功能开发已结清，进入 v1.0 前的最后观察期
 >
-> - **Sprint 0–6 全部完成并真机验收**；当前版本 `v0.5.0-beta16`（beta15 已发布；**beta16 代码 + 单测完成，真机四项验收全部通过，待用户决定是否发版**）。
-> - **最近发布**：tag `v0.5.0-beta15` @ 提交 `afe2d84`；Release <https://github.com/wjf1/zcode-remote-app/releases/tag/v0.5.0-beta15>（附 `ZCodeRemote-0.5.0-beta15.apk`，签名 release 包）。CI 在该提交上 success。
+> - **Sprint 0–6 全部完成并真机验收**；当前版本 `v0.5.0-beta16`（**beta16 已发布**；代码 + 单测 + 真机四项验收全部通过）。
+> - **最近发布**：tag `v0.5.0-beta16` @ 提交 `a0b81a3`；Release <https://github.com/wjf1/zcode-remote-app/releases/tag/v0.5.0-beta16>（附 `ZCodeRemote-0.5.0-beta16.apk`，签名 release 包）。CI 在该提交上 success。
 > - **全部后续开发计划已取消**（用户决策：Sprint 7 生物识别/自建中继 E2EE、P2-3 余项等一律不做）。
 > - **唯一剩余事项**：P0-2 三天日常使用观察 → 通过即发 **v1.0**（详见 §6.0 待办总览 + §6.0 P0-2 章节）。
 > - 接手者默认职责：**维护与缺陷修复**，不再新增功能；如需演进须用户重新拍板立项。
@@ -28,6 +28,7 @@
 > - **验证状态**：`gradle testDebugUnitTest assembleDebug` BUILD SUCCESSFUL；`tools/check_test_count.py` 核对 **声明 47 项 = 实际执行 47 项**。该脚本已接入 CI（`.github/workflows/ci.yml`）。
 > - ⚠️ **踩坑（勿重犯）**：beta13 轮次中一个 `@Test` 因被挤进行注释而**静默未执行**（构建仍全绿），导致当时「39 项全绿」实际只跑了 38 项。**任何「N 项单测全绿」的结论都必须同时确认 N == 实际执行的用例数**（跑 `tools/check_test_count.py`）。
 > - ⚠️ **跨 adb 做文本检索不可靠**（引号转义丢失会返回假阴性），一律先把文件 `pull` 到本地再解析；`grep` 检索代码用 `-F`（`.` 是任意字符）。
+> - ⚠️ **release（R8）包与 debug 包签名不同**（debug `3A:B5:8F…` / release `1D:46:E9…`）：手机上若已装 debug 包，`adb install -r` release 包会 `INSTALL_FAILED_UPDATE_INCOMPATIBLE`，需先卸载——**会丢失配对凭据**，属破坏性操作，动手前必须取得用户同意。beta16 的 release 包因此**未做真机冒烟**，上机验收用的是同源 debug 包。
 > - ⚠️ **观察窗口已重置**：按 §6.0 P0-2 规则，v1.0 判停线自补丁**真机验收通过之日**重新计时。
 > - ⚠️ **实测系统为 Android 17 / HyperOS**（旧记录为 Android 15）：跨两个大版本，接入时须把 USB 用途切到「传输文件」才暴露 ADB 接口。P0-2 第 2/3 项依赖 HyperOS 后台与通知策略，跨版本升级后务必重新观察。
 > - **本次未做（有依据，勿当遗漏）**：**A-3**（103 `EventDispose` 零调用 —— 协议文档仅有帧码表项、**无 payload 字段规格**，须先真机 + 桌面端在线探测）、**A-4**（改 `RpcChannel` 并发 buffer 策略，高危回归）、**档 C 全部 12 张卡**（`[需立项]`）。
