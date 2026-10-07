@@ -1,6 +1,9 @@
 package com.zcode.remote.relay
 
 import kotlinx.serialization.Serializable
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonElement
+import kotlinx.serialization.json.JsonNull
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.jsonArray
@@ -53,6 +56,13 @@ data class SessionItem(
     val provider: String?,
     val updatedAt: Long?,
     val archived: Boolean,
+    /**
+     * 会话级错误原因（host 的 task meta 里有 `lastError:{code,detail,message?}`，桌面端据此显示）。
+     * ⚠️ `PROTOCOL.md` 记录的 bootstrap `tasks[]` 形状**不含**该字段（文档样本取自健康会话），
+     * 故此字段是**宽容解析**：负载里带了就显示，没带就是 null（此时列表只能显示「异常」二字，
+     * 原因需进会话页看快照 `control.lastError`，那里是协议保证存在的）。
+     */
+    val lastError: String? = null,
 ) {
     val isRunning: Boolean get() = displayStatus == "running" || displayStatus == "streaming"
     val needsApproval: Boolean
@@ -64,14 +74,44 @@ data class SessionItem(
             val taskId = str("taskId") ?: return null
             return SessionItem(
                 taskId = taskId,
-                title = str("title") ?: taskId,
+                title = unwrapJsonTitle(str("title")) ?: taskId,
                 displayStatus = str("displayStatus") ?: "unknown",
                 workspacePath = str("workspacePath"),
                 workspaceLabel = str("workspaceLabel"),
                 provider = str("provider"),
                 updatedAt = str("updatedAt")?.toLongOrNull(),
                 archived = str("archived") == "true",
+                lastError = errorText(obj["lastError"]),
             )
+        }
+
+        /**
+         * 防御性解包：host 曾把会话标题存成 `{"title":"…"}`（双重序列化，桌面端数据库实锤，
+         * 见 tasks-index 里 sess_98e11ba2）。这种形态的标题不可能是本意，解出内层；其余原样返回。
+         */
+        fun unwrapJsonTitle(raw: String?): String? {
+            if (raw.isNullOrBlank()) return null
+            val o = runCatching { Json.parseToJsonElement(raw).jsonObject }.getOrNull() ?: return raw
+            val inner = o["title"]?.let { runCatching { it.jsonPrimitive.content }.getOrNull() }
+            return inner?.takeIf { it.isNotBlank() } ?: raw
+        }
+
+        /**
+         * 错误原因归一：host 的 `lastError` 可能是对象（取 `message`，缺了退 `detail`）
+         * 或已是字符串。都取不到（含空对象/未知形状）返回 null —— 宁可不显示也不把
+         * 原始 JSON 灌进 UI。
+         */
+        fun errorText(el: JsonElement?): String? {
+            if (el == null || el is JsonNull) return null
+            return runCatching {
+                when (el) {
+                    is JsonObject ->
+                        (el["message"] ?: el["detail"])?.let {
+                            runCatching { it.jsonPrimitive.content }.getOrNull()
+                        }
+                    else -> el.jsonPrimitive.content
+                }
+            }.getOrNull()?.takeIf { it.isNotBlank() }
         }
     }
 }

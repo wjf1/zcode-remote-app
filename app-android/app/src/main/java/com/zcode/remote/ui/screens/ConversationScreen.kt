@@ -491,6 +491,44 @@ fun ConversationScreen(
             }
         }
 
+        // 会话级错误原因（快照 control.lastError）：桌面端列表会显示原因，App 端此前只有「异常」二字。
+        // 放在反馈横幅之后、审批卡片之前——进入会话第一眼就能看到为什么出错。
+        meta.lastError?.let { reason ->
+            val context = LocalContext.current
+            Surface(
+                color = MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.72f),
+                shape = RoundedCornerShape(8.dp),
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Row(
+                    verticalAlignment = Alignment.Top,
+                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp)
+                ) {
+                    Text(
+                        text = reason,
+                        style = MaterialTheme.typography.labelSmall.copy(fontFamily = FontFamily.Monospace),
+                        color = MaterialTheme.colorScheme.onErrorContainer,
+                        maxLines = 6,
+                        overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier.weight(1f)
+                    )
+                    Spacer(Modifier.width(6.dp))
+                    // 原文可复制（报障 / 排查用），沿用本文件「思考过程已复制」的既有模式
+                    TextButton(
+                        onClick = {
+                            val cm = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+                            cm.setPrimaryClip(ClipData.newPlainText("lastError", reason))
+                            Toast.makeText(context, "错误原因已复制", Toast.LENGTH_SHORT).show()
+                        },
+                        contentPadding = PaddingValues(horizontal = 4.dp, vertical = 0.dp),
+                        modifier = Modifier.height(24.dp)
+                    ) {
+                        Text("复制", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onErrorContainer)
+                    }
+                }
+            }
+        }
+
         // 浮动审批提醒卡片（待决议置顶）
         approvals.forEach { ApprovalCard(it, onResolve) }
 
@@ -1093,13 +1131,15 @@ private fun InputBar(
             modifier = Modifier.fillMaxWidth()
         ) {
             Row(
-                verticalAlignment = Alignment.Bottom,
+                // B-2：CenterVertically 而非 Bottom —— 文本框 56dp 高、文字垂直居中（距顶 ~28dp），
+                // 按钮若贴底则中心在 ~38dp，错位 ~10dp（用户反馈「文字偏上、按钮偏下」即此）。
+                verticalAlignment = Alignment.CenterVertically,
                 modifier = Modifier.padding(horizontal = 8.dp, vertical = 6.dp)
             ) {
-                // 附件选择
+                // 附件选择（48dp 触控档，图标视觉 18dp；与语音/发送按钮同档，见任务书 B-2）
                 IconButton(
                     onClick = onPick,
-                    modifier = Modifier.size(36.dp)
+                    modifier = Modifier.size(48.dp)
                 ) {
                     Icon(
                         imageVector = Icons.Default.Add,
@@ -1142,7 +1182,7 @@ private fun InputBar(
                     FilledIconButton(
                         onClick = onSend,
                         enabled = !sending,
-                        modifier = Modifier.size(36.dp),
+                        modifier = Modifier.size(48.dp),
                         colors = IconButtonDefaults.filledIconButtonColors(
                             containerColor = MaterialTheme.colorScheme.primary
                         )
@@ -1157,7 +1197,7 @@ private fun InputBar(
                     FilledIconButton(
                         onClick = onStop,
                         enabled = !stopping,
-                        modifier = Modifier.size(36.dp),
+                        modifier = Modifier.size(48.dp),
                         colors = IconButtonDefaults.filledIconButtonColors(
                             containerColor = MaterialTheme.colorScheme.error
                         )
@@ -1168,7 +1208,7 @@ private fun InputBar(
                     IconButton(
                         onClick = {},
                         enabled = false,
-                        modifier = Modifier.size(36.dp)
+                        modifier = Modifier.size(48.dp)
                     ) {
                         Icon(
                             imageVector = Icons.Default.Send,
@@ -1730,5 +1770,8 @@ private fun phaseLabel(p: String) = when (p) {
     "running" -> "运行中"
     "waitingUserInput" -> "等待输入"
     "aborted" -> "已中止"
+    // host 对失败轮次直接送 phase="error"（非 completedError），此前落到 else 显示英文原文，
+    // 与列表里同一状态的「异常」标签不一致。
+    "error" -> "异常"
     else -> p
 }

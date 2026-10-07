@@ -112,12 +112,15 @@ object ConversationFrames {
      * control 块：官方 schema `canStop: boolean / stopState: idle|stoppable|stopping /
      * activeWorks[]`（host asar zod 实证）。停止按钮的显示条件就是 `canStop`；
      * `foregroundExecutionId` 是 activeWorks 里的前台执行 id，stop 命令带上可防误停。
+     * `lastError`：会话级错误原因（host 侧 task meta 同名字段；桌面端在会话列表显示的就是它），
+     * 文档样式中健康会话为 `null`（research/CONVERSATION-PROTOCOL.md:159）。
      */
     data class Control(
         val phase: String?,
         val canStop: Boolean?,
         val stopState: String?,
         val foregroundExecutionId: String?,
+        val lastError: String? = null,
     )
 
     fun parseControl(o: JsonObject?): Control? {
@@ -130,6 +133,7 @@ object ConversationFrames {
                 ?.firstNotNullOfOrNull { el ->
                     runCatching { el.jsonObject["foregroundExecutionId"]?.jsonPrimitive?.content }.getOrNull()
                 },
+            lastError = SessionItem.errorText(o["lastError"]),
         )
     }
 
@@ -143,7 +147,8 @@ object ConversationFrames {
             sessionId = snap.str("sessionId"),
             logEpoch = snap.str("logEpoch"),
             seq = snap.long("seq"),
-            title = snap.obj("meta")?.str("title"),
+            // 标题防御性解包：host 曾把标题双重序列化成 {"title":"…"}（tasks-index 实锤），解出内层
+            title = SessionItem.unwrapJsonTitle(snap.obj("meta")?.str("title")),
             phase = control?.phase,
             rows = rowsObj?.get("window")?.let { w ->
                 runCatching { w.jsonArray }.getOrNull()

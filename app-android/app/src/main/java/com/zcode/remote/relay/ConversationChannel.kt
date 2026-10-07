@@ -72,6 +72,12 @@ class ConversationChannel(private val rpc: RpcChannel) {
     /** 行变更通知钩子（供 AppViewModel 监听并将最新消息行写入离线缓存）。 */
     var onRowsUpdated: ((sessionId: String, rows: List<ConversationRow>) -> Unit)? = null
 
+    /**
+     * 会话级错误原因钩子：快照 `control.lastError` 非空时回调（供 AppViewModel 把原因
+     * 回填进首页会话列表——bootstrap 的 tasks[] 形状不含该字段，见 SessionItem 注释）。
+     */
+    var onSessionError: ((sessionId: String, error: String) -> Unit)? = null
+
     data class ConversationMeta(
         val title: String? = null,
         val phase: String? = null,
@@ -82,6 +88,12 @@ class ConversationChannel(private val rpc: RpcChannel) {
         val canStop: Boolean? = null,
         /** idle | stoppable | stopping（stopping 时按钮显示"停止中"并禁用）。 */
         val stopState: String? = null,
+        /**
+         * 会话级错误原因（快照 `control.lastError`，host 侧 task meta 的 lastError 同源；
+         * 桌面端会话列表显示的就是它）。null = 无错误（或该会话已恢复）。
+         * 首页列表对「已打开过的会话」也会用同源数据补齐（见 AppViewModel 的快照回填）。
+         */
+        val lastError: String? = null,
         /** 快照 config 带的 PC 端当前模型（新建会话弹窗展示与 provider 继承用）。 */
         val model: String? = null,
         val provider: String? = null,
@@ -253,6 +265,10 @@ class ConversationChannel(private val rpc: RpcChannel) {
                 _elicitations.value = snap.elicitations
                 val control = snap.control
                 control?.foregroundExecutionId?.let { foregroundExecutionId = it }
+                // 会话级错误原因回填（仅在有错误时回调，避免快照风暴造成列表无谓重组）
+                control?.lastError?.takeIf { it.isNotBlank() }?.let { err ->
+                    sessionId?.let { sid -> onSessionError?.invoke(sid, err) }
+                }
                 _meta.value = _meta.value.copy(
                     title = snap.title ?: _meta.value.title,
                     phase = snap.phase,
@@ -260,6 +276,8 @@ class ConversationChannel(private val rpc: RpcChannel) {
                     logEpoch = snap.logEpoch ?: _meta.value.logEpoch,
                     canStop = control?.canStop ?: _meta.value.canStop,
                     stopState = control?.stopState ?: _meta.value.stopState,
+                    // 快照是全量状态：control 在场时以新值为准（错误恢复后自然清空）
+                    lastError = if (control != null) control.lastError else _meta.value.lastError,
                     model = snap.configModel ?: _meta.value.model,
                     provider = snap.configProvider ?: _meta.value.provider,
                     revision = snap.revision ?: _meta.value.revision,

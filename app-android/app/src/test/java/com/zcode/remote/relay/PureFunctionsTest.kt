@@ -307,6 +307,82 @@ class PureFunctionsTest {
         assertEquals("ok.txt", mixed.attachments[0].fileName)
     }
 
+    // ---------- 会话异常原因与标题解包（用户反馈：APP 只显示「异常」没有原因）----------
+
+    @Test
+    fun errorTextPrefersMessageThenDetail() {
+        // 形状取自桌面端 tasks-index 的 task meta.lastError 实锤样本
+        val obj = buildJsonObject {
+            put("code", "3009")
+            put("detail", "Turn execution failed\nprovider=… reason=rate_limited status=429 retryable=false")
+            put("message", "模型并发超限，稍后重试")
+        }
+        assertEquals("模型并发超限，稍后重试", SessionItem.errorText(obj))
+        // 没有 message 时退 detail（保留换行的原文）
+        val detailOnly = buildJsonObject {
+            put("code", "3009")
+            put("detail", "Turn execution failed\nreason=rate_limited")
+        }
+        assertEquals("Turn execution failed\nreason=rate_limited", SessionItem.errorText(detailOnly))
+        // 已是字符串 / null / 空对象
+        assertEquals("直接字符串", SessionItem.errorText(kotlinx.serialization.json.JsonPrimitive("直接字符串")))
+        assertNull(SessionItem.errorText(JsonNull))
+        assertNull(SessionItem.errorText(buildJsonObject { }))
+    }
+
+    @Test
+    fun unwrapJsonTitleHandlesDoubleSerializedTitle() {
+        // host 曾把标题双重序列化成 {"title":"…"}（tasks-index 里 sess_98e11ba2 实锤）
+        assertEquals(
+            "分析 ZCode STREAM_IDLE_TIMEOUT 报错原因",
+            SessionItem.unwrapJsonTitle("""{"title":"分析 ZCode STREAM_IDLE_TIMEOUT 报错原因"}"""),
+        )
+        // 正常标题原样返回
+        assertEquals("普通标题", SessionItem.unwrapJsonTitle("普通标题"))
+        // 非 JSON / 非 title 键的对象 → 原样返回，不抛异常
+        assertEquals("not json", SessionItem.unwrapJsonTitle("not json"))
+        assertEquals("""{"a":1}""", SessionItem.unwrapJsonTitle("""{"a":1}"""))
+        assertNull(SessionItem.unwrapJsonTitle(null))
+        assertNull(SessionItem.unwrapJsonTitle(""))
+    }
+
+    @Test
+    fun sessionItemParsesLastErrorAndUnwrapsTitle() {
+        val o = buildJsonObject {
+            put("taskId", "sess_x")
+            put("title", """{"title":"真标题"}""")
+            put("displayStatus", "error")
+            put("lastError", buildJsonObject { put("code", "3009"); put("detail", "reason=rate_limited") })
+        }
+        val s = SessionItem.from(o)!!
+        assertEquals("真标题", s.title)
+        assertEquals("error", s.displayStatus)
+        assertEquals("reason=rate_limited", s.lastError)
+        // 无 lastError 字段（PROTOCOL.md 记录的 bootstrap 形状）→ null，列表退回只显示「异常」
+        val plain = SessionItem.from(buildJsonObject {
+            put("taskId", "sess_y"); put("title", "t"); put("displayStatus", "error")
+        })!!
+        assertNull(plain.lastError)
+    }
+
+    @Test
+    fun parseControlReadsLastError() {
+        // 形状见 research/CONVERSATION-PROTOCOL.md:159（健康会话 lastError:null）
+        assertNull(ConversationFrames.parseControl(buildJsonObject {
+            put("phase", "completedSuccess"); put("canStop", false); put("stopState", "idle")
+            put("lastError", JsonNull)
+        })?.lastError)
+        assertEquals(
+            "reason=rate_limited",
+            ConversationFrames.parseControl(buildJsonObject {
+                put("phase", "completedError")
+                put("lastError", buildJsonObject { put("detail", "reason=rate_limited") })
+            })?.lastError,
+        )
+        // control 缺失 → 整体为 null
+        assertNull(ConversationFrames.parseControl(null))
+    }
+
     // ---------- A-1：上传回调的会话归属判定 ----------
 
     @Test

@@ -441,6 +441,20 @@ private fun SessionItemCard(
                     overflow = TextOverflow.Ellipsis
                 )
 
+                // 异常原因（host 的 task meta.lastError / 会话快照 control.lastError 回填）。
+                // 数据源说明：bootstrap 的 tasks[] 形状不含该字段（PROTOCOL.md 实测样本），
+                // 故「没打开过的会话」可能只有「异常」二字——原因在会话页的快照里一定有。
+                if (s.displayStatus == "error" && !s.lastError.isNullOrBlank()) {
+                    Spacer(Modifier.height(3.dp))
+                    Text(
+                        text = s.lastError!!.lineSequence().lastOrNull { it.isNotBlank() } ?: s.lastError!!,
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.error,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                }
+
                 // 待处理提醒
                 if (pending > 0) {
                     Spacer(Modifier.height(4.dp))

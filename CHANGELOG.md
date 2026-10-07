@@ -1,5 +1,30 @@
 # 变更记录 / Changelog
 
+## v0.5.0-beta16（2026-10-07）· 会话异常原因可见、标题解包与输入栏对齐（附顶栏标签中文化）
+
+**起因（用户真机反馈 + 截图）**：① 会话列表只显示「异常」二字，看不到原因（桌面端有）；② 会话页顶栏标题显示成原始 JSON（`{"title":"分…`）；③ 输入栏文字与按钮错位（「难看」）。
+
+### 新增
+- **会话页错误原因横幅**：解析快照 `control.lastError`（**协议保证存在**，`research/CONVERSATION-PROTOCOL.md:159`；host 侧 task meta 同名字段，桌面端显示的就是它——真机取证样本：`{code:'3009', detail:'Turn execution failed\nprovider=… reason=rate_limited status=429 retryable=false'}`）。横幅带「复制」按钮（沿用既有剪贴板模式），错误原文可直接报障。
+- **首页列表补齐原因**：`SessionItem` 新增宽容解析的 `lastError` 字段；VM 在收到会话快照时把原因回填进列表。⚠️ **数据边界如实标注**：`PROTOCOL.md` 记录的 bootstrap `tasks[]` 形状**不含**该字段（文档样本取自健康会话），故「没打开过的会话」可能仍只有「异常」二字——完整原因一定在会话页横幅里。
+
+### 修复
+- **标题双重序列化解包**：host 曾把会话标题存成字面量 `{"title":"…"}`（`tasks-index` 实锤：`sess_98e11ba2` 的 title 就是这串 JSON，与正常标题的 `sess_05f98803` 并存）。现对 `SessionItem.title` 与快照 `meta.title` 做防御性解包（能解析出内层 `title` 字符串就用之；其余原样，不抛异常）。**这是 host 侧数据瑕疵，App 端只是不再把它原样显示给用户。**
+- **输入栏对齐（任务书 B-2）**：`Alignment.Bottom` → `CenterVertically`——文本框 56dp 高、文字垂直居中（距顶 ~28dp），按钮贴底则中心在 ~38dp，错位 ~10dp（即用户截图里「文字偏上、按钮偏下」）；附件/发送/停止三控件统一到 **48dp 触控档**（图标视觉 18dp，与语音按钮同档）。**按任务书红线未动 inset 顺序**（`statusBarsPadding().navigationBarsPadding().imePadding()` 换序零效果）。
+- **会话页顶栏 phase 标签补中文映射**：host 对失败轮次直接下发 `phase="error"`（而非 `completedError`），此前落到 `phaseLabel` 的 `else -> p` 分支，顶栏原样显示英文 `error`，与列表对同一会话显示的「异常」自相矛盾。补 `"error" -> "异常"`。
+
+### 新增单测（+4 项，全仓 43 → 47 项）
+- `errorTextPrefersMessageThenDetail`（形状取自桌面端 tasks-index 实锤样本）、`unwrapJsonTitleHandlesDoubleSerializedTitle`、`sessionItemParsesLastErrorAndUnwrapsTitle`、`parseControlReadsLastError`。
+
+### 验证状态
+- `gradle testDebugUnitTest assembleDebug` **BUILD SUCCESSFUL**；`tools/check_test_count.py` 核对 **声明 47 项 = 实际执行 47 项**。
+- ✅ **真机验收通过**（小米 15 Pro / 1080×2400 / 450dpi，beta16 装机实测，四屏取证 `_tmp/s8s.png`、UI dump `_tmp/u9.xml`）：
+  - ① **错误原因横幅**：打开 `修改插件，使其在DSH desktop桌面端安装不再报这个错误…`（`已连接 · error · 共 219 行`）→ 横幅逐字显示 `Start Plan is busy and automatic model stream recovery reached the maximum retry count.`，与 host `tasks-index` 中 `sess_ed1b88ff-…` 的 `meta_json.lastError.message` **逐字一致**；点「复制」弹 Toast「错误原因已复制」。
+  - ② **标题解包**：列表与顶栏均不再出现 `{"title":` 原始串；两个同名会话（`sess_98e11ba2` 原始 JSON vs `sess_05f98803` 洁净）顶栏均显示干净的 `分析 ZCode STREAM_IDLE_TIMEOUT 报错原因`。
+  - ③ **输入栏对齐**：`uiautomator` 量得附件 `[62,197]–[197,2349]`、EditText `[208,2202]–[872,2360]`、发送 `[883,2214]–[1018,2349]`，三者垂直中心同为 **y=2281（偏差 0px）**；控件高 135px = 48dp，符合预期触控档。
+  - ④ **顶栏 phase 标签**：同一 error 会话顶栏由英文 `error` 变为 `已连接 · 异常 · 共 219 行`（修复生效复验）。
+- `versionName 0.5.0-beta16` / `versionCode 26`。
+
 ## v0.5.0-beta15（2026-10-07）· 修复「已连接却永久卡在会话报错」与网络恢复慢（两个连接层缺陷）
 
 **起因（用户真机反馈）**：「设置里显示已连接，但会话页持续报 `异常：hello: bridge not ready`，永不恢复」；以及此前实测的「断网 90s 后恢复耗时 ~47s，而基线是 `<9s`」。两个问题都在连接层，一并修掉。

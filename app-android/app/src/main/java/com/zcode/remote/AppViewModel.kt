@@ -417,6 +417,14 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
                 SessionCacheStore.saveRows(getApplication(), sid, updatedRows)
             }
         }
+        // 会话级错误原因回填首页列表：bootstrap 的 tasks[] 形状不含 lastError（PROTOCOL.md 实测样本），
+        // 只有打开过的会话能从快照 control.lastError 拿到原因——聊胜于无，完整原因在会话页横幅。
+        conv.onSessionError = { sid, err ->
+            val idx = sessions.indexOfFirst { it.taskId == sid }
+            if (idx >= 0 && sessions[idx].lastError != err) {
+                sessions[idx] = sessions[idx].copy(lastError = err)
+            }
+        }
         val sidx = SessionsIndexChannel(ch)
         val wcfg = WorkspaceConfigChannel(ch)
         client = c
