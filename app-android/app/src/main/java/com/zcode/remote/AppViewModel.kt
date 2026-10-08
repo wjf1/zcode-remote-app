@@ -13,6 +13,7 @@ import com.zcode.remote.relay.BridgeFrames
 import com.zcode.remote.BuildConfig
 import com.zcode.remote.relay.ApprovalOption
 import com.zcode.remote.relay.ConversationChannel
+import com.zcode.remote.relay.ConversationFrames
 import com.zcode.remote.relay.ConversationRow
 import com.zcode.remote.relay.FailureReason
 import com.zcode.remote.relay.NetworkGate
@@ -29,6 +30,8 @@ import com.zcode.remote.relay.RowStore
 import com.zcode.remote.relay.RpcChannel
 import com.zcode.remote.relay.SessionItem
 import com.zcode.remote.relay.TaskEvent
+import com.zcode.remote.relay.displayStatusForPhase
+import com.zcode.remote.relay.displayStatusForTaskEvent
 import com.zcode.remote.relay.parseBootstrapSessions
 import com.zcode.remote.notify.ApprovalBridge
 import com.zcode.remote.notify.ApprovalNotifier
@@ -225,6 +228,14 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
      * （rows.size 不变、旧触发器完全不跑）时也能定位到最新一行。
      */
     var snapshotAligned by mutableStateOf<ConversationChannel.SnapshotAligned?>(null)
+        private set
+
+    /**
+     * 当前会话的会话级状态（上下文用量 / 目标 / 待办 / 后台任务 / 子智能体 / 排队输入）。
+     * 面板与顶栏「状态」入口都读它；全空时 [ConversationFrames.SessionState.hasContent]
+     * 为 false，入口不出现。
+     */
+    var sessionState by mutableStateOf(ConversationFrames.SessionState())
         private set
 
     // ---- 权限审批 ----
@@ -425,6 +436,17 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
                 sessions[idx] = sessions[idx].copy(lastError = err)
             }
         }
+        // 会话相位回填首页列表：列表的 displayStatus 只在配对成功时的 bootstrap 取一次快照，
+        // 全仓没有刷新入口——「会话页明明在跑、退回主界面却没有运行中的会话」就是这一半缺口。
+        conv.onSessionPhase = { sid, phase ->
+            val mapped = displayStatusForPhase(phase)
+            if (mapped != null) {
+                val idx = sessions.indexOfFirst { it.taskId == sid }
+                if (idx >= 0 && sessions[idx].displayStatus != mapped) {
+                    sessions[idx] = sessions[idx].copy(displayStatus = mapped)
+                }
+            }
+        }
         val sidx = SessionsIndexChannel(ch)
         val wcfg = WorkspaceConfigChannel(ch)
         client = c
@@ -512,6 +534,18 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
                                     if (taskElicitations.remove(it) != null) refreshElicitations()
                                 }
                         }
+                        // 列表状态实时化：任务事件是 host 推的实时流（PROTOCOL.md §6.2），而列表的
+                        // displayStatus 只在 bootstrap 取过一次快照——不回写就会出现「会话页在跑、
+                        // 退回主界面仍显示已完成」。映射规则见 displayStatusForTaskEvent。
+                        ev.taskId?.let { tid ->
+                            val mapped = displayStatusForTaskEvent(ev.type)
+                            if (mapped != null) {
+                                val idx = sessions.indexOfFirst { it.taskId == tid }
+                                if (idx >= 0 && sessions[idx].displayStatus != mapped) {
+                                    sessions[idx] = sessions[idx].copy(displayStatus = mapped)
+                                }
+                            }
+                        }
                     }
                     else -> Unit
                 }
@@ -568,6 +602,7 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         }
         viewModelScope.launch { conv.meta.collect { conversationMeta = it } }
         viewModelScope.launch { conv.snapshotAligned.collect { snapshotAligned = it } }
+        viewModelScope.launch { conv.sessionState.collect { sessionState = it } }
         viewModelScope.launch { conv.earlier.collect { earlier = it } }
         viewModelScope.launch {
             conv.interactions.collect { refreshApprovals() }

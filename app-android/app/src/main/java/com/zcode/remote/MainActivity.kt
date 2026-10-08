@@ -94,6 +94,7 @@ class MainActivity : ComponentActivity() {
                             elicitations = vm.elicitations,
                             approvalFeedback = vm.approvalFeedback,
                             earlier = vm.earlier,
+                            sessionState = vm.sessionState,
                             prompt = vm.promptDraft,
                             sending = vm.sending,
                             canStop = vm.conversationMeta.canStop == true,

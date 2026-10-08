@@ -1,19 +1,21 @@
 # 交接开发计划（HANDOVER）
 
-> ## ✅ 项目状态（2026-10-05）：功能开发已结清，进入 v1.0 前的最后观察期
+> ## ✅ 项目状态（2026-10-08）：会话页排版全面对齐桌面端 + 会话级状态面板（beta17）
 >
-> - **Sprint 0–6 全部完成并真机验收**；当前版本 `v0.5.0-beta16`（**beta16 已发布**；代码 + 单测 + 真机四项验收全部通过）。
-> - **最近发布**：tag `v0.5.0-beta16` @ 提交 `a0b81a3`；Release <https://github.com/wjf1/zcode-remote-app/releases/tag/v0.5.0-beta16>（附 `ZCodeRemote-0.5.0-beta16.apk`，签名 release 包）。CI 在该提交上 success。
-> - **全部后续开发计划已取消**（用户决策：Sprint 7 生物识别/自建中继 E2EE、P2-3 余项等一律不做）。
+> - **当前版本 `v0.5.0-beta17`（versionCode 27）**：代码完成、debug/release 构建通过、**107 项单测全绿**；**真机视觉验收待办（验收设备当前离线）**。
+> - **最近已发布**：tag `v0.5.0-beta16` @ 提交 `a0b81a3`；Release <https://github.com/wjf1/zcode-remote-app/releases/tag/v0.5.0-beta16>（附 `ZCodeRemote-0.5.0-beta16.apk`，签名 release 包）。CI 在该提交上 success。
+> - **beta17 内容（用户直接提出，超原定「仅维护」范围）**：按用户要求把会话页**显示逻辑与排版全面对齐桌面端**（工具行改无外框内联折叠行、用户气泡改中性半透明表面、助手正文去卡片外壳改全宽 Markdown、完整 GFM + 代码语法高亮），并新增**只读**「会话状态」面板与「待发送 N 条」只读队列条；顺带修复「运行中」会话退出会话页后不在列表显示的缺陷。
+> - **全部后续开发计划仍取消**（用户决策：Sprint 7 生物识别/自建中继 E2EE、P2-3 余项等一律不做）。
 > - **唯一剩余事项**：P0-2 三天日常使用观察 → 通过即发 **v1.0**（详见 §6.0 待办总览 + §6.0 P0-2 章节）。
 > - 接手者默认职责：**维护与缺陷修复**，不再新增功能；如需演进须用户重新拍板立项。
 >
-> ### 🩹 补丁轮次（v0.5.0-beta13 / beta14 / beta15）
+> ### 🩹 补丁与对齐轮次（v0.5.0-beta13 → beta17）
 >
 > **beta13**（缺陷修复，依据《体验提升任务书 v2》档 A/B）：A-1 上传跨会话附件注入、A-2 握手三跳无超时（阈值由 T0 实测校准为 4s/4s/5s）、B-1 贴底回归与「回到底部被翻页锚点覆盖」新缺陷、B-3 触觉与失败时长档位。
 > **beta14**（新增功能，**用户直接提出**、超出档 A/B 范围）：会话流渲染用户消息的附件 chip。
 > **beta15**（连接层缺陷修复，**用户真机反馈**驱动）：桥握手无超时导致「已连接却永久卡在会话报错」、`bridge not ready` 未判可重试、网络恢复白等一整轮退避（~47s）。
 > **beta16**（用户真机反馈 + 截图）：会话异常原因可见（快照 `control.lastError` + 列表回填）、标题双重序列化解包（host 数据瑕疵，tasks-index 实锤）、输入栏对齐（任务书 B-2）、顶栏 phase 标签中文化（`error` → 「异常」，与列表标签一致）。
+> **beta17**（用户直接提出「按桌面端设计会话页显示与排版」）：会话页排版三段式对齐（设计基座 / 行渲染重排 / 会话级状态面板）+ 「运行中」状态回填修复；新增依赖 `multiplatform-markdown-renderer-m3/-code:0.27.0`。
 >
 > | 项 | 状态 |
 > |---|---|
@@ -24,12 +26,13 @@
 > | beta14 附件 chip | ✅ 代码 + 单测 + **真机端到端通过**（真实走通「选文件 → 发送 → 流内显示 chip」） |
 > | beta15 连接层三修 | ✅ 代码 + 单测；**网络恢复延迟真机 PASS（80s 断网→5s / 150s 断网→3s，旧版 ~47s）**；桥看门狗**健康路径非回归 PASS**（127ms 就绪、无误触发）；「桥重开用尽→可见失败」因需人为丢帧**未能构造**，仅代码推理覆盖 |
 > | beta16 四修 | ✅ 代码 + 单测（47 项全绿）+ **真机四项验收全通过**：① 错误原因横幅逐字等于 host `lastError.message` 且「复制」Toast 生效；② 列表/顶栏标题不再泄漏 `{"title":`；③ 输入栏三控件垂直中心偏差 **0px**、控件 135px = 48dp；④ error 会话顶栏由英文 `error` 变「异常」 |
+> | beta17 排版对齐 + 状态面板 | ✅ 代码 + **107 项单测全绿** + debug/release 构建通过；⏳ **真机视觉验收待办（设备离线，未阻塞编码完成）** |
 >
-> - **验证状态**：`gradle testDebugUnitTest assembleDebug` BUILD SUCCESSFUL；`tools/check_test_count.py` 核对 **声明 47 项 = 实际执行 47 项**。该脚本已接入 CI（`.github/workflows/ci.yml`）。
+> - **验证状态**：`assembleDebug` / `testDebugUnitTest` / `assembleRelease`（R8 + 资源收缩，用于验证新引入 markdown 依赖可被正确压缩）三条 BUILD SUCCESSFUL；`tools/check_test_count.py` 核对 **声明 107 项 = 实际执行 107 项**。该脚本已接入 CI（`.github/workflows/ci.yml`）。
 > - ⚠️ **踩坑（勿重犯）**：beta13 轮次中一个 `@Test` 因被挤进行注释而**静默未执行**（构建仍全绿），导致当时「39 项全绿」实际只跑了 38 项。**任何「N 项单测全绿」的结论都必须同时确认 N == 实际执行的用例数**（跑 `tools/check_test_count.py`）。
 > - ⚠️ **跨 adb 做文本检索不可靠**（引号转义丢失会返回假阴性），一律先把文件 `pull` 到本地再解析；`grep` 检索代码用 `-F`（`.` 是任意字符）。
 > - ⚠️ **release（R8）包与 debug 包签名不同**（debug `3A:B5:8F…` / release `1D:46:E9…`）：手机上若已装 debug 包，`adb install -r` release 包会 `INSTALL_FAILED_UPDATE_INCOMPATIBLE`，需先卸载——**会丢失配对凭据**，属破坏性操作，动手前必须取得用户同意。beta16 的 release 包因此**未做真机冒烟**，上机验收用的是同源 debug 包。
-> - ⚠️ **观察窗口已重置**：按 §6.0 P0-2 规则，v1.0 判停线自补丁**真机验收通过之日**重新计时。
+> - ⚠️ **观察窗口已重置**：按 §6.0 P0-2 规则，v1.0 判停线自补丁/对齐轮**真机验收通过之日**重新计时；最近一次重置因 **beta17**（2026-10-08）。
 > - ⚠️ **实测系统为 Android 17 / HyperOS**（旧记录为 Android 15）：跨两个大版本，接入时须把 USB 用途切到「传输文件」才暴露 ADB 接口。P0-2 第 2/3 项依赖 HyperOS 后台与通知策略，跨版本升级后务必重新观察。
 > - **本次未做（有依据，勿当遗漏）**：**A-3**（103 `EventDispose` 零调用 —— 协议文档仅有帧码表项、**无 payload 字段规格**，须先真机 + 桌面端在线探测）、**A-4**（改 `RpcChannel` 并发 buffer 策略，高危回归）、**档 C 全部 12 张卡**（`[需立项]`）。
 > - 🆕 **验证副作用（需知悉）**：验证附件 chip 时向真实会话 `sess_0f00b96b`（「zcode-dotfiles 优化方案可行性确认」）写入了一条测试消息（`attachment-render-check` + 89B 测试文件）。核对 `tasks-index` 确认**未调度 agent 轮次、未消耗额度**；协议无删除消息操作，无法程序化清理。
@@ -234,10 +237,11 @@ ADB -s <serial> shell am broadcast -n com.zcode.remote/.debug.DebugApprovalRecei
 | 线路切换（主线/备线/自定义，Origin 同源推导）+ 主题三模式 | ✅ 实测 | `storage/SettingsStore.kt` `ui/theme/Theme.kt` `HomeScreen.kt` |
 | 保活引导页 / debug 注入 receiver | ✅ | `ui/screens/KeepAliveGuideScreen.kt` `app/src/debug/` |
 | 前台服务 | ✅ 实测（FGS specialUse + 进程级 ConnectionScope 单例，断网重连与保活全通） | `service/ConnectionService.kt` |
+| 会话页排版对齐 + 会话级状态面板（beta17） | ✅ 代码 + 单测（真机视觉验收待办） | `ui/components/CollapsibleRow.kt` `ui/components/SessionStatusPanel.kt` `ui/components/ToolKindLabels.kt` `ui/theme/Typography.kt` `ui/theme/Dimens.kt` `ui/screens/ConversationScreen.kt` `relay/ConversationFrames.kt` |
 
 版本序列：`v0.2.0-m2` → `v0.2.1-m2b` → `v0.2.2-m3a` → `v0.2.3-m3b` → `v0.3.0-m3` →
 `v0.4.0-beta1…beta6`（发版内测 → 真机修复 → 16KB 对齐 → 互踢修复 → 扫码重构 → 排版对齐）→
-`v0.5.0-beta1…beta5`（模型档位链路，versionCode 15）→ `v0.5.0-beta6`（P0 结清 + 最近文件 + Diff 视图，versionCode 16）→ `v0.5.0-beta7`（智能贴底 + 快捷胶囊，versionCode 17）→ `v0.5.0-beta8`（通知栏 RemoteInput + Share Sheet，versionCode 18）→ `v0.5.0-beta9`（单轮 Turn 变更聚合，versionCode 19）→ `v0.5.0-beta10`（Deep Link + 触觉反馈，versionCode 20）→ `v0.5.0-beta11`（会话列表离线持久化秒开，versionCode 21）→ `v0.5.0-beta12`（**当前**，会话消息流离线持久化与点进秒开，versionCode 22）。
+`v0.5.0-beta1…beta5`（模型档位链路，versionCode 15）→ `v0.5.0-beta6`（P0 结清 + 最近文件 + Diff 视图，versionCode 16）→ `v0.5.0-beta7`（智能贴底 + 快捷胶囊，versionCode 17）→ `v0.5.0-beta8`（通知栏 RemoteInput + Share Sheet，versionCode 18）→ `v0.5.0-beta9`（单轮 Turn 变更聚合，versionCode 19）→ `v0.5.0-beta10`（Deep Link + 触觉反馈，versionCode 20）→ `v0.5.0-beta11`（会话列表离线持久化秒开，versionCode 21）→ `v0.5.0-beta12`（会话消息流离线持久化与点进秒开，versionCode 22）→ `v0.5.0-beta13…beta16`（正确性缺陷修复 → 附件 chip → 连接层修复 → 异常原因与输入栏对齐）→ `v0.5.0-beta17`（**当前**，会话页排版全面对齐桌面端 + 会话级状态面板，versionCode 27）。
 
 ## 5. 关键技术结论（浓缩坑清单，动手前必读）
 
@@ -254,6 +258,10 @@ ADB -s <serial> shell am broadcast -n com.zcode.remote/.debug.DebugApprovalRecei
     **begin 不需要 connectionId**；分片 384KiB（host 上限 512KiB），`dataBase64` 标准 base64，
     `checksum="sha256:<hex>"`；chunk 应答 `nextChunkIndex` 必须等于已发 index+1；
     commit 返回 `ref=zcode-artifact://…`，随 `sendPrompt.attachments=[{ref,fileName,mime,bytes}]` 发出。
+11. **会话快照的会话级状态块形状（beta17 实证，无官方 schema）**：`usage{contextWindow,cumulative}`、`queue{items:list,autoDrain:bool}`、**`backgroundWorks` 是 list（不是 dict）**、`subagents{revision,childSessionIds,running,endedTotal}`、`goal` 可为 `null`、`plan{items,updatedAt}` 而 `plan.items` 元素为 `{id,content,status}`（`status=='completed'` 即完成，**没有** `iteration`/`title`/`verificationOutcome`，`completed/total` 需现场统计）。`rows{window,totalCount,firstRowId}`。**桌面端「计划」分区的数据来自另一条 RPC `transport.plans`，本 App 未订阅，故状态面板不做该分区**（红线：不为面板新开查询命令）。
+12. **增量 patch 只合并白名单键**：`ConversationChannel` 的 `state.updated` 处理原仅合并 `pendingInteractions`/`elicitations`，其余会话级键被忽略 → 即使快照补齐，数据也只在首帧正确、之后永不更新。beta17 已补齐缺口；新增会话级块时**必须同步改这里**。
+13. **Compose 实测坑（beta17 新增，均已在代码注释留痕）**：① LazyColumn 回收滚出视野的行 → 行内 `remember` 折叠态丢失，**必须提升到屏幕层**，且折叠态用 `List<String>` 而非 `Set`（`rememberSaveable` 写 Bundle 不保证任意 Set 实现可反序列化）；② LazyColumn 项内高度约束无限 → `fillMaxHeight` 退化为 0 高，`IntrinsicSize.Min` 与 `verticalScroll` 不兼容 → 画竖线只能用 `drawBehind`；③ **嵌套同方向 `verticalScroll` 会运行时告警** → 面板把滚动统一放在最外层一层，内部折叠行展开体一律不限高；④ `CollapsibleRow` 的 `label` 槽位**不是 RowScope**（不能挂 `weight`），需要撑开中间时用 `primary = { Spacer(Modifier.weight(1f)) }`。
+14. **Markdown/高亮依赖的版本上限**：`com.mikepenz:multiplatform-markdown-renderer-m3/-code:0.27.0` —— **0.30.0 起改用 Kotlin 2.1+ 编译，本项目 Kotlin 插件 2.0.20 读不了其元数据（硬报错）**，0.27.0 是最后一个 Kotlin 2.0.x 编译版，**升级 Kotlin 插件前不得上调**。安全边界：显式传 `NoOpImageTransformerImpl` 不加载外链图片；链接走 http/https 白名单（`ui/components/SafeUriHandler.kt`）。
 
 ## 6. 剩余任务（P0 → P2，含验收标准）
 
@@ -281,7 +289,7 @@ P1-2 多会话看板、P1-4 协议常量结清、P1-3 附件+语音、E-1 权威
 | **Sprint 4** | 通知层升级：RemoteInput 内联回复（真机实测） | ✅ 核心完成（v0.5.0-beta8） |
 | **Sprint 5** | 配对 Deep Link + 触觉反馈 + Share Sheet + 快捷指令 chips + 双离线持久化秒开 | ✅ 全部完成（v0.5.0-beta12） |
 | **Sprint 6** | 回归网：VQL 金标准对拍 + 26 项纯函数单测 + CI + `build.sh` 可移植化 | ✅ 全部结清，本地与 CI 全绿 |
-| **P0-2（唯一剩余项）** | **日常使用观察 3 天**：锁屏通知可达性、HyperOS 杀后台 30min 后审批可达 | ⏳ 待观察（前台服务实测运行中） |
+| **P0-2（唯一剩余项）** | **日常使用观察 3 天**：锁屏通知可达性、HyperOS 杀后台 30min 后审批可达 | ⏳ 待观察（前台服务实测运行中）；窗口因 **beta17**（2026-10-08）再次重置 |
 | ⛔ 后续开发计划 | Sprint 7（生物识别/凭据生命周期/自建中继 E2EE）、P2-3 余项、O-1/O-2 增强 | ❌ **2026-10-05 用户决策：全部取消，不再开发** |
 
 > **📌 唯一路径（v1.0 判停线）**：Sprint 0–6 已全部完成，**全部后续开发计划已取消**。
@@ -565,3 +573,5 @@ FCM/小米推送主通道（IM Bot 通道兜底另议）、追功能广度（多
 - **App 侧永不提供文件写能力**（2026-10-05 采纳自八周计划评审）：远程读文件（`file.readTextFile`）
   只为查看 Agent 产物；写路径等价于把整台桌面交给手机——配对链接一旦泄露即远程任意写。
   若确有需求，单独走一轮安全评审再排期。
+- **会话状态面板严格只读**（2026-10-08 beta17）：不新增任何控制类命令（cancelBackgroundWork / queueEdit / pauseGoal / resumeGoal / fork / compact），**不为面板新开查询 RPC**（因此不做「计划」分区，见 §5.11）。面板所需数据只能来自既有会话快照帧。
+- **排版未真机验收前不得宣称验收通过**（2026-10-08 beta17）：beta17 的排版对齐与状态面板属**代码完成、设备离线未验**，文档一律如实标注；上机前需先用 `adb devices` 确认设备在线（adb 属常驻服务，操作受硬约束）。

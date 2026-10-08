@@ -5,6 +5,8 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.darkColorScheme
 import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.graphics.Color
 
 /**
@@ -93,6 +95,10 @@ object ZCodeTokens {
     val ToolCallTrajectoryDark = Color(0xFFF59E0B)
     val ToolCallTrajectoryLight = Color(0xFFD97706)
 
+    // 工具执行结果轨迹色（桌面端 toolResult：暗 #38bdf8 / 浅 #0284c7）——此前缺失
+    val ToolResultTrajectoryDark = Color(0xFF38BDF8)
+    val ToolResultTrajectoryLight = Color(0xFF0284C7)
+
     // 运行/连接状态色
     val StatusOnline = Color(0xFF46BF72)      // 官方 success 绿
     val StatusPending = Color(0xFFFF8A30)     // 官方 warning 橙
@@ -104,14 +110,48 @@ object ZCodeTokens {
     val CodeBgLight = Color(0xFFF3F4F6)
     val CodeHeaderDark = Color(0xFF232530)
     val CodeHeaderLight = Color(0xFFE5E7EB)
+
+    // ---- 桌面端半透明叠加层（surface / hover / selected）----
+    val OverlaySurfaceDark = Color(0x0DFFFFFF)
+    val OverlaySurfaceLight = Color(0x080D0D0D)
+    val OverlaySurfaceHoverDark = Color(0x1AFFFFFF)
+    val OverlaySurfaceHoverLight = Color(0x0D0D0D0D)
+    val OverlayHoverDark = Color(0x0DFFFFFF)
+    val OverlayHoverLight = Color(0x0D0D0D0D)
+    val OverlaySelectedDark = Color(0x1AFFFFFF)
+    val OverlaySelectedLight = Color(0x0D0D0D0D)
+
+    // ---- 桌面端边框（border / border-hover）----
+    val BorderSubtleDark = Color(0x1AFFFFFF)
+    val BorderSubtleLight = Color(0x1A0D0D0D)
+    val BorderHoverDark = Color(0x26FFFFFF)
+    val BorderHoverLight = Color(0x260D0D0D)
+
+    // ---- 容器底色 ----
+    val CardDark = Color(0xFF2B2B2B)
+    val PanelDark = Color(0xFF202020)
+    val TagDark = Color(0xFF363636)
+    val TagLight = Color(0xFFE6E6E6)
+
+    // 闲时任务（idle task）标识色
+    val IdleTaskDark = Color(0xFF7B5CE5)
+    val IdleTaskLight = Color(0xFF9E77ED)
 }
+
+/**
+ * 当前是否暗色。由 [ZCodeTheme] 注入：应用以 forceDark 覆盖系统主题时，
+ * 深层组件用 isSystemInDarkTheme() 会读到相反的值，故统一走这里。
+ */
+val LocalZCodeDark = staticCompositionLocalOf { true }
 
 /** dark=null 表示跟随系统（设置项 THEME_SYSTEM）。 */
 @Composable
 fun ZCodeTheme(forceDark: Boolean? = true, content: @Composable () -> Unit) {
     val dark = forceDark ?: isSystemInDarkTheme()
-    MaterialTheme(
-        colorScheme = if (dark) ZCodeDarkScheme else ZCodeLightScheme,
-        content = content
-    )
+    CompositionLocalProvider(LocalZCodeDark provides dark) {
+        MaterialTheme(
+            colorScheme = if (dark) ZCodeDarkScheme else ZCodeLightScheme,
+            content = content
+        )
+    }
 }

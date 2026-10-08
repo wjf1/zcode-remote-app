@@ -520,4 +520,39 @@ class PureFunctionsTest {
             assertFalse("trigger=$t 在用户上翻时不应强拉", pin(t, alreadyPinned = true, userScrolledAway = true))
         }
     }
+
+    // ---------- 首页列表状态实时化（任务事件 / 会话相位 → displayStatus）----------
+
+    @Test
+    fun taskEventMapsInFlightStatesToRunning() {
+        // 一轮正在跑的所有表现：发过 prompt、正在流式输出、已恢复、有待应答的审批/表单
+        for (t in listOf("prompt_sent", "streaming", "resumed", "permission_request", "elicitation_request")) {
+            assertEquals("事件 $t 应判为运行中", "running", displayStatusForTaskEvent(t))
+        }
+    }
+
+    @Test
+    fun taskEventMapsOnlyExplicitTerminalStates() {
+        // 终态只认 host 明确推的 completed / error
+        assertEquals("completed", displayStatusForTaskEvent("completed"))
+        assertEquals("error", displayStatusForTaskEvent("error"))
+        // created / updated / *_resolved 不足以判定状态：返回 null 表示「保持原值」，
+        // 宁可不动也不能把正在跑的会话误标成已完成（host 持久化状态与实时相位会打架）
+        for (t in listOf("created", "updated", "permission_resolved", "elicitation_resolved", "whatever")) {
+            assertNull("事件 $t 不应改状态", displayStatusForTaskEvent(t))
+        }
+    }
+
+    @Test
+    fun phaseOnlyConfirmsRunning() {
+        // 单方向补「正在跑」：终态交给任务事件判定，不做双向推断
+        assertEquals("running", displayStatusForPhase("running"))
+        assertEquals("running", displayStatusForPhase("streaming"))
+        // 非运行相位一律不写回（含 idle 与各种终态），避免覆盖任务事件给的终态
+        for (p in listOf("idle", "waitingUserInput", "completedSuccess", "completedInterrupted",
+                         "completedError", "aborted", "error")) {
+            assertNull("相位 $p 不应改状态", displayStatusForPhase(p))
+        }
+        assertNull(displayStatusForPhase(null))
+    }
 }

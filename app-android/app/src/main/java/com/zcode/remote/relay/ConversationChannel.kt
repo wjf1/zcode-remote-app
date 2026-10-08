@@ -69,6 +69,16 @@ class ConversationChannel(private val rpc: RpcChannel) {
     private val _elicitations = MutableStateFlow<List<PendingElicitation>>(emptyList())
     val elicitations: StateFlow<List<PendingElicitation>> = _elicitations
 
+    /**
+     * 会话级状态块（上下文容量 / 排队输入 / 后台任务 / 子智能体 / 目标 / 计划）。
+     *
+     * 这些块在快照与 `state.updated` 增量里都会出现，**必须两处都合并** ——
+     * 只处理快照的话，数据会停在首帧永不再更新（运行中会话的上下文占用、后台任务数
+     * 恰恰全靠增量在推）。
+     */
+    private val _sessionState = MutableStateFlow(ConversationFrames.SessionState())
+    val sessionState: StateFlow<ConversationFrames.SessionState> = _sessionState
+
     /** 行变更通知钩子（供 AppViewModel 监听并将最新消息行写入离线缓存）。 */
     var onRowsUpdated: ((sessionId: String, rows: List<ConversationRow>) -> Unit)? = null
 
@@ -77,6 +87,14 @@ class ConversationChannel(private val rpc: RpcChannel) {
      * 回填进首页会话列表——bootstrap 的 tasks[] 形状不含该字段，见 SessionItem 注释）。
      */
     var onSessionError: ((sessionId: String, error: String) -> Unit)? = null
+
+    /**
+     * 会话相位钩子：快照 `phase` 发生变化时回调（供 AppViewModel 把「运行中」回填进首页列表）。
+     *
+     * 首页列表的状态此前只来自 bootstrap 的一次性快照，任务事件也没回写，导致「会话页明明在跑、
+     * 退回主界面却显示已完成」。会话页订阅期间相位是实时的，这里补上这一路。
+     */
+    var onSessionPhase: ((sessionId: String, phase: String) -> Unit)? = null
 
     data class ConversationMeta(
         val title: String? = null,
@@ -263,12 +281,15 @@ class ConversationChannel(private val rpc: RpcChannel) {
                 }
                 _interactions.value = snap.pendingInteractions
                 _elicitations.value = snap.elicitations
+                // 会话级状态块：快照是**全量**，直接换掉（不做合并），否则上一个会话的残留会串场
+                _sessionState.value = snap.sessionState
                 val control = snap.control
                 control?.foregroundExecutionId?.let { foregroundExecutionId = it }
                 // 会话级错误原因回填（仅在有错误时回调，避免快照风暴造成列表无谓重组）
                 control?.lastError?.takeIf { it.isNotBlank() }?.let { err ->
                     sessionId?.let { sid -> onSessionError?.invoke(sid, err) }
                 }
+                val prevPhase = _meta.value.phase
                 _meta.value = _meta.value.copy(
                     title = snap.title ?: _meta.value.title,
                     phase = snap.phase,
@@ -282,6 +303,10 @@ class ConversationChannel(private val rpc: RpcChannel) {
                     provider = snap.configProvider ?: _meta.value.provider,
                     revision = snap.revision ?: _meta.value.revision,
                 )
+                // 相位变更回填首页列表（只在真的变了时回调，避免快照风暴造成列表无谓重组）
+                if (snap.phase != null && snap.phase != prevPhase) {
+                    sessionId?.let { sid -> onSessionPhase?.invoke(sid, snap.phase) }
+                }
                 ZLog.i(TAG, "snapshot: ${snap.rows.size} 行（总 ${snap.totalCount}）" +
                         "待审批=${snap.pendingInteractions.size} delivery=${lf.deliveryKind}" +
                         " canStop=${control?.canStop} stopState=${control?.stopState}")
@@ -315,13 +340,30 @@ class ConversationChannel(private val rpc: RpcChannel) {
                             p["control"].asObj()?.let { c ->
                                 ConversationFrames.parseControl(c)?.let { ctl ->
                                     ctl.foregroundExecutionId?.let { foregroundExecutionId = it }
+                                    val prevPhase = _meta.value.phase
+                                    val newPhase = ctl.phase
                                     _meta.value = _meta.value.copy(
-                                        phase = ctl.phase ?: _meta.value.phase,
+                                        phase = newPhase ?: _meta.value.phase,
                                         canStop = ctl.canStop ?: _meta.value.canStop,
                                         stopState = ctl.stopState ?: _meta.value.stopState,
                                     )
+                                    // 相位增量也回填首页列表：运行中相位主要靠这条增量实时推（快照只在订阅时来一次）
+                                    if (newPhase != null && newPhase != prevPhase) {
+                                        sessionId?.let { sid -> onSessionPhase?.invoke(sid, newPhase) }
+                                    }
                                     ZLog.i(TAG, "control 更新 phase=${ctl.phase} canStop=${ctl.canStop} stopState=${ctl.stopState}")
                                 }
+                            }
+                            // 会话级状态块增量：patch 里出现哪块就换哪块（未出现的保持原值）。
+                            // 运行中会话的上下文占用 / 后台任务 / 子智能体数全靠这条增量在推 ——
+                            // 此前这里被整体忽略，导致这些数据永远停在订阅首帧。
+                            val before = _sessionState.value
+                            val after = before.merge(p)
+                            if (after != before) {
+                                _sessionState.value = after
+                                ZLog.i(TAG, "状态块更新 上下文=${after.usage?.usedTokens}/${after.usage?.maxTokens}" +
+                                        " 排队=${after.queue?.itemCount} 后台=${after.backgroundWorks?.running?.size}" +
+                                        " 子智能体=${after.subagents?.runningCount} 目标=${after.goal != null} 计划=${after.plan?.items?.size}")
                             }
                             // revision 增量更新（用于 CAS 校验）
                             p["revision"]?.let { rEl ->
@@ -363,6 +405,7 @@ class ConversationChannel(private val rpc: RpcChannel) {
         foregroundExecutionId = null
         _interactions.value = emptyList()
         _elicitations.value = emptyList()
+        _sessionState.value = ConversationFrames.SessionState()
         _earlier.value = EarlierState()
         _status.value = Status.Idle
         _meta.value = ConversationMeta()

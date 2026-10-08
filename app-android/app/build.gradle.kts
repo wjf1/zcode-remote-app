@@ -22,8 +22,8 @@ android {
         applicationId = "com.zcode.remote"
         minSdk = 31
         targetSdk = 35
-        versionCode = 26
-        versionName = "0.5.0-beta16"
+        versionCode = 27
+        versionName = "0.5.0-beta17"
     }
 
     signingConfigs {
@@ -90,4 +90,12 @@ dependencies {
 
     // 显式钉住 16 KB 对齐修复版，覆盖 compose BOM 传递的旧版 graphics-path
     implementation("androidx.graphics:graphics-path:1.0.1")
+
+    // 会话页 Markdown 渲染：对齐桌面端的 GFM 表格/任务列表/代码块语法高亮。
+    // 版本上限说明：本项目 Kotlin 插件为 2.0.20，而 Kotlin 元数据不向后兼容——
+    // 该库 0.30.0 起已改用 Kotlin 2.1+ 编译，2.0.20 编译器读不了其元数据（硬报错）。
+    // 0.27.0 是最后一个 Kotlin 2.0.x 编译的版本，故锁死在此；升级 Kotlin 插件前不得上调。
+    // code 模块自带 dev.snipme:highlights 1.x（纯 JVM，无原生 .so）。
+    implementation("com.mikepenz:multiplatform-markdown-renderer-m3:0.27.0")
+    implementation("com.mikepenz:multiplatform-markdown-renderer-code:0.27.0")
 }

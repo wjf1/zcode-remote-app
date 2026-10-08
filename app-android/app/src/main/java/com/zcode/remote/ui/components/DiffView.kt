@@ -4,6 +4,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -24,6 +25,8 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalClipboardManager
@@ -34,6 +37,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.zcode.remote.relay.ConversationRow
+import com.zcode.remote.ui.theme.ZCodeDimens
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
@@ -256,8 +260,9 @@ fun DiffBlock(diff: ToolDiff, modifier: Modifier = Modifier) {
                     Text("⧉ 复制", style = MaterialTheme.typography.labelSmall)
                 }
             }
-            val addBg = Color(0xFF2E7D32).copy(alpha = 0.16f)
-            val delBg = Color(0xFFC62828).copy(alpha = 0.16f)
+            // 桌面端 diff 的增删比手写值更淡（14%），底色只做提示，靠左侧竖条承担主要辨识
+            val addBg = Color(0xFF2E7D32).copy(alpha = 0.14f)
+            val delBg = Color(0xFFC62828).copy(alpha = 0.14f)
             val addFg = Color(0xFF66BB6A)
             val delFg = Color(0xFFEF5350)
             val gutter = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f)
@@ -295,23 +300,46 @@ fun DiffBlock(diff: ToolDiff, modifier: Modifier = Modifier) {
                                     DiffType.DEL -> "−"
                                     DiffType.CONTEXT -> " "
                                 }
-                                Row(Modifier.background(bg)) {
-                                    Text(
-                                        text = "${dl.oldNo ?: ""}",
-                                        style = MaterialTheme.typography.labelSmall.copy(
-                                            fontFamily = FontFamily.Monospace, fontSize = 10.sp
-                                        ),
-                                        color = gutter,
-                                        modifier = Modifier.width(34.dp).padding(start = 6.dp)
-                                    )
-                                    Text(
-                                        text = "${dl.newNo ?: ""}",
-                                        style = MaterialTheme.typography.labelSmall.copy(
-                                            fontFamily = FontFamily.Monospace, fontSize = 10.sp
-                                        ),
-                                        color = gutter,
-                                        modifier = Modifier.width(34.dp)
-                                    )
+                                // 单列行号：新增取新号、删除取老号、上下文取新号 —— 与桌面端一致。
+                                val lineNo = when (dl.type) {
+                                    DiffType.DEL -> dl.oldNo
+                                    else -> dl.newNo ?: dl.oldNo
+                                }
+                                val accent = when (dl.type) {
+                                    DiffType.ADD -> addFg
+                                    DiffType.DEL -> delFg
+                                    DiffType.CONTEXT -> Color.Transparent
+                                }
+                                Row(
+                                    modifier = Modifier
+                                        .background(bg)
+                                        .drawBehind {
+                                            if (accent != Color.Transparent) {
+                                                drawRect(
+                                                    color = accent,
+                                                    size = Size(
+                                                        ZCodeDimens.DiffAccentWidth.toPx(),
+                                                        size.height,
+                                                    ),
+                                                )
+                                            }
+                                        }
+                                ) {
+                                    Box(
+                                        modifier = Modifier
+                                            .width(ZCodeDimens.DiffGutterWidth)
+                                            .background(accent.copy(alpha = 0.18f)),
+                                        contentAlignment = Alignment.CenterEnd,
+                                    ) {
+                                        Text(
+                                            text = lineNo?.toString().orEmpty(),
+                                            style = MaterialTheme.typography.labelSmall.copy(
+                                                fontFamily = FontFamily.Monospace, fontSize = 10.sp
+                                            ),
+                                            color = gutter,
+                                            modifier = Modifier.padding(end = 6.dp, start = 4.dp),
+                                        )
+                                    }
                                     Text(
                                         text = "$sign${dl.text.take(2000)}",
                                         style = MaterialTheme.typography.bodySmall.copy(

@@ -3,6 +3,7 @@ toolchain/
 _tmp/
 **/build/
 **/.gradle/
+**/.kotlin/
 **/local.properties
 
 # Python

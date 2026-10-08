@@ -31,11 +31,13 @@ import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.text.font.FontFamily
@@ -49,11 +51,30 @@ import com.zcode.remote.relay.ConversationChannel
 import com.zcode.remote.relay.ConversationRow
 import com.zcode.remote.relay.PendingApproval
 import com.zcode.remote.relay.PendingElicitation
+import com.zcode.remote.ui.components.CollapsibleRow
 import com.zcode.remote.ui.components.MarkdownView
+import com.zcode.remote.ui.components.QueuePendingStrip
+import com.zcode.remote.ui.components.SessionStatusPanel
+import com.zcode.remote.ui.components.ShimmerText
+import com.zcode.remote.ui.components.StatusPanelLabels
+import com.zcode.remote.ui.components.ToolBody
+import com.zcode.remote.ui.components.ToolBodySection
+import com.zcode.remote.ui.components.ToolFamily
+import com.zcode.remote.ui.components.ToolKindLabels
+import com.zcode.remote.ui.components.ToolStatus
+import com.zcode.remote.ui.components.ToolSummaryBadge
+import com.zcode.remote.ui.components.toolStatusTone
+import com.zcode.remote.ui.theme.LocalZCodeDark
+import com.zcode.remote.ui.theme.ZCodeDimens
 import com.zcode.remote.ui.theme.ZCodeTokens
+import com.zcode.remote.ui.theme.ZCodeType
 import com.zcode.remote.ui.voice.VoiceInputButton
+import com.zcode.remote.util.Format
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonElement
+import kotlinx.serialization.json.JsonPrimitive
 
 /**
  * 沉浸式会话详情与对话控制台
@@ -70,6 +91,10 @@ fun ConversationScreen(
     elicitations: List<PendingElicitation> = emptyList(),
     approvalFeedback: String? = null,
     earlier: ConversationChannel.EarlierState = ConversationChannel.EarlierState(),
+    /** C3：会话级状态（上下文用量 / 目标 / 待办 / 后台任务 / 子智能体 / 排队输入）。
+     *  顶栏「状态」入口只在 [com.zcode.remote.relay.ConversationFrames.SessionState.hasContent] 为真时出现。 */
+    sessionState: com.zcode.remote.relay.ConversationFrames.SessionState =
+        com.zcode.remote.relay.ConversationFrames.SessionState(),
     prompt: String = "",
     sending: Boolean = false,
     canStop: Boolean = false,
@@ -119,6 +144,17 @@ fun ConversationScreen(
     // Sprint 3 第三步：从会话行按 Turn 聚合文件写操作 Diff
     val turnSummaries = remember(rows) { com.zcode.remote.relay.TurnChanges.aggregate(rows) }
     var showFiles by remember { mutableStateOf(false) }
+    // C3：会话状态面板弹层
+    var showStatus by remember { mutableStateOf(false) }
+
+    // 折叠态提升到屏幕层：LazyColumn 会回收滚出视野的行，行内 remember 随之销毁，
+    // 表现为「滚上去再滚回来，刚展开的详情自己合上了」。键优先取 toolCallId（工具行唯一且跨重放稳定），
+    // 无则退化为 `kind:rowId`。用 List 而不是 Set，是因为 rememberSaveable 要把值写进 Bundle，
+    // 具体集合类型（Set 的实现类）跨进程恢复时不保证可反序列化，List 则一定有 ArrayList 兜底。
+    var expandedRows by rememberSaveable { mutableStateOf(listOf<String>()) }
+    val toggleExpanded: (String) -> Unit = { key ->
+        expandedRows = if (key in expandedRows) expandedRows - key else expandedRows + key
+    }
 
     // 进入会话页即刷新一次模型目录（PC 端新增/删除模型后回到 APP 即可看到最新列表）
     LaunchedEffect(Unit) { onLoadModels() }
@@ -327,6 +363,32 @@ fun ConversationScreen(
                     ) {
                         Text(
                             text = "📁 ${sessionFiles.size}",
+                            style = MaterialTheme.typography.labelSmall.copy(
+                                fontWeight = FontWeight.SemiBold, fontSize = 11.sp
+                            ),
+                            color = MaterialTheme.colorScheme.primary,
+                            maxLines = 1
+                        )
+                    }
+                }
+                Spacer(Modifier.width(6.dp))
+            }
+
+            // 顶栏右侧：会话状态入口（C3）—— 有可展示内容时才出现，点开底部面板
+            StatusPanelLabels.entryLabel(sessionState)?.let { label ->
+                Surface(
+                    onClick = { showStatus = true },
+                    shape = RoundedCornerShape(14.dp),
+                    color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.6f),
+                    border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
+                    modifier = Modifier.height(28.dp)
+                ) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        modifier = Modifier.padding(horizontal = 8.dp)
+                    ) {
+                        Text(
+                            text = label,
                             style = MaterialTheme.typography.labelSmall.copy(
                                 fontWeight = FontWeight.SemiBold, fontSize = 11.sp
                             ),
@@ -606,7 +668,12 @@ fun ConversationScreen(
                         )
                     }
                     items(rows, key = { it.rowId }) { row ->
-                        RowItem(row)
+                        val expandKey = rowExpandKey(row)
+                        RowItem(
+                            row = row,
+                            expanded = expandKey in expandedRows,
+                            onToggleExpand = { toggleExpanded(expandKey) },
+                        )
                         turnSummaries[row.rowId]?.let { summary ->
                             com.zcode.remote.ui.components.TurnChangesCard(
                                 summary = summary,
@@ -696,6 +763,12 @@ fun ConversationScreen(
             modifier = Modifier.padding(vertical = 2.dp)
         )
 
+        // C3：待发送队列条（只读）—— 仅在有排队输入时占位，纯告知不做控制
+        QueuePendingStrip(
+            itemCount = sessionState.queue?.itemCount ?: 0,
+            modifier = Modifier.padding(vertical = 2.dp),
+        )
+
         // 4. 底部现代化输入栏
         InputBar(
             prompt = prompt,
@@ -724,6 +797,16 @@ fun ConversationScreen(
                     onPreview = onPreviewFile,
                     onDismissPreview = onDismissFilePreview,
                     onClose = { showFiles = false },
+                )
+            }
+        }
+
+        // 6. 会话状态面板（C3）：纯只读，分区无数据自动隐藏
+        if (showStatus) {
+            ModalBottomSheet(onDismissRequest = { showStatus = false }) {
+                SessionStatusPanel(
+                    state = sessionState,
+                    onClose = { showStatus = false },
                 )
             }
         }
@@ -1396,15 +1479,32 @@ private fun ApprovalCard(
     }
 }
 
+/**
+ * 行分发。桌面端也是一套渲染器按行类型分流，这里保持同名同序。
+ *
+ * [expanded] / [onToggleExpand] 由屏幕层传入而非行内 `remember`，原因见 `expandedRows` 处的说明
+ * （LazyColumn 回收滚出视野的行，行内状态会丢）。只有三类可折叠行会用到，其余行忽略。
+ */
 @Composable
-private fun RowItem(row: ConversationRow) = when (row.kind) {
+private fun RowItem(
+    row: ConversationRow,
+    expanded: Boolean,
+    onToggleExpand: () -> Unit,
+) = when (row.kind) {
     "userInput" -> UserBubble(row)
-    "assistantText" -> Bubble(row.text.orEmpty(), isUser = false, streaming = row.isStreaming)
-    "reasoning" -> ReasoningBlock(row)
-    "toolCall" -> ToolCallCard(row)
+    "assistantText" -> AssistantText(row)
+    "reasoning" -> ReasoningBlock(row, expanded, onToggleExpand)
+    "toolCall" -> ToolCallRow(row, expanded, onToggleExpand)
     "turnHeader" -> TurnHeaderRow(row)
+    "subagent" -> SubagentRow(row)
+    "timelineMarker" -> TimelineMarkerRow(row)
+    "hookInvocation" -> HookInvocationRow(row, expanded, onToggleExpand)
     else -> PlainRow(row)
 }
+
+/** 折叠状态在屏幕层的键：工具行用 `toolCallId`（跨重放稳定），其余行退化为 `kind:rowId`。 */
+private fun rowExpandKey(row: ConversationRow): String =
+    row.toolCallId?.takeIf { it.isNotBlank() } ?: "${row.kind}:${row.rowId}"
 
 /**
  * 用户消息：附件 chip（若有）在气泡上方，整体右对齐。
@@ -1412,9 +1512,18 @@ private fun RowItem(row: ConversationRow) = when (row.kind) {
  * 附件来自服务端在 userInput 行的回显（`{ref, fileName, mime, bytes}`），
  * 即「手机上选文件→发送」之后该消息在会话流里的呈现方式与官方客户端一致。
  * 历史消息仅展示：`ref` 是 host 侧暂存引用而非工作区路径，故不做点击预览（见 [RowAttachment]）。
+ *
+ * 气泡形态对齐桌面端：**中性半透明叠加底 + 1px 细边框**，右上角收成 2dp 小圆角指向发送者，
+ * 宽度上限取屏宽的 84%（桌面端是气泡最大宽度按容器比例收缩，手机同理）。
+ * 此前用的蓝底 primary 是 Material 默认聊天样式，与桌面端的中性叠加层差异很大。
  */
 @Composable
 private fun UserBubble(row: ConversationRow) {
+    val dark = LocalZCodeDark.current
+    val bubbleBg = if (dark) ZCodeTokens.OverlaySurfaceHoverDark else ZCodeTokens.OverlaySurfaceHoverLight
+    val bubbleBorder = if (dark) ZCodeTokens.BorderSubtleDark else ZCodeTokens.BorderSubtleLight
+    val maxWidth = (LocalConfiguration.current.screenWidthDp * ZCodeDimens.BubbleWidthFraction).dp
+
     Column(
         modifier = Modifier.fillMaxWidth(),
         horizontalAlignment = Alignment.End,
@@ -1455,144 +1564,61 @@ private fun UserBubble(row: ConversationRow) {
                 }
             }
         }
-        Bubble(row.text.orEmpty(), isUser = true)
-    }
-}
-
-@Composable
-private fun Bubble(text: String, isUser: Boolean, streaming: Boolean = false) {
-    Row(
-        modifier = Modifier.fillMaxWidth().padding(vertical = 2.dp),
-        horizontalArrangement = if (isUser) Arrangement.End else Arrangement.Start,
-    ) {
-        if (isUser) {
-            Surface(
-                modifier = Modifier.widthIn(max = 310.dp),
-                shape = RoundedCornerShape(topStart = 16.dp, topEnd = 4.dp, bottomStart = 16.dp, bottomEnd = 16.dp),
-                color = MaterialTheme.colorScheme.primary,
-                shadowElevation = 1.dp
-            ) {
-                Text(
-                    text = text,
-                    style = MaterialTheme.typography.bodyMedium.copy(color = MaterialTheme.colorScheme.onPrimary),
-                    modifier = Modifier.padding(horizontal = 14.dp, vertical = 10.dp)
-                )
-            }
-        } else {
-            Surface(
-                modifier = Modifier.fillMaxWidth(),
-                shape = RoundedCornerShape(12.dp),
-                color = MaterialTheme.colorScheme.surface,
-                border = CardDefaults.outlinedCardBorder()
-            ) {
-                Column(Modifier.padding(horizontal = 14.dp, vertical = 10.dp)) {
-                    MarkdownView(
-                        markdown = text,
-                        modifier = Modifier.fillMaxWidth(),
-                        textColor = MaterialTheme.colorScheme.onSurface
-                    )
-                    if (streaming) {
-                        Spacer(Modifier.height(6.dp))
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Box(
-                                modifier = Modifier
-                                    .size(6.dp)
-                                    .clip(CircleShape)
-                                    .background(MaterialTheme.colorScheme.primary)
-                            )
-                            Spacer(Modifier.width(6.dp))
-                            Text(
-                                "正在生成…",
-                                style = MaterialTheme.typography.labelSmall,
-                                color = MaterialTheme.colorScheme.primary
-                            )
-                        }
-                    }
-                }
-            }
+        Surface(
+            modifier = Modifier.widthIn(max = maxWidth),
+            shape = RoundedCornerShape(
+                topStart = ZCodeDimens.RadiusXl,
+                topEnd = ZCodeDimens.RadiusTail,
+                bottomStart = ZCodeDimens.RadiusXl,
+                bottomEnd = ZCodeDimens.RadiusXl,
+            ),
+            color = bubbleBg,
+            border = BorderStroke(1.dp, bubbleBorder),
+        ) {
+            Text(
+                text = row.text.orEmpty(),
+                style = MaterialTheme.typography.bodyMedium.copy(
+                    fontSize = ZCodeType.Base,
+                    lineHeight = ZCodeType.BodyLineHeight,
+                    color = MaterialTheme.colorScheme.onSurface,
+                ),
+                modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
+            )
         }
     }
 }
 
 /**
- * 官方 ZCode 风格深度思考折叠胶囊 (ReasoningBlock)
+ * 助手正文。桌面端**没有卡片外壳**：正文直接铺满整列，靠段间距与上一行区分。
+ * 此前套了一层 `Surface`（圆角 + 描边），把大段 Markdown 关进卡片里，与桌面端差距最明显的一处。
  */
 @Composable
-private fun ReasoningBlock(row: ConversationRow) {
-    var expanded by remember { mutableStateOf(false) }
-    val content = row.text.orEmpty().trim()
-    if (content.isEmpty()) return
-    val context = LocalContext.current
-
-    Column(modifier = Modifier.fillMaxWidth().padding(vertical = 2.dp)) {
-        Surface(
-            shape = RoundedCornerShape(8.dp),
-            color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.45f),
-            modifier = Modifier.fillMaxWidth()
-        ) {
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp)
-            ) {
-                // 紫色思考轨迹圆点
+private fun AssistantText(row: ConversationRow) {
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            // 与上一行的呼吸感：桌面端是 gap-5（20px），这里补在行内，
+            // LazyColumn 的 spacedBy(8dp) 只负责行间基础间距。
+            .padding(top = ZCodeDimens.GapTurn),
+    ) {
+        MarkdownView(
+            markdown = row.text.orEmpty(),
+            modifier = Modifier.fillMaxWidth(),
+            textColor = MaterialTheme.colorScheme.onSurface,
+        )
+        if (row.isStreaming) {
+            Spacer(Modifier.height(ZCodeDimens.GapInline))
+            Row(verticalAlignment = Alignment.CenterVertically) {
                 Box(
                     modifier = Modifier
                         .size(6.dp)
                         .clip(CircleShape)
-                        .background(ZCodeTokens.ReasoningTrajectoryDark)
+                        .background(MaterialTheme.colorScheme.primary)
                 )
-                Spacer(Modifier.width(8.dp))
-                Text(
-                    text = "思考过程 (${content.length} 字符)",
-                    style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Medium),
-                    color = ZCodeTokens.ReasoningTrajectoryDark,
-                    modifier = Modifier.weight(1f)
-                )
-                TextButton(
-                    onClick = { expanded = !expanded },
-                    contentPadding = PaddingValues(horizontal = 6.dp, vertical = 0.dp),
-                    modifier = Modifier.height(26.dp)
-                ) {
-                    Text(if (expanded) "收起" else "展开", style = MaterialTheme.typography.labelSmall)
-                }
-                if (expanded) {
-                    TextButton(
-                        onClick = {
-                            val cm = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
-                            cm.setPrimaryClip(ClipData.newPlainText("reasoning", content))
-                            Toast.makeText(context, "思考过程已复制", Toast.LENGTH_SHORT).show()
-                        },
-                        contentPadding = PaddingValues(horizontal = 6.dp, vertical = 0.dp),
-                        modifier = Modifier.height(26.dp)
-                    ) {
-                        Text("复制", style = MaterialTheme.typography.labelSmall)
-                    }
-                }
-            }
-        }
-
-        AnimatedVisibility(
-            visible = expanded,
-            enter = expandVertically() + fadeIn(),
-            exit = shrinkVertically() + fadeOut()
-        ) {
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(top = 4.dp, start = 4.dp)
-            ) {
-                // 左侧微弱竖向引导线（官方同款）
-                Box(
-                    modifier = Modifier
-                        .width(2.dp)
-                        .fillMaxHeight()
-                        .background(ZCodeTokens.ReasoningTrajectoryDark.copy(alpha = 0.35f))
-                )
-                Spacer(Modifier.width(8.dp))
-                MarkdownView(
-                    markdown = content,
-                    modifier = Modifier.weight(1f),
-                    textColor = MaterialTheme.colorScheme.onSurfaceVariant
+                Spacer(Modifier.width(6.dp))
+                ShimmerText(
+                    text = "正在生成…",
+                    style = MaterialTheme.typography.labelSmall.copy(fontSize = ZCodeType.Sm),
                 )
             }
         }
@@ -1600,157 +1626,431 @@ private fun ReasoningBlock(row: ConversationRow) {
 }
 
 /**
- * 官方 ZCode 风格紧凑工具调用卡片 (ToolCallBlock)
+ * 思考过程。对齐桌面端为**无外框的内联折叠行**：紫色圆点 + 「思考 · 持续了 N 秒」+ 折叠箭头，
+ * 展开后是左侧一条中性竖线 + 缩进正文，高度封顶后内部滚动。
+ *
+ * 此前是一个带背景色的圆角胶囊 + 「展开/收起」文字按钮，属于自造样式（桌面上并不存在）。
+ * 复制按钮保留（桌面端是 hover 才出现的图标按钮，手机没有 hover，收进行尾以免丢失功能）。
  */
 @Composable
-private fun ToolCallCard(row: ConversationRow) {
-    val tool = row.toolName?.trim().orEmpty()
+private fun ReasoningBlock(
+    row: ConversationRow,
+    expanded: Boolean,
+    onToggleExpand: () -> Unit,
+) {
+    val content = row.text.orEmpty().trim()
+    if (content.isEmpty()) return
+    val dark = LocalZCodeDark.current
+    val tone = if (dark) ZCodeTokens.ReasoningTrajectoryDark else ZCodeTokens.ReasoningTrajectoryLight
+    val context = LocalContext.current
+    val worked = Format.duration(row.durationMs ?: row.activeMs)
+
+    CollapsibleRow(
+        expanded = expanded,
+        onToggle = onToggleExpand,
+        leading = {
+            Box(
+                modifier = Modifier
+                    .size(6.dp)
+                    .clip(CircleShape)
+                    .background(tone)
+            )
+        },
+        label = {
+            Text(
+                text = if (worked.isEmpty()) "思考" else "思考 · 持续了 $worked",
+                style = MaterialTheme.typography.labelSmall.copy(
+                    fontSize = ZCodeType.Sm,
+                    fontWeight = ZCodeType.Medium,
+                ),
+                color = tone,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+        },
+        primary = {
+            if (row.isStreaming) {
+                ShimmerText(
+                    text = "正在思考",
+                    modifier = Modifier.weight(1f),
+                    style = MaterialTheme.typography.labelSmall.copy(fontSize = ZCodeType.Sm),
+                    baseColor = tone.copy(alpha = 0.6f),
+                    highlightColor = tone,
+                )
+            } else {
+                Spacer(Modifier.weight(1f))
+            }
+        },
+        trailing = {
+            TextButton(
+                onClick = {
+                    val cm = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+                    cm.setPrimaryClip(ClipData.newPlainText("reasoning", content))
+                    Toast.makeText(context, "思考过程已复制", Toast.LENGTH_SHORT).show()
+                },
+                contentPadding = PaddingValues(horizontal = 4.dp, vertical = 0.dp),
+                modifier = Modifier.height(24.dp),
+            ) {
+                Text("复制", style = MaterialTheme.typography.labelSmall.copy(fontSize = ZCodeType.Sm))
+            }
+            Text(
+                text = "${content.length} 字符",
+                style = MaterialTheme.typography.labelSmall.copy(fontSize = ZCodeType.Sm),
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        },
+        chevronColor = tone,
+    ) {
+        ToolBody {
+            MarkdownView(
+                markdown = content,
+                modifier = Modifier.fillMaxWidth(),
+                textColor = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+    }
+}
+
+/**
+ * 工具调用行。对齐桌面端为**无外框的内联折叠行**：家族图标 + 中文类型标签 + 主文案 +
+ * 尾部增删徽标 + 状态字。
+ *
+ * 此前是带描边的圆角卡片 + 琥珀色工具名徽章 —— 卡片外壳在桌面上并不存在，
+ * 且每个工具一次卡片会让长会话变成「一摞卡片」，视觉噪声远高于桌面端。
+ */
+@Composable
+private fun ToolCallRow(
+    row: ConversationRow,
+    expanded: Boolean,
+    onToggleExpand: () -> Unit,
+) {
     val input = row.inputText?.trim().orEmpty()
     val output = row.outputText?.trim().orEmpty()
+    val errorText = row.errorText?.trim().orEmpty()
+    val tool = row.toolName?.trim().orEmpty()
     if (tool.isEmpty() && input.isEmpty() && output.isEmpty()) return
 
-    var expanded by remember { mutableStateOf(false) }
+    val family = ToolKindLabels.familyFor(row.toolName, row.kind)
+    val status = ToolKindLabels.normalizeStatus(row.status)
+    val label = if (status == ToolStatus.Running) {
+        ToolKindLabels.runningLabel(family, row.toolName)
+    } else {
+        ToolKindLabels.label(family, row.toolName)
+    }
+    val statusText = ToolKindLabels.statusLabel(status)
+    val tone = toolStatusTone(status)
+    val primary = if (family == ToolFamily.FileWrite) {
+        ToolKindLabels.filePathBasename(input)
+            ?: ToolKindLabels.primaryText(row.toolName, row.kind, null, input)
+    } else {
+        ToolKindLabels.primaryText(row.toolName, row.kind, null, input)
+    }
     // Sprint 3：写类工具（Edit/Write/MultiEdit）从 inputText 解析红绿 diff —— 纯客户端，零 RPC
     val toolDiff = remember(row.rowId, input) {
         runCatching { com.zcode.remote.ui.components.ToolDiffParser.parse(row.toolName, input) }.getOrNull()
     }
-    val tone = when (row.status) {
-        "success" -> ZCodeTokens.StatusOnline
-        "error", "cancelled" -> MaterialTheme.colorScheme.error
-        else -> MaterialTheme.colorScheme.primary
-    }
 
-    Card(
-        shape = RoundedCornerShape(10.dp),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-        border = CardDefaults.outlinedCardBorder(),
-        modifier = Modifier.fillMaxWidth().padding(vertical = 2.dp)
-    ) {
-        Column(Modifier.padding(horizontal = 12.dp, vertical = 8.dp)) {
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                Surface(
-                    color = ZCodeTokens.ToolCallTrajectoryDark.copy(alpha = 0.15f),
-                    shape = RoundedCornerShape(4.dp)
-                ) {
-                    Text(
-                        text = tool.ifEmpty { "Command" },
-                        style = MaterialTheme.typography.labelSmall.copy(
-                            color = ZCodeTokens.ToolCallTrajectoryDark,
-                            fontWeight = FontWeight.SemiBold
-                        ),
-                        modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
-                    )
-                }
-                Spacer(Modifier.width(8.dp))
+    CollapsibleRow(
+        expanded = expanded,
+        onToggle = onToggleExpand,
+        leading = { ToolFamilyIcon(family = family, tint = tone) },
+        label = {
+            Text(
+                text = label,
+                style = MaterialTheme.typography.labelSmall.copy(
+                    fontSize = ZCodeType.Sm,
+                    fontWeight = ZCodeType.SemiBold,
+                ),
+                color = tone,
+                maxLines = 1,
+            )
+        },
+        primary = {
+            val text = primary
+            if (!expanded && !text.isNullOrBlank()) {
                 Text(
-                    text = when (row.status) {
-                        "success" -> "✓ 成功"
-                        "error" -> "✗ 失败"
-                        "running" -> "执行中…"
-                        "cancelled" -> "已取消"
-                        else -> row.status ?: ""
-                    },
-                    style = MaterialTheme.typography.labelSmall,
-                    color = tone,
-                    modifier = Modifier.weight(1f)
-                )
-                TextButton(
-                    onClick = { expanded = !expanded },
-                    contentPadding = PaddingValues(horizontal = 6.dp, vertical = 0.dp),
-                    modifier = Modifier.height(28.dp)
-                ) {
-                    Text(if (expanded) "收起" else "详情", style = MaterialTheme.typography.labelSmall)
-                }
-            }
-
-            val summary = input.replace('\n', ' ').trim()
-            if (!expanded && toolDiff != null) {
-                // 折叠态：写类工具直接显示 文件 + 增删统计，一眼判断这次改动是否越界
-                Text(
-                    text = buildString {
-                        toolDiff.filePath?.let { append("📄 $it  ") }
-                        append("+${toolDiff.added} −${toolDiff.removed}")
-                    },
-                    style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.SemiBold),
-                    color = MaterialTheme.colorScheme.tertiary,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                    modifier = Modifier.padding(top = 4.dp)
-                )
-            } else if (!expanded && summary.isNotEmpty()) {
-                Text(
-                    text = summary,
-                    style = MaterialTheme.typography.bodySmall.copy(fontFamily = FontFamily.Monospace, fontSize = 11.5.sp),
+                    text = text,
+                    style = MaterialTheme.typography.bodySmall.copy(
+                        fontFamily = FontFamily.Monospace,
+                        fontSize = 11.5.sp,
+                    ),
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
-                    modifier = Modifier.padding(top = 4.dp)
+                    modifier = Modifier.weight(1f),
+                )
+            } else {
+                Spacer(Modifier.weight(1f))
+            }
+        },
+        trailing = {
+            if (!expanded && toolDiff != null) {
+                if (toolDiff.added > 0) ToolSummaryBadge("+${toolDiff.added}", ZCodeTokens.StatusOnline)
+                if (toolDiff.removed > 0) ToolSummaryBadge("−${toolDiff.removed}", ZCodeTokens.StatusError)
+            }
+            statusText?.let {
+                Text(
+                    text = it,
+                    style = MaterialTheme.typography.labelSmall.copy(fontSize = ZCodeType.Sm),
+                    color = tone,
+                    maxLines = 1,
                 )
             }
+        },
+        chevronColor = tone,
+    ) {
+        ToolBody {
+            toolDiff?.let { com.zcode.remote.ui.components.DiffBlock(it) }
+            ToolBodySection(title = "Parameters", content = prettyJson(input))
+            if (errorText.isNotEmpty()) {
+                ToolBodySection(
+                    title = "Error",
+                    content = errorText,
+                    titleColor = ZCodeTokens.StatusError,
+                    background = ZCodeTokens.StatusError.copy(alpha = 0.10f),
+                    mono = false,
+                )
+            }
+            ToolBodySection(title = "Result", content = output)
+        }
+    }
+}
 
-            AnimatedVisibility(visible = expanded) {
-                Column(Modifier.padding(top = 6.dp)) {
-                    if (toolDiff != null) {
-                        com.zcode.remote.ui.components.DiffBlock(toolDiff)
-                        Text(
-                            "原始输入",
-                            style = MaterialTheme.typography.labelSmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            modifier = Modifier.padding(top = 6.dp)
-                        )
-                    }
-                    CodeBlock("输入", input)
-                    CodeBlock("输出", output)
-                }
+/**
+ * 工具家族图标。桌面端用 lucide 图标集，App 只有 `material-icons-core` 的内置图标
+ * （全量清单：AccountBox … Warning 共 45 个），形态无法与 lucide 一一对应，
+ * 故按语义就近映射；家族主色一致，形状差异不会造成误读。
+ */
+@Composable
+private fun ToolFamilyIcon(family: ToolFamily, tint: Color) {
+    val icon = when (family) {
+        ToolFamily.FileRead -> Icons.Default.Info
+        ToolFamily.FileWrite -> Icons.Default.Edit
+        ToolFamily.Shell -> Icons.Default.PlayArrow
+        ToolFamily.Search -> Icons.Default.Search
+        ToolFamily.Todo -> Icons.Default.List
+        ToolFamily.Goal -> Icons.Default.Star
+        ToolFamily.Explore -> Icons.Default.Place
+        ToolFamily.SessionContext -> Icons.Default.Refresh
+        ToolFamily.AskUserQuestion -> Icons.Default.Face
+        ToolFamily.Message -> Icons.Default.Email
+        ToolFamily.TaskControl -> Icons.Default.Settings
+        ToolFamily.NodeRepl -> Icons.Default.Build
+        ToolFamily.Agent -> Icons.Default.Person
+        ToolFamily.Skill -> Icons.Default.Favorite
+        ToolFamily.Unknown -> Icons.Default.MoreVert
+    }
+    Icon(
+        imageVector = icon,
+        contentDescription = null,
+        tint = tint,
+        modifier = Modifier.size(ZCodeDimens.IconSm),
+    )
+}
+
+private val prettyJsonPrinter = Json { prettyPrint = true; prettyPrintIndent = "  " }
+
+/**
+ * 工具入参缩进美化。服务端下发的 input 是紧凑 JSON，展开后不缩进基本没法读。
+ * 解析失败（例如某些工具直接下发非 JSON 文本）时原样返回 —— 绝不因为「美化失败」把内容吞掉。
+ */
+private fun prettyJson(raw: String): String {
+    if (raw.isBlank()) return raw
+    return runCatching {
+        prettyJsonPrinter.encodeToString(JsonElement.serializer(), Json.parseToJsonElement(raw))
+    }.getOrNull() ?: raw
+}
+
+/**
+ * 轮次头。桌面端是一行极淡的分隔线 + 「轮次 · 来源 · 状态」，右侧或次行给出耗时。
+ *
+ * 这里不使用 wall-clock 时间戳：会话行的 wire 协议只下发 `startedAt` / `endedAt` /
+ * `activeMs` 三个相对量，没有「行创建时刻」的绝对时间；早期版本用 `SimpleDateFormat`
+ * 格式化 `createdAt`，显示的其实是首帧到达时刻，与桌面端语义不符，已移除。
+ */
+@Composable
+private fun TurnHeaderRow(row: ConversationRow) {
+    val dark = LocalZCodeDark.current
+    // 优先用服务端累计的活跃时长；缺失时用起止时间兜底（含等待用户输入的空档）
+    val durationMs = row.activeMs
+        ?: if (row.startedAt != null && row.endedAt != null) row.endedAt - row.startedAt else null
+    val meta = listOfNotNull(
+        "轮次",
+        row.origin?.trim()?.takeIf { it.isNotEmpty() },
+        row.state?.let { phaseLabel(it) },
+    ).joinToString(" · ")
+
+    Column(
+        modifier = Modifier.fillMaxWidth()
+            .padding(top = ZCodeDimens.GapTurn, bottom = ZCodeDimens.GapInline),
+    ) {
+        HorizontalDivider(
+            color = if (dark) ZCodeTokens.BorderSubtleDark else ZCodeTokens.BorderSubtleLight,
+        )
+        Spacer(Modifier.height(ZCodeDimens.GapInline))
+        Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
+            Text(
+                text = meta,
+                style = MaterialTheme.typography.labelSmall.copy(fontSize = ZCodeType.Sm),
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.weight(1f),
+            )
+            Format.workedDuration(durationMs).takeIf { it.isNotEmpty() }?.let {
+                Text(
+                    text = it,
+                    style = MaterialTheme.typography.labelSmall.copy(fontSize = ZCodeType.Sm),
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 1,
+                )
             }
         }
     }
 }
 
+/**
+ * 子智能体行。桌面端压缩成单行：`{类型} · {状态} — {摘要}`，
+ * 正文本身由子智能体的独立会话承载，聚合视图不重复渲染。
+ */
 @Composable
-private fun CodeBlock(label: String, content: String?) {
-    if (content.isNullOrBlank()) return
-    Text(label, style = MaterialTheme.typography.labelSmall, modifier = Modifier.padding(top = 4.dp))
-    Surface(
-        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f),
-        shape = RoundedCornerShape(6.dp),
-        modifier = Modifier.fillMaxWidth()
+private fun SubagentRow(row: ConversationRow) {
+    val tone = if (LocalZCodeDark.current) ZCodeTokens.AssistantTrajectoryDark else ZCodeTokens.AssistantTrajectoryLight
+    val type = row.origin?.trim()?.takeIf { it.isNotEmpty() } ?: "子智能体"
+    val status = ToolKindLabels.statusLabel(row.status)
+    val summary = Format.singleLine(row.summaryText ?: row.text, limit = 160)
+
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        modifier = Modifier.fillMaxWidth().padding(vertical = 2.dp),
     ) {
-        Text(
-            text = content.take(4000),
-            style = MaterialTheme.typography.bodySmall.copy(fontFamily = FontFamily.Monospace, fontSize = 11.5.sp, lineHeight = 16.sp),
-            modifier = Modifier.padding(8.dp),
+        Icon(
+            imageVector = Icons.Default.Person,
+            contentDescription = null,
+            tint = tone,
+            modifier = Modifier.size(ZCodeDimens.IconSm),
         )
+        Spacer(Modifier.width(6.dp))
+        Text(
+            text = type,
+            style = MaterialTheme.typography.labelSmall.copy(
+                fontSize = ZCodeType.Sm,
+                fontWeight = ZCodeType.SemiBold,
+            ),
+            color = tone,
+            maxLines = 1,
+        )
+        status?.let {
+            Text(
+                text = " · $it",
+                style = MaterialTheme.typography.labelSmall.copy(fontSize = ZCodeType.Sm),
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                maxLines = 1,
+            )
+        }
+        summary?.takeIf { it.isNotEmpty() }?.let {
+            Text(
+                text = " — $it",
+                style = MaterialTheme.typography.bodySmall.copy(fontSize = ZCodeType.Caption),
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.weight(1f),
+            )
+        }
     }
 }
 
+/** 时间线标记（会话被压缩 / 分叉 / 恢复之类的分隔点）：居中标签 + 两侧 1px 细线。 */
 @Composable
-private fun TurnHeaderRow(row: ConversationRow) {
-    HorizontalDivider(Modifier.padding(vertical = 4.dp), color = MaterialTheme.colorScheme.outlineVariant)
-    Text(
-        text = listOfNotNull(
-            row.state?.let { phaseLabel(it) },
-            row.createdAt?.let { java.text.SimpleDateFormat("HH:mm:ss", java.util.Locale.getDefault()).format(java.util.Date(it)) },
-        ).joinToString(" · "),
-        style = MaterialTheme.typography.labelSmall,
-        color = MaterialTheme.colorScheme.onSurfaceVariant,
-        modifier = Modifier.fillMaxWidth(),
-    )
+private fun TimelineMarkerRow(row: ConversationRow) {
+    val dark = LocalZCodeDark.current
+    val line = if (dark) ZCodeTokens.BorderSubtleDark else ZCodeTokens.BorderSubtleLight
+    val label = Format.singleLine(row.summaryText ?: row.text, limit = 60)
+        ?.takeIf { it.isNotEmpty() }
+        ?: return
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        modifier = Modifier.fillMaxWidth().padding(vertical = ZCodeDimens.PadBlock),
+    ) {
+        HorizontalDivider(Modifier.weight(1f), color = line)
+        Text(
+            text = label,
+            style = MaterialTheme.typography.labelSmall.copy(fontSize = ZCodeType.Sm),
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+            modifier = Modifier.padding(horizontal = ZCodeDimens.GapInline),
+        )
+        HorizontalDivider(Modifier.weight(1f), color = line)
+    }
+}
+
+/** 钩子调用行（PreToolUse / PostToolUse 等）：形态与工具行一致，走同一条折叠行。 */
+@Composable
+private fun HookInvocationRow(
+    row: ConversationRow,
+    expanded: Boolean,
+    onToggleExpand: () -> Unit,
+) {
+    val hook = row.toolName?.trim().takeIf { !it.isNullOrEmpty() } ?: "钩子"
+    val detail = row.outputText?.trim().orEmpty().ifEmpty { row.inputText?.trim().orEmpty() }
+    val failed = row.status?.lowercase()?.contains("error") == true ||
+        row.status?.lowercase()?.contains("fail") == true
+    val tone = if (failed) ZCodeTokens.StatusError else ZCodeTokens.StatusOffline
+
+    CollapsibleRow(
+        expanded = expanded,
+        onToggle = onToggleExpand,
+        leading = { Icon(Icons.Default.Build, contentDescription = null, tint = tone, modifier = Modifier.size(ZCodeDimens.IconSm)) },
+        label = {
+            Text(
+                text = hook,
+                style = MaterialTheme.typography.labelSmall.copy(fontSize = ZCodeType.Sm, fontWeight = ZCodeType.SemiBold),
+                color = tone,
+                maxLines = 1,
+            )
+        },
+        primary = {
+            if (!expanded) {
+                Text(
+                    text = Format.singleLine(detail, limit = 120).orEmpty(),
+                    style = MaterialTheme.typography.bodySmall.copy(fontSize = ZCodeType.Caption),
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.weight(1f),
+                )
+            } else {
+                Spacer(Modifier.weight(1f))
+            }
+        },
+        chevronColor = tone,
+    ) {
+        ToolBody {
+            ToolBodySection(title = "Input", content = prettyJson(row.inputText?.trim().orEmpty()))
+            ToolBodySection(title = "Output", content = row.outputText?.trim().orEmpty())
+        }
+    }
 }
 
 @Composable
 private fun PlainRow(row: ConversationRow) {
-    Card(
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
-        shape = RoundedCornerShape(8.dp)
-    ) {
-        Column(Modifier.padding(8.dp)) {
-            Text("${row.kind} #${row.rowId}", style = MaterialTheme.typography.labelSmall)
-            row.text?.let { Text(it, style = MaterialTheme.typography.bodySmall, maxLines = 4, overflow = TextOverflow.Ellipsis) }
-        }
+    Text(
+        text = "${row.kind} #${row.rowId}",
+        style = MaterialTheme.typography.labelSmall.copy(fontSize = ZCodeType.Sm),
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
+        modifier = Modifier.fillMaxWidth().padding(vertical = 2.dp),
+    )
+    row.text?.takeIf { it.isNotBlank() }?.let {
+        Text(
+            text = it,
+            style = MaterialTheme.typography.bodySmall.copy(fontSize = ZCodeType.Caption),
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            maxLines = 4,
+            overflow = TextOverflow.Ellipsis,
+            modifier = Modifier.fillMaxWidth().padding(bottom = 2.dp),
+        )
     }
 }
 
