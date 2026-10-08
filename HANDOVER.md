@@ -3,7 +3,7 @@
 > ## ✅ 项目状态（2026-10-08）：会话页排版全面对齐桌面端 + 会话级状态面板（beta17）
 >
 > - **当前版本 `v0.5.0-beta17`（versionCode 27）**：代码完成、debug/release 构建通过、**107 项单测全绿**；**真机视觉验收待办（验收设备当前离线）**。
-> - **最近已发布**：tag `v0.5.0-beta16` @ 提交 `a0b81a3`；Release <https://github.com/wjf1/zcode-remote-app/releases/tag/v0.5.0-beta16>（附 `ZCodeRemote-0.5.0-beta16.apk`，签名 release 包）。CI 在该提交上 success。
+> - **最近发布**：tag `v0.5.0-beta17` @ 提交 `879bfd7`；Release <https://github.com/wjf1/zcode-remote-app/releases/tag/v0.5.0-beta17>（附 `ZCodeRemote-0.5.0-beta17.apk`，签名 release 包，versionCode 27）。上一个发布：tag `v0.5.0-beta16` @ 提交 `a0b81a3`。
 > - **beta17 内容（用户直接提出，超原定「仅维护」范围）**：按用户要求把会话页**显示逻辑与排版全面对齐桌面端**（工具行改无外框内联折叠行、用户气泡改中性半透明表面、助手正文去卡片外壳改全宽 Markdown、完整 GFM + 代码语法高亮），并新增**只读**「会话状态」面板与「待发送 N 条」只读队列条；顺带修复「运行中」会话退出会话页后不在列表显示的缺陷。
 > - **全部后续开发计划仍取消**（用户决策：Sprint 7 生物识别/自建中继 E2EE、P2-3 余项等一律不做）。
 > - **唯一剩余事项**：P0-2 三天日常使用观察 → 通过即发 **v1.0**（详见 §6.0 待办总览 + §6.0 P0-2 章节）。
