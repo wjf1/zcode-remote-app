@@ -23,7 +23,8 @@
 - 单测：**声明 111 = 实际执行 111 ✓**（beta17 的 107 项 + `CodeHighlightTest` 4 项，`tools/check_test_count.py` 核对）。
 - 仪器化：**模拟器 `apkrev35`（Android 15 / x86_64，AEHD 加速）上 2/2 PASS**（`connectedDebugAndroidTest`）。
 - 修复前后证据：见上文两条截图与 token 色命中像素 0 → 1789。
-- ⚠️ **诚实标注**：本轮修复的验收证据是**模拟器仪器化测试 + 位图断言**，**不是真机验收**（小米 15 Pro 当前未连接）。观察期用的手机若要拿到该修复，需要装 beta18；真机复核（同一段落一次目视确认）仍列为待办。
+- ✅ **真机复核通过（2026-10-09，小米 15 Pro / Android 17 · HyperOS，debug 包 `versionCode 28`）**：装机 → 重新扫码配对 → 打开会话「整理 commandcode-proxy 发行版」→ 屏幕上的 ` ```bash ` 代码卡**完整渲染且高亮分色**（注释灰、`-a` / `--tags` 青、字符串绿、数字橙红），**token 色命中 2365 像素**、肉眼可见 `git tag -a v4.23.0 -m "…"` 逐段着色，**未再出现 beta17 的「吞字」**（截图归档 `docs/screenshots/render-code-block-phone.png`）。即本轮为**双轨验收**：模拟器仪器化测试（可重复）+ 真机目视/像素复核。
+- ⚠️ **两个装机坑（真机复核时踩到，已记入 HANDOVER 避坑清单）**：① 手机上原有包是**异源 debug 密钥**签的（SHA-256 `89:45:76:B3…`，与仓库 debug `3A:B5:8F…`、release `1D:46:E9…` 都不同），`install -r` 必然 `INSTALL_FAILED_UPDATE_INCOMPATIBLE`，只能**卸载重装**（配对凭据随卸载清空 → 需重新扫码）；② HyperOS 首装会由「USB 安装」确认弹窗拦截（`INSTALL_FAILED_USER_RESTRICTED`），且本机 USB 调试接口会自行掉线（表现为只剩 WPD 设备、adb 里 `offline`/消失），需切「传输文件」+ 重新允许调试或拔插数据线。
 - 版本：`versionName 0.5.0-beta18` / `versionCode 28`。
 
 ## v0.5.0-beta17（2026-10-08）· 会话页排版全面对齐桌面端 + 会话级状态面板（含「运行中」状态回填修复）
