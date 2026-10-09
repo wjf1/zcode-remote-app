@@ -1,5 +1,40 @@
 # 变更记录 / Changelog
 
+## 未发布（2026-10-09）· v1.1 首批「用户可感知收益」体验补强（C-1 / C-2 / C-4 / C-6 / C-7 / C-10 / C-11）
+
+**授权与范围**：用户拍板推进 v1.1 候选里「用户可感知收益」的条目（此前全部 `[需立项]`）。**A-3 / A-4 / C-3 / C-5 本轮不做**——A-3 的 103 帧 payload 无字段规格（须真机 + 桌面端在线探测）、A-4 与 C-5 改动 `RpcChannel`/状态机并发路径（自标高危，须独立灰度 + 独立真机回归）、C-3 的键盘 inset 根因须先真机量测（emoji 图标替换另需先评估 `material-icons-extended` 的包体影响），均以真机实测为前置（详见 `HANDOVER.md` §6.1 与《体验提升任务书 v2》§5）。
+
+### 新增
+- **发送本地回显（C-6）**：发送瞬间在消息流末尾插入半透明「发送中…」气泡，服务端回显同文本 `userInput` 行后自动移除，发送失败立即撤回。解决「按了没反应」的空窗期——`sendText` 的 ack 只是排队成功，turn 结束前消息不会出现在会话流里（长任务下可隔数分钟）。
+- **上传失败可重试 / 在途可取消（C-1）**：上传失败进「失败态行」（文件名 + 原因 + 「重试」「取消」两个入口）；在途上传新增「取消」按钮（发 `attachmentAbortV4`）。**关键修复：重试与重选同一文件复用原 `uploadId`** —— 服务端按 uploadId 幂等（`state=="committed"` 直接返回 ref，已传分片不重传），原实现每次 `UUID.randomUUID()` 使该分支永不命中、失败即整文件重传（任务书 §5 C-1 纠正点）。
+- **深链配对确认弹窗（C-10）**：协议链接（`zcode://pair` / `zcode.z.ai/remote` 等）不再静默替换当前设备连接，先弹确认框（设备名 + 「当前设备连接会被替换」说明）。
+
+### 修复
+- **审批 Tab 反馈文案滞留（C-11）**：`approvalFeedback` 与 `commandFeedback` 双轨反馈合并为单队列（由 `flash()` 统一管理显示与自动消退）。原实现 `ApprovalsTab` 从不消费 `approvalFeedback`（`consumeApprovalFeedback` 只在会话页被调），在审批 Tab 产生的反馈文案会永久滞留；横幅配色同时改由显式失败语义（`feedbackIsFailure`）决定，取代按文案前缀猜的白名单。
+- **错误文案裸英文直出（C-2）**：新增 `relay/UserFacingError.kt` 映射层（本地通道自造英文 + 服务端 fault code + 网络栈英文 → 中文），覆盖 14 处用户可感知失败路径（发送 / 停止 / 上传 / 审批应答 / 表单应答 / 切换模型 / 删除会话 / 文件预览 / 新建会话 / 检查更新 / 执行模式切换 / 会话顶栏异常）。`bridge not ready`、`timeout after 15000ms`、`bridge re-established`、`channel reset`、`Unable to resolve host` 等不再直出 UI；服务端 fault code（如 `fault.connection.handshakeRequired`）复用 `RpcReply.Err` 第二参解析（无需改协议层，任务书 §5 C-2 纠正点）。
+- **浅色主题对比度不达标（C-4，全部静态可算 + 新增 CI 断言）**：
+  - 次要文本 `onSurfaceVariant` `#64748B → #556074`（surfaceVariant 卡内 4.28:1 → 5.71:1）；
+  - 工具轨迹色浅色版 `ToolCallTrajectoryLight` `#D97706 → #B45309`（2.88:1 → 4.73:1）；
+  - 待处理橙新增浅色专用 `StatusPendingLight #C2410C`（白底 2.35:1 → 5.18:1），**14 处引用全部改为主题感知**（`statusPendingTone()`）——原实现只有亮橙一个值，浅色下不可读；
+  - `ApprovalsTab` / `HomeScreen` 两处**硬编码深色轨迹色**改主题感知（`toolCallTrajectoryTone()`，浅色下原为 2.15:1）；
+  - Diff 增删前景色浅色版加深（`#66BB6A→#2E7D32` / `#EF5350→#C62828`）；Diff 行号栏去掉 50% 透明度（2.63:1 → 5.71:1）。
+- **缓存文件无清理（C-7）**：删除会话时同步删除其 `rows_<safeId>.json`（原只从列表移除，缓存文件永久残留）；新增行缓存 LRU 裁剪（上限 30 个文件，每次写入后自动收敛）。
+
+### 可读性
+- 思考折叠行补**内容摘要**（原折叠态零摘要、只有「思考 · 持续了 N 秒」，无法判断值不值得展开）；最近文件面板的文件路径字号 10sp → 11sp。
+
+### 新增单测（+27 项，全仓 107 → 134 项）
+- `relay/UserFacingErrorTest.kt`（8 项）：本地英文 / 服务端 fault（含嵌套 `fault` 键）映射、中文透传、空值兜底、未知 fault 保留原 code、**「不得泄漏裸英文」断言**。
+- `storage/SessionCacheStoreTest.kt`（5 项）：LRU 淘汰选择（超限删最旧、同毫秒写入的确定性、keep=0、空目录）。
+- `AppViewModelTest.kt`（8 项）：C-6 pending 回显按文本匹配移除（含空文本 / 不匹配保留 / 只删最先插入）；C-1 `uploadId` 复用判定（同文件复用 / 换名或用同名不同内容新 id / 无失败态新 id）。
+- `ui/theme/ContrastTest.kt`（6 项）：两套主题关键色对 WCAG ≥4.5:1 静态断言 + 两条**反向断言**（旧低对比色值不得回流）。
+- `tools/check_test_count.py` 动态比对：**声明 134 = 实际执行 134**。
+
+### 验证状态
+- `testDebugUnitTest` + `assembleDebug` **BUILD SUCCESSFUL**；`assembleRelease`（R8 + 资源收缩）**BUILD SUCCESSFUL**；`tools/check_test_count.py` 核对 **134/134 ✓**。
+- ⏳ **真机验收未做**（截至本记录，小米 15 Pro 不在线）：按项目既有门禁（「全部真机验收项通过前不打 tag、不推送」），本段改动**保持未发布**。C-6 回显气泡与移除时序、C-1 取消/重试交互、C-10 确认弹窗、C-4 浅色主题观感、C-2 各文案均需真机复核。
+- ⚠️ **环境阻塞（发布前置）**：本机 `toolchain/keys/zcode-remote.keystore` 与 `app-android/keystore.properties` **均不存在**（`toolchain/` 目录仅剩 `avd/`），无法产出签名 release 包。已安装 release 包的设备若要覆盖升级必须恢复该 keystore（否则只能卸载重装 → 丢失配对凭据，属破坏性操作，须用户同意）。
+
 ## v0.5.0-beta17（2026-10-08）· 会话页排版全面对齐桌面端 + 会话级状态面板（含「运行中」状态回填修复）
 
 **起因（用户真机反馈）**：① 会话在运行中，退出到主界面却看不到「运行中」标记；② 「APP 会话里面的显示逻辑和排版能否按桌面端进行设计」。

@@ -35,6 +35,8 @@ import com.zcode.remote.relay.SessionItem
 import com.zcode.remote.relay.TaskEvent
 import com.zcode.remote.storage.PairedDevice
 import com.zcode.remote.ui.theme.ZCodeTokens
+import com.zcode.remote.ui.theme.statusPendingTone
+import com.zcode.remote.ui.theme.toolCallTrajectoryTone
 import com.zcode.remote.ui.voice.VoiceInputButton
 
 /**
@@ -345,7 +347,7 @@ private fun SessionItemCard(
         ),
         border = if (pending > 0) {
             CardDefaults.outlinedCardBorder().copy(
-                brush = androidx.compose.ui.graphics.SolidColor(ZCodeTokens.StatusPending.copy(alpha = 0.6f))
+                brush = androidx.compose.ui.graphics.SolidColor(statusPendingTone().copy(alpha = 0.6f))
             )
         } else if (isActive) {
             CardDefaults.outlinedCardBorder().copy(
@@ -373,7 +375,7 @@ private fun SessionItemCard(
                     .clip(CircleShape)
                     .background(
                         when {
-                            pending > 0 -> ZCodeTokens.StatusPending
+                            pending > 0 -> statusPendingTone()
                             s.isRunning -> ZCodeTokens.StatusOnline
                             else -> ZCodeTokens.StatusOffline
                         }
@@ -461,7 +463,7 @@ private fun SessionItemCard(
                     Text(
                         text = "⏳ $pending 项待决议 (请前往「待办」处理)",
                         style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.SemiBold),
-                        color = ZCodeTokens.StatusPending
+                        color = statusPendingTone()
                     )
                 }
             }
@@ -501,7 +503,7 @@ private fun statusText(s: String) = when (s) {
 private fun StatusDot(state: RelayState) {
     val color = when (state) {
         is RelayState.Paired -> ZCodeTokens.StatusOnline
-        is RelayState.WaitingPeer -> ZCodeTokens.StatusPending
+        is RelayState.WaitingPeer -> statusPendingTone()
         is RelayState.Failed -> ZCodeTokens.StatusError
         else -> ZCodeTokens.StatusOffline
     }
@@ -648,7 +650,7 @@ private fun CreateSessionDialog(
                             Icon(
                                 Icons.Filled.Build,
                                 contentDescription = null,
-                                tint = ZCodeTokens.ToolCallTrajectoryDark,
+                                tint = toolCallTrajectoryTone(),
                                 modifier = Modifier.size(16.dp)
                             )
                             Spacer(Modifier.width(8.dp))

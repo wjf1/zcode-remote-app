@@ -27,13 +27,21 @@ import com.zcode.remote.relay.ApprovalOption
 import com.zcode.remote.relay.ConversationChannel
 import com.zcode.remote.relay.PendingApproval
 import com.zcode.remote.relay.SessionItem
+import com.zcode.remote.storage.PairedDevice
 import com.zcode.remote.storage.QrParser
 import com.zcode.remote.ui.screens.*
 import com.zcode.remote.ui.theme.ZCodeTheme
 import com.zcode.remote.ui.theme.ZCodeTokens
+import com.zcode.remote.ui.theme.statusPendingTone
 
 class MainActivity : ComponentActivity() {
     private var appVm: AppViewModel? = null
+
+    /**
+     * C-10：深链配对的待确认设备。此前协议链接（zcode://pair 等）被直接 `vm.pair()`——
+     * 误点链接即静默替换当前设备连接，没有任何确认环节。
+     */
+    private var pendingPair by mutableStateOf<PairedDevice?>(null)
 
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
@@ -71,6 +79,34 @@ class MainActivity : ComponentActivity() {
                         }
                     }
 
+                    // C-10：深链配对确认弹窗——协议链接不再静默替换当前设备连接
+                    pendingPair?.let { dev ->
+                        AlertDialog(
+                            onDismissRequest = { pendingPair = null },
+                            title = { Text("确认配对设备") },
+                            text = {
+                                Text(
+                                    "链接中的设备：${dev.deviceName ?: dev.deviceSid}\n\n" +
+                                        "确认后将连接到该设备，当前设备的连接会被替换。"
+                                )
+                            },
+                            confirmButton = {
+                                TextButton(onClick = {
+                                    vm.pair(dev)
+                                    pendingPair = null
+                                    android.widget.Toast.makeText(
+                                        this@MainActivity,
+                                        "已通过链接配对：${dev.deviceName ?: dev.deviceSid}",
+                                        android.widget.Toast.LENGTH_SHORT
+                                    ).show()
+                                }) { Text("配对") }
+                            },
+                            dismissButton = {
+                                TextButton(onClick = { pendingPair = null }) { Text("取消") }
+                            },
+                        )
+                    }
+
                     val target = opened
                     when {
                         // 1. 保活指引全屏页
@@ -90,9 +126,9 @@ class MainActivity : ComponentActivity() {
                             status = vm.conversationStatus,
                             meta = vm.conversationMeta,
                             rows = vm.rows.toList(),
+                            pendingUserMessages = vm.pendingUserMessages,
                             approvals = vm.approvals,
                             elicitations = vm.elicitations,
-                            approvalFeedback = vm.approvalFeedback,
                             earlier = vm.earlier,
                             sessionState = vm.sessionState,
                             prompt = vm.promptDraft,
@@ -100,15 +136,19 @@ class MainActivity : ComponentActivity() {
                             canStop = vm.conversationMeta.canStop == true,
                             stopState = vm.conversationMeta.stopState,
                             commandFeedback = vm.commandFeedback,
+                            feedbackIsFailure = vm.feedbackIsFailure,
                             attachments = vm.attachments.toList(),
                             attachUploadName = vm.attachUpload?.name,
                             attachUploadPercent = vm.attachUpload?.percent ?: 0,
+                            attachFailed = vm.attachFailed,
+                            onCancelUpload = { vm.cancelAttachmentUpload() },
+                            onRetryUpload = { vm.retryAttachmentUpload() },
+                            onDismissUploadFailure = { vm.dismissAttachFailure() },
                             onResolve = { a: PendingApproval, opt: ApprovalOption -> vm.resolve(a, opt) },
                             onElicitationAccept = { el, answers -> vm.answerElicitation(el, answers) },
                             onElicitationDecline = { vm.declineElicitation(it) },
                             onElicitationFreeText = { el, text -> vm.answerElicitationFreeText(el, text) },
                             onLoadEarlier = { vm.loadEarlier() },
-                            onFeedbackSeen = { vm.consumeApprovalFeedback() },
                             onPromptChange = { vm.updatePromptDraft(it) },
                             onSend = { vm.sendPrompt() },
                             onStop = { vm.stopSession() },
@@ -126,7 +166,12 @@ class MainActivity : ComponentActivity() {
                             onSwitchMode = { m ->
                                 vm.setSessionMode(m) { err ->
                                     if (err != null) {
-                                        android.widget.Toast.makeText(this@MainActivity, "切换失败：$err", android.widget.Toast.LENGTH_SHORT).show()
+                                        // C-2：exec mode 切换失败同样经错误映射，不直出裸英文
+                                        android.widget.Toast.makeText(
+                                            this@MainActivity,
+                                            "切换失败：${com.zcode.remote.relay.UserFacingError.map(err)}",
+                                            android.widget.Toast.LENGTH_SHORT
+                                        ).show()
                                     }
                                 }
                             },
@@ -174,7 +219,7 @@ class MainActivity : ComponentActivity() {
                                                     badge = {
                                                         if (totalPending > 0) {
                                                             Badge(
-                                                                containerColor = ZCodeTokens.StatusPending,
+                                                                containerColor = statusPendingTone(),
                                                                 contentColor = MaterialTheme.colorScheme.onPrimary
                                                             ) {
                                                                 Text(if (totalPending > 99) "99+" else "$totalPending")
@@ -261,7 +306,8 @@ class MainActivity : ComponentActivity() {
                                             sessions = vm.sessions.toList(),
                                             sessionPending = vm.sessionPending,
                                             subscribedSessionId = vm.subscribedSessionId,
-                                            feedback = vm.commandFeedback ?: vm.approvalFeedback,
+                                            feedback = vm.commandFeedback,
+                                            feedbackIsFailure = vm.feedbackIsFailure,
                                             onResolveApproval = { a, opt -> vm.resolve(a, opt) },
                                             onAcceptElicitation = { el, answers -> vm.answerElicitation(el, answers) },
                                             onDeclineElicitation = { vm.declineElicitation(it) },
@@ -332,9 +378,8 @@ class MainActivity : ComponentActivity() {
         val rawUrl = uri.toString()
         val dev = QrParser.parse(rawUrl)
         if (dev != null) {
-            val vm = appVm ?: return
-            vm.pair(dev)
-            android.widget.Toast.makeText(this, "已通过链接自动配对：${dev.deviceName ?: dev.deviceSid}", android.widget.Toast.LENGTH_SHORT).show()
+            // C-10：不再直接配对——先弹确认弹窗（见 pendingPair 的渲染处）
+            pendingPair = dev
         }
     }
 }

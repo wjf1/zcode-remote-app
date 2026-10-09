@@ -43,10 +43,14 @@ ZCode 官方远程控制（`zcode.z.ai/remote`）的**原生安卓增强客户�
 - **扫码配对**：扫描桌面端二维码即完成配对，凭据经 AES-256-GCM + Android Keystore 加密存储；支持手动粘贴链接兜底；支持多台设备管理（切换 / 移除）。
 - **会话流式渲染与代码块自适应**：原生 Markdown 渲染支持各级标题、粗体、列表、引用，代码块自动适配深浅双色主题并配备一键复制反馈；滚到顶部自动翻页加载更早历史。
 - **发送消息与停止**：会话页底部悬浮药丸输入栏直接向桌面端发消息；会话运行中显示平滑变形的「停止」按钮，一键中断。
+- **发送本地回显**：消息发出瞬间即在会话流末尾显示半透明「发送中…」气泡（服务端回显到达后自动替换为正式消息，失败立即撤回）——长任务排队时不再「按了没反应」。
+- **附件上传可取消 / 失败可重试**：在途上传可随时取消；失败进入失败态行可一键重试，**复用同一 uploadId 命中服务端幂等**（已传分片不重传）。
+- **错误提示全面中文化**：底层英文错误（`bridge not ready`、`timeout after …` 等）与服务端 fault code 统一映射为用户可读中文，覆盖发送/上传/审批/模型切换等 14 处失败路径。
+- **浅色主题可读性达标（WCAG AA）**：浅色下次要文本、工具轨迹色、待处理橙与 Diff 增删色全部加深至 ≥4.5:1，并由 JVM 对比度断言测试防回流。
 - **附件上传**：会话页选择文件（≤20MiB）→ 分片上传 → 随消息发送，桌面端模型可直接读取内容；走官方 Web 同款 `sendText` 附件链路。
 - **语音输入**：输入栏 🎤 系统语音识别转文字（识别中实时上屏），一键追加到消息草稿，零协议改动。
 - **会话离线持久化与秒开（Sprint 5 核心）**：`SessionCacheStore` 本地原子持久化缓存 —— App 启动首帧 0ms 渲染历史会话列表；点击任意会话卡片更可立即呈现该会话最近 200 行历史消息，无需等待订阅握手与快照回包，网络到达后由快照平滑对齐权威状态。
-- **配对链接 Deep Link 一键唤起（Sprint 5）**：点击外部浏览器、邮件或分享卡片中的 `zcode://pair` 或官方 `https://zcode.z.ai/remote` 配对链接，直接唤起 App 并自动解析凭据完成秒级配对，彻底免除扫码或复制粘贴。
+- **配对链接 Deep Link 一键唤起（Sprint 5）**：点击外部浏览器、邮件或分享卡片中的 `zcode://pair` 或官方 `https://zcode.z.ai/remote` 配对链接，直接唤起 App 解析凭据；**弹确认框**（避免误点链接静默替换当前设备连接）后完成秒级配对，彻底免除扫码或复制粘贴。
 - **全场景机械级触觉反馈（Haptic Feedback）**：权限审批（允许/拒绝）、消息发送、会话中断、代码 Diff 复制触发饱满的系统触觉震动确认；快捷指令胶囊点击与悬浮回底触发细腻轻触震动回馈。
 - **单轮 Turn 变更文件聚合卡片（Sprint 3 第三步）**：自动将每一轮 Agent Turn 中执行的所有 Edit / Write 工具行汇聚为 `📦 本轮变更 · 共 N 个文件 (+A −B)` 汇总卡片，支持一键展开多文件代码 DiffBlock 进行一站式 Review（对标 GitHub PR Files Changed）。
 - **通知栏 RemoteInput 直接回复（Sprint 4）**：遇到提问或表单交互时，锁屏状态下收到通知可直接下拉展开文本框输入并一键提交，全程免解锁进 App。
@@ -60,7 +64,7 @@ ZCode 官方远程控制（`zcode.z.ai/remote`）的**原生安卓增强客户�
 - **强韧断网感知重连（Sprint 1）**：`NetworkGate` 常驻监听系统网络，断网立即重置并挂起，网络恢复即刻重连（事件链全程 <9s）。
 - **会话流附件 chip**：发送带附件的消息后，附件以 chip（图标 + 文件名 + 体积）显示在消息气泡上方，与官方客户端一致；附件字段随行缓存持久化，冷启动秒开时同样可见。
 - **会话异常原因可见**：出错会话在会话页显示完整错误原因（可一键复制），列表对已打开过的会话补齐原因——与桌面端信息对齐。
-- **完整回归测试保护网（Sprint 6 起持续扩充）**：VQL 二进制编解码金标准双向对拍测试（Python↔Kotlin 共享 fixture）、**107 项**纯函数与状态判定单测全绿、GitHub Actions CI 持续集成。
+- **完整回归测试保护网（Sprint 6 起持续扩充）**：VQL 二进制编解码金标准双向对拍测试（Python↔Kotlin 共享 fixture）、**134 项**纯函数与状态判定单测全绿（含主题对比度静态断言）、GitHub Actions CI 持续集成。
 - **桌面 Widget**：主屏卡片实时显示待处理总数（审批 + 表单交互），点按直达 App；连接断开时明示「未连接」。
 - **可靠连接**：完整官方握手（HMAC proof）、心跳、指数退避重连、断线出站缓冲，单端在线互踢提示。
 
@@ -92,10 +96,13 @@ ZCode 官方远程控制（`zcode.z.ai/remote`）的**原生安卓增强客户�
 | **v1.0 判停** | **3 天日常使用观察（锁屏审批可达 / 杀后台 30min / 网络往返）** | ⏳ 进行中（唯一剩余事项）；观察窗口因 beta13/14/15/16/17 补丁**已重置**，自 beta17 真机验收通过日（2026-10-08）重新计时 |
 | 会话异常原因 + 输入栏对齐 | 会话页显示错误原因（可复制）、列表回填、标题双重序列化解包、输入栏控件对齐（48dp 触控档）、顶栏 phase 标签中文化 | ✅ 代码 + 单测 + **真机验收全通过**（v0.5.0-beta16，2026-10-07） |
 | 会话页排版全面对齐桌面端 + 会话级状态面板 | 工具行改无外框内联折叠、用户气泡改中性表面、助手正文去卡片外壳全宽 Markdown、完整 GFM + 代码语法高亮；新增只读「会话状态」面板（上下文/目标/进程/终端/智能体/排队输入）与「待发送队列条」；修复「运行中」状态退出会话页后不显示 | ✅ 代码 + 107 项单测 + release 构建通过 + **真机验收全通过**（v0.5.0-beta17，2026-10-08） |
+| 体验补强首批（C-1/C-2/C-4/C-6/C-7/C-10/C-11） | 发送本地回显（pending 气泡）、上传可取消/失败可重试（**uploadId 复用命中服务端幂等**）、深链配对确认弹窗、反馈横幅合并单队列、错误文案中文化（14 处）、浅色主题 WCAG AA 对比度 + CI 静态断言、缓存文件删除与 LRU；+27 项单测 | ✅ 代码 + 134 项单测 + debug/release 构建通过；⏳ **真机验收待做**（2026-10-09，**未发布**） |
 
 ### 接力开发 / Handover
 
 **功能开发已结清（2026-10-05）**：Sprint 0–6 全部完成并真机验收，后续开发计划（Sprint 7 等）经决策取消。当前仅剩「3 天日常使用观察 → 发 v1.0」一步。
+
+**2026-10-09 体验补强首批（未发布）**：经用户拍板推进 v1.1 候选里「用户可感知收益」的条目 —— 发送本地回显（C-6）、上传可取消/失败可重试且 **uploadId 复用命中服务端幂等**（C-1）、深链配对确认弹窗（C-10）、反馈横幅合并单队列并修复审批 Tab 文案滞留（C-11）、错误文案中文化映射层（C-2，14 处）、浅色主题 WCAG AA 对比度修正 + 思考折叠摘要（C-4，含 CI 静态断言）、缓存文件删除与 LRU（C-7）。单测由 107 项扩至 **134 项**全绿，debug/release 构建均通过。**尚未发布**：真机验收未做（设备不在线）、且本机 release keystore 缺失，两项解决前不 tag、不推送（详见 [HANDOVER.md](HANDOVER.md) 顶部 🆕 段与 [CHANGELOG.md](CHANGELOG.md)）。
 
 **2026-10-08 排版对齐轮（v0.5.0-beta17）**：按用户要求把会话页的显示逻辑与排版**全面对齐桌面端** —— 工具行改无外框内联折叠行、用户气泡改中性半透明表面、助手正文去卡片外壳改全宽 Markdown、Markdown 升级为完整 GFM + 代码语法高亮（新增依赖 `multiplatform-markdown-renderer-m3/-code:0.27.0`，锁死版本因其为最后一个 Kotlin 2.0.x 编译版）；同时新增**只读**「会话状态」面板（上下文 / 目标 / 进程 / 终端 / 智能体 / 排队输入，无数据分区自动隐藏）与「待发送 N 条」只读队列条，并修复「运行中」状态退出会话页后不在列表显示的缺陷。单测由 47 项扩至 **107 项**全绿、debug/release 构建均通过，并已在小米 15 Pro（Android 17 · HyperOS）真机验收全通过（「运行中」列表回填复验、排版像素断言、状态面板六分区）。按仓库规则**再次重置 3 天观察窗口**，自 2026-10-08 重新计时。详见 [CHANGELOG.md](CHANGELOG.md) 与 [HANDOVER.md](HANDOVER.md)。
 
@@ -167,10 +174,14 @@ A **native Android client** for the official ZCode Remote Control relay (`zcode.
 - **QR Pairing & Multi-device Management**: AES-256-GCM + Android Keystore encrypted credential storage, manual link fallback, and multi-device switching/deletion.
 - **Markdown & Code Rendering**: Adaptive light/dark code blocks with one-tap copy confirmation; auto-pagination when scrolling to top.
 - **Send & Stop**: Pill-shaped floating composer sends prompts; morphing Stop button interrupts running turns.
+- **Local Echo on Send**: an optimistic translucent "Sending…" bubble appears at the end of the stream the instant you hit send, and is swapped for the server-echoed message when it arrives (or withdrawn on failure) — no more "nothing happened" while a long turn queues your message.
+- **Cancellable / Retryable Attachments**: in-flight uploads can be cancelled; failures enter a retry row that **reuses the same uploadId**, hitting the server's idempotent path so already-uploaded chunks are not re-sent.
+- **Localized Error Messages**: low-level English errors (`bridge not ready`, `timeout after …`) and server fault codes are mapped to readable Chinese across 14 user-facing failure paths.
+- **Light-Theme Readability (WCAG AA)**: secondary text, trajectory colors, the pending orange and diff add/remove colors were darkened to ≥4.5:1 in the light theme, enforced by a JVM contrast-assertion test.
 - **Chunked Attachments**: Pick files (≤20 MiB) in conversation, chunked stream upload, sent via official `sendText` attachment path.
 - **Voice Input**: Tap-to-talk speech recognition with live partial results appended to drafts.
 - **Offline-First Cache & Instant Open (Sprint 5)**: `SessionCacheStore` local atomic persistence renders the cached session list on frame 0 (0ms instant cold launch); tapping any session card likewise surfaces its most recent 200 cached message rows immediately, without waiting for the subscribe handshake or snapshot — the network snapshot then smoothly reconciles to authoritative state.
-- **Pairing URL Deep Link Integration (Sprint 5)**: Tap `zcode://pair` or official `https://zcode.z.ai/remote` pairing URLs in external browsers or chats to wake the app and pair instantly with zero scanning or manual copy-pasting.
+- **Pairing URL Deep Link Integration (Sprint 5)**: Tap `zcode://pair` or official `https://zcode.z.ai/remote` pairing URLs in external browsers or chats to wake the app; a **confirmation dialog** (so a stray tap can never silently swap the current device) leads to instant pairing with zero scanning or manual copy-pasting.
 - **Full Tactile Haptic Feedback**: Tactile vibration confirmation for approvals (allow/deny), prompt sends, turn stops, and diff copying, plus crisp feedback on action chips and scroll-to-bottom buttons.
 - **Notification RemoteInput Inline Reply (Sprint 4)**: Direct pull-down inline text reply within system notifications for interactive prompts without needing to unlock into the app.
 - **Turn Changes Summary Card (Sprint 3 Step 3)**: Automatically aggregates all Edit / Write tool rows in each agent turn into a compact `📦 Turn Changes · N files (+A −B)` review card (aligned with GitHub PR Files Changed), with one-tap expansion to review all file diffs in a continuous flow.
@@ -183,7 +194,7 @@ A **native Android client** for the official ZCode Remote Control relay (`zcode.
 - **Foreground Service Keep-Alive & Terminal Notifications (Sprint 1–2 / P0-A)**: `ConnectionService` promoted to a real `specialUse` Foreground Service with process-level `ConnectionScope` singleton to keep connections alive across lock-screen and task killing; persistent system notifications for KICKED / AUTH_FAILED / PROTOCOL_MISMATCH.
 - **Resilient Network-Aware Reconnection (Sprint 1)**: `NetworkGate` actively monitors network connectivity via `ConnectivityManager`, instantly resetting on connection loss and reconnecting in <9s upon network availability.
 - **Attachment Chips in the Conversation Stream**: messages sent with attachments render a chip (icon + file name + size) above the message bubble, matching the official client; the attachment field rides along in the row cache so chips also show on instant-open cold starts.
-- **Regression Safety Net (since Sprint 6, continuously extended)**: Bi-directional VQL binary codec golden fixture tests (Python↔Kotlin shared vectors), **107** pure-function & state-decision unit tests, and GitHub Actions CI automation.
+- **Regression Safety Net (since Sprint 6, continuously extended)**: Bi-directional VQL binary codec golden fixture tests (Python↔Kotlin shared vectors), **134** pure-function & state-decision unit tests (including static theme-contrast assertions), and GitHub Actions CI automation.
 - **Home-Screen Widget**: Live card showing total pending items, tap to jump into the app.
 - **Reliable Connectivity**: HMAC handshake proof, 30s heartbeat, exponential backoff, and offline outbound queue.
 
@@ -209,6 +220,7 @@ A **native Android client** for the official ZCode Remote Control relay (`zcode.
 | **v1.0 Judgment Line** | **3-day daily-use observation (lock-screen approval reachability / 30-min background kill / network round-trips)** | ⏳ In progress (only remaining item); window **reset** by the beta13–beta17 patches — restarts from beta17 real-device acceptance (2026-10-08) |
 | Session Error Reason + Composer Alignment | Full error reason shown in the session page (copyable), backfilled into the list, double-serialized title unwrapped, composer controls aligned to the 48dp touch tier, phase label localized | ✅ Code + unit tests + **real-device verification all PASS** (v0.5.0-beta16, 2026-10-07) |
 | Conversation Layout Aligned with Desktop + Session Status Panel | Tool rows became borderless inline collapsibles, user bubbles a neutral surface, assistant bodies card-less full-width Markdown, full GFM + code syntax highlighting; added a read-only **Session Status** panel (context / goal / plan / terminal / agents / queued input) and a queued-input strip; fixed the running session not showing in the list after leaving its page | ✅ Code + 107 unit tests + release build green + **real-device acceptance all PASS** (v0.5.0-beta17, 2026-10-08) |
+| UX Polish Batch #1 (C-1/C-2/C-4/C-6/C-7/C-10/C-11) | Local echo on send (pending bubble), cancellable / retryable uploads (**uploadId reuse hitting the server's idempotent path**), deep-link pair confirmation dialog, unified feedback banner, localized error mapping (14 paths), light-theme WCAG AA contrast + CI assertions, cache cleanup & LRU; +27 unit tests | ✅ Code + 134 unit tests + debug/release builds green; ⏳ **real-device acceptance pending** (**unreleased**, 2026-10-09) |
 
 ### Releases
 

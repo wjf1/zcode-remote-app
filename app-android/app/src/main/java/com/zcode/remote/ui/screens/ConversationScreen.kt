@@ -68,6 +68,7 @@ import com.zcode.remote.ui.theme.LocalZCodeDark
 import com.zcode.remote.ui.theme.ZCodeDimens
 import com.zcode.remote.ui.theme.ZCodeTokens
 import com.zcode.remote.ui.theme.ZCodeType
+import com.zcode.remote.ui.theme.statusPendingTone
 import com.zcode.remote.ui.voice.VoiceInputButton
 import com.zcode.remote.util.Format
 import kotlinx.coroutines.delay
@@ -87,9 +88,10 @@ fun ConversationScreen(
     status: ConversationChannel.Status,
     meta: ConversationChannel.ConversationMeta,
     rows: List<ConversationRow>,
+    /** C-6：已发出但服务端尚未回显的消息（本地 pending 气泡，渲染在消息流末尾）。 */
+    pendingUserMessages: List<AppViewModel.PendingUserMessage> = emptyList(),
     approvals: List<PendingApproval> = emptyList(),
     elicitations: List<PendingElicitation> = emptyList(),
-    approvalFeedback: String? = null,
     earlier: ConversationChannel.EarlierState = ConversationChannel.EarlierState(),
     /** C3：会话级状态（上下文用量 / 目标 / 待办 / 后台任务 / 子智能体 / 排队输入）。
      *  顶栏「状态」入口只在 [com.zcode.remote.relay.ConversationFrames.SessionState.hasContent] 为真时出现。 */
@@ -100,15 +102,21 @@ fun ConversationScreen(
     canStop: Boolean = false,
     stopState: String? = null,
     commandFeedback: String? = null,
+    /** C-11：反馈横幅是否为失败语义（决定配色，与 VM 的 FlashKind 同源）。 */
+    feedbackIsFailure: Boolean = false,
     attachments: List<ConversationChannel.AttachmentRef> = emptyList(),
     attachUploadName: String? = null,
     attachUploadPercent: Int = 0,
+    /** C-1：上传失败态（UI 显示重试/取消）；重试复用原 uploadId，已传分片不重来。 */
+    attachFailed: AppViewModel.FailedUpload? = null,
+    onCancelUpload: () -> Unit = {},
+    onRetryUpload: () -> Unit = {},
+    onDismissUploadFailure: () -> Unit = {},
     onResolve: (PendingApproval, ApprovalOption) -> Unit = { _, _ -> },
     onElicitationAccept: (PendingElicitation, Map<Int, List<String>>) -> Unit = { _, _ -> },
     onElicitationDecline: (PendingElicitation) -> Unit = {},
     onElicitationFreeText: (PendingElicitation, String) -> Unit = { _, _ -> },
     onLoadEarlier: () -> Unit = {},
-    onFeedbackSeen: () -> Unit = {},
     onPromptChange: (String) -> Unit = {},
     onSend: () -> Unit = {},
     onStop: () -> Unit = {},
@@ -236,15 +244,17 @@ fun ConversationScreen(
 
     // 3) 流式增量跟随：以「末行 rowId + 文本长度」为键 —— 流式 appendText 只替换单行、
     //    size 不变，故不能再用 rows.size 作触发键。只要用户未主动上翻就持续跟随。
-    val lastRowKey = rows.lastOrNull()?.let { it.rowId to (it.text?.length ?: -1) }
+    //    C-6：本地 pending 气泡优先参与（发送瞬间它才是视觉末行，不跟随就会出现在屏幕外）。
+    val lastRowKey = pendingUserMessages.lastOrNull()?.let { -1 to it.text.length }
+        ?: rows.lastOrNull()?.let { it.rowId to (it.text?.length ?: -1) }
     LaunchedEffect(lastRowKey) {
         if (lastRowKey == null) return@LaunchedEffect
         if (ConversationScrollPolicy.shouldPinToLatest(
                 ConversationScrollPolicy.Trigger.Delta, rows.size, paginationInFlight,
                 pinnedThisSession, userScrolledAway,
-            ) && rows.isNotEmpty()
+            ) && (rows.isNotEmpty() || pendingUserMessages.isNotEmpty())
         ) {
-            listState.animateScrollToItem(rows.lastIndex + headerCount)
+            listState.animateScrollToItem(rows.lastIndex + headerCount + pendingUserMessages.size)
         }
     }
 
@@ -521,33 +531,21 @@ fun ConversationScreen(
             }
         }
 
-        // 反馈横幅提示
-        approvalFeedback?.let { msg ->
-            LaunchedEffect(msg) { onFeedbackSeen() }
-            Surface(
-                color = MaterialTheme.colorScheme.primaryContainer,
-                shape = RoundedCornerShape(8.dp),
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                Text(
-                    text = msg,
-                    style = MaterialTheme.typography.labelMedium,
-                    color = MaterialTheme.colorScheme.onPrimaryContainer,
-                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp)
-                )
-            }
-        }
-
+        // 统一反馈横幅（C-11：审批反馈与操作反馈合并为单队列，配色按失败/提示语义区分，
+        // 由 VM 的 flash 统一消退；原两条并排横幅 + 审批 Tab 文案滞留的缺陷一并消除）
         commandFeedback?.let { msg ->
+            val failure = feedbackIsFailure
             Surface(
-                color = MaterialTheme.colorScheme.surfaceVariant,
+                color = if (failure) MaterialTheme.colorScheme.errorContainer
+                        else MaterialTheme.colorScheme.primaryContainer,
                 shape = RoundedCornerShape(8.dp),
                 modifier = Modifier.fillMaxWidth()
             ) {
                 Text(
                     text = msg,
                     style = MaterialTheme.typography.labelMedium,
-                    color = MaterialTheme.colorScheme.primary,
+                    color = if (failure) MaterialTheme.colorScheme.onErrorContainer
+                            else MaterialTheme.colorScheme.onPrimaryContainer,
                     modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp)
                 )
             }
@@ -681,6 +679,10 @@ fun ConversationScreen(
                             )
                         }
                     }
+                    // C-6：本地 pending 回显气泡（服务端 userInput 行到达后由 VM 移除）
+                    items(pendingUserMessages, key = { "pending-${it.id}" }) { p ->
+                        PendingUserBubble(p)
+                    }
                 }
 
                 // 悬浮「回到底部」胶囊按钮（仅在用户主动上翻查阅历史且列表有内容时展示）
@@ -750,6 +752,10 @@ fun ConversationScreen(
             uploadPercent = attachUploadPercent,
             onPick = { filePicker.launch(arrayOf("*/*")) },
             onRemove = onRemoveAttachment,
+            failedUpload = attachFailed,
+            onCancelUpload = onCancelUpload,
+            onRetryUpload = onRetryUpload,
+            onDismissUploadFailure = onDismissUploadFailure,
         )
 
         // 3.5 常用快捷指令胶囊（减少软键盘输入成本）
@@ -1009,7 +1015,7 @@ private fun SessionFilesPanel(
                                     Text(
                                         f.path,
                                         style = MaterialTheme.typography.labelSmall.copy(
-                                            fontFamily = FontFamily.Monospace, fontSize = 10.sp
+                                            fontFamily = FontFamily.Monospace, fontSize = 11.sp
                                         ),
                                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                                         maxLines = 1, overflow = TextOverflow.Ellipsis
@@ -1037,7 +1043,7 @@ private fun SessionFilesPanel(
                     Text(
                         p.path,
                         style = MaterialTheme.typography.labelSmall.copy(
-                            fontFamily = FontFamily.Monospace, fontSize = 10.sp
+                            fontFamily = FontFamily.Monospace, fontSize = 11.sp
                         ),
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         maxLines = 2, overflow = TextOverflow.Ellipsis,
@@ -1111,8 +1117,12 @@ private fun AttachmentBar(
     uploadPercent: Int,
     onPick: () -> Unit,
     onRemove: (ConversationChannel.AttachmentRef) -> Unit,
+    failedUpload: AppViewModel.FailedUpload?,
+    onCancelUpload: () -> Unit,
+    onRetryUpload: () -> Unit,
+    onDismissUploadFailure: () -> Unit,
 ) {
-    if (attachments.isEmpty() && uploadName == null) return
+    if (attachments.isEmpty() && uploadName == null && failedUpload == null) return
     Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
         uploadName?.let { name ->
             Row(
@@ -1130,6 +1140,59 @@ private fun AttachmentBar(
                     progress = { uploadPercent / 100f },
                     modifier = Modifier.width(80.dp),
                 )
+                // C-1：在途上传可取消（原实现只能等它失败；取消会发 attachmentAbortV4）
+                TextButton(
+                    onClick = onCancelUpload,
+                    contentPadding = PaddingValues(horizontal = 6.dp, vertical = 0.dp),
+                    modifier = Modifier.height(24.dp),
+                ) {
+                    Text("取消", style = MaterialTheme.typography.labelSmall)
+                }
+            }
+        }
+        // C-1：失败态行（重试复用同一 uploadId —— 服务端幂等分支命中后已传分片不重传）
+        failedUpload?.let { f ->
+            Surface(
+                color = MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.7f),
+                shape = RoundedCornerShape(8.dp),
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp),
+                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                ) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            text = "上传失败：${f.fileName}",
+                            style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Medium),
+                            color = MaterialTheme.colorScheme.onErrorContainer,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                        Text(
+                            text = f.message,
+                            style = MaterialTheme.typography.labelSmall.copy(fontSize = ZCodeType.Xs),
+                            color = MaterialTheme.colorScheme.onErrorContainer.copy(alpha = 0.8f),
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                    }
+                    TextButton(
+                        onClick = onRetryUpload,
+                        contentPadding = PaddingValues(horizontal = 6.dp, vertical = 0.dp),
+                        modifier = Modifier.height(24.dp),
+                    ) {
+                        Text("重试", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onErrorContainer)
+                    }
+                    TextButton(
+                        onClick = onDismissUploadFailure,
+                        contentPadding = PaddingValues(horizontal = 6.dp, vertical = 0.dp),
+                        modifier = Modifier.height(24.dp),
+                    ) {
+                        Text("取消", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onErrorContainer)
+                    }
+                }
             }
         }
         attachments.forEach { a ->
@@ -1422,7 +1485,7 @@ private fun ApprovalCard(
         shape = RoundedCornerShape(12.dp),
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
         border = CardDefaults.outlinedCardBorder().copy(
-            brush = androidx.compose.ui.graphics.SolidColor(ZCodeTokens.StatusPending.copy(alpha = 0.6f))
+            brush = androidx.compose.ui.graphics.SolidColor(statusPendingTone().copy(alpha = 0.6f))
         ),
         modifier = Modifier.fillMaxWidth()
     ) {
@@ -1431,7 +1494,7 @@ private fun ApprovalCard(
                 Text(
                     text = "权限审批 · ${a.toolName ?: "Command"}",
                     style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.Bold),
-                    color = ZCodeTokens.StatusPending
+                    color = statusPendingTone()
                 )
                 Spacer(Modifier.weight(1f))
                 a.autoResolveAt?.let {
@@ -1589,6 +1652,69 @@ private fun UserBubble(row: ConversationRow) {
 }
 
 /**
+ * 本地 pending 回显气泡（C-6）：消息发出瞬间即在流末尾显示，半透明 + 「发送中…」表示
+ * 尚未被服务端回显确认；服务端 userInput 行到达后由 VM 移除本气泡（见
+ * [AppViewModel.pendingUserMessages]）。形态与 [UserBubble] 一致，仅降透明度并加状态行。
+ */
+@Composable
+private fun PendingUserBubble(p: AppViewModel.PendingUserMessage) {
+    val dark = LocalZCodeDark.current
+    val bubbleBg = if (dark) ZCodeTokens.OverlaySurfaceHoverDark else ZCodeTokens.OverlaySurfaceHoverLight
+    val bubbleBorder = if (dark) ZCodeTokens.BorderSubtleDark else ZCodeTokens.BorderSubtleLight
+    val maxWidth = (LocalConfiguration.current.screenWidthDp * ZCodeDimens.BubbleWidthFraction).dp
+
+    Column(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalAlignment = Alignment.End,
+    ) {
+        p.attachmentNames.forEach { name ->
+            Surface(
+                color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f),
+                shape = RoundedCornerShape(10.dp),
+                modifier = Modifier.padding(bottom = 4.dp),
+            ) {
+                Text(
+                    text = "附件 · $name",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp),
+                )
+            }
+        }
+        Surface(
+            modifier = Modifier.widthIn(max = maxWidth),
+            shape = RoundedCornerShape(
+                topStart = ZCodeDimens.RadiusXl,
+                topEnd = ZCodeDimens.RadiusTail,
+                bottomStart = ZCodeDimens.RadiusXl,
+                bottomEnd = ZCodeDimens.RadiusXl,
+            ),
+            color = bubbleBg.copy(alpha = 0.6f),
+            border = BorderStroke(1.dp, bubbleBorder),
+        ) {
+            Column(modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp)) {
+                Text(
+                    text = p.text,
+                    style = MaterialTheme.typography.bodyMedium.copy(
+                        fontSize = ZCodeType.Base,
+                        lineHeight = ZCodeType.BodyLineHeight,
+                        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.75f),
+                    ),
+                )
+                Spacer(Modifier.height(2.dp))
+                Text(
+                    text = "发送中…",
+                    style = MaterialTheme.typography.labelSmall.copy(fontSize = ZCodeType.Sm),
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+        }
+    }
+}
+
+/**
  * 助手正文。桌面端**没有卡片外壳**：正文直接铺满整列，靠段间距与上一行区分。
  * 此前套了一层 `Surface`（圆角 + 描边），把大段 Markdown 关进卡片里，与桌面端差距最明显的一处。
  */
@@ -1677,6 +1803,22 @@ private fun ReasoningBlock(
                     baseColor = tone.copy(alpha = 0.6f),
                     highlightColor = tone,
                 )
+            } else if (!expanded) {
+                // C-4：折叠态给出内容摘要（原折叠态零摘要，只有「思考 · 持续了 N 秒」，
+                // 用户无法判断这段思考值不值得展开）。单行截断，与工具行折叠态同款。
+                val summary = Format.singleLine(content, limit = 120)
+                if (!summary.isNullOrBlank()) {
+                    Text(
+                        text = summary,
+                        style = MaterialTheme.typography.bodySmall.copy(fontSize = ZCodeType.Caption),
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier.weight(1f),
+                    )
+                } else {
+                    Spacer(Modifier.weight(1f))
+                }
             } else {
                 Spacer(Modifier.weight(1f))
             }
@@ -2059,7 +2201,8 @@ private fun statusLabel(s: ConversationChannel.Status) = when (s) {
     ConversationChannel.Status.Hello -> "握手中…"
     ConversationChannel.Status.Initialized -> "订阅中…"
     is ConversationChannel.Status.Live -> "已连接"
-    is ConversationChannel.Status.Failed -> "异常：${s.reason.take(50)}"
+    // C-2：底层 reason 可能是 bridge not ready / timeout after… 这类自造英文，先映射再截断
+    is ConversationChannel.Status.Failed -> "异常：${com.zcode.remote.relay.UserFacingError.map(s.reason).take(50)}"
 }
 
 private fun phaseLabel(p: String) = when (p) {

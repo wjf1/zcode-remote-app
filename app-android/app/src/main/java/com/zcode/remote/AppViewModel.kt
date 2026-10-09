@@ -30,6 +30,7 @@ import com.zcode.remote.relay.RowStore
 import com.zcode.remote.relay.RpcChannel
 import com.zcode.remote.relay.SessionItem
 import com.zcode.remote.relay.TaskEvent
+import com.zcode.remote.relay.UserFacingError
 import com.zcode.remote.relay.displayStatusForPhase
 import com.zcode.remote.relay.displayStatusForTaskEvent
 import com.zcode.remote.relay.parseBootstrapSessions
@@ -181,7 +182,7 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
                 )
             }.onFailure { err ->
                 ZLog.w(TAG, "checkForUpdate failed", err)
-                updateState = UpdateState.Error("网络连接失败：${err.message ?: "未知错误"}")
+                updateState = UpdateState.Error("网络连接失败：${UserFacingError.map(err.message ?: "未知错误")}")
             }
         }
     }
@@ -244,9 +245,6 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         private set
     /** 任务事件流（桌面端实证的审批推送路径）来的待审批，按 interactionId 索引。主线程专用。 */
     private val taskApprovals = LinkedHashMap<String, PendingApproval>()
-    /** 最近一次应答的反馈文案（UI 直接显示，用完置空）。 */
-    var approvalFeedback by mutableStateOf<String?>(null)
-        private set
 
     // ---- 表单交互（elicitation，P1-1）----
     /** 当前会话的待应答表单（会话帧 userInput 条目 + 任务事件流 elicitation_request 合并）。 */
@@ -306,7 +304,7 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
             viewModelScope.launch {
                 filePreview = r.fold(
                     onSuccess = { FilePreview.Loaded(path, it) },
-                    onFailure = { FilePreview.Failed(path, it.message ?: "读取失败") },
+                    onFailure = { FilePreview.Failed(path, UserFacingError.map(it.message)) },
                 )
             }
         }
@@ -428,6 +426,8 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
                 SessionCacheStore.saveRows(getApplication(), sid, updatedRows)
             }
         }
+        // C-6：服务端回显 userInput 行 → 移除对应的本地 pending 回显气泡
+        conv.onUserInputEcho = { row -> consumePendingEcho(row.text) }
         // 会话级错误原因回填首页列表：bootstrap 的 tasks[] 形状不含 lastError（PROTOCOL.md 实测样本），
         // 只有打开过的会话能从快照 control.lastError 拿到原因——聊胜于无，完整原因在会话页横幅。
         conv.onSessionError = { sid, err ->
@@ -705,7 +705,7 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         val a = approvals.firstOrNull { it.interactionId == interactionId }
         val opt = a?.options?.firstOrNull { it.optionId == optionId }
         if (a == null || opt == null) {
-            approvalFeedback = "这条审批已经不在待处理列表里了（可能桌面端已处理）"
+            flash("这条审批已经不在待处理列表里了（可能桌面端已处理）")
             return
         }
         resolve(a, opt)
@@ -714,7 +714,6 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
     /** 应答一次审批（乐观消除 + 会话隔离修复）。 */
     fun resolve(approval: PendingApproval, option: ApprovalOption) {
         val conv = conversation ?: run {
-            approvalFeedback = "连接已断开，未发出"
             flash("连接已断开，未发出", FlashKind.Failure)
             return
         }
@@ -739,27 +738,50 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
                         // 失败回滚：放回审批列表中
                         taskApprovals[interId] = approval
                         refreshApprovals()
-                        "发送失败：${r.message}" to FlashKind.Failure
+                        "发送失败：${UserFacingError.map(r.message)}" to FlashKind.Failure
                     }
                 }
-                approvalFeedback = feedback
                 flash(feedback, kind)
                 ZLog.i(TAG, "resolve result=$r interaction=$interId feedback=$feedback")
             }
         }
     }
 
-    fun consumeApprovalFeedback() { approvalFeedback = null }
-
     // ---- 发送消息 / 停止（P0-1）----
 
     /** 会话页输入栏草稿（跨重组保持，发送成功才清空）。 */
     var promptDraft by mutableStateOf("")
         private set
+
+    /**
+     * 本地回显的待确认消息（C-6）：发送瞬间插入一条 pending 气泡，解决「按了没反应」的空窗期——
+     * sendText ack 之后服务端要等 turn 排队才回显 userInput 行（快则几百毫秒、慢则数分钟）。
+     *
+     * 移除时机：服务端回显同文本的 userInput 行（[ConversationChannel.onUserInputEcho]）→ 移除；
+     * 发送失败 → 立即撤回（错误横幅已说明原因）；切会话 / 断开连接 → 清空（气泡与会话绑定）。
+     */
+    data class PendingUserMessage(val id: Long, val text: String, val attachmentNames: List<String>)
+
+    var pendingUserMessages by mutableStateOf<List<PendingUserMessage>>(emptyList())
+        private set
+    private var pendingSeq = 0L
+
+    /** 服务端回显到达时按文本匹配移除（多条 pending 时只移除最先插入的那条）。 */
+    private fun consumePendingEcho(echoText: String?) {
+        pendingUserMessages = consumePendingByEcho(pendingUserMessages, echoText)
+    }
     var sending by mutableStateOf(false)
         private set
-    /** 发送/停止的操作反馈（与审批反馈同一展示位，几秒后自动清除）。 */
+    /**
+     * 统一的反馈横幅（C-11）：审批应答反馈与操作反馈共用这一条状态，
+     * 由 [flash] 统一管理显示与自动消退。原 approvalFeedback 与 commandFeedback 双轨并存，
+     * 且审批 Tab 从不消费 approvalFeedback（`consumeApprovalFeedback` 只在会话页被调），
+     * 表现为审批 Tab 文案永久滞留——合并为单队列后该缺陷消失。
+     */
     var commandFeedback by mutableStateOf<String?>(null)
+        private set
+    /** 当前反馈是否为失败语义（UI 据此决定横幅配色；与 [flashDurationMs] 的时长档位同源）。 */
+    var feedbackIsFailure by mutableStateOf(false)
         private set
 
     private var feedbackJob: kotlinx.coroutines.Job? = null
@@ -772,6 +794,7 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
 
     private fun flash(msg: String, kind: FlashKind = FlashKind.Info) {
         commandFeedback = msg
+        feedbackIsFailure = kind == FlashKind.Failure
         feedbackJob?.cancel()
         // 失败类提示留 8s（4s 真机上易被错过，2026-09-30 验收发现）；成功提示仍 4s 免打扰
         val ms = flashDurationMs(kind)
@@ -783,13 +806,17 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
 
     fun updatePromptDraft(v: String) { promptDraft = v }
 
-    /** 发送输入栏消息：成功后服务端把 userInput 行推回会话流（无需本地 append）。 */
+    /** 发送输入栏消息：成功后服务端把 userInput 行推回会话流（本地只留 pending 回显气泡）。 */
     fun sendPrompt() {
         val content = promptDraft.trim()
         val atts = attachments.toList()
         if ((content.isEmpty() && atts.isEmpty()) || sending) return
         val conv = conversation ?: run { flash("连接已断开，未发送", FlashKind.Failure); return }
         sending = true
+        // C-6：发送瞬间先插一条本地回显气泡（发送失败时撤回，服务端回显到达时移除）
+        pendingSeq += 1
+        val pending = PendingUserMessage(pendingSeq, content, atts.mapNotNull { it.fileName })
+        pendingUserMessages = pendingUserMessages + pending
         conv.sendPrompt(content, atts) { r ->
             viewModelScope.launch {
                 sending = false
@@ -799,7 +826,11 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
                         attachments.clear()
                         ZLog.i(TAG, "sendPrompt ok session=$subscribedSessionId atts=${atts.size}")
                     },
-                    onFailure = { flash("发送失败：${it.message}", FlashKind.Failure) },
+                    onFailure = {
+                        // 撤回本地气泡：错误横幅已说明原因，不留下只在手机上存在的「幽灵消息」
+                        pendingUserMessages = pendingUserMessages.filterNot { it.id == pending.id }
+                        flash("发送失败：${UserFacingError.map(it.message)}", FlashKind.Failure)
+                    },
                 )
             }
         }
@@ -820,6 +851,42 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
 
     /** 在途上传句柄（A-1）：切会话 / 清理附件时用于终止，防止跨会话回写。 */
     private var attachUploadHandle: ConversationChannel.UploadHandle? = null
+
+    /**
+     * C-1：上传失败态（可重试）。记录重试所需的全部信息——**特别是 uploadId**：
+     * 重试必须复用同一 id 才能命中服务端幂等分支（`state=="committed"` 直接返回 ref，
+     * 已上传分片不重传）；原实现 `ConversationChannel` 每次随机生成 id，幂等分支永不命中。
+     */
+    data class FailedUpload(
+        val uri: android.net.Uri,
+        val fileName: String,
+        val mime: String,
+        val size: Long,
+        val uploadId: String,
+        val message: String,
+    )
+
+    var attachFailed by mutableStateOf<FailedUpload?>(null)
+        private set
+
+    private fun newUploadId(): String = "upload-${java.util.UUID.randomUUID()}"
+
+    /** C-1：取消在途上传（用户主动放弃，不记失败态）。 */
+    fun cancelAttachmentUpload() {
+        attachUploadHandle?.abort()
+        attachUploadHandle = null
+        attachUpload = null
+    }
+
+    /** C-1：失败后重试——复用原 uploadId（同一文件不重传已提交的分片）。 */
+    fun retryAttachmentUpload() {
+        val f = attachFailed ?: return
+        attachFailed = null
+        startUpload(f.uri, f.fileName, f.mime, f.size, f.uploadId)
+    }
+
+    /** C-1：放弃失败的上传（清掉失败态）。 */
+    fun dismissAttachFailure() { attachFailed = null }
 
     /**
      * 附件上传成/败信号（B-3）：tick 每次自增，UI 侧以 `LaunchedEffect(tick)` 消费一次触觉。
@@ -844,8 +911,18 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
      *
      * A-1：上传发起时把「发起会话」捕获进闭包，所有回调先校验会话归属——否则在途上传
      * 完成后会把文件塞进用户已经切过去的另一个会话的附件条（数据正确性 + 隐私风险）。
+     *
+     * C-1：失败进 [attachFailed] 失败态（UI 提供重试/取消）；重选同一文件复用 uploadId。
      */
     fun addAttachment(uri: android.net.Uri, fileName: String, mime: String, size: Long) {
+        val prev = attachFailed
+        val id = uploadIdForAttempt(
+            prev?.fileName, prev?.size ?: -1L, prev?.uploadId, fileName, size, newUploadId())
+        attachFailed = null
+        startUpload(uri, fileName, mime, size, id)
+    }
+
+    private fun startUpload(uri: android.net.Uri, fileName: String, mime: String, size: Long, uploadId: String) {
         val conv = conversation ?: run { flash("连接已断开，无法上传", FlashKind.Failure); return }
         if (attachUpload != null) { flash("还有附件在上传中"); return }
         if (size > ConversationChannel.MAX_ATTACHMENT_BYTES) {
@@ -855,7 +932,7 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         val originSession = subscribedSessionId
         attachUpload = AttachUpload(fileName, 0, size)
         val app = getApplication<android.app.Application>()
-        attachUploadHandle = conv.uploadAttachment(fileName, mime, size,
+        attachUploadHandle = conv.uploadAttachment(uploadId, fileName, mime, size,
             openStream = {
                 app.contentResolver.openInputStream(uri)
                     ?: throw IllegalStateException("无法打开所选文件（可能已被移动或删除）")
@@ -876,12 +953,15 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
                 r.fold(
                     onSuccess = {
                         attachments.add(it)
+                        attachFailed = null
                         signalAttachmentFeedback(ok = true)
                         flash("已添加附件 ${it.fileName}")
                     },
                     onFailure = {
                         signalAttachmentFeedback(ok = false)
-                        flash("附件上传失败：${it.message}", FlashKind.Failure)
+                        // C-1：记录失败态供「重试/取消」；重试复用同一 uploadId
+                        attachFailed = FailedUpload(uri, fileName, mime, size, uploadId, it.message ?: "上传失败")
+                        flash("附件上传失败：${UserFacingError.map(it.message)}", FlashKind.Failure)
                     },
                 )
             }
@@ -898,6 +978,7 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         attachUploadHandle = null
         attachments.clear()
         attachUpload = null
+        attachFailed = null   // C-1：失败态同样与会话绑定
     }
 
     /** 停止当前运行（envelope `stop` 命令，官方 web 同款）。 */
@@ -908,7 +989,7 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
                 flash(
                     when (r) {
                         is ConversationChannel.ResolveResult.Accepted -> "已请求停止"
-                        is ConversationChannel.ResolveResult.Failed -> "停止失败：${r.message}"
+                        is ConversationChannel.ResolveResult.Failed -> "停止失败：${UserFacingError.map(r.message)}"
                     },
                     when (r) {
                         is ConversationChannel.ResolveResult.Accepted -> FlashKind.Info
@@ -1015,7 +1096,7 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
                 is ConversationChannel.ResolveResult.Failed -> {
                     taskElicitations[el.interactionId] = el
                     refreshElicitations()
-                    flash("应答失败：${r.message}", FlashKind.Failure)
+                    flash("应答失败：${UserFacingError.map(r.message)}", FlashKind.Failure)
                 }
             }
         }
@@ -1040,7 +1121,7 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
             when (r) {
                 is ConversationChannel.ResolveResult.Accepted -> flash(okText)
                 is ConversationChannel.ResolveResult.Failed ->
-                    flash("应答失败：${r.message}", FlashKind.Failure)
+                    flash("应答失败：${UserFacingError.map(r.message)}", FlashKind.Failure)
             }
         }
     }
@@ -1060,6 +1141,7 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         handshakeRetryJob?.cancel(); handshakeRetryJob = null
         handshakeRetryCount = 0
         clearAttachments()   // 附件与会话绑定，切会话即清空
+        pendingUserMessages = emptyList()   // C-6：本地回显气泡同样与会话绑定
 
         // Sprint 5 离线缓存秒开：点击会话卡片首帧立即同步呈现历史消息行
         rowStore.clear()
@@ -1202,7 +1284,7 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
                     },
                     onFailure = { err ->
                         ZLog.w(TAG, "createNewSession failed: ${err.message}")
-                        onError(err.message ?: "创建会话失败")
+                        onError(UserFacingError.map(err.message ?: "创建会话失败"))
                     }
                 )
             }
@@ -1470,7 +1552,7 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
             viewModelScope.launch {
                 result.fold(
                     onSuccess = { flash("模型已切换为 $mid" + (thought?.let { " · $it" } ?: "")) },
-                    onFailure = { flash("切换模型失败: ${it.message}", FlashKind.Failure) }
+                    onFailure = { flash("切换模型失败: ${UserFacingError.map(it.message)}", FlashKind.Failure) }
                 )
             }
         }
@@ -1484,7 +1566,7 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
             viewModelScope.launch {
                 result.fold(
                     onSuccess = { flash("模型已切换为 $modelId") },
-                    onFailure = { flash("切换模型失败: ${it.message}", FlashKind.Failure) }
+                    onFailure = { flash("切换模型失败: ${UserFacingError.map(it.message)}", FlashKind.Failure) }
                 )
             }
         }
@@ -1524,8 +1606,9 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
                 when (reply) {
                     is RpcChannel.RpcReply.Ok -> {
                         ZLog.i(TAG, "deleteTask 成功: ${item.taskId.take(20)}…")
-                        // 本地列表同步移除并写回持久化缓存
+                        // 本地列表同步移除并写回持久化缓存；C-7：同步清理该会话的行缓存文件
                         sessions.removeAll { it.taskId == item.taskId }
+                        SessionCacheStore.deleteRows(getApplication(), item.taskId)
                         viewModelScope.launch { SessionCacheStore.save(getApplication(), sessions.toList()) }
                         // 若删除的是当前订阅中的会话，复位订阅与草稿状态
                         if (subscribedSessionId == item.taskId) {
@@ -1544,7 +1627,7 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
                     }
                     is RpcChannel.RpcReply.Err -> {
                         ZLog.w(TAG, "deleteTask 失败: ${reply.message}")
-                        flash("删除会话失败: ${reply.message}", FlashKind.Failure)
+                        flash("删除会话失败: ${UserFacingError.map(reply.message)}", FlashKind.Failure)
                         onResult(false, reply.message)
                     }
                 }
@@ -1597,6 +1680,8 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         syncWidget(0)
         clearAttachments()
         promptDraft = ""
+        // C-6：连接没了，本地回显气泡无从确认，清掉避免误导
+        pendingUserMessages = emptyList()
     }
 
     fun forget() {
@@ -1660,6 +1745,40 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
          */
         internal fun uploadBelongsTo(originSession: String?, currentSession: String?): Boolean =
             originSession != null && originSession == currentSession
+
+        /**
+         * C-1：上传 id 的复用判定（纯函数，参数化以避免测试依赖 android.net.Uri）。
+         * 名字与大小都相同视为同一附件 → 复用原 id 命中服务端幂等（已 committed 直接返回 ref）；
+         * 换了文件必须换新 id，否则服务端会把旧文件内容当作新文件提交（数据正确性）。
+         * previous* 传 null 表示没有可复用的失败态。
+         */
+        internal fun uploadIdForAttempt(
+            previousFileName: String?,
+            previousSize: Long,
+            previousUploadId: String?,
+            fileName: String,
+            size: Long,
+            freshId: String,
+        ): String =
+            if (previousFileName != null && previousUploadId != null &&
+                previousFileName == fileName && previousSize == size
+            ) previousUploadId else freshId
+
+        /**
+         * 服务端回显到达时的 pending 匹配移除（C-6 纯函数）：按文本 trim 相等匹配，
+         * 只移除最先插入的一条；不匹配 / 空文本时原样返回
+         * （回显可能是桌面端发的消息，不能误删本机的 pending 气泡）。
+         */
+        internal fun consumePendingByEcho(
+            pending: List<PendingUserMessage>,
+            echoText: String?,
+        ): List<PendingUserMessage> {
+            val text = echoText?.trim().orEmpty()
+            if (text.isEmpty() || pending.isEmpty()) return pending
+            val idx = pending.indexOfFirst { it.text.trim() == text }
+            if (idx < 0) return pending
+            return pending.filterIndexed { i, _ -> i != idx }
+        }
 
         /** 反馈横幅驻留时长（B-3）：失败 8s（4s 真机上易被错过），成功/提示 4s。 */
         internal fun flashDurationMs(kind: FlashKind): Long =

@@ -37,6 +37,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.zcode.remote.relay.ConversationRow
+import com.zcode.remote.ui.theme.LocalZCodeDark
 import com.zcode.remote.ui.theme.ZCodeDimens
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.jsonArray
@@ -263,9 +264,13 @@ fun DiffBlock(diff: ToolDiff, modifier: Modifier = Modifier) {
             // 桌面端 diff 的增删比手写值更淡（14%），底色只做提示，靠左侧竖条承担主要辨识
             val addBg = Color(0xFF2E7D32).copy(alpha = 0.14f)
             val delBg = Color(0xFFC62828).copy(alpha = 0.14f)
-            val addFg = Color(0xFF66BB6A)
-            val delFg = Color(0xFFEF5350)
-            val gutter = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f)
+            // C-4：增删前景色此前硬编码深色主题取色，浅色主题下对比度不足
+            // （#66BB6A 在白底仅 2.39:1）—— 浅色改用加深版（#2E7D32 / #C62828，均 ≥5:1）。
+            val dark = LocalZCodeDark.current
+            val addFg = if (dark) Color(0xFF66BB6A) else Color(0xFF2E7D32)
+            val delFg = if (dark) Color(0xFFEF5350) else Color(0xFFC62828)
+            // C-4：行号栏原为 onSurfaceVariant@50%（白底仅 2.63:1），去掉 alpha 用量足色
+            val gutter = MaterialTheme.colorScheme.onSurfaceVariant
 
             slices.forEach { slice ->
                 if (slice.collapsedRun != null) {

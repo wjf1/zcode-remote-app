@@ -48,6 +48,7 @@ import com.zcode.remote.ui.theme.LocalZCodeDark
 import com.zcode.remote.ui.theme.ZCodeDimens
 import com.zcode.remote.ui.theme.ZCodeTokens
 import com.zcode.remote.ui.theme.ZCodeType
+import com.zcode.remote.ui.theme.statusPendingTone
 import kotlinx.coroutines.delay
 
 /**
@@ -533,7 +534,7 @@ fun QueuePendingStrip(itemCount: Int, modifier: Modifier = Modifier) {
             Box(
                 modifier = Modifier
                     .size(6.dp)
-                    .background(ZCodeTokens.StatusPending, shape = RoundedCornerShape(3.dp)),
+                    .background(statusPendingTone(), shape = RoundedCornerShape(3.dp)),
             )
             Text(
                 text = label,

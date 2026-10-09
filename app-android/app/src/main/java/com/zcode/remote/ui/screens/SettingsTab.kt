@@ -39,6 +39,7 @@ import com.zcode.remote.relay.RelayState
 import com.zcode.remote.relay.RpcChannel
 import com.zcode.remote.storage.PairedDevice
 import com.zcode.remote.ui.theme.ZCodeTokens
+import com.zcode.remote.ui.theme.statusPendingTone
 
 /**
  * 独立的系统与设备设置中心 (Settings Tab)
@@ -596,7 +597,7 @@ private fun SectionHeader(title: String) {
 private fun StatusDot(state: RelayState) {
     val color = when (state) {
         is RelayState.Paired -> ZCodeTokens.StatusOnline
-        is RelayState.WaitingPeer -> ZCodeTokens.StatusPending
+        is RelayState.WaitingPeer -> statusPendingTone()
         is RelayState.Failed -> ZCodeTokens.StatusError
         else -> ZCodeTokens.StatusOffline
     }

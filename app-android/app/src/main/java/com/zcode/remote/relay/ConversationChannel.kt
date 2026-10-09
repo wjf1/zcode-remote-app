@@ -96,6 +96,13 @@ class ConversationChannel(private val rpc: RpcChannel) {
      */
     var onSessionPhase: ((sessionId: String, phase: String) -> Unit)? = null
 
+    /**
+     * 服务端回显钩子（C-6）：增量里出现**新的** `userInput` 行时回调
+     * （快照不回调——快照是历史全量，不代表刚发出的消息被服务端确认）。
+     * AppViewModel 据此移除本地 pending 回显气泡。
+     */
+    var onUserInputEcho: ((ConversationRow) -> Unit)? = null
+
     data class ConversationMeta(
         val title: String? = null,
         val phase: String? = null,
@@ -315,7 +322,11 @@ class ConversationChannel(private val rpc: RpcChannel) {
                 val deltas = ConversationFrames.parseDeltas(frame.payload)
                 for (d in deltas) {
                     when (d) {
-                        is ConversationFrames.Delta.Upsert -> store.upsert(d.row)
+                        is ConversationFrames.Delta.Upsert -> {
+                            store.upsert(d.row)
+                            // C-6：服务端把 userInput 行推回来 = 本地回显气泡的使命结束
+                            if (d.row.kind == "userInput") onUserInputEcho?.invoke(d.row)
+                        }
                         is ConversationFrames.Delta.RemoveFrom -> store.removeFrom(d.fromRowId)
                         is ConversationFrames.Delta.AppendText -> store.appendText(d.rowId, d.path, d.append)
                         // 审批请求/消解走这里：patch 里的 pendingInteractions 是整组替换
@@ -1000,6 +1011,9 @@ class ConversationChannel(private val rpc: RpcChannel) {
      * 返回值用于终止在途上传（A-1）。
      */
     fun uploadAttachment(
+        /** C-1：调用方持有并复用的上传 id。重试必须复用同一 id（服务端按 uploadId 幂等，
+         *  随机新 id 会让已上传的分片全部作废、整文件重传）。 */
+        uploadId: String,
         fileName: String,
         mime: String,
         totalBytes: Long,
@@ -1029,7 +1043,8 @@ class ConversationChannel(private val rpc: RpcChannel) {
         val total = totalBytes
         val base = HashMap<String, Any>(target)
         base["sessionId"] = session
-        base["uploadId"] = "upload-${UUID.randomUUID()}"
+        // C-1：uploadId 由调用方持有（重试复用，命中服务端 committed 幂等分支）
+        base["uploadId"] = uploadId
 
         // A-1：外部可终止标记。置位后一切在途回调（begin/chunk/commit 的应答）与后续分片
         // 全部短路，且不再回写 onResult——否则切会话后旧上传仍会把结果投给新会话。

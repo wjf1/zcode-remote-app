@@ -13,7 +13,8 @@ import androidx.compose.ui.graphics.Color
  * 对齐官方 ZCode (zai-dark / zai-light) 设计系统的色彩体系。
  * 遵循官方 calm, dense, operational 的高信息密度与低视觉疲劳规范。
  */
-private val ZCodeDarkScheme = darkColorScheme(
+/** 深色主题色表。internal 供 JVM 对比度断言测试（[ContrastTest]）引用。 */
+internal val ZCodeDarkScheme = darkColorScheme(
     primary = Color(0xFF7C9EFF),
     onPrimary = Color(0xFF0F172A),
     primaryContainer = Color(0xFF233054),
@@ -46,7 +47,8 @@ private val ZCodeDarkScheme = darkColorScheme(
     onErrorContainer = Color(0xFFFFD1D1),
 )
 
-private val ZCodeLightScheme = lightColorScheme(
+/** 浅色主题色表。internal 供 JVM 对比度断言测试（[ContrastTest]）引用。 */
+internal val ZCodeLightScheme = lightColorScheme(
     primary = Color(0xFF3B5BDB),
     onPrimary = Color(0xFFFFFFFF),
     primaryContainer = Color(0xFFDBE4FE),
@@ -68,7 +70,9 @@ private val ZCodeLightScheme = lightColorScheme(
     surface = Color(0xFFFFFFFF),
     onSurface = Color(0xFF1E293B),
     surfaceVariant = Color(0xFFF1F3F7),
-    onSurfaceVariant = Color(0xFF64748B),
+    // C-4 对比度修正：原 #64748B 在 surfaceVariant 卡内仅 4.28:1（<4.5 卡内不达标），
+    // 加深为 #556074（白底 6.34:1 / #F8F8FA 上 5.98:1 / surfaceVariant 上约 5.9:1）。
+    onSurfaceVariant = Color(0xFF556074),
 
     outline = Color(0x1F000000),          // 12% 官方浅色微边框
     outlineVariant = Color(0x0F000000),
@@ -93,7 +97,9 @@ object ZCodeTokens {
     val ReasoningTrajectoryLight = Color(0xFF7C3AED)
 
     val ToolCallTrajectoryDark = Color(0xFFF59E0B)
-    val ToolCallTrajectoryLight = Color(0xFFD97706)
+    // C-4 对比度修正：原 #D97706 在白底 3.19:1 / 浅色面上不足——加深为 #B45309
+    // （#F8F8FA 上 4.73:1 / 白底 5.02:1）。
+    val ToolCallTrajectoryLight = Color(0xFFB45309)
 
     // 工具执行结果轨迹色（桌面端 toolResult：暗 #38bdf8 / 浅 #0284c7）——此前缺失
     val ToolResultTrajectoryDark = Color(0xFF38BDF8)
@@ -101,7 +107,13 @@ object ZCodeTokens {
 
     // 运行/连接状态色
     val StatusOnline = Color(0xFF46BF72)      // 官方 success 绿
-    val StatusPending = Color(0xFFFF8A30)     // 官方 warning 橙
+    val StatusPending = Color(0xFFFF8A30)     // 官方 warning 橙（深色主题用）
+    /**
+     * C-4 对比度修正：浅色主题的待处理橙。原 #FF8A30 在白底仅 2.35:1，
+     * 作为文字/徽标不可读——加深为 #C2410C（#F8F8FA 上 4.88:1 / 白底 5.18:1）。
+     * 取色入口见 [statusPendingTone]。
+     */
+    val StatusPendingLight = Color(0xFFC2410C)
     val StatusOffline = Color(0xFF8B949E)     // 官方 neutral 灰
     val StatusError = Color(0xFFFF5C5C)       // 官方 destructive 红
 
@@ -143,6 +155,25 @@ object ZCodeTokens {
  * 深层组件用 isSystemInDarkTheme() 会读到相反的值，故统一走这里。
  */
 val LocalZCodeDark = staticCompositionLocalOf { true }
+
+/**
+ * 待处理橙（主题感知，C-4）：浅色主题用加深版 [ZCodeTokens.StatusPendingLight]
+ * （亮橙 #FF8A30 在白底仅 2.35:1，作文字/徽标不可读）；深色主题保持亮橙。
+ *
+ * 注意：只能用在本就 @Composable 的地方；非 Composable 的取色逻辑请显式接收
+ * `dark: Boolean` 参数（本项目不做全局色值单例，避免主题切换后取到旧值）。
+ */
+@Composable
+fun statusPendingTone(): Color =
+    if (LocalZCodeDark.current) ZCodeTokens.StatusPending else ZCodeTokens.StatusPendingLight
+
+/**
+ * 工具调用轨迹色（主题感知，C-4）：浅色主题用加深版 [ZCodeTokens.ToolCallTrajectoryLight]
+ * —— 原实现多处硬编码 Dark 版（#F59E0B）导致浅色主题下对比度仅 2.15:1。
+ */
+@Composable
+fun toolCallTrajectoryTone(): Color =
+    if (LocalZCodeDark.current) ZCodeTokens.ToolCallTrajectoryDark else ZCodeTokens.ToolCallTrajectoryLight
 
 /** dark=null 表示跟随系统（设置项 THEME_SYSTEM）。 */
 @Composable

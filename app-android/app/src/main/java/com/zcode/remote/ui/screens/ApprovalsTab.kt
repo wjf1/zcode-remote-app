@@ -33,6 +33,8 @@ import com.zcode.remote.relay.PendingApproval
 import com.zcode.remote.relay.PendingElicitation
 import com.zcode.remote.relay.SessionItem
 import com.zcode.remote.ui.theme.ZCodeTokens
+import com.zcode.remote.ui.theme.statusPendingTone
+import com.zcode.remote.ui.theme.toolCallTrajectoryTone
 
 /**
  * 集中式审批与待办看板 (Inbox / Approvals Tab)
@@ -46,6 +48,8 @@ fun ApprovalsTab(
     sessionPending: Map<String, Int>,
     subscribedSessionId: String?,
     feedback: String? = null,
+    /** C-11：反馈是否为失败语义（配色依据，取代原先按文案前缀猜的白名单）。 */
+    feedbackIsFailure: Boolean = false,
     onResolveApproval: (PendingApproval, ApprovalOption) -> Unit,
     onAcceptElicitation: (PendingElicitation, Map<Int, List<String>>) -> Unit,
     onDeclineElicitation: (PendingElicitation) -> Unit,
@@ -78,16 +82,16 @@ fun ApprovalsTab(
             )
             if (totalCurrentPending > 0) {
                 Surface(
-                    color = ZCodeTokens.StatusPending.copy(alpha = 0.2f),
+                    color = statusPendingTone().copy(alpha = 0.2f),
                     shape = RoundedCornerShape(12.dp),
                     border = ButtonDefaults.outlinedButtonBorder.copy(
-                        brush = androidx.compose.ui.graphics.SolidColor(ZCodeTokens.StatusPending.copy(alpha = 0.4f))
+                        brush = androidx.compose.ui.graphics.SolidColor(statusPendingTone().copy(alpha = 0.4f))
                     )
                 ) {
                     Text(
                         text = "$totalCurrentPending 项待处理",
                         style = MaterialTheme.typography.labelSmall.copy(
-                            color = ZCodeTokens.StatusPending,
+                            color = statusPendingTone(),
                             fontWeight = FontWeight.SemiBold
                         ),
                         modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
@@ -96,13 +100,11 @@ fun ApprovalsTab(
             }
         }
 
-        // 统一操作反馈提示横幅
+        // 统一反馈横幅（C-11）：与 VM 的 flash 单队列同源，失败/提示配色由显式语义决定
         feedback?.let { msg ->
             Surface(
-                color = if (msg.startsWith("发送失败") || msg.startsWith("应答失败") || msg.startsWith("连接已断开"))
-                    MaterialTheme.colorScheme.errorContainer
-                else
-                    MaterialTheme.colorScheme.primaryContainer,
+                color = if (feedbackIsFailure) MaterialTheme.colorScheme.errorContainer
+                else MaterialTheme.colorScheme.primaryContainer,
                 shape = RoundedCornerShape(8.dp),
                 modifier = Modifier
                     .fillMaxWidth()
@@ -111,10 +113,8 @@ fun ApprovalsTab(
                 Text(
                     text = msg,
                     style = MaterialTheme.typography.labelMedium,
-                    color = if (msg.startsWith("发送失败") || msg.startsWith("应答失败") || msg.startsWith("连接已断开"))
-                        MaterialTheme.colorScheme.onErrorContainer
-                    else
-                        MaterialTheme.colorScheme.onPrimaryContainer,
+                    color = if (feedbackIsFailure) MaterialTheme.colorScheme.onErrorContainer
+                    else MaterialTheme.colorScheme.onPrimaryContainer,
                     modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp)
                 )
             }
@@ -173,7 +173,7 @@ fun ApprovalsTab(
                         Text(
                             text = "权限审批请求 (${approvals.size})",
                             style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.Bold),
-                            color = ZCodeTokens.StatusPending
+                            color = statusPendingTone()
                         )
                     }
                     items(approvals, key = { it.interactionId }) { a ->
@@ -233,7 +233,7 @@ fun ApprovalsTab(
                                     Text(
                                         text = "${sessionPending[s.taskId] ?: 0} 项请求等待处理",
                                         style = MaterialTheme.typography.bodySmall,
-                                        color = ZCodeTokens.StatusPending
+                                        color = statusPendingTone()
                                     )
                                 }
                                 Button(
@@ -276,13 +276,13 @@ private fun ApprovalInboxCard(
             // 来源标签与工具名
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Surface(
-                    color = ZCodeTokens.ToolCallTrajectoryDark.copy(alpha = 0.15f),
+                    color = toolCallTrajectoryTone().copy(alpha = 0.15f),
                     shape = RoundedCornerShape(6.dp)
                 ) {
                     Text(
                         text = "工具调用 · ${a.toolName ?: "Command"}",
                         style = MaterialTheme.typography.labelSmall.copy(
-                            color = ZCodeTokens.ToolCallTrajectoryDark,
+                            color = toolCallTrajectoryTone(),
                             fontWeight = FontWeight.SemiBold
                         ),
                         modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)

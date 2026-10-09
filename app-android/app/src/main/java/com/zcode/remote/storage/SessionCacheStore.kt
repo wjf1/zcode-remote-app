@@ -81,9 +81,56 @@ object SessionCacheStore {
             tmp.writeText(raw)
             if (tmp.renameTo(target) || (target.delete() && tmp.renameTo(target))) {
                 ZLog.d(TAG, "成功持久化会话 $sessionId 的 ${slice.size} 行缓存")
+                // C-7：写入后顺手裁剪目录（LRU），保证文件数收敛到上限
+                pruneRowsCache(context)
             }
         }.onFailure {
             ZLog.w(TAG, "保存会话行缓存失败 ($sessionId): ${it.message}")
         }
     }
+
+    /**
+     * C-7：删除单个会话的行缓存文件。会话被删除时调用——原实现只从列表移除会话项，
+     * `rows_<sid>.json` 永久残留（缓存文件数量无任何上限）。
+     */
+    fun deleteRows(context: Context, sessionId: String) {
+        val safeId = sessionId.replace(Regex("[^a-zA-Z0-9_-]"), "_")
+        runCatching {
+            if (File(context.filesDir, "rows_$safeId.json").delete()) {
+                ZLog.d(TAG, "已清理会话行缓存 $sessionId")
+            }
+        }.onFailure { ZLog.w(TAG, "删除会话行缓存失败 ($sessionId): ${it.message}") }
+    }
+
+    /**
+     * C-7：LRU 裁剪行缓存目录——只保留最近写入的 [keep] 个 `rows_*.json`。
+     * 每个文件最多 200 行，但文件数随「打开过的会话数」无上限增长，长期使用会持续占用存储。
+     */
+    fun pruneRowsCache(context: Context, keep: Int = MAX_ROW_CACHE_FILES) {
+        runCatching {
+            val files = context.filesDir
+                .listFiles { f -> f.name.startsWith("rows_") && f.name.endsWith(".json") }
+                ?: return
+            val stale = staleCacheFilesToDelete(files.map { it.name to it.lastModified() }, keep)
+            stale.forEach { name ->
+                if (File(context.filesDir, name).delete()) ZLog.d(TAG, "LRU 清理过期行缓存 $name")
+            }
+        }.onFailure { ZLog.w(TAG, "裁剪行缓存失败: ${it.message}") }
+    }
+
+    /**
+     * LRU 淘汰选择（纯函数，JVM 单测覆盖）：[entries] = (文件名, 最后修改时间)，
+     * 返回应删除的文件名（按名称排序，保证结果确定）。
+     * 保留最近修改的最多 [keep] 个；时间相同时按文件名升序，避免同毫秒写入抖动误删。
+     */
+    internal fun staleCacheFilesToDelete(entries: List<Pair<String, Long>>, keep: Int): List<String> {
+        if (keep <= 0) return entries.map { it.first }.sorted()
+        val sorted = entries.sortedWith(
+            compareByDescending<Pair<String, Long>> { it.second }.thenBy { it.first }
+        )
+        return sorted.drop(keep).map { it.first }.sorted()
+    }
+
+    /** 行缓存文件数量上限（LRU）：单个文件约 ≤200 行文本，30 个足够覆盖常用会话。 */
+    const val MAX_ROW_CACHE_FILES = 30
 }

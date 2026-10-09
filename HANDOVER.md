@@ -17,6 +17,17 @@
 > **beta16**（用户真机反馈 + 截图）：会话异常原因可见（快照 `control.lastError` + 列表回填）、标题双重序列化解包（host 数据瑕疵，tasks-index 实锤）、输入栏对齐（任务书 B-2）、顶栏 phase 标签中文化（`error` → 「异常」，与列表标签一致）。
 > **beta17**（用户直接提出「按桌面端设计会话页显示与排版」）：会话页排版三段式对齐（设计基座 / 行渲染重排 / 会话级状态面板）+ 「运行中」状态回填修复；新增依赖 `multiplatform-markdown-renderer-m3/-code:0.27.0`。
 >
+> **🆕 未发布轮次（2026-10-09，v1.1 首批「用户可感知收益」）**：用户拍板推进此前 `[需立项]` 的档 C 可感知条目。本轮落地 **C-6** 发送本地回显（pending 气泡）、**C-1** 上传可取消/失败可重试（**uploadId 复用命中服务端幂等**）、**C-10** 深链配对确认弹窗、**C-11** 反馈横幅合并单队列（修 ApprovalsTab 文案滞留）、**C-2** 错误文案映射层（`UserFacingError`，14 处）、**C-4** 浅色主题对比度修正 + 思考折叠摘要（含 CI 对比度断言 `ContrastTest`）、**C-7** 缓存文件删除与 LRU。代码 + **134 项单测全绿**（含 +27 新增）+ debug/release 构建通过。**⏳ 真机验收未做（设备不在线）**；**⚠️ 本机 release keystore 缺失**（`toolchain/` 仅剩 `avd/`，`keystore.properties` 不存在）→ 两项都解决前**不 tag、不推送**。详见 `CHANGELOG.md`「未发布」段。
+>
+> **真机验收清单（2026-10-09 批 · 待做）**
+> 1. **C-6 回显**：发送消息 → 流末尾立即出现半透明「发送中…」气泡 → 服务端回显后自动消失并出现正式消息行；断连发送 → 气泡撤回 + 中文失败横幅。
+> 2. **C-1 上传**：上传中点「取消」→ 停止（日志可见 `attachmentAbort sent`）；弱网失败 → 出现失败行 → 「重试」→ 观察 `attachmentBegin` 的 `nextChunkIndex`/`state`（复用 id 时不从 0 重传）；重选同一文件同样复用 id。
+> 3. **C-10 深链**：点配对链接 → 弹确认框（设备名 + 影响说明）→ 点「取消」不改变当前连接。
+> 4. **C-2 文案**：断网下发消息/上传 → 横幅与顶栏均为中文可读（不得出现 `bridge not ready` / `timeout after` 字样）。
+> 5. **C-4 浅色主题**：切浅色后审批卡标题、待处理角标、次要文本、工具轨迹色、Diff 增删色均清晰可读；思考折叠行显示内容摘要。
+> 6. **C-7 缓存**：删除会话后 `adb shell run-as com.zcode.remote ls files/ | grep rows_` 不再有该会话文件；打开 >30 个会话后文件数收敛到 30。
+> 7. **C-11 横幅**：在「待办」Tab 批准/拒绝一条 → 横幅出现并自动消退（不再永久滞留）。
+>
 > | 项 | 状态 |
 > |---|---|
 > | A-1 上传跨会话注入 | ✅ 代码 + 单测 + **用户人工确认无问题** |
@@ -34,7 +45,7 @@
 > - ⚠️ **release（R8）包与 debug 包签名不同**（debug `3A:B5:8F…` / release `1D:46:E9…`）：手机上若已装 debug 包，`adb install -r` release 包会 `INSTALL_FAILED_UPDATE_INCOMPATIBLE`，需先卸载——**会丢失配对凭据**，属破坏性操作，动手前必须取得用户同意。beta16 的 release 包因此**未做真机冒烟**，上机验收用的是同源 debug 包。
 > - ⚠️ **观察窗口已重置**：按 §6.0 P0-2 规则，v1.0 判停线自补丁/对齐轮**真机验收通过之日**重新计时；最近一次重置因 **beta17**，且 **beta17 真机验收已于 2026-10-08 通过**，窗口自该日起重新计时（预计 2026-10-11 收官）。
 > - ⚠️ **实测系统为 Android 17 / HyperOS**（旧记录为 Android 15）：跨两个大版本，接入时须把 USB 用途切到「传输文件」才暴露 ADB 接口。P0-2 第 2/3 项依赖 HyperOS 后台与通知策略，跨版本升级后务必重新观察。
-> - **本次未做（有依据，勿当遗漏）**：**A-3**（103 `EventDispose` 零调用 —— 协议文档仅有帧码表项、**无 payload 字段规格**，须先真机 + 桌面端在线探测）、**A-4**（改 `RpcChannel` 并发 buffer 策略，高危回归）、**档 C 全部 12 张卡**（`[需立项]`）。
+> - **未做项现状（2026-10-09 更新）**：**档 C 首批 7 项已落地**（C-1/C-2/C-4/C-6/C-7/C-10/C-11，见上方 🆕 段与 `CHANGELOG.md`「未发布」段，待真机验收）。**仍未做（有依据，勿当遗漏）**：**A-3**（103 `EventDispose` 零调用 —— 协议文档仅有帧码表项、**无 payload 字段规格**，须先真机 + 桌面端在线探测）、**A-4** 与 **C-5**（改动 `RpcChannel` / `ConversationFrames` 并发与状态机路径，自标高危，须独立灰度 + 独立真机回归）、**C-8/C-9/C-12**（工程/安全/拆分类，用户不可感知）、决策项（ws:// 明文中继、reverseLayout）。
 > - 🆕 **验证副作用（需知悉）**：验证附件 chip 时向真实会话 `sess_0f00b96b`（「zcode-dotfiles 优化方案可行性确认」）写入了一条测试消息（`attachment-render-check` + 89B 测试文件）。核对 `tasks-index` 确认**未调度 agent 轮次、未消耗额度**；协议无删除消息操作，无法程序化清理。
 >
 > **真机验收清单（beta13/beta14/beta15）**
@@ -238,6 +249,7 @@ ADB -s <serial> shell am broadcast -n com.zcode.remote/.debug.DebugApprovalRecei
 | 保活引导页 / debug 注入 receiver | ✅ | `ui/screens/KeepAliveGuideScreen.kt` `app/src/debug/` |
 | 前台服务 | ✅ 实测（FGS specialUse + 进程级 ConnectionScope 单例，断网重连与保活全通） | `service/ConnectionService.kt` |
 | 会话页排版对齐 + 会话级状态面板（beta17） | ✅ 代码 + 单测 + **真机视觉验收通过** | `ui/components/CollapsibleRow.kt` `ui/components/SessionStatusPanel.kt` `ui/components/ToolKindLabels.kt` `ui/theme/Typography.kt` `ui/theme/Dimens.kt` `ui/screens/ConversationScreen.kt` `relay/ConversationFrames.kt` |
+| 体验补强首批 C-1/C-2/C-4/C-6/C-7/C-10/C-11（2026-10-09，**未发布**） | ✅ 代码 + 134 项单测 + debug/release 构建通过；**⏳ 真机验收待做** | `relay/UserFacingError.kt` `relay/ConversationChannel.kt` `AppViewModel.kt` `ui/screens/ConversationScreen.kt` `ui/screens/ApprovalsTab.kt` `ui/theme/Theme.kt` `storage/SessionCacheStore.kt` `MainActivity.kt` |
 
 版本序列：`v0.2.0-m2` → `v0.2.1-m2b` → `v0.2.2-m3a` → `v0.2.3-m3b` → `v0.3.0-m3` →
 `v0.4.0-beta1…beta6`（发版内测 → 真机修复 → 16KB 对齐 → 互踢修复 → 扫码重构 → 排版对齐）→
@@ -262,6 +274,10 @@ ADB -s <serial> shell am broadcast -n com.zcode.remote/.debug.DebugApprovalRecei
 12. **增量 patch 只合并白名单键**：`ConversationChannel` 的 `state.updated` 处理原仅合并 `pendingInteractions`/`elicitations`，其余会话级键被忽略 → 即使快照补齐，数据也只在首帧正确、之后永不更新。beta17 已补齐缺口；新增会话级块时**必须同步改这里**。
 13. **Compose 实测坑（beta17 新增，均已在代码注释留痕）**：① LazyColumn 回收滚出视野的行 → 行内 `remember` 折叠态丢失，**必须提升到屏幕层**，且折叠态用 `List<String>` 而非 `Set`（`rememberSaveable` 写 Bundle 不保证任意 Set 实现可反序列化）；② LazyColumn 项内高度约束无限 → `fillMaxHeight` 退化为 0 高，`IntrinsicSize.Min` 与 `verticalScroll` 不兼容 → 画竖线只能用 `drawBehind`；③ **嵌套同方向 `verticalScroll` 会运行时告警** → 面板把滚动统一放在最外层一层，内部折叠行展开体一律不限高；④ `CollapsibleRow` 的 `label` 槽位**不是 RowScope**（不能挂 `weight`），需要撑开中间时用 `primary = { Spacer(Modifier.weight(1f)) }`。
 14. **Markdown/高亮依赖的版本上限**：`com.mikepenz:multiplatform-markdown-renderer-m3/-code:0.27.0` —— **0.30.0 起改用 Kotlin 2.1+ 编译，本项目 Kotlin 插件 2.0.20 读不了其元数据（硬报错）**，0.27.0 是最后一个 Kotlin 2.0.x 编译版，**升级 Kotlin 插件前不得上调**。安全边界：显式传 `NoOpImageTransformerImpl` 不加载外链图片；链接走 http/https 白名单（`ui/components/SafeUriHandler.kt`）。
+15. **上传重试必须复用 uploadId（C-1，2026-10-09）**：服务端按 `uploadId` 幂等——`attachmentBeginV4` 对已 committed 的 id 直接返回 ref（分片不重传）。`uploadId` 现由 `AppViewModel` 生成并保存在失败态（`FailedUpload`）里；**换文件（名字或大小不同）必须换新 id**，否则服务端会把旧文件内容当新文件提交（`uploadIdForAttempt` 纯函数 + 单测钉死）。
+16. **主题感知色值必须走 `statusPendingTone()` / `toolCallTrajectoryTone()`（C-4，2026-10-09）**：亮橙 `#FF8A30` 与轨迹 `#F59E0B` 只允许出现在深色主题（浅色下对比度仅 2.15~2.35:1）。`ContrastTest` 有两条反向断言防止低对比色值回流；新增「浅色下要可读的文字/图标」时先看该测试再选色。
+17. **用户可见错误必须过 `UserFacingError.map()`（C-2，2026-10-09）**：本地自造英文（`bridge not ready` / `timeout after` / `channel reset`…）与服务端 fault code 不得直出 UI；新增失败路径时在展示点调用它（`UserFacingErrorTest` 有「不得泄漏裸英文」断言）。
+18. **本地回显气泡与会话绑定（C-6，2026-10-09）**：`AppViewModel.pendingUserMessages` 在切会话 / 断开时清空；服务端回显按「文本 trim 相等」匹配移除（回显可能是桌面端发的消息，不能误删本机 pending）。
 
 ## 6. 剩余任务（P0 → P2，含验收标准）
 
@@ -448,17 +464,19 @@ FCM/小米推送主通道（IM Bot 通道兜底另议）、追功能广度（多
 - **判停线**：3 天内无新缺陷 → **达到 v1.0 发布条件**（`HANDOVER §6.1` 里程碑定义）。
 - **若发现问题**：按「真机实测抓出并已修复的问题」同款流程修复 → 补丁版本 → 重置 3 天观察窗口。
 
-### v1.1 候选待办（未立项，仅登记 · 2026-10-07）
+### v1.1 候选待办（未立项，仅登记 · 2026-10-07；2026-10-09 更新首批落地）
 
-> 来源：《体验提升任务书 v2》。以下均**未获用户拍板**，不得直接开工。
+> 来源：《体验提升任务书 v2》。
+> **2026-10-09 更新**：用户拍板「用户可感知收益」条目 → **档 C 首批 7 项已落地代码**（下表首行）；其余（A-3/A-4/T0/C-5/C-8/C-9/C-12、决策项）仍**未拍板不得开工**，前置条件见下表。
 
 | ID | 内容 | 开工前置条件 |
 |---|---|---|
+| ✅ **档 C 首批**（**已落地 · 2026-10-09 · 未发布**） | C-6 发送本地回显、C-1 上传可取消/重试（uploadId 复用）、C-10 深链配对确认、C-11 横幅合并单队列、C-2 错误映射层（14 处）、C-4 浅色对比度 + 折叠摘要 + CI 断言、C-7 缓存删除与 LRU | **待真机验收 + release keystore 恢复后发布**（见顶部 🆕 段） |
 | ✅ **重连退避不重置**（**已修 · beta15 · 真机 PASS**） | `RelayClient` 退避 3s→6s→12s→24s→48s（封顶 48s），**网络恢复事件不重置退避**：约 90s 飞行模式往返后实测恢复 ~47s（基线 `<9s`）。修法：`NetworkGate.onAvailable` → `RelayClient.onNetworkAvailable()` 重置计数并**掐断正在 sleep 的退避**立即重连（须只对 `Paired`/`WaitingPeer` 提前返回，见 CHANGELOG 复盘）。**真机实测：断网 80s → 5s、150s → 3s** | 残留：`onLost` 的 `probeNow()` 去抖守卫仍会误判导致断网期空烧退避（不影响恢复延迟）——改动前需先验证其双网去抖理由 |
 | **A-3** | 订阅监听泄漏：`TYPE_EVENT_DISPOSE = 103` 全库零调用，切 N 次会话后入站流量放大约 N 倍 | 先真机 + 桌面端在线**实测探测** 103 的 payload 字段与服务端行为（协议文档只有帧码表一行，无字段规格）；若服务端不认 103，退化为「仅加代次守卫丢弃旧应答」 |
 | **A-4** | 事件流丢帧无缺口检测 → 会话静默停在旧状态 | 需改 `RpcChannel` buffer 策略（`extraBufferCapacity=256 / DROP_OLDEST` → 照抄 `RelayClient` 的 `512 / SUSPEND` + 单泵），**动并发路径，任务书自标高危**，须独立 commit + 独立真机回归；且与 C-5⑤⑦ 同动 `ConversationFrames`/RowStore 状态机，**排期必须串行** |
 | **T0** | 握手/快照耗时打点（A-2 阈值的测量基础） | 无需立项，属测量工作；见顶部真机验收清单第 5 条。**A-2 的 `HANDSHAKE_*_TIMEOUT_MS` 当前是占位值，必须以 T0 实测分布校准** |
-| **档 C（C-1~C-12）** | 体验/性能重构（上传三态状态机、错误分层映射、输入栏重构、可读性字阶、性能线程模型、本地回显、缓存 LRU、JSON 序列化、token 加密、深链确认、横幅统一、AppViewModel 拆分） | **全部 `[需立项]`**，约 8d；C-5/C-12 高风险。立项前须先读任务书 §5 的「已复核证据与纠正点」，其中多条纠正了 v1 的误诊 |
+| **档 C 剩余（C-3/C-5/C-8/C-9/C-12）** | C-3 输入栏图标与键盘 inset 根因（须先真机量 inset；emoji 图标替换另需评估 `material-icons-extended` 包体）、C-5 性能与线程模型（自标高危，须独立灰度）、C-8 手拼 JSON 改序列化、C-9 githubToken 加密存储（复用 MultiDeviceStore，勿引入 EncryptedSharedPreferences）、C-12 AppViewModel 拆分（二期） | 未拍板不得开工；**C-5 与 A-4 同动状态机，排期必须串行** |
 | **决策项** | `ws://` 明文中继（minSdk 31 + 无 `networkSecurityConfig` → 静态即可定论必失败）：要么删选项，要么显式补配置（削弱安全性，需用户同意）；`reverseLayout` 翻转待 B-1 落地后评估 | 用户拍板 |
 
 ### P1-1 elicitation（表单类交互）应答（✅ 2026-09-29 完成，协议层端到端验收通过）
