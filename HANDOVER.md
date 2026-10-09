@@ -269,6 +269,7 @@ ADB -s <serial> shell am broadcast -n com.zcode.remote/.debug.DebugApprovalRecei
 16. **未知围栏语言不是「不亮」而是「泛化高亮」**：`SyntaxLanguage.getByName("nosuchlang") == null`，但不设 language 时库会用 DEFAULT 规则继续给字符串/注释/数字上色 —— 所以**不能拿「未知语言 = 无高亮」当渲染测试的对照组**（beta18 实测推翻该假设，改为直接断言主题 token 色像素）。
 17. **`ColorHighlight.rgb` 主题色实测值**（`SyntaxThemes.atom(dark=true)`）：`#2BBAC5` 青 / `#D55FDE` 品红 / `#89CA78` 绿 / `#5C6370` 灰（注释，饱和度低）。模拟器渲染断言按前三色逐像素比对（容差 10），主题一改就会失败 —— 那是期望行为。
 18. **仪器化渲染测试的两个实操坑（beta18）**：① AGP 跑完 `connectedDebugAndroidTest` **默认会把 APK 卸载**，测试里写到应用内部目录的截图会一起消失 —— 要取证据需加 `-Pandroid.injected.androidTest.leaveApksInstalledAfterRun=true`，再用 `adb exec-out run-as com.zcode.remote cat files/render-evidence/*.png` 取出；② 断言文本时用 `onAllNodesWithText(useUnmergedTree = true).onFirst()`：表格/代码块既有叶子又有合并父节点，`onNodeWithText` 会因「命中 2 个节点」直接失败（是断言写法问题，不是渲染问题）。
+19. **D-1 核查结论（2026-10-09，有界核查）**：`v4/conversation/frame` 的 **delta op 层三方已对齐、无差集**（桌面 host bundle ↔ `CONVERSATION-PROTOCOL.md:142-146` ↔ `relay/ConversationFrames.kt:515-538`，5 个 op：`row.appended/row.upserted/row.removed/row.delta/state.updated`；`row.delta.path ∈ text|inputText|output.text|summaryText`）。自该帧析出的两个**真缺口**已按「未立项待办」登记在 §6：**① 逻辑帧 `kind:"fragment"` 被静默丢弃**（`ConversationChannel.kt:257-259`，无实测样本，触发即缺帧）；**② 桌面 frame 业务 schema 与完整 row kind 联合仍未还原**（有 `PlainRow` 兜底，最坏样式降级）。未知 op / 未知 payload kind 一律「只记日志、UI 无告警」——**这条本身就是需要知悉的行为**：出问题时要先看 logcat，不要期待界面报错。
 
 ## 6. 剩余任务（P0 → P2，含验收标准）
 
@@ -471,6 +472,7 @@ FCM/小米推送主通道（IM Bot 通道兜底另议）、追功能广度（多
 | **A-3** | 订阅监听泄漏：`TYPE_EVENT_DISPOSE = 103` 全库零调用，切 N 次会话后入站流量放大约 N 倍 | 先真机 + 桌面端在线**实测探测** 103 的 payload 字段与服务端行为（协议文档只有帧码表一行，无字段规格）；若服务端不认 103，退化为「仅加代次守卫丢弃旧应答」 |
 | **A-4** | 事件流丢帧无缺口检测 → 会话静默停在旧状态 | 需改 `RpcChannel` buffer 策略（`extraBufferCapacity=256 / DROP_OLDEST` → 照抄 `RelayClient` 的 `512 / SUSPEND` + 单泵），**动并发路径，任务书自标高危**，须独立 commit + 独立真机回归；且与 C-5⑤⑦ 同动 `ConversationFrames`/RowStore 状态机，**排期必须串行** |
 | ✅ **T0**（**已 PASS 并回填**） | 握手/快照耗时打点（A-2 阈值的测量基础） | 整链路实测 **512–740ms**（见顶部真机验收清单第 5 条），**A-2 的 `HANDSHAKE_*_TIMEOUT_MS` 已据此校准为 4s/4s/5s**，不再是占位值 |
+| **A-5**（新登记 · 2026-10-09 由 D-1 核查析出） | **逻辑帧分片未处理**：wireVersion 3 的 `kind:"fragment"` 信封在 App 侧被静默丢弃（`ConversationChannel.kt:257-259`），若真机出现会**缺帧**且 UI 无提示 | **未立项**。前置：真机 + 桌面端在线抓到一条真实 `fragment` 帧（字段规格见 `FRAME-CODEC.md:681-686`，但无实测样本）；拿到样本前不得盲写重组逻辑。与 A-4 同属「事件流完整性」，若一起做须串行 |
 | **档 C（C-1~C-12）** | 体验/性能重构（上传三态状态机、错误分层映射、输入栏重构、可读性字阶、性能线程模型、本地回显、缓存 LRU、JSON 序列化、token 加密、深链确认、横幅统一、AppViewModel 拆分） | **全部 `[需立项]`**，约 8d；C-5/C-12 高风险。立项前须先读任务书 §5 的「已复核证据与纠正点」，其中多条纠正了 v1 的误诊 |
 | **决策项** | `ws://` 明文中继（minSdk 31 + 无 `networkSecurityConfig` → 静态即可定论必失败）：要么删选项，要么显式补配置（削弱安全性，需用户同意）；`reverseLayout` 翻转待 B-1 落地后评估 | 用户拍板 |
 
@@ -561,8 +563,27 @@ FCM/小米推送主通道（IM Bot 通道兜底另议）、追功能广度（多
   修正（原 `rows.lastIndex` 漏算占位项，停在倒数第二行）；0 行时会话有 `rows.isNotEmpty()` 守卫。
 - ✅ ~~elicitation 仅能在会话页应答~~ → D-3 通知栏快捷应答已实现。
 
-**仍待处理**：
-- 会话流 `v4/conversation/frame` 二进制细节字段未穷举（不影响当前功能，未知 op 已有 Unknown 分支兜底）——见 D-1。
+**仍待处理（2026-10-09 按 D-1 核查结果重写）**：
+
+> 原条目「会话流 `v4/conversation/frame` 二进制细节字段未穷举」经**有界核查**后收窄为下面两条。
+> 核查结论先说：**delta op 层三方已完全对齐、无差集** —— 桌面端 host bundle
+> （`research/asar/out/host/chunk-BG4MS6RN.js` 的 `mr=discriminatedUnion("op",[...])`，字节 ~2018/2264）
+> 的 5 个 op `row.appended` / `row.upserted` / `row.removed` / `row.delta`（path 枚举 `text|inputText|output.text|summaryText`）
+> / `state.updated` ↔ 文档 `CONVERSATION-PROTOCOL.md:142-146` ↔ App `relay/ConversationFrames.kt:515-538` 三方一致；
+> 未知 op 走 `Delta.Unknown`（`ConversationChannel.kt:387-388` 仅记日志）。
+
+- **① 逻辑帧分片未实现（新登记，此前没写在任何待办里）**：wireVersion 3 的 logical frame 有两种信封，
+  `kind:"fragment"` 形态（`logicalFrameId` / `logicalFrameOrdinal` …，见 `FRAME-CODEC.md:681-686`）
+  在 App 侧**被静默丢弃**（`relay/ConversationChannel.kt:257-259` 只记一条日志）。若真机出现该分支，
+  表现为**会话流缺帧 / 卡在旧状态**，且 UI 无任何提示。
+  - 现状判定：**无任何抓包证据表明该分支会被触发**（历史所有真机会话流均为 `kind:"complete"`）。
+  - 开工前置：真机 + 桌面端在线抓一次 `kind:"fragment"` 的真实帧，拿到字段规格再实现重组；
+    在拿到证据前**不盲目实现**（协议未验证的代码只会在坏路径上更难排查）。
+- **② 桌面端 frame 业务 schema / 完整 row kind 联合仍未还原**：`FRAME-CODEC.md:773` 自认该表置信度低；
+  本轮在 bundle 里只抓到 3 个 kind literal（`turnHeader` / `hookInvocation` / `timelineMarker`，见
+  `research/asar/out/preload/index.cjs:40` 一带），未取全。风险可控：App 已渲染 8 种 kind
+  （`ui/screens/ConversationScreen.kt:1493-1502`），其余落到 `PlainRow` 显示 `"{kind} #{rowId}"` 原文，
+  **最坏是样式降级，不崩、不丢行**。若要继续穷举，需在 preload 的 zod 定义处按 `kind:e.literal(` 全量提取。
 
 ### P1-4 协议【待验证】项补全（✅ 2026-09-29 完成）
 
