@@ -176,7 +176,14 @@ class Probe:
     def open(self):
         url = RELAY + (f"?mid={self.mid}" if self.mid else "")
         self.log("connecting", url)
-        self.ws = connect(url, open_timeout=15)
+        try:
+            # websockets 17：`proxy` 默认 True = 读「操作系统代理」（Windows 注册表）。
+            # 本机系统代理指向已关闭的 Clash 端口 → ConnectionRefused；
+            # 显式 None = 只读环境变量（本机为空）→ 直连（zcode.z.ai 直连实测可达）。
+            self.ws = connect(url, open_timeout=15, proxy=None)
+        except TypeError:
+            # 自带 wsclient（标准库实现）无 proxy 参数
+            self.ws = connect(url, open_timeout=15)
         self.log("ws open")
 
     def send_payload(self, payload):
@@ -267,6 +274,19 @@ class Probe:
         不是包一层的数组（见 toService 代理的 F(o) 分支）。
         """
         return self._rpc(102, channel, name, vql_encode(arg))
+
+    def send_dispose(self, listen_req_id):
+        """发 103 EventDispose（A-3 探测用）。
+
+        字段规格取自官方 web bundle 的 `sendCancelOrDispose`：
+            zu(n,[e,t]); zu(n,void 0)
+        即头部数组为 **两元素** `[103, 原监听请求 id]`（与 102 的四元素
+        `[102, id, channel, event]` 不同），参数段为 undefined。
+        """
+        body = vql_encode([103, listen_req_id]) + vql_encode(None)
+        self.log(f"rpc send 103 EventDispose listenId={listen_req_id} bytes={len(body)}")
+        self._send_frame(body)
+        return listen_req_id
 
     def _rpc(self, typ, channel, name, arg_bytes):
         req = self.next_req; self.next_req += 1
@@ -444,6 +464,123 @@ def main():
     p.pump(4)   # 收 RPC 通道的 Initialize(200)（未初始化前请求会被服务端丢弃）
     if mode == "chan":
         probe_channels(p)
+        return 0
+    if mode == "dispose":
+        # A-3 探测：发 103 EventDispose，验证服务端行为与事件流是否停止。
+        # 优先选 running 会话（有持续 delta 才能做「前后对比」；静态会话基线为 0 无意义）。
+        tasks = result.get("tasks") or []
+        target = next((t for t in tasks if not session_prefix or t.get("taskId", "").startswith(session_prefix)), None)
+        if target is None and session_prefix is None:
+            target = next((t for t in tasks if t.get("displayStatus") == "running"), None)
+        if not target:
+            print("找不到目标会话（可直接看 bootstrap 列表或指定前缀）")
+            return 1
+        print("观察会话:", target.get("taskId"), target.get("displayStatus"), target.get("title"))
+        target_ws = {"workspacePath": target.get("workspacePath")}
+        if target.get("workspaceIdentity"):
+            target_ws["workspaceIdentity"] = target["workspaceIdentity"]
+
+        hello_rid = p.call("zcode-agent", "helloConversationV4", [])
+        p.pump(3)
+        hello = p.last_result(hello_rid) or {}
+        client_id = f"probe-{uuid.uuid4()}"
+        p.call("zcode-agent", "initializeConversationV4", [{
+            "kind": "clientHello",
+            "protocolVersion": hello.get("protocolVersion", 3),
+            "clientId": client_id,
+            "clientKind": "mobileApp",
+            "appVersion": "1.0.0",
+        }])
+        p.pump(3)
+        listen_rid = p.listen("zcode-agent", "onDynamicConversationFrame", target_ws)
+        p.pump(3)
+        p.call("zcode-agent", "subscribeConversationV4", [dict(target_ws, sessionId=target.get("taskId"))])
+
+        def events_since(from_idx):
+            return sum(1 for typ, rid, _ in p.frames[from_idx:] if typ == 204 and rid == listen_rid)
+
+        print(f"—— 阶段 1：订阅后观察 12s（listen_id={listen_rid}）")
+        base1 = len(p.frames)
+        p.pump(12)
+        n1 = events_since(base1)
+        print(f"    基线：204 事件 {n1} 帧")
+
+        print("—— 阶段 2：发送 103 EventDispose")
+        base2 = len(p.frames)
+        p.send_dispose(listen_rid)
+        p.pump(6)
+        replies = [(typ, rid, body) for typ, rid, body in p.frames[base2:] if typ in (201, 202, 203)]
+        if replies:
+            for typ, rid, body in replies:
+                print(f"    服务端应答：type={typ} id={rid} body={str(body)[:200]}")
+        else:
+            print("    服务端未对 103 返回 201/202/203（静默）")
+
+        print("—— 阶段 3：dispose 后再观察 12s")
+        base3 = len(p.frames)
+        p.pump(12)
+        n2 = events_since(base3)
+        print(f"    同一 listen 的 204 事件：{n2} 帧")
+
+        print("—— 结论")
+        if n1 == 0 and n2 == 0:
+            print("    ⚠️ 基线为 0（该会话当前无事件流）——本次探测无法判定，请换 running 会话重试")
+        elif n1 > 0 and n2 == 0:
+            print("    ✅ 103 生效：dispose 后事件流停止（可据此启用 App 侧 SEND_EVENT_DISPOSE）")
+        else:
+            print("    ❌ 103 未生效：dispose 后事件仍在推送（服务端不认该帧或字段不符）")
+        return 0
+    if mode == "dispose-stress":
+        # A-3 验收口径的探针版：「切 N 次会话入站量不随 N 增长」——
+        # 循环 listen→subscribe→dispose N 次，最后留一个监听，统计观察窗内 204 帧的
+        # listen_id 分布：只有 1 个 id 在收 = 旧监听已释放；多个 id 重复推同一事件 = 泄漏。
+        n = int(sys.argv[2]) if len(sys.argv) > 2 and sys.argv[2].isdigit() else 10
+        tasks = result.get("tasks") or []
+        target = next((t for t in tasks if not session_prefix or t.get("taskId", "").startswith(session_prefix)), None)
+        if target is None:
+            target = next((t for t in tasks if t.get("displayStatus") == "running"), None)
+        if not target:
+            print("找不到目标会话")
+            return 1
+        print("观察会话:", target.get("taskId"), target.get("displayStatus"))
+        target_ws = {"workspacePath": target.get("workspacePath")}
+        if target.get("workspaceIdentity"):
+            target_ws["workspaceIdentity"] = target["workspaceIdentity"]
+        hello_rid = p.call("zcode-agent", "helloConversationV4", [])
+        p.pump(3)
+        hello = p.last_result(hello_rid) or {}
+        p.call("zcode-agent", "initializeConversationV4", [{
+            "kind": "clientHello", "protocolVersion": hello.get("protocolVersion", 3),
+            "clientId": f"probe-{uuid.uuid4()}", "clientKind": "mobileApp", "appVersion": "1.0.0",
+        }])
+        p.pump(3)
+
+        print(f"—— 循环 {n} 次：listen → subscribe → dispose")
+        for i in range(n):
+            lid = p.listen("zcode-agent", "onDynamicConversationFrame", target_ws)
+            p.pump(2)
+            p.call("zcode-agent", "subscribeConversationV4", [dict(target_ws, sessionId=target.get("taskId"))])
+            p.pump(2)
+            p.send_dispose(lid)
+            p.pump(1)
+            print(f"    第 {i + 1}/{n} 次完成（listen_id={lid} 已 dispose）")
+
+        print("—— 末次订阅（保留监听）后观察 15s：统计 204 帧的 listen_id 分布")
+        last_lid = p.listen("zcode-agent", "onDynamicConversationFrame", target_ws)
+        p.pump(2)
+        p.call("zcode-agent", "subscribeConversationV4", [dict(target_ws, sessionId=target.get("taskId"))])
+        base = len(p.frames)
+        p.pump(15)
+        from collections import Counter
+        dist = Counter(rid for typ, rid, _ in p.frames[base:] if typ == 204)
+        print(f"    末次 listen_id={last_lid}；观察窗内 204 帧分布：{dict(dist)}")
+        live_ids = [k for k, v in dist.items() if v > 0]
+        if not live_ids:
+            print("    ⚠️ 观察窗内无事件（无法判定）——请在窗口内让会话产生事件后重试")
+        elif live_ids == [last_lid]:
+            print("    ✅ 只有最后一个监听在收：旧监听全部释放（无 N 倍放大）")
+        else:
+            print(f"    ❌ 检测到 {len(live_ids)} 个监听同时在收（旧监听泄漏，流量随 N 放大）")
         return 0
     tasks = result.get("tasks") or []
     target = next((t for t in tasks if not session_prefix or t.get("taskId", "").startswith(session_prefix)), None)

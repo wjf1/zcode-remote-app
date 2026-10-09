@@ -23,6 +23,8 @@
 >
 > **🆕 同日第三批（C-5 静态部分 + 看门狗可测试化）**：**C-5①** `AppViewModel` 的 `ev.data.toString()` 观测代码整段移入 `BuildConfig.DEBUG` 门控（release 不再为每个 delta 做全量 JSON 序列化——R8 只剥离日志调用、不剥离实参求值）；**桥看门狗**到点决策抽成纯函数 `RpcChannel.watchdogDecision`（Noop/Retry/Fail）+ 单测——闭合 beta15「重开用尽 → 可见失败」真机未能构造的验收缺口；CI 增「`ZLog.e` 只写元信息」断言。三批合计单测 **144 项全绿**（107 → 144）。**C-5 其余（③④⑤⑦）与 C-12 仍未做**：改 Compose 缓存语义 / 并发路径，须真机观察 + 独立灰度。
 >
+> **🆕 同日第四批（A-3 实测确认并启用）**：用户打开桌面端「移动端远程控制」面板后，用 `tools/probe.py` 完成 A-3 的**静态 + 动态双确认**：① 官方 bundle 实证字段规格 = `[103, id]` + undefined 参数段（已修正 App 侧编码——原实现缺参数段）；② `dispose` 实测：活跃会话 dispose 前 12s 收 8 帧、发 103 后 12s **0 帧**（服务端静默接受）；③ `dispose-stress 10` 实测：10 次 subscribe→dispose 后观察窗只有最后 1 个 listen_id 在收（**无 N 倍放大**，对应验收口径）。`ConversationChannel.SEND_EVENT_DISPOSE` 已置 **true**。探针两处修复（websockets 17 的 proxy 默认读系统代理导致 ConnectionRefused、必须带 `ZCODE_MID`）见 §3。
+>
 > ⚠️ **本机模拟器实测定论不可用（2026-10-09 复核）**：emulator 二进制 / AVD（test35）/ system-image 齐备，但启动即退出——原文 `ERROR | x86_64 emulation currently requires hardware acceleration! ... Your CPU: 'CentaurHauls'`（兆芯 CPU 无 Intel/AMD 虚拟化扩展）。**UI 类验收仍只能真机**；换 Intel/AMD 机器可解锁「视觉/布局/空态」类验证，但触觉、通知策略、真实会话仍须真机。
 >
 > **真机验收清单（2026-10-09 批 · 待做）**
@@ -33,6 +35,7 @@
 > 5. **C-4 浅色主题**：切浅色后审批卡标题、待处理角标、次要文本、工具轨迹色、Diff 增删色均清晰可读；思考折叠行显示内容摘要。
 > 6. **C-7 缓存**：删除会话后 `adb shell run-as com.zcode.remote ls files/ | grep rows_` 不再有该会话文件；打开 >30 个会话后文件数收敛到 30。
 > 7. **C-11 横幅**：在「待办」Tab 批准/拒绝一条 → 横幅出现并自动消退（不再永久滞留）。
+> 8. **A-3 退订**：连续切 20 次会话后，`logcat` 可见 `rpc dispose listenId=…`（每次切走都发），且入站事件量不随切换次数增长（泄漏时同事件会被多个 listenId 重复推送）；桌面端侧监听数不单调增长。
 >
 > | 项 | 状态 |
 > |---|---|
@@ -51,7 +54,7 @@
 > - ⚠️ **release（R8）包与 debug 包签名不同**（debug `3A:B5:8F…` / release `1D:46:E9…`）：手机上若已装 debug 包，`adb install -r` release 包会 `INSTALL_FAILED_UPDATE_INCOMPATIBLE`，需先卸载——**会丢失配对凭据**，属破坏性操作，动手前必须取得用户同意。beta16 的 release 包因此**未做真机冒烟**，上机验收用的是同源 debug 包。
 > - ⚠️ **观察窗口已重置**：按 §6.0 P0-2 规则，v1.0 判停线自补丁/对齐轮**真机验收通过之日**重新计时；最近一次重置因 **beta17**，且 **beta17 真机验收已于 2026-10-08 通过**，窗口自该日起重新计时（预计 2026-10-11 收官）。
 > - ⚠️ **实测系统为 Android 17 / HyperOS**（旧记录为 Android 15）：跨两个大版本，接入时须把 USB 用途切到「传输文件」才暴露 ADB 接口。P0-2 第 2/3 项依赖 HyperOS 后台与通知策略，跨版本升级后务必重新观察。
-> - **未做项现状（2026-10-09 更新）**：**档 C 首批 7 项已落地**（C-1/C-2/C-4/C-6/C-7/C-10/C-11）+ **无设备可验证项已落地**（C-8；A-3/A-4 前置；C-5① 的 release 热点门控；桥看门狗决策纯函数化）。**仍未做（有依据，勿当遗漏）**：**A-3 启用**（待真机 / `probe` 探测 103 服务端行为后置 `SEND_EVENT_DISPOSE=true`）、**A-4 自愈与 buffer 策略** 与 **C-5 其余（③ rows 拷贝 / ④ Compose 解析缓存 / ⑤⑦ 并发与快照差分）**（改并发与 Compose 缓存语义，须真机观察 + 独立灰度）、**C-3**（emoji 图标替换需先评估 `material-icons-extended` 包体；键盘 inset 根因须真机量测）、**C-9/C-12**（加密存储需 Android Keystore 运行时验证；拆分为二期）、决策项（ws:// 明文中继、reverseLayout）。
+> - **未做项现状（2026-10-09 更新）**：**档 C 首批 7 项 + A-3 + 无设备可验证项（C-8、A-4 前置、C-5①、看门狗可测试化）已落地**。**仍未做（有依据，勿当遗漏）**：**A-4 自愈与 buffer 策略** 与 **C-5 其余（③ rows 拷贝 / ④ Compose 解析缓存 / ⑤⑦ 并发与快照差分）**（改并发与 Compose 缓存语义，须真机观察 + 独立灰度）、**C-3**（emoji 图标替换需先评估 `material-icons-extended` 包体；键盘 inset 根因须真机量测）、**C-9/C-12**（加密存储需 Android Keystore 运行时验证；拆分为二期）、决策项（ws:// 明文中继、reverseLayout）。
 > - 🆕 **验证副作用（需知悉）**：验证附件 chip 时向真实会话 `sess_0f00b96b`（「zcode-dotfiles 优化方案可行性确认」）写入了一条测试消息（`attachment-render-check` + 89B 测试文件）。核对 `tasks-index` 确认**未调度 agent 轮次、未消耗额度**；协议无删除消息操作，无法程序化清理。
 >
 > **真机验收清单（beta13/beta14/beta15）**
@@ -226,8 +229,20 @@ export ANDROID_AVD_HOME="F:\\AI\\Zcode\\zcode-remote-app\\toolchain\\avd"
 ADB=toolchain/platform-tools/adb.exe    # adb/模拟器全套在此
 
 # 协议探针（模拟手机端，调试协议秒级迭代；凭据自动读 PC 端 ZCode 配置）
-ZCODE_MID=$(python -c "import json;print(json.load(open(r'C:/Users/admin/.zcode/v2/telemetry-state.json'))['deviceMid'])") \
-  python tools/probe.py auth|boot|bridge|chan|sub <会话ID前缀>
+# ⚠️ 必须带 ZCODE_MID（telemetry-state.json 的 deviceMid）：缺失时 auth 虽返回 auth_ack，但
+#    pair_status=waiting（配对绑定含机器 ID）——2026-10-09 实测踩坑。
+# ⚠️ 探针与桌面端/手机互踢（同 deviceSid 单 terminal 槽）：探针上线会把桌面端 KICKED（后者自动
+#    重连），用完即退；探测期间桌面端日志可见 `external relay device KICKED, reconnecting`。
+ZCODE_MID=$(python -c "import json;print(json.load(open(r'C:/Users/Administrator/.zcode/v2/telemetry-state.json'))['deviceMid'])") \
+  python tools/probe.py auth|boot|bridge|chan|sub|dispose|dispose-stress <会话ID前缀>
+
+# A-3 探测子命令（2026-10-09 新增）：
+#   dispose <前缀>       订阅 → 12s 基线 → 发 103 EventDispose → 12s 观察（事件流应停止）
+#   dispose-stress [N]   N 次 listen→subscribe→dispose 后留一个监听，按 listen_id 统计 204 帧
+#                        分布（只有 1 个 id 在收 = 无泄漏；多 id 重复推 = N 倍放大）
+# 探针代理坑（2026-10-09）：websockets 17 的 `proxy` 默认 True = 读「操作系统代理」（Windows
+# 注册表）——本机系统代理指向未运行的 Clash 端口会 ConnectionRefused；probe.py 已显式
+# `proxy=None`（只读环境变量）直连，zcode.z.ai 实测直连可达。
 python tools/setmode.py list|set <taskId前缀> build|yolo   # 切会话权限模式（验收审批用）
 python tools/_e2e_send.py                                  # 以手机端身份发排队消息
 python tools/_e2e_tap_approve.py                           # 验收自动化：等通知→点「允许一次」→回读证据
@@ -256,7 +271,7 @@ ADB -s <serial> shell am broadcast -n com.zcode.remote/.debug.DebugApprovalRecei
 | 前台服务 | ✅ 实测（FGS specialUse + 进程级 ConnectionScope 单例，断网重连与保活全通） | `service/ConnectionService.kt` |
 | 会话页排版对齐 + 会话级状态面板（beta17） | ✅ 代码 + 单测 + **真机视觉验收通过** | `ui/components/CollapsibleRow.kt` `ui/components/SessionStatusPanel.kt` `ui/components/ToolKindLabels.kt` `ui/theme/Typography.kt` `ui/theme/Dimens.kt` `ui/screens/ConversationScreen.kt` `relay/ConversationFrames.kt` |
 | 体验补强首批 C-1/C-2/C-4/C-6/C-7/C-10/C-11（2026-10-09，**未发布**） | ✅ 代码 + 单测 + debug/release 构建通过；**⏳ 真机验收待做** | `relay/UserFacingError.kt` `relay/ConversationChannel.kt` `AppViewModel.kt` `ui/screens/ConversationScreen.kt` `ui/screens/ApprovalsTab.kt` `ui/theme/Theme.kt` `storage/SessionCacheStore.kt` `MainActivity.kt` |
-| 无设备可验证项 + C-5① + 看门狗可测试化（2026-10-09，**未发布**） | ✅ 代码 + 144 项单测 + debug/release 构建通过 | `storage/DevicesCodec.kt` `relay/RpcChannel.kt` `relay/ConversationChannel.kt` `AppViewModel.kt` `.github/workflows/ci.yml` |
+| 无设备可验证项 + C-5① + 看门狗可测试化 + **A-3 实测启用**（2026-10-09，**未发布**） | ✅ 代码 + 144 项单测 + debug/release 构建通过；**A-3 经 probe 静态 + 动态双确认并启用** | `storage/DevicesCodec.kt` `relay/RpcChannel.kt` `relay/ConversationChannel.kt` `AppViewModel.kt` `tools/probe.py` `.github/workflows/ci.yml` |
 
 版本序列：`v0.2.0-m2` → `v0.2.1-m2b` → `v0.2.2-m3a` → `v0.2.3-m3b` → `v0.3.0-m3` →
 `v0.4.0-beta1…beta6`（发版内测 → 真机修复 → 16KB 对齐 → 互踢修复 → 扫码重构 → 排版对齐）→
@@ -286,7 +301,7 @@ ADB -s <serial> shell am broadcast -n com.zcode.remote/.debug.DebugApprovalRecei
 17. **用户可见错误必须过 `UserFacingError.map()`（C-2，2026-10-09）**：本地自造英文（`bridge not ready` / `timeout after` / `channel reset`…）与服务端 fault code 不得直出 UI；新增失败路径时在展示点调用它（`UserFacingErrorTest` 有「不得泄漏裸英文」断言）。
 18. **本地回显气泡与会话绑定（C-6，2026-10-09）**：`AppViewModel.pendingUserMessages` 在切会话 / 断开时清空；服务端回显按「文本 trim 相等」匹配移除（回显可能是桌面端发的消息，不能误删本机 pending）。
 19. **`devices_v2` 凭据文件是新旧双格式（C-8，2026-10-09）**：新格式为 kotlinx.serialization 结构化 JSON；**旧格式（0x01 拼接行、控制字符未转义、按 JSON 规范非法）用 kotlinx 读不出来是正常现象**——`DevicesCodec.decode` 失败后必须走 `decodeLegacy`（读到即迁移）。改存储结构前先看 `DevicesCodecTest` 的双格式用例。
-20. **A-3/A-4 的保守开关（2026-10-09）**：`ConversationChannel.SEND_EVENT_DISPOSE = false`（103 的 payload 规格未实测）与「缺口只记 WARN 日志、不触发重订阅」都是刻意保守的默认值——**未经真机 / `probe` 探测确认前不得打开**；A-4 的 buffer 策略改动还须独立 commit + 独立真机回归。
+20. **A-3 的 103 已实测启用（2026-10-09）**：字段规格 = 官方 bundle `[103, id]` + **undefined 参数段**（两段式，**勿省参数段**）；服务端静默接受、无 201/202/203 应答（fire-and-forget，勿等回包）。`SEND_EVENT_DISPOSE = true` 已启用；复现脚本 `probe.py dispose`（单次对照）与 `dispose-stress N`（N 次循环后按 listen_id 统计 204 帧分布）。**A-4 仍保守**：「缺口只记 WARN 日志、不触发重订阅」，buffer 策略改动须独立 commit + 独立真机回归。
 21. **release 热点在「日志实参」而非日志调用（C-5①，2026-10-09）**：`ZLog.d/i/w` 的**调用**会被 R8 的 `-assumenosideeffects` 剥离，但**实参表达式不会**——`ZLog.d(TAG, ev.data.toString())` 在 release 仍执行 `toString()`。任何「重计算进日志参数」的写法必须自带 `BuildConfig.DEBUG` 门控（例外：`ZLog.e` 在 release 也输出，只允许字符串字面量元信息，CI 有断言守）。
 22. **桥看门狗决策是纯函数（2026-10-09）**：`RpcChannel.watchdogDecision`（Noop/Retry/Fail）由单测钉死——改看门狗行为（超时、重开次数）时先改它和对应单测，不要在 `scheduleBridgeWatchdog` 里散写判断（该路径真机无法构造，单测是唯一防线）。
 
@@ -485,7 +500,7 @@ FCM/小米推送主通道（IM Bot 通道兜底另议）、追功能广度（多
 | ✅ **档 C 首批**（**已落地 · 2026-10-09 · 未发布**） | C-6 发送本地回显、C-1 上传可取消/重试（uploadId 复用）、C-10 深链配对确认、C-11 横幅合并单队列、C-2 错误映射层（14 处）、C-4 浅色对比度 + 折叠摘要 + CI 断言、C-7 缓存删除与 LRU | **待真机验收 + release keystore 恢复后发布**（见顶部 🆕 段） |
 | ✅ **无设备可验证项**（**已落地 · 2026-10-09 · 未发布**） | C-8 凭据结构化序列化（含旧格式迁移）；A-3 前置（103 编码 + 释放入口，**开关默认关闭**）；A-4 前置（缺口检测 + WARN 日志）；C-2 的 CI grep 断言 | **A-3 启用前**需真机 / `tools/probe.py` 探测 103 服务端行为；**A-4 重订阅与 buffer 改动**须独立真机回归 |
 | ✅ **重连退避不重置**（**已修 · beta15 · 真机 PASS**） | `RelayClient` 退避 3s→6s→12s→24s→48s（封顶 48s），**网络恢复事件不重置退避**：约 90s 飞行模式往返后实测恢复 ~47s（基线 `<9s`）。修法：`NetworkGate.onAvailable` → `RelayClient.onNetworkAvailable()` 重置计数并**掐断正在 sleep 的退避**立即重连（须只对 `Paired`/`WaitingPeer` 提前返回，见 CHANGELOG 复盘）。**真机实测：断网 80s → 5s、150s → 3s** | 残留：`onLost` 的 `probeNow()` 去抖守卫仍会误判导致断网期空烧退避（不影响恢复延迟）——改动前需先验证其双网去抖理由 |
-| **A-3** | 订阅监听泄漏：`TYPE_EVENT_DISPOSE = 103` 全库零调用，切 N 次会话后入站流量放大约 N 倍 | 先真机 + 桌面端在线**实测探测** 103 的 payload 字段与服务端行为（协议文档只有帧码表一行，无字段规格）；若服务端不认 103，退化为「仅加代次守卫丢弃旧应答」 |
+| ✅ **A-3**（**已落地 · 2026-10-09 · 未发布**） | 订阅监听泄漏：`TYPE_EVENT_DISPOSE = 103` 零调用 → 现已在切会话 / 重置时发 103 释放旧监听 | 字段规格（官方 bundle 实证 + `probe` 动态实测）与服务端行为（dispose 后事件流停止、10 次循环无泄漏）**均已确认**，`SEND_EVENT_DISPOSE = true`。**App 端到端（真机切 20 次会话）待并入真机验收** |
 | **A-4** | 事件流丢帧无缺口检测 → 会话静默停在旧状态 | 需改 `RpcChannel` buffer 策略（`extraBufferCapacity=256 / DROP_OLDEST` → 照抄 `RelayClient` 的 `512 / SUSPEND` + 单泵），**动并发路径，任务书自标高危**，须独立 commit + 独立真机回归；且与 C-5⑤⑦ 同动 `ConversationFrames`/RowStore 状态机，**排期必须串行** |
 | **T0** | 握手/快照耗时打点（A-2 阈值的测量基础） | 无需立项，属测量工作；见顶部真机验收清单第 5 条。**A-2 的 `HANDSHAKE_*_TIMEOUT_MS` 当前是占位值，必须以 T0 实测分布校准** |
 | **档 C 剩余（C-3/C-5/C-8/C-9/C-12）** | C-3 输入栏图标与键盘 inset 根因（须先真机量 inset；emoji 图标替换另需评估 `material-icons-extended` 包体）、C-5 性能与线程模型（自标高危，须独立灰度）、C-8 手拼 JSON 改序列化、C-9 githubToken 加密存储（复用 MultiDeviceStore，勿引入 EncryptedSharedPreferences）、C-12 AppViewModel 拆分（二期） | 未拍板不得开工；**C-5 与 A-4 同动状态机，排期必须串行** |

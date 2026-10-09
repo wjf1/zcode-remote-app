@@ -413,10 +413,9 @@ class ConversationChannel(private val rpc: RpcChannel) {
      * 缺陷背景：`TYPE_EVENT_DISPOSE = 103` 全库零调用——每次订阅都新建监听而旧监听从不释放，
      * 切 N 次会话后入站流量与解析量放大约 N 倍（「3 天日常使用」最容易积累的退化）。
      *
-     * ⚠️ **开关默认关闭**：协议文档只有帧码表一行、103 的 payload 字段规格未实测
-     * （任务书 §5 A-3 前置条件）。编码函数 `RpcChannel.encodeEventDispose` 与单测已就绪；
-     * 经真机 / `tools/probe.py` 探测确认服务端认这个帧后，把 [SEND_EVENT_DISPOSE] 置 true 即可启用
-     * （发送是 fire-and-forget，失败不影响主流程；若服务端不认 103，退路是仅靠代次守卫丢弃旧应答）。
+     * **2026-10-09 已实测确认启用**（见 [SEND_EVENT_DISPOSE]）：官方 bundle 实证字段规格 +
+     * `tools/probe.py dispose` 动态验证「dispose 后事件流停止」。发送是 fire-and-forget
+     * （服务端对 103 不回 201/202，与实测一致），桥未就绪时静默跳过。
      */
     private fun disposeOldListener(oldListenId: Int?) {
         val id = oldListenId ?: return
@@ -1342,10 +1341,13 @@ class ConversationChannel(private val rpc: RpcChannel) {
 
         /**
          * A-3：是否启用 103 EventDispose（释放旧事件监听）。
-         * **默认关闭**——协议文档仅帧码表一行，payload 字段规格未实测（任务书 §5 A-3 前置）；
-         * 经真机 / `probe` 探测确认服务端认该帧后改此开关即可（编码与单测已就绪）。
+         *
+         * **2026-10-09 已实测确认并启用**（`tools/probe.py dispose`，桌面端面板在线）：
+         * - 字段规格来自官方 web bundle 静态实证（`sendCancelOrDispose`：[103, id] + undefined 参数段）；
+         * - 动态实测（本对话会话，事件流活跃）：dispose 前 12s 收到 8 帧 204（1 快照 + 7 在线增量），
+         *   发 103 后 12s **0 帧**（期间会话仍在产生事件）；服务端对 103 静默接受（无 201/202/203）。
          */
-        private const val SEND_EVENT_DISPOSE = false
+        private const val SEND_EVENT_DISPOSE = true
 
         /**
          * A-2：握手三跳的超时阈值。

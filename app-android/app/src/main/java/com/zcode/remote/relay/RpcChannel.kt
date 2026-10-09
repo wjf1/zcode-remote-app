@@ -474,15 +474,16 @@ class RpcChannel(private val relay: RelayClient) {
         const val TYPE_EVENT_FIRE = 204
 
         /**
-         * A-3 前置：103 EventDispose 帧编码（纯函数，单测见 `PureFunctionsTest`）。
+         * A-3：103 EventDispose 帧编码（纯函数，单测见 `PureFunctionsTest`）。
          *
-         * ⚠️ **形态为最简假设**：协议文档（`CONVERSATION-PROTOCOL.md` §2 帧码表）只有
-         * 「103 | EventDispose | 移除事件监听」一行，**payload 字段规格未实测**。本函数按
-         * 「仅回带原监听请求 id」编码 `[103, id]`；若真机 / `tools/probe.py` 实测要求
-         * 追加 channel/event 参数段，改这里一处即可（对应单测同步改）。
+         * **字段规格 = 官方 web bundle 静态实证 + 动态实测双确认（2026-10-09）**：
+         * 官方 `sendCancelOrDispose` 为 `zu(n,[e,t]); zu(n,void 0)`——头部数组 `[103, id]`
+         * 加一个 undefined 参数段（与 102 listen 的两段式同构）；
+         * `tools/probe.py dispose` 实测：dispose 前 12s 收 8 帧事件、发帧后 12s 归零
+         * （期间会话持续产生事件），服务端静默接受无错误应答。
          */
         internal fun encodeEventDispose(requestId: Int): ByteArray =
-            Vql.serialize(listOf(TYPE_EVENT_DISPOSE, requestId))
+            Vql.serialize(listOf(TYPE_EVENT_DISPOSE, requestId), null)
 
         /**
          * A-4 前置：事件流缺口判定（纯函数，单测见 `PureFunctionsTest`）。

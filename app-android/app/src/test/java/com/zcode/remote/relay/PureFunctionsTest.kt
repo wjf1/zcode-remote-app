@@ -571,10 +571,13 @@ class PureFunctionsTest {
 
     @Test
     fun eventDisposeEncodesTypeAndRequestId() {
-        val head = Vql.deserialize(RpcChannel.encodeEventDispose(7)).value as List<*>
-        // 最简形态 [103, id]（payload 字段规格待实测，见 RpcChannel.encodeEventDispose 注释）
+        // 官方 bundle 实证（sendCancelOrDispose）：两段式——头部数组 [103, id] + 参数段 undefined
+        val decoded = Vql.deserialize(RpcChannel.encodeEventDispose(7))
+        val head = decoded.value as List<*>
         assertEquals(RpcChannel.TYPE_EVENT_DISPOSE, head[0])
         assertEquals(7, head[1])
+        val payload = Vql.deserialize(RpcChannel.encodeEventDispose(7), decoded.nextOffset)
+        assertNull("参数段必须是 undefined（与 102 listen 的两段式同构）", payload.value)
     }
 
     // ---------- 桥看门狗决策（闭合 beta15「重开用尽 → 可见失败」未构造项） ----------

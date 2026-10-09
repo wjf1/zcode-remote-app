@@ -47,8 +47,19 @@
 - **桥看门狗「重开用尽 → 可见失败」可测试化**：把到点决策抽成纯函数 `RpcChannel.watchdogDecision`（`Noop` / `Retry(nextAttempt)` / `Fail`），`scheduleBridgeWatchdog` 改为消费该决策。beta15 遗留的验收缺口（该路径在真机上**无法构造**——需人为丢弃 `workspace-bridge-ready`，App 外部制造不了，当时只有代码推理覆盖）由此被单测钉死。单测 +2。
 - **CI 断言补强**：新增「`ZLog.e` 第二参数必须是字符串字面量」断言——P0-C 红线要求 `e`（release 仍输出）只写元信息，禁止携带 payload / 正文 / 凭据（任务书 §5 决策项建议）。
 
+### 第四批（A-3 EventDispose 实测确认并启用，同日）
+
+> 前置：用户打开桌面端「移动端远程控制」面板（探针需面板在线才 `pair_status=matched`）。
+
+- **字段规格双确认**：官方 web bundle 静态实证 + 动态实测。bundle 里 `sendCancelOrDispose(e,t){ zu(n,[e,t]); zu(n,void 0) }` 给出完整规格——头部数组 `[103, 原监听请求 id]`（**两元素**，区别于 102 的四元素）+ **undefined 参数段**；据此修正了本仓库的 `encodeEventDispose`（原实现只写头部数组、缺参数段）。
+- **动态实测（`tools/probe.py dispose`）**：同一活跃会话（本对话会话，期间持续产生工具调用事件）——dispose 前 12s 收到 **8 帧 204**（1 快照 + 7 在线增量），发 103 后 12s **0 帧**（期间会话仍在产生事件）；服务端对 103 **静默接受**（无 201/202/203）。
+- **压力验证（`tools/probe.py dispose-stress 10`）**：`listen→subscribe→dispose` 循环 10 次后保留 1 个监听，观察窗内 204 帧的 listen_id 分布 = `{末次id: 2}`——**旧监听全部释放、无 N 倍放大**，直接对应任务书 A-3 的验收口径（「切 N 次会话入站量不随 N 增长」）。
+- **启用**：`ConversationChannel.SEND_EVENT_DISPOSE` 由 `false` 置 **`true`**（切会话 / 重置时对旧 listenId 发 103，fire-and-forget）。
+- **探针工具修复（实测踩坑）**：① websockets 17 的 `proxy` 默认 `True` = 读「操作系统代理」（Windows 注册表），本机系统代理指向未运行的 Clash 端口 → `ConnectionRefused`，probe 已显式 `proxy=None`（只读环境变量）直连；② 探针**必须带 `ZCODE_MID`**——缺失时 auth 返回 `pair_status=waiting`（配对绑定含机器 ID），补齐后 `matched`；③ 新增 `dispose` / `dispose-stress` 子命令。
+- **真机待办**：App 侧端到端（连续切 20 次会话，入站流量不随 N 增长）并入真机验收清单；探针上线会把桌面端短暂 KICKED（后者自动重连），属同 deviceSid 单 terminal 槽的预期行为。
+
 ### 验证状态
-- `testDebugUnitTest` + `assembleDebug` **BUILD SUCCESSFUL**；`assembleRelease`（R8 + 资源收缩）**BUILD SUCCESSFUL**；`tools/check_test_count.py` 核对 **144/144 ✓**（三批合计 107 → 144，+37 项）。
+- `testDebugUnitTest` + `assembleDebug` **BUILD SUCCESSFUL**；`assembleRelease`（R8 + 资源收缩）**BUILD SUCCESSFUL**；`tools/check_test_count.py` 核对 **144/144 ✓**（四批合计 107 → 144，+37 项）。
 - ⏳ **真机验收未做**（截至本记录，小米 15 Pro 不在线）：按项目既有门禁（「全部真机验收项通过前不打 tag、不推送」），本段改动**保持未发布**。C-6 回显气泡与移除时序、C-1 取消/重试交互、C-10 确认弹窗、C-4 浅色主题观感、C-2 各文案均需真机复核。
 - ⚠️ **环境阻塞（发布前置）**：本机 `toolchain/keys/zcode-remote.keystore` 与 `app-android/keystore.properties` **均不存在**（`toolchain/` 目录仅剩 `avd/`），无法产出签名 release 包。已安装 release 包的设备若要覆盖升级必须恢复该 keystore（否则只能卸载重装 → 丢失配对凭据，属破坏性操作，须用户同意）。
 
