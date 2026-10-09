@@ -22,8 +22,16 @@ android {
         applicationId = "com.zcode.remote"
         minSdk = 31
         targetSdk = 35
-        versionCode = 27
-        versionName = "0.5.0-beta17"
+        versionCode = 28
+        versionName = "0.5.0-beta18"
+        // 仪器化渲染回归网（src/androidTest）用 androidx.test 默认 runner。
+        // 只在模拟器/真机上跑；CI runner 无设备，故 ci.yml 不接（见 HANDOVER §6.1 回归网）。
+        testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
+    }
+
+    testOptions {
+        // 渲染断言要求稳定帧：关掉系统的窗口/转场动画，避免捕获到中间态
+        animationsDisabled = true
     }
 
     signingConfigs {
@@ -80,6 +88,14 @@ dependencies {
 
     // Sprint 6：JVM 单元测试（VQL 金标准对拍 + 纯函数；不需要模拟器/真机）
     testImplementation("junit:junit:4.13.2")
+
+    // 仪器化渲染回归网（模拟器上跑；用 fixture 行直接渲染真实 Composable，不需要中继/配对）。
+    // 覆盖纯单测够不着的部分：GFM 表格、围栏代码块与语法高亮、折叠行交互。
+    androidTestImplementation(composeBom)
+    androidTestImplementation("androidx.compose.ui:ui-test-junit4")
+    androidTestImplementation("androidx.test.ext:junit:1.2.1")
+    androidTestImplementation("androidx.test:runner:1.6.2")
+    debugImplementation("androidx.compose.ui:ui-test-manifest")
 
     // 扫码配对：CameraX 预览 + ZXing 解码（无 Google 服务依赖，国内可用）
     // CameraX 1.4.x 起原生库按 16 KB 页对齐编译（Android 15 兼容性要求）

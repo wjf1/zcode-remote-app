@@ -1,5 +1,31 @@
 # 变更记录 / Changelog
 
+## v0.5.0-beta18（2026-10-09）· 代码块高亮「吞字」缺陷修复 + 模拟器仪器化渲染回归网
+
+**起因（本地验证抓出，非用户报障）**：beta17 的验收留下一个空洞 —— 抽样会话视口内没有出现围栏代码块与 GFM 表格，这两个组件当时只能标注「未取到真机样本」。本轮在**模拟器**上补一条仪器化渲染测试来堵这个洞，测试第一次运行就把一个**用户可见缺陷**照出来了。
+
+### 修复
+- **代码块里被高亮的字符整个消失（缺陷）**：`dev.snipme highlights` 的 `ColorHighlight.rgb` 是**纯 RGB**（如 `0x2BBAC5`，不含 alpha 位），而 Compose 的 `Color(Int)` 按 **ARGB** 解释 —— 直接把 `rgb` 传进去得到的是 `alpha=0x00` 的**全透明**色。症状不是「高亮没生效」，而是**关键字 / 字符串 / 注释被画成透明、肉眼看不见**，代码块只剩标识符与标点（例如 `fun main() { val message = "hello zcode" }` 会渲染成 `main`、`message`、`println message` 三行残句）。
+  - 修法：新增纯函数 `opaqueHighlightArgb(rgb)`（`rgb or 0xFF000000`）并在 `MarkdownView` 的高亮 span 处统一使用，见 `ui/components/MarkdownView.kt`。
+  - 证据（模拟器实测位图，已归档）：修复前 `docs/screenshots/render-code-block-before-fix.png`、修复后 `docs/screenshots/render-code-block.png`；主题 token 色命中像素 **0 → 1789**。
+  - **影响范围**：beta17 发布的 APK 含此缺陷；任何走 `MarkdownView` 的代码块（会话流里的代码卡片）都受影响。GFM 表格、行内代码、列表、链接不受影响（它们不走这套彩色 span）。
+
+### 新增（验证能力，不新增 App 功能）
+- **模拟器仪器化渲染回归网**（`app/src/androidTest/`，project 首次有 `androidTest` 源集）：用 fixture Markdown 直接渲染真实的 `MarkdownView`，不依赖中继与配对。
+  - `MarkdownRenderTest.gfmTableAndInlineMarkupRender`：表格单元格 / 标题 / 行内代码 / 链接 / 任务列表逐一存在，并对捕获位图断言**着墨像素**（证明真的画到了屏幕上，而不只是语义树里有节点）。
+  - `MarkdownRenderTest.fencedCodeBlockGetsSyntaxHighlighting`：围栏语言名解析 + **主题 token 色真的被画到屏幕上**（按 `#2BBAC5/#D55FDE/#89CA78` 逐像素比对）。**上面那条缺陷就是被这条断言抓出来的**。
+  - 捕获位图留证：`app files/render-evidence/*.png`（`adb exec-out run-as com.zcode.remote cat ...` 取出）。
+- **纯 JVM 高亮单测 `CodeHighlightTest`（4 项）**：把高亮流水线的三层分别钉住 —— 语言名解析、kotlin 代码产出 ≥3 段 ≥3 色高亮、**RGB→ARGB 必须补不透明 alpha**（缺陷成因的针对性回归），以及一条反直觉实测：**语言名不可识别时不是「不亮」，而是回落 DEFAULT 泛化高亮**（原先「未知语言 = 无高亮」的对照组假设因此作废）。
+- `app/build.gradle.kts`：`testInstrumentationRunner` + `animationsDisabled`（渲染断言要求稳定帧）+ androidTest 依赖（`ui-test-junit4` / `ui-test-manifest` / `androidx.test:*`，均为 test/debug 作用域，**不进 release 包**）。
+
+### 验证状态
+- `bash build.sh`（assembleDebug）**BUILD SUCCESSFUL**；`bash build.sh testDebugUnitTest` **BUILD SUCCESSFUL**；`bash build.sh assembleRelease`（R8 + 资源收缩）**BUILD SUCCESSFUL**。
+- 单测：**声明 111 = 实际执行 111 ✓**（beta17 的 107 项 + `CodeHighlightTest` 4 项，`tools/check_test_count.py` 核对）。
+- 仪器化：**模拟器 `apkrev35`（Android 15 / x86_64，AEHD 加速）上 2/2 PASS**（`connectedDebugAndroidTest`）。
+- 修复前后证据：见上文两条截图与 token 色命中像素 0 → 1789。
+- ⚠️ **诚实标注**：本轮修复的验收证据是**模拟器仪器化测试 + 位图断言**，**不是真机验收**（小米 15 Pro 当前未连接）。观察期用的手机若要拿到该修复，需要装 beta18；真机复核（同一段落一次目视确认）仍列为待办。
+- 版本：`versionName 0.5.0-beta18` / `versionCode 28`。
+
 ## v0.5.0-beta17（2026-10-08）· 会话页排版全面对齐桌面端 + 会话级状态面板（含「运行中」状态回填修复）
 
 **起因（用户真机反馈）**：① 会话在运行中，退出到主界面却看不到「运行中」标记；② 「APP 会话里面的显示逻辑和排版能否按桌面端进行设计」。
@@ -54,6 +80,7 @@
   - **C1 增量补丁缺口已修复（关键实证）**：同一会话内顶栏「状态」百分比随流实时递增（`53% → 56% → 63% → 66%`），证明 `state.updated` 的会话级块不再只首帧正确。
   - **稳定性**：`logcat` 无异常、无 `FATAL`、**无 Compose 嵌套滚动告警**（面板滚动落在最外层）。
   - 如实标注未直接观察项：本轮抽样视口内**未出现围栏代码块与 GFM 表格**，故语法高亮与表格渲染未在真机直接取到样本（实现已接库并有单测覆盖，此处属「实机未直接观察」而非「已验」）。
+  - ⚠️ **2026-10-09 追记（beta18）**：上述空洞已由模拟器仪器化测试补上 —— 结果是**表格渲染正常**，而**代码块语法高亮当时是坏的**（高亮字符因 alpha=0 全透明而不可见，见 beta18 条目）。即：这条「未取到样本」如实标注救了一次误判，但缺陷本身确实漏到了发布包里。
 - 版本：`versionName 0.5.0-beta17` / `versionCode 27`。
 
 ## v0.5.0-beta16（2026-10-07）· 会话异常原因可见、标题解包与输入栏对齐（附顶栏标签中文化）
