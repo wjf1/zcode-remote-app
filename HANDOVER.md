@@ -468,6 +468,28 @@ FCM/小米推送主通道（IM Bot 通道兜底另议）、追功能广度（多
 - **判停线**：3 天内无新缺陷 → **达到 v1.0 发布条件**（`HANDOVER §6.1` 里程碑定义）。
 - **若发现问题**：按「真机实测抓出并已修复的问题」同款流程修复 → 补丁版本 → 重置 3 天观察窗口。
 
+> 📮 **2026-10-09 观测期反馈：表单应答失败（**待复现，暂不计为 beta18 缺陷**）**
+>
+> **现象**：用户真机截图（21:02）显示「应答失败：[{code:"invalid_value", path:["answer","action"],
+> values:["accept","decline","cancel"], message:"Invalid option: expected one of …"}]」，对应一条
+> 带选项的表单交互（截图徽标「需要你的输入回答」⇒ `el.questions` 非空，见 `ApprovalsTab.kt:419`）。
+>
+> **host 侧 schema（权威证据）**：`research/asar/out/host/chunk-BG4MS6RN.js` 内联定义
+> `resolveInteraction: answer:{optionId?, freeText?, action?:enum(["accept","decline","cancel"]), content?}` ——
+> `action` 是**可选枚举**，报错说明实际发出的 `action` 是**枚举外的值**（`{freeText}` 这种「不带 action」不触发该错）。
+>
+> **代码侧排查（2026-10-09，全仓穷举）**：能产出 `action` 的位置只有 4 处 ——
+> `AppViewModel.kt:958`（accept）、`:976`（decline）、`:991`（accept）、`notify/ElicitationNotifier.kt:179/186`（accept/decline）
+> —— **不存在能产出非法 action 的路径**，且 `content` 为 `Record<string,unknown>` 亦合规。
+>
+> **最可能来源**：失败发生在 21:02，当时机上装的是一个**我们无法签名、来源不明的异源 debug 包**
+> （SHA-256 `89:45:76:B3…`，本轮已卸载换成 beta18）。该包代码是否与本仓库一致**未知**。
+>
+> **待办（复现即定论）**：① 打开桌面端「移动端远程控制」面板（关着时中继回 `pair_status=waiting`，手机与探针都连不上，
+> 本轮探针实测）；② 若该交互仍在 pending，从 **beta18** 重新提交一次；③ 同时抓
+> `adb logcat -s ConvChannel` 中的 `resolveElicitation … answer=<JSON>` 原始载荷与 host 返回 —— 一次即可判定
+> 「beta18 无此问题」或「确有缺陷」，后者按同款流程修复并重置观察窗口。
+
 ### v1.1 候选待办（未立项，仅登记 · 2026-10-07）
 
 > 来源：《体验提升任务书 v2》。以下均**未获用户拍板**，不得直接开工。
