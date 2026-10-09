@@ -27,6 +27,11 @@
 >
 > ⚠️ **本机模拟器实测定论不可用（2026-10-09 复核）**：emulator 二进制 / AVD（test35）/ system-image 齐备，但启动即退出——原文 `ERROR | x86_64 emulation currently requires hardware acceleration! ... Your CPU: 'CentaurHauls'`（兆芯 CPU 无 Intel/AMD 虚拟化扩展）。**UI 类验收仍只能真机**；换 Intel/AMD 机器可解锁「视觉/布局/空态」类验证，但触觉、通知策略、真实会话仍须真机。
 >
+> **⚠️ 真机验收阻塞（2026-10-09，签名不匹配 · 待用户决策）**：手机（`9f6241b4`）已连上 ADB，但装机被拒——手机上 beta17 的签名指纹 `3A:B5:8F:…:1C:47`，与本机当前 `~/.android/debug.keystore`（`89:45:76:…:CB:B0`，文件时间 9-28）**不一致**（`INSTALL_FAILED_UPDATE_INCOMPATIBLE`）。**已全盘搜索确认本机只有这一个 keystore**；历史记录的 release keystore（`1D:46:E9`，供 Release APK 覆盖升级）同样不在本机。
+> **影响**：① 本批（四批合计）改动无法装机验收 → 不能打 tag / 推送 / 发 Release；② 未来发布的签名包也无法覆盖升级已装设备（除非找回 `1D:46:E9`）。
+> **可选路径（待用户决策）**：**(a)** 找回旧 keystore（`3A:B5:8F` 或 `1D:46:E9` 任一，可能在其他机器 / 备份盘 / 回收站 / toolchain 备份）→ 覆盖安装、不丢配对凭据（最优）；**(b)** 卸载重装（**破坏性**：丢失 App 配对凭据，需用面板二维码重新扫码配对）；**(c)** 给 debug 构建加 `applicationIdSuffix`（如 `.dev`）→ 改包名并存安装，**不碰旧包**，但仍需重新配对（新包无数据）；**(d)** 暂不装机。
+> **附实测**：`adb install --user 999`（小米 XSpace 分身空间）**同样被拒**——Android 的签名一致性校验是**设备级**的，同包名无法在任意用户空间共存不同签名版本；并存安装只能靠改包名。
+>
 > **真机验收清单（2026-10-09 批 · 待做）**
 > 1. **C-6 回显**：发送消息 → 流末尾立即出现半透明「发送中…」气泡 → 服务端回显后自动消失并出现正式消息行；断连发送 → 气泡撤回 + 中文失败横幅。
 > 2. **C-1 上传**：上传中点「取消」→ 停止（日志可见 `attachmentAbort sent`）；弱网失败 → 出现失败行 → 「重试」→ 观察 `attachmentBegin` 的 `nextChunkIndex`/`state`（复用 id 时不从 0 重传）；重选同一文件同样复用 id。
