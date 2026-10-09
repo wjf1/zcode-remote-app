@@ -164,6 +164,8 @@ class ConversationChannel(private val rpc: RpcChannel) {
 
         // 1) 先挂监听：之后所有 204 都挂在 listenId 上。
         //    事件监听服务端只回 204、不回 201，故不注册应答回调（否则会留下永不触发的挂起项）。
+        // A-3：重订阅前释放上一个监听（由开关门控，默认关闭——见 SEND_EVENT_DISPOSE 说明）
+        disposeOldListener(listenId)
         listenId = rpc.listen(RpcChannel.CHANNEL_AGENT, "onDynamicConversationFrame", target)
 
         // 2) hello → 拿 protocolVersion / connectionId
@@ -405,10 +407,29 @@ class ConversationChannel(private val rpc: RpcChannel) {
         }
     }
 
+    /**
+     * A-3：释放服务端的事件监听（切会话 / 重置时调用）。
+     *
+     * 缺陷背景：`TYPE_EVENT_DISPOSE = 103` 全库零调用——每次订阅都新建监听而旧监听从不释放，
+     * 切 N 次会话后入站流量与解析量放大约 N 倍（「3 天日常使用」最容易积累的退化）。
+     *
+     * ⚠️ **开关默认关闭**：协议文档只有帧码表一行、103 的 payload 字段规格未实测
+     * （任务书 §5 A-3 前置条件）。编码函数 `RpcChannel.encodeEventDispose` 与单测已就绪；
+     * 经真机 / `tools/probe.py` 探测确认服务端认这个帧后，把 [SEND_EVENT_DISPOSE] 置 true 即可启用
+     * （发送是 fire-and-forget，失败不影响主流程；若服务端不认 103，退路是仅靠代次守卫丢弃旧应答）。
+     */
+    private fun disposeOldListener(oldListenId: Int?) {
+        val id = oldListenId ?: return
+        if (!SEND_EVENT_DISPOSE) return
+        rpc.disposeEvent(id)
+    }
+
     fun reset() {
         // A-2：作废在途握手应答（迟到应答不得回写已重置的状态）
         generation += 1
         _snapshotAligned.value = null
+        // A-3：重置前释放服务端的事件监听（由开关门控，默认关闭——见 SEND_EVENT_DISPOSE 说明）
+        disposeOldListener(listenId)
         listenId = null
         subscriptionId = null
         sessionId = null
@@ -1318,6 +1339,13 @@ class ConversationChannel(private val rpc: RpcChannel) {
          * （真机验收发现「发送中」永久卡死，2026-09-30）。
          */
         private const val SEND_ACK_TIMEOUT_MS = 15_000L
+
+        /**
+         * A-3：是否启用 103 EventDispose（释放旧事件监听）。
+         * **默认关闭**——协议文档仅帧码表一行，payload 字段规格未实测（任务书 §5 A-3 前置）；
+         * 经真机 / `probe` 探测确认服务端认该帧后改此开关即可（编码与单测已就绪）。
+         */
+        private const val SEND_EVENT_DISPOSE = false
 
         /**
          * A-2：握手三跳的超时阈值。

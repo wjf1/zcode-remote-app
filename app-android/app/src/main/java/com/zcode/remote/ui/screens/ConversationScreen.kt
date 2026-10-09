@@ -2201,7 +2201,7 @@ private fun statusLabel(s: ConversationChannel.Status) = when (s) {
     ConversationChannel.Status.Hello -> "握手中…"
     ConversationChannel.Status.Initialized -> "订阅中…"
     is ConversationChannel.Status.Live -> "已连接"
-    // C-2：底层 reason 可能是 bridge not ready / timeout after… 这类自造英文，先映射再截断
+    // C-2：底层 reason 可能是通道未就绪 / 超时（英文自造短语）这类串，先经 UserFacingError 映射再截断
     is ConversationChannel.Status.Failed -> "异常：${com.zcode.remote.relay.UserFacingError.map(s.reason).take(50)}"
 }
 

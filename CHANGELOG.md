@@ -1,6 +1,6 @@
 # 变更记录 / Changelog
 
-## 未发布（2026-10-09）· v1.1 首批「用户可感知收益」体验补强（C-1 / C-2 / C-4 / C-6 / C-7 / C-10 / C-11）
+## 未发布（2026-10-09）· v1.1 首批体验补强（C-1/C-2/C-4/C-6/C-7/C-10/C-11）+ 无设备可验证项（C-8 + A-3/A-4 前置）
 
 **授权与范围**：用户拍板推进 v1.1 候选里「用户可感知收益」的条目（此前全部 `[需立项]`）。**A-3 / A-4 / C-3 / C-5 本轮不做**——A-3 的 103 帧 payload 无字段规格（须真机 + 桌面端在线探测）、A-4 与 C-5 改动 `RpcChannel`/状态机并发路径（自标高危，须独立灰度 + 独立真机回归）、C-3 的键盘 inset 根因须先真机量测（emoji 图标替换另需先评估 `material-icons-extended` 的包体影响），均以真机实测为前置（详见 `HANDOVER.md` §6.1 与《体验提升任务书 v2》§5）。
 
@@ -30,8 +30,18 @@
 - `ui/theme/ContrastTest.kt`（6 项）：两套主题关键色对 WCAG ≥4.5:1 静态断言 + 两条**反向断言**（旧低对比色值不得回流）。
 - `tools/check_test_count.py` 动态比对：**声明 134 = 实际执行 134**。
 
+### 无设备可验证项（同日第二批，用户指示「按建议执行」）
+
+> 本批全部为「无需真机/模拟器即可完成并验证」的工作项（本机模拟器实测不可用：CPU 为兆芯 `CentaurHauls`，x86_64 镜像强制要求硬件加速，emulator 直接退出——证据已入档）。
+
+- **C-8 多机凭据持久化改结构化序列化**：`MultiDeviceStore` 原手拼 JSON（转义只覆盖 `\` 与 `"`）并以正则 + `split` 解析——设备名含换行、制表或其它控制字符时会写出损坏 JSON。现抽出纯函数 `storage/DevicesCodec.kt`（kotlinx.serialization 结构化对象 + `ignoreUnknownKeys`），**保留旧格式解析分支并在读取成功后一次性迁移**（旧数据内嵌 0x01 控制字符未转义、属非法 JSON，kotlinx 读不了，必须双路径兼容）。
+- **A-3 前置：103 EventDispose 就绪（默认关闭）**：新增 `RpcChannel.encodeEventDispose`（纯函数，`[103, id]` 最简形态）、`disposeEvent` 发送入口（fire-and-forget）、`ConversationChannel.disposeOldListener` 在切会话 / 重置路径上的调用点；由 `SEND_EVENT_DISPOSE = false` 门控——协议文档只有帧码表一行、**payload 字段规格未实测**，经真机 / `tools/probe.py` 探测确认后再置 true 即启用（退路：服务端不认 103 时仅靠代次守卫丢弃旧应答）。
+- **A-4 前置：事件流缺口检测（可观测）**：新增纯函数 `RpcChannel.hasSeqGap`（连续 / 跳号 / 重复 / 回退四类）+ 收帧路径 WARN 日志，用于真机现场诊断丢帧。**「触发重订阅」与「buffer 策略改 SUSPEND + 单泵」仍按高危处理**，须独立 commit + 独立真机回归后才可启用。
+- **C-2 收尾：CI 断言**：`.github/workflows/ci.yml` 新增「UI 层不得出现底层英文错误串」grep 步骤（`bridge not ready` / `timeout after` / `bridge re-established` / `channel reset` 四个字面量只允许存在于 relay 协议层与映射表），与 `UserFacingErrorTest` 的行为断言配套。
+- **新增单测（+8 项，134 → 142）**：`storage/DevicesCodecTest.kt`（6 项：特殊字符往返、多设备保序、active 缺省、旧格式 0x01 解析、损坏 JSON 兜底、旧格式空列表）+ `PureFunctionsTest` +2（缺口四类判定、103 编码形态）。
+
 ### 验证状态
-- `testDebugUnitTest` + `assembleDebug` **BUILD SUCCESSFUL**；`assembleRelease`（R8 + 资源收缩）**BUILD SUCCESSFUL**；`tools/check_test_count.py` 核对 **134/134 ✓**。
+- `testDebugUnitTest` + `assembleDebug` **BUILD SUCCESSFUL**；`assembleRelease`（R8 + 资源收缩）**BUILD SUCCESSFUL**；`tools/check_test_count.py` 核对 **142/142 ✓**。
 - ⏳ **真机验收未做**（截至本记录，小米 15 Pro 不在线）：按项目既有门禁（「全部真机验收项通过前不打 tag、不推送」），本段改动**保持未发布**。C-6 回显气泡与移除时序、C-1 取消/重试交互、C-10 确认弹窗、C-4 浅色主题观感、C-2 各文案均需真机复核。
 - ⚠️ **环境阻塞（发布前置）**：本机 `toolchain/keys/zcode-remote.keystore` 与 `app-android/keystore.properties` **均不存在**（`toolchain/` 目录仅剩 `avd/`），无法产出签名 release 包。已安装 release 包的设备若要覆盖升级必须恢复该 keystore（否则只能卸载重装 → 丢失配对凭据，属破坏性操作，须用户同意）。
 

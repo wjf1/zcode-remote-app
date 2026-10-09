@@ -40,6 +40,23 @@ jobs:
       - name: 断言「声明的 @Test 全部被执行」
         run: python tools/check_test_count.py
 
+      # C-2：UI 层不得出现底层自造英文错误串（必须经 UserFacingError.map() 映射后才能展示）。
+      # 这些字面量只允许存在于 relay/ 协议层（错误消息源）与映射表本身；
+      # 一旦有人在 UI 界面层直出，这里立刻变红（映射行为由 UserFacingErrorTest 单测覆盖）。
+      - name: 断言 UI 层不出现裸英文错误串（C-2）
+        run: |
+          cd app-android/app/src/main/java/com/zcode/remote
+          if grep -rn --include="*.kt" \
+              -e "bridge not ready" \
+              -e "timeout after" \
+              -e "bridge re-established" \
+              -e "channel reset" \
+              ui/ MainActivity.kt; then
+            echo "::error::UI 层出现底层英文错误串，须经 UserFacingError.map() 映射后再展示"
+            exit 1
+          fi
+          echo "✓ UI 层无裸英文错误串"
+
       - name: 汇总测试结果
         if: always()
         run: |

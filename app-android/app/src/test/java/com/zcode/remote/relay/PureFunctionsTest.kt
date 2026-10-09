@@ -555,4 +555,25 @@ class PureFunctionsTest {
         }
         assertNull(displayStatusForPhase(null))
     }
+
+    // ---------- A-4：事件流缺口判定 ----------
+
+    @Test
+    fun seqGap_detectsOnlyForwardJumps() {
+        assertFalse("连续（+1）不应报缺口", RpcChannel.hasSeqGap(2, 1))
+        assertTrue("跳号（丢了 seq=2）应报缺口", RpcChannel.hasSeqGap(3, 1))
+        assertTrue("大跳号应报缺口", RpcChannel.hasSeqGap(10, 7))
+        assertFalse("重复帧不应报缺口", RpcChannel.hasSeqGap(5, 5))
+        assertFalse("迟到旧帧（回退）不应报缺口", RpcChannel.hasSeqGap(4, 5))
+    }
+
+    // ---------- A-3：103 EventDispose 帧编码 ----------
+
+    @Test
+    fun eventDisposeEncodesTypeAndRequestId() {
+        val head = Vql.deserialize(RpcChannel.encodeEventDispose(7)).value as List<*>
+        // 最简形态 [103, id]（payload 字段规格待实测，见 RpcChannel.encodeEventDispose 注释）
+        assertEquals(RpcChannel.TYPE_EVENT_DISPOSE, head[0])
+        assertEquals(7, head[1])
+    }
 }

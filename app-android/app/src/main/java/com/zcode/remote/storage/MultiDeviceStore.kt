@@ -28,19 +28,8 @@ class MultiDeviceStore(context: Context) {
     }
 
     fun save(snapshot: Snapshot) {
-        val lines = snapshot.devices.map { d ->
-            listOf(d.deviceSid, d.passHash, d.deviceMid ?: "", d.deviceName ?: "", d.remoteUrl)
-                .joinToString("\u0001")
-        }
-        val json = buildString {
-            append("{\"active\":\"")
-            append((snapshot.activeSid ?: snapshot.devices.firstOrNull()?.deviceSid ?: "")
-                .replace("\"", ""))
-            append("\",\"list\":[")
-            append(lines.joinToString(",") { l -> "\"" + l.replace("\\", "\\\\").replace("\"", "\\\"") + "\"" })
-            append("]}")
-        }
-        writeEncrypted("devices_v2", json)
+        // C-8：结构化序列化（kotlinx.serialization），替换原手拼 JSON 的不完备转义
+        writeEncrypted("devices_v2", DevicesCodec.encode(snapshot.devices, snapshot.activeSid))
     }
 
     /** 追加/更新设备（同 deviceSid 覆盖）并激活。 */
@@ -76,21 +65,21 @@ class MultiDeviceStore(context: Context) {
     private fun readV2(): Snapshot? {
         val json = readEncrypted("devices_v2") ?: return null
         ZLog.i("MultiDeviceStore", "readV2 json.len=${json.length}")
-        return runCatching {
-            // 轻量解析（避免引 JSON 库）：active 与 list 行都经我们自己的转义规则写出
-            val active = Regex("\"active\":\"([^\"]*)\"").find(json)?.groupValues?.get(1)
-            val listPart = json.substringAfter("\"list\":[", "").substringBeforeLast("]")
-            val devices = listPart.split("\",\"").mapNotNull { raw ->
-                val line = raw.trim().removePrefix("\"").removeSuffix("\"")
-                    .replace("\\\"", "\"").replace("\\\\", "\\")
-                if (line.isBlank()) return@mapNotNull null
-                val p = line.split("\u0001")
-                if (p.size < 5) return@mapNotNull null
-                PairedDevice(p[0], p[1], p[2].ifEmpty { null }, p[3].ifEmpty { null }, p[4])
-            }
+        // C-8：新格式（结构化 JSON）
+        DevicesCodec.decode(json)?.let { (devices, active) ->
             ZLog.i("MultiDeviceStore", "readV2 parsed=${devices.size} active=$active")
-            Snapshot(devices, active?.ifEmpty { null })
-        }.onFailure { ZLog.w("MultiDeviceStore", "readV2 failed", it) }.getOrNull()
+            return Snapshot(devices, active)
+        }
+        // 旧格式（0x01 拼接行、控制字符未转义，kotlinx 读不了）→ 解析后立即以新格式重写（一次性迁移）
+        val legacy = DevicesCodec.decodeLegacy(json)
+        if (legacy == null) {
+            ZLog.w("MultiDeviceStore", "readV2 新旧两种格式均解析失败，按空快照处理")
+            return null
+        }
+        val (devices, active) = legacy
+        ZLog.i("MultiDeviceStore", "readV2 legacy 迁移 parsed=${devices.size} active=$active")
+        runCatching { save(Snapshot(devices, active)) }   // 迁移写入失败不阻断读取（下次再试）
+        return Snapshot(devices, active)
     }
 
     /** 旧版单条（iv/data）→ v2。 */

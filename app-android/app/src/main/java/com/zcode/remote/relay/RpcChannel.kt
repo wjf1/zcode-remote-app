@@ -240,6 +240,22 @@ class RpcChannel(private val relay: RelayClient) {
         return id
     }
 
+    /**
+     * A-3 前置：[encodeEventDispose] 的发送入口（fire-and-forget，与 [listen] 同构——服务端
+     * 对 103 的应答形态未知，不注册回调；发送失败不影响主流程）。返回 false = 桥未就绪。
+     */
+    fun disposeEvent(listenId: Int): Boolean {
+        val bridge = _bridge.value
+        if (bridge !is BridgeState.Ready) {
+            ZLog.w(TAG, "disposeEvent($listenId) skipped: bridge not ready")
+            return false
+        }
+        val msg = encodeEventDispose(listenId)
+        ZLog.i(TAG, "rpc dispose listenId=$listenId bytes=${msg.size}")
+        sendMessage(msg, bridge.bridgeSessionId)
+        return true
+    }
+
     private fun sendMessage(message: ByteArray, bridgeSessionId: String) {
         val bytes = message
         val crc = CRC32().apply { update(bytes) }.value
@@ -311,7 +327,15 @@ class RpcChannel(private val relay: RelayClient) {
             }
             joined
         }
-        messageSeq?.let { ack(it, bridgeSessionId) }
+        messageSeq?.let { seq ->
+            // A-4 前置：事件流缺口检测（纯函数判定 + WARN 日志）。
+            // 本轮只落地「检测与可观测」——「触发重订阅」与「buffer 策略改 SUSPEND/单泵」
+            // 属高危改动（任务书自标），须独立 commit + 独立真机回归，见 HANDOVER §6.1。
+            if (lastAckedMessageSeq > 0 && hasSeqGap(seq, lastAckedMessageSeq)) {
+                ZLog.w(TAG, "事件流缺口检测: seq=$seq lastAcked=$lastAckedMessageSeq（中间有帧未收到）")
+            }
+            ack(seq, bridgeSessionId)
+        }
         handleMessage(complete)
     }
 
@@ -421,6 +445,30 @@ class RpcChannel(private val relay: RelayClient) {
         const val TYPE_ERROR = 202
         const val TYPE_ERROR_OBJ = 203
         const val TYPE_EVENT_FIRE = 204
+
+        /**
+         * A-3 前置：103 EventDispose 帧编码（纯函数，单测见 `PureFunctionsTest`）。
+         *
+         * ⚠️ **形态为最简假设**：协议文档（`CONVERSATION-PROTOCOL.md` §2 帧码表）只有
+         * 「103 | EventDispose | 移除事件监听」一行，**payload 字段规格未实测**。本函数按
+         * 「仅回带原监听请求 id」编码 `[103, id]`；若真机 / `tools/probe.py` 实测要求
+         * 追加 channel/event 参数段，改这里一处即可（对应单测同步改）。
+         */
+        internal fun encodeEventDispose(requestId: Int): ByteArray =
+            Vql.serialize(listOf(TYPE_EVENT_DISPOSE, requestId))
+
+        /**
+         * A-4 前置：事件流缺口判定（纯函数，单测见 `PureFunctionsTest`）。
+         *
+         * 事件流帧的 `messageSeq` 单调递增（WS 帧严格有序，服务端不重发已 ack 的帧）。
+         * 收到的 seq 与已确认水位 [lastAckedSeq] 之间「跳号」即说明中间有帧丢失——
+         * 表现为会话静默停在旧状态（ack 已发出、服务端不再重放）。
+         *
+         * 四类输入：连续（incoming == last+1）→ false；跳号（> last+1）→ **true**；
+         * 重复（==）→ false；回退（<，迟到旧帧）→ false。
+         */
+        internal fun hasSeqGap(incomingSeq: Int, lastAckedSeq: Int): Boolean =
+            incomingSeq > lastAckedSeq + 1
 
         /** 通道名（asar/out/host/chunk-RWMCBKS2.js 枚举）。 */
         const val CHANNEL_AGENT = "zcode-agent"      // ← 会话/对话方法都在这个通道上
