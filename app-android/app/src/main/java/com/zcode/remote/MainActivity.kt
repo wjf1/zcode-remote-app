@@ -24,6 +24,8 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.zcode.remote.relay.ApprovalOption
+import com.zcode.remote.relay.approvalsForSession
+import com.zcode.remote.relay.elicitationsForSession
 import com.zcode.remote.relay.ConversationChannel
 import com.zcode.remote.relay.PendingApproval
 import com.zcode.remote.relay.SessionItem
@@ -90,8 +92,11 @@ class MainActivity : ComponentActivity() {
                             status = vm.conversationStatus,
                             meta = vm.conversationMeta,
                             rows = vm.rows.toList(),
-                            approvals = vm.approvals,
-                            elicitations = vm.elicitations,
+                            // 跨会话隔离（2026-10-09 真机反馈）：待处理项合并了
+                            // 「任务事件流（全 workspace）」与「会话流（当前订阅）」两路，
+                            // 会话页只能渲染属于本会话的卡，否则 B 会话会弹出 A 会话的审批。
+                            approvals = approvalsForSession(vm.approvals, target.taskId),
+                            elicitations = elicitationsForSession(vm.elicitations, target.taskId),
                             approvalFeedback = vm.approvalFeedback,
                             earlier = vm.earlier,
                             sessionState = vm.sessionState,

@@ -321,3 +321,25 @@ data class PendingElicitation(
             } ?: emptyList()
     }
 }
+
+/**
+ * 会话页只渲染「属于当前会话」的待处理项（审批）。
+ *
+ * 背景（2026-10-09 真机反馈「在其他会话也会弹审批」）：待处理项有两路来源 ——
+ * 会话流（只含当前订阅会话）与**任务事件流（覆盖整个 workspace，不限当前订阅会话）**，
+ * 两路合并后是一个全局列表。会话页此前把整份全局列表直接铺在输入栏上方，
+ * 于是一条属于 A 会话的审批会出现在 B 会话的页面上。
+ *
+ * `sessionId == null`（解析时拿不到归属）按**可见**处理：宁可多显示一条，
+ * 也不能把当前会话的卡隐藏掉（未知归属 ≠ 属于别的会话）。「待办」页仍用全局列表并按会话分组。
+ */
+internal fun approvalsForSession(
+    list: List<PendingApproval>,
+    sessionId: String?,
+): List<PendingApproval> = list.filter { it.sessionId == null || it.sessionId == sessionId }
+
+/** 同 [approvalsForSession]，用于表单/计划类交互。 */
+internal fun elicitationsForSession(
+    list: List<PendingElicitation>,
+    sessionId: String?,
+): List<PendingElicitation> = list.filter { it.sessionId == null || it.sessionId == sessionId }

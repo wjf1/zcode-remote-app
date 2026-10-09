@@ -1,5 +1,25 @@
 # 变更记录 / Changelog
 
+## v0.5.0-beta19（2026-10-09）· 待处理项跨会话泄漏修复（在别的会话弹出本会话的审批/提问）
+
+**起因（观测期真机反馈）**：用户在会话 B 的页面上看到了**属于会话 A** 的提问卡 —— 截图是一个还没有任何消息行的会话（`重试 / 状态 12% / cn:deepseek-…`），输入栏上方却铺着一张「提问 · 需要你的回答：本地 9 处含这两个名字的位置，实际删除范围定哪个？」（该问题属于另一个会话）。
+
+### 修复
+- **会话页内联的审批卡 / 提问卡改为按当前会话过滤**。待处理项有两路来源：会话流（只含当前订阅会话）与**任务事件流（覆盖整个 workspace，不限当前订阅会话）**，两路合并后是一个全局列表；会话页此前把整份列表直接铺在输入栏上方（`ConversationScreen` 的 `approvals.forEach` / `elicitations.forEach`），于是 A 会话的卡会出现在 B 会话上。
+  - 新增纯函数 `approvalsForSession(list, sessionId)` / `elicitationsForSession(list, sessionId)`（`relay/Interactions.kt`）；调用点 `MainActivity` 的会话页改传**按 `target.taskId` 过滤后**的列表（含顶栏「待审批 N」角标，随之自动收敛）。
+  - **归属未知（`sessionId == null`）按可见处理**（fail-open）：未知归属 ≠ 属于别的会话 —— 宁可多显示一条，也不能把当前会话的卡藏掉。若写成严格过滤，会把「会话流快照没带 sessionId」的正常条目一并隐藏，比原缺陷更难排查；这条已由单测钉住。
+  - **`待办` 页与通知栏保持全局语义不变**：它们的设计就是跨会话聚合（`ApprovalsTab` 已按会话分组、通知栏本就该提醒任意会话的待处理项），只修被误用的会话页。
+- 同一轮附带的排查记录：用户同晚报告的「应答失败：`answer.action` invalid_value」经核对 **host schema**（`research/asar/out/host/chunk-BG4MS6RN.js`：`action?: enum(["accept","decline","cancel"])`）与全仓 4 处 `action` 产出点，**当前代码不存在能产出非法 action 的路径**；该失败发生在 21:02，当时机上装的是来源不明的异源签名包（已卸载）。结论与复现步骤见 HANDOVER §6.0「观测期反馈」。
+
+### 测试
+- 新增 `relay/PendingScopeTest.kt`（5 项）：本会话保留 / 他会话剔除 / 归属未知 fail-open / 未选中会话时带归属者不放行 / 空输入。单测 111 → **116 项全绿**。
+
+### 验证状态
+- `assembleDebug` / `testDebugUnitTest` / `assembleRelease`（R8 + 资源收缩）三条构建均 BUILD SUCCESSFUL；`tools/check_test_count.py` 核对 **声明 116 = 实际执行 116**。
+- **真机装机冒烟通过**（2026-10-09，小米 15 Pro / Android 17 · HyperOS，debug 包 `versionCode 29`）：升级安装 → 启动 → 打开会话，消息行正常渲染、无待处理项时无卡片、`logcat` 无 `FATAL`。
+- ⚠️ **跨会话 A/B 的真机证据待补**：当前工作区**没有任何 pending 项**，无法当场构造「A 会话挂起 + 看 B 会话」的对照；仓库的 `DebugApprovalReceiver` 只作用于**通知层**（`ApprovalNotifier.sync`），注入不到 App 内存里的待处理列表，已确认无法替代。下次自然出现待处理项时按该场景核对即可。
+- 本版本为**观测期（P0-2）内抓出并修复**的缺陷，按仓库规则观察窗口自本次装机日 **2026-10-09** 重新计时。
+
 ## v0.5.0-beta18（2026-10-09）· 代码块高亮「吞字」缺陷修复 + 模拟器仪器化渲染回归网
 
 **起因（本地验证抓出，非用户报障）**：beta17 的验收留下一个空洞 —— 抽样会话视口内没有出现围栏代码块与 GFM 表格，这两个组件当时只能标注「未取到真机样本」。本轮在**模拟器**上补一条仪器化渲染测试来堵这个洞，测试第一次运行就把一个**用户可见缺陷**照出来了。
