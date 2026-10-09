@@ -3,7 +3,7 @@
 > ## ✅ 项目状态（2026-10-09）：代码块高亮「吞字」缺陷修复 + 模拟器仪器化渲染回归网（beta18）
 >
 > - **当前版本 `v0.5.0-beta18`（versionCode 28）**：代码完成、debug/release 构建通过、**111 项单测全绿**、**模拟器仪器化测试 2/2 通过**；**真机复核待办**（小米 15 Pro 当前未连接 —— 本轮验收证据是模拟器，不等于真机验收，见 §8 红线）。
-> - **最近发布**：tag `v0.5.0-beta17` @ 提交 `879bfd7`；Release <https://github.com/wjf1/zcode-remote-app/releases/tag/v0.5.0-beta17>（附 `ZCodeRemote-0.5.0-beta17.apk`，签名 release 包，versionCode 27）。beta18 发布见本节末尾「发布记录」。
+> - **最近发布**：tag `v0.5.0-beta18` @ 提交 `a82570a`；Release <https://github.com/wjf1/zcode-remote-app/releases/tag/v0.5.0-beta18>（附 `ZCodeRemote-0.5.0-beta18.apk`，签名 release 包，versionCode 28）。上一个发布：tag `v0.5.0-beta17` @ 提交 `879bfd7`（<https://github.com/wjf1/zcode-remote-app/releases/tag/v0.5.0-beta17>）。
 > - **beta18 内容（本地验证驱动，非用户报障）**：为清掉 beta17 验收遗留的「围栏代码块与 GFM 表格没有样本」空洞，在模拟器上补**仪器化渲染回归网**，测试首轮即抓出**用户可见缺陷** —— 高亮库的 `ColorHighlight.rgb` 是纯 RGB，被 Compose `Color(Int)` 按 ARGB 解释后 alpha=0，**代码块里被高亮的字符被画成完全透明**（关键字/字符串/注释整段消失）。修复见 `ui/components/MarkdownView.kt` 的 `opaqueHighlightArgb`；证据 `docs/screenshots/render-code-block-before-fix.png` → `render-code-block.png`（token 色命中 0 → 1789）。**beta17 的 APK 含此缺陷**。
 > - **全部后续开发计划仍取消**（用户决策：Sprint 7 生物识别/自建中继 E2EE、P2-3 余项等一律不做）。
 > - **唯一剩余事项**：P0-2 三天日常使用观察 → 通过即发 **v1.0**（详见 §6.0 待办总览 + §6.0 P0-2 章节）。
