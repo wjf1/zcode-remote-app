@@ -57,6 +57,17 @@ jobs:
           fi
           echo "✓ UI 层无裸英文错误串"
 
+      # P0-C 红线补充（任务书 §5 决策项建议）：ZLog.e 在 release 仍输出（proguard 只剥离 d/i/w），
+      # 约定「e 只写元信息」。断言第二参数必须是字符串字面量开头——变量（payload/content/data…）一律拒绝。
+      - name: 断言 ZLog.e 不携带 payload（P0-C 红线）
+        run: |
+          cd app-android/app/src/main/java/com/zcode/remote
+          if grep -rn --include="*.kt" -E 'ZLog\.e\([A-Za-z_][A-Za-z0-9_]*,[[:space:]]*[a-z_]' .; then
+            echo "::error::ZLog.e 第二参数不是字符串字面量——release 仍输出，禁止携带 payload / 正文 / 凭据"
+            exit 1
+          fi
+          echo "✓ ZLog.e 调用点均只写元信息"
+
       - name: 汇总测试结果
         if: always()
         run: |

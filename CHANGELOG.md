@@ -40,8 +40,15 @@
 - **C-2 收尾：CI 断言**：`.github/workflows/ci.yml` 新增「UI 层不得出现底层英文错误串」grep 步骤（`bridge not ready` / `timeout after` / `bridge re-established` / `channel reset` 四个字面量只允许存在于 relay 协议层与映射表），与 `UserFacingErrorTest` 的行为断言配套。
 - **新增单测（+8 项，134 → 142）**：`storage/DevicesCodecTest.kt`（6 项：特殊字符往返、多设备保序、active 缺省、旧格式 0x01 解析、损坏 JSON 兜底、旧格式空列表）+ `PureFunctionsTest` +2（缺口四类判定、103 编码形态）。
 
+### 第三批（C-5 静态部分 + 看门狗可测试化，同日续做）
+
+- **C-5① release 热点修复**：`AppViewModel` 的 events collector 里 `ev.data.toString()`（**每个 delta 一次全量 JSON 序列化**，主线程 collector 内）此前无任何门控——`ZLog.d` 虽被 R8 的 `-assumenosideeffects` 剥离，但**实参求值不会被剥离**，release 每个 delta 都在付这份成本（任务书 §5 C-5① 纠正 v1 后认定的真凶）。现整段观测代码（toString + 两次 `take` 拷贝 + `rpcEvents` 写入）移入 `BuildConfig.DEBUG` 门控，release 主路径只剩三路事件分发。
+  - ⚠️ **C-5 其余部分本轮不做**：③ `rows.toList()` 整表拷贝、④ `remember(rows)` 里的逐行 JSON 解析缓存化、⑤ 线程与 buffer 策略、⑦ 快照差分——它们改 Compose 缓存语义与并发路径，必须在真机上观察流畅度与列表行为，按任务书要求独立灰度 + 独立回归。
+- **桥看门狗「重开用尽 → 可见失败」可测试化**：把到点决策抽成纯函数 `RpcChannel.watchdogDecision`（`Noop` / `Retry(nextAttempt)` / `Fail`），`scheduleBridgeWatchdog` 改为消费该决策。beta15 遗留的验收缺口（该路径在真机上**无法构造**——需人为丢弃 `workspace-bridge-ready`，App 外部制造不了，当时只有代码推理覆盖）由此被单测钉死。单测 +2。
+- **CI 断言补强**：新增「`ZLog.e` 第二参数必须是字符串字面量」断言——P0-C 红线要求 `e`（release 仍输出）只写元信息，禁止携带 payload / 正文 / 凭据（任务书 §5 决策项建议）。
+
 ### 验证状态
-- `testDebugUnitTest` + `assembleDebug` **BUILD SUCCESSFUL**；`assembleRelease`（R8 + 资源收缩）**BUILD SUCCESSFUL**；`tools/check_test_count.py` 核对 **142/142 ✓**。
+- `testDebugUnitTest` + `assembleDebug` **BUILD SUCCESSFUL**；`assembleRelease`（R8 + 资源收缩）**BUILD SUCCESSFUL**；`tools/check_test_count.py` 核对 **144/144 ✓**（三批合计 107 → 144，+37 项）。
 - ⏳ **真机验收未做**（截至本记录，小米 15 Pro 不在线）：按项目既有门禁（「全部真机验收项通过前不打 tag、不推送」），本段改动**保持未发布**。C-6 回显气泡与移除时序、C-1 取消/重试交互、C-10 确认弹窗、C-4 浅色主题观感、C-2 各文案均需真机复核。
 - ⚠️ **环境阻塞（发布前置）**：本机 `toolchain/keys/zcode-remote.keystore` 与 `app-android/keystore.properties` **均不存在**（`toolchain/` 目录仅剩 `avd/`），无法产出签名 release 包。已安装 release 包的设备若要覆盖升级必须恢复该 keystore（否则只能卸载重装 → 丢失配对凭据，属破坏性操作，须用户同意）。
 

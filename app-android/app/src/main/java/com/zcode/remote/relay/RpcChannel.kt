@@ -40,6 +40,23 @@ class RpcChannel(private val relay: RelayClient) {
         data class Err(val message: String, val raw: JsonElement?) : RpcReply
     }
 
+    /**
+     * 桥看门狗到点后的决策（见 companion 的 `watchdogDecision`）。
+     * 定义在类体内（与 [RpcReply] 同款）——最初放在 companion 内时，测试源集引用
+     * `RpcChannel.WatchdogDecision` 报 Unresolved reference（Kotlin 2.0.20 实编译复现一次），
+     * 移到类体即通过；**勿轻易挪回 companion**。
+     */
+    sealed interface WatchdogDecision {
+        /** 什么都不做：令牌已过期（被更新的一次 open 取代）或桥已就绪。 */
+        data object Noop : WatchdogDecision
+
+        /** 未用尽：带上重开次数继续 `openBridge`。 */
+        data class Retry(val nextAttempt: Int) : WatchdogDecision
+
+        /** 重开次数用尽：置 `BridgeState.Failed`，把「静默卡死」变成「可见失败」。 */
+        data object Fail : WatchdogDecision
+    }
+
     /** 204 EventFire：带请求 id（事件监听的应答都挂在该监听的 id 上）。 */
     data class RpcEvent(val id: Int?, val data: JsonElement)
 
@@ -136,15 +153,25 @@ class RpcChannel(private val relay: RelayClient) {
      */
     private fun scheduleBridgeWatchdog(wsKey: String, taskId: String?, attempt: Int, token: Int) {
         mainHandler.postDelayed({
-            if (token != bridgeOpenToken) return@postDelayed              // 已被更新的一次 open 取代
-            if (_bridge.value is BridgeState.Ready) return@postDelayed     // 已就绪，看门狗自动失效
-            if (attempt >= MAX_BRIDGE_OPEN_ATTEMPTS) {
-                ZLog.w(TAG, "bridge 握手重开已用尽（$attempt 次），置失败态（state=${_bridge.value}）")
-                _bridge.value = BridgeState.Failed("工作区桥未就绪（已重开 $attempt 次）")
-                return@postDelayed
+            // 决策抽成纯函数（watchdogDecision）以便 JVM 单测钉死「重开用尽 → 可见失败」——
+            // 该路径在真机上**无法构造**（需人为丢弃 workspace-bridge-ready，App 外部制造不了，
+            // 见 HANDOVER beta15 记录），此前仅有代码推理覆盖。
+            when (val d = watchdogDecision(
+                token = token,
+                currentToken = bridgeOpenToken,
+                bridgeReady = _bridge.value is BridgeState.Ready,
+                attempt = attempt,
+            )) {
+                is WatchdogDecision.Noop -> Unit
+                is WatchdogDecision.Fail -> {
+                    ZLog.w(TAG, "bridge 握手重开已用尽（$attempt 次），置失败态（state=${_bridge.value}）")
+                    _bridge.value = BridgeState.Failed("工作区桥未就绪（已重开 $attempt 次）")
+                }
+                is WatchdogDecision.Retry -> {
+                    ZLog.w(TAG, "bridge ${BRIDGE_OPEN_TIMEOUT_MS}ms 未就绪，重开 attempt=${d.nextAttempt} ws=$wsKey")
+                    openBridge(wsKey, taskId, d.nextAttempt)
+                }
             }
-            ZLog.w(TAG, "bridge ${BRIDGE_OPEN_TIMEOUT_MS}ms 未就绪，重开 attempt=${attempt + 1} ws=$wsKey")
-            openBridge(wsKey, taskId, attempt + 1)
         }, BRIDGE_OPEN_TIMEOUT_MS)
     }
 
@@ -469,6 +496,26 @@ class RpcChannel(private val relay: RelayClient) {
          */
         internal fun hasSeqGap(incomingSeq: Int, lastAckedSeq: Int): Boolean =
             incomingSeq > lastAckedSeq + 1
+
+        /**
+         * 桥看门狗到点时的决策（纯函数，单测见 `PureFunctionsTest.watchdog*`）。
+         *
+         * 历史背景：beta15 的「桥重开 3 次用尽 → 可见失败」在真机上**无法构造**
+         * （需人为丢弃 `workspace-bridge-ready`，App 外部制造不了），当时只有代码推理覆盖；
+         * 抽成纯函数后该路径由单测钉死（token 过期 / 已就绪 / 未用尽重开 / 用尽置失败）。
+         */
+        internal fun watchdogDecision(
+            token: Int,
+            currentToken: Int,
+            bridgeReady: Boolean,
+            attempt: Int,
+            maxAttempts: Int = MAX_BRIDGE_OPEN_ATTEMPTS,
+        ): WatchdogDecision = when {
+            token != currentToken -> WatchdogDecision.Noop
+            bridgeReady -> WatchdogDecision.Noop
+            attempt >= maxAttempts -> WatchdogDecision.Fail
+            else -> WatchdogDecision.Retry(attempt + 1)
+        }
 
         /** 通道名（asar/out/host/chunk-RWMCBKS2.js 枚举）。 */
         const val CHANNEL_AGENT = "zcode-agent"      // ← 会话/对话方法都在这个通道上

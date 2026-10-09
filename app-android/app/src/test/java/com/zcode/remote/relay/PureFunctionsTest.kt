@@ -576,4 +576,39 @@ class PureFunctionsTest {
         assertEquals(RpcChannel.TYPE_EVENT_DISPOSE, head[0])
         assertEquals(7, head[1])
     }
+
+    // ---------- 桥看门狗决策（闭合 beta15「重开用尽 → 可见失败」未构造项） ----------
+
+    @Test
+    fun watchdog_noopWhenTokenStaleOrBridgeReady() {
+        // 令牌过期：已被更新的一次 open 取代——老看门狗不得再动作（否则重开风暴）
+        assertEquals(
+            RpcChannel.WatchdogDecision.Noop,
+            RpcChannel.watchdogDecision(token = 1, currentToken = 2, bridgeReady = false, attempt = 1),
+        )
+        // 已就绪：看门狗自动失效
+        assertEquals(
+            RpcChannel.WatchdogDecision.Noop,
+            RpcChannel.watchdogDecision(token = 1, currentToken = 1, bridgeReady = true, attempt = 3),
+        )
+    }
+
+    @Test
+    fun watchdog_retriesUntilExhaustedThenFails() {
+        // 未用尽 → 带下一轮次数重开
+        assertEquals(
+            RpcChannel.WatchdogDecision.Retry(2),
+            RpcChannel.watchdogDecision(token = 5, currentToken = 5, bridgeReady = false, attempt = 1),
+        )
+        // 边界：attempt == max-1 仍应重开（重开机会要用满）
+        assertEquals(
+            RpcChannel.WatchdogDecision.Retry(3),
+            RpcChannel.watchdogDecision(token = 5, currentToken = 5, bridgeReady = false, attempt = 2, maxAttempts = 3),
+        )
+        // 用尽 → 置失败（正是真机无法构造、此前只有代码推理覆盖的那条路径）
+        assertEquals(
+            RpcChannel.WatchdogDecision.Fail,
+            RpcChannel.watchdogDecision(token = 5, currentToken = 5, bridgeReady = false, attempt = 3, maxAttempts = 3),
+        )
+    }
 }

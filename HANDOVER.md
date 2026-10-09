@@ -19,7 +19,9 @@
 >
 > **🆕 未发布轮次（2026-10-09，v1.1 首批「用户可感知收益」）**：用户拍板推进此前 `[需立项]` 的档 C 可感知条目。本轮落地 **C-6** 发送本地回显（pending 气泡）、**C-1** 上传可取消/失败可重试（**uploadId 复用命中服务端幂等**）、**C-10** 深链配对确认弹窗、**C-11** 反馈横幅合并单队列（修 ApprovalsTab 文案滞留）、**C-2** 错误文案映射层（`UserFacingError`，14 处）、**C-4** 浅色主题对比度修正 + 思考折叠摘要（含 CI 对比度断言 `ContrastTest`）、**C-7** 缓存文件删除与 LRU。代码 + **134 项单测全绿**（含 +27 新增）+ debug/release 构建通过。**⏳ 真机验收未做（设备不在线）**；**⚠️ 本机 release keystore 缺失**（`toolchain/` 仅剩 `avd/`，`keystore.properties` 不存在）→ 两项都解决前**不 tag、不推送**。详见 `CHANGELOG.md`「未发布」段。
 >
-> **🆕 同日第二批（无设备可验证项，用户指示「按建议执行」）**：**C-8** 多机凭据改 `storage/DevicesCodec.kt` 结构化序列化（旧格式读取后一次性迁移）；**A-3 前置**（`encodeEventDispose` 103 编码 + `disposeEvent` 发送入口 + 切会话/重置调用点，`SEND_EVENT_DISPOSE=false` 门控待实测）；**A-4 前置**（`hasSeqGap` 缺口检测 + WARN 日志，重订阅与 buffer 改动仍按高危待真机）；**C-2 收尾**（CI 加「UI 层不得出现裸英文错误串」grep 断言）。单测 **142 项全绿**（+8）。
+> **🆕 同日第二批（无设备可验证项，用户指示「按建议执行」）**：**C-8** 多机凭据改 `storage/DevicesCodec.kt` 结构化序列化（旧格式读取后一次性迁移）；**A-3 前置**（`encodeEventDispose` 103 编码 + `disposeEvent` 发送入口 + 切会话/重置调用点，`SEND_EVENT_DISPOSE=false` 门控待实测）；**A-4 前置**（`hasSeqGap` 缺口检测 + WARN 日志，重订阅与 buffer 改动仍按高危待真机）；**C-2 收尾**（CI 加「UI 层不得出现裸英文错误串」grep 断言）。
+>
+> **🆕 同日第三批（C-5 静态部分 + 看门狗可测试化）**：**C-5①** `AppViewModel` 的 `ev.data.toString()` 观测代码整段移入 `BuildConfig.DEBUG` 门控（release 不再为每个 delta 做全量 JSON 序列化——R8 只剥离日志调用、不剥离实参求值）；**桥看门狗**到点决策抽成纯函数 `RpcChannel.watchdogDecision`（Noop/Retry/Fail）+ 单测——闭合 beta15「重开用尽 → 可见失败」真机未能构造的验收缺口；CI 增「`ZLog.e` 只写元信息」断言。三批合计单测 **144 项全绿**（107 → 144）。**C-5 其余（③④⑤⑦）与 C-12 仍未做**：改 Compose 缓存语义 / 并发路径，须真机观察 + 独立灰度。
 >
 > ⚠️ **本机模拟器实测定论不可用（2026-10-09 复核）**：emulator 二进制 / AVD（test35）/ system-image 齐备，但启动即退出——原文 `ERROR | x86_64 emulation currently requires hardware acceleration! ... Your CPU: 'CentaurHauls'`（兆芯 CPU 无 Intel/AMD 虚拟化扩展）。**UI 类验收仍只能真机**；换 Intel/AMD 机器可解锁「视觉/布局/空态」类验证，但触觉、通知策略、真实会话仍须真机。
 >
@@ -49,7 +51,7 @@
 > - ⚠️ **release（R8）包与 debug 包签名不同**（debug `3A:B5:8F…` / release `1D:46:E9…`）：手机上若已装 debug 包，`adb install -r` release 包会 `INSTALL_FAILED_UPDATE_INCOMPATIBLE`，需先卸载——**会丢失配对凭据**，属破坏性操作，动手前必须取得用户同意。beta16 的 release 包因此**未做真机冒烟**，上机验收用的是同源 debug 包。
 > - ⚠️ **观察窗口已重置**：按 §6.0 P0-2 规则，v1.0 判停线自补丁/对齐轮**真机验收通过之日**重新计时；最近一次重置因 **beta17**，且 **beta17 真机验收已于 2026-10-08 通过**，窗口自该日起重新计时（预计 2026-10-11 收官）。
 > - ⚠️ **实测系统为 Android 17 / HyperOS**（旧记录为 Android 15）：跨两个大版本，接入时须把 USB 用途切到「传输文件」才暴露 ADB 接口。P0-2 第 2/3 项依赖 HyperOS 后台与通知策略，跨版本升级后务必重新观察。
-> - **未做项现状（2026-10-09 更新）**：**档 C 首批 7 项已落地**（C-1/C-2/C-4/C-6/C-7/C-10/C-11）+ **无设备可验证项已落地**（C-8；A-3/A-4 前置代码与单测就绪，功能开关默认关闭）。**仍未做（有依据，勿当遗漏）**：**A-3 启用**（待真机 / `probe` 探测 103 服务端行为后置 `SEND_EVENT_DISPOSE=true`）、**A-4 自愈与 buffer 策略**与 **C-5**（改并发 / 状态机路径，自标高危，须独立灰度 + 独立真机回归）、**C-3**（emoji 图标替换需先评估 `material-icons-extended` 包体；键盘 inset 根因须真机量测）、**C-9/C-12**（加密存储需 Android Keystore 运行时验证；拆分为二期）、决策项（ws:// 明文中继、reverseLayout）。
+> - **未做项现状（2026-10-09 更新）**：**档 C 首批 7 项已落地**（C-1/C-2/C-4/C-6/C-7/C-10/C-11）+ **无设备可验证项已落地**（C-8；A-3/A-4 前置；C-5① 的 release 热点门控；桥看门狗决策纯函数化）。**仍未做（有依据，勿当遗漏）**：**A-3 启用**（待真机 / `probe` 探测 103 服务端行为后置 `SEND_EVENT_DISPOSE=true`）、**A-4 自愈与 buffer 策略** 与 **C-5 其余（③ rows 拷贝 / ④ Compose 解析缓存 / ⑤⑦ 并发与快照差分）**（改并发与 Compose 缓存语义，须真机观察 + 独立灰度）、**C-3**（emoji 图标替换需先评估 `material-icons-extended` 包体；键盘 inset 根因须真机量测）、**C-9/C-12**（加密存储需 Android Keystore 运行时验证；拆分为二期）、决策项（ws:// 明文中继、reverseLayout）。
 > - 🆕 **验证副作用（需知悉）**：验证附件 chip 时向真实会话 `sess_0f00b96b`（「zcode-dotfiles 优化方案可行性确认」）写入了一条测试消息（`attachment-render-check` + 89B 测试文件）。核对 `tasks-index` 确认**未调度 agent 轮次、未消耗额度**；协议无删除消息操作，无法程序化清理。
 >
 > **真机验收清单（beta13/beta14/beta15）**
@@ -254,7 +256,7 @@ ADB -s <serial> shell am broadcast -n com.zcode.remote/.debug.DebugApprovalRecei
 | 前台服务 | ✅ 实测（FGS specialUse + 进程级 ConnectionScope 单例，断网重连与保活全通） | `service/ConnectionService.kt` |
 | 会话页排版对齐 + 会话级状态面板（beta17） | ✅ 代码 + 单测 + **真机视觉验收通过** | `ui/components/CollapsibleRow.kt` `ui/components/SessionStatusPanel.kt` `ui/components/ToolKindLabels.kt` `ui/theme/Typography.kt` `ui/theme/Dimens.kt` `ui/screens/ConversationScreen.kt` `relay/ConversationFrames.kt` |
 | 体验补强首批 C-1/C-2/C-4/C-6/C-7/C-10/C-11（2026-10-09，**未发布**） | ✅ 代码 + 单测 + debug/release 构建通过；**⏳ 真机验收待做** | `relay/UserFacingError.kt` `relay/ConversationChannel.kt` `AppViewModel.kt` `ui/screens/ConversationScreen.kt` `ui/screens/ApprovalsTab.kt` `ui/theme/Theme.kt` `storage/SessionCacheStore.kt` `MainActivity.kt` |
-| 无设备可验证项 C-8 + A-3/A-4 前置（2026-10-09，**未发布**） | ✅ 代码 + 142 项单测 + debug/release 构建通过 | `storage/DevicesCodec.kt` `relay/RpcChannel.kt` `relay/ConversationChannel.kt` `.github/workflows/ci.yml` |
+| 无设备可验证项 + C-5① + 看门狗可测试化（2026-10-09，**未发布**） | ✅ 代码 + 144 项单测 + debug/release 构建通过 | `storage/DevicesCodec.kt` `relay/RpcChannel.kt` `relay/ConversationChannel.kt` `AppViewModel.kt` `.github/workflows/ci.yml` |
 
 版本序列：`v0.2.0-m2` → `v0.2.1-m2b` → `v0.2.2-m3a` → `v0.2.3-m3b` → `v0.3.0-m3` →
 `v0.4.0-beta1…beta6`（发版内测 → 真机修复 → 16KB 对齐 → 互踢修复 → 扫码重构 → 排版对齐）→
@@ -285,6 +287,8 @@ ADB -s <serial> shell am broadcast -n com.zcode.remote/.debug.DebugApprovalRecei
 18. **本地回显气泡与会话绑定（C-6，2026-10-09）**：`AppViewModel.pendingUserMessages` 在切会话 / 断开时清空；服务端回显按「文本 trim 相等」匹配移除（回显可能是桌面端发的消息，不能误删本机 pending）。
 19. **`devices_v2` 凭据文件是新旧双格式（C-8，2026-10-09）**：新格式为 kotlinx.serialization 结构化 JSON；**旧格式（0x01 拼接行、控制字符未转义、按 JSON 规范非法）用 kotlinx 读不出来是正常现象**——`DevicesCodec.decode` 失败后必须走 `decodeLegacy`（读到即迁移）。改存储结构前先看 `DevicesCodecTest` 的双格式用例。
 20. **A-3/A-4 的保守开关（2026-10-09）**：`ConversationChannel.SEND_EVENT_DISPOSE = false`（103 的 payload 规格未实测）与「缺口只记 WARN 日志、不触发重订阅」都是刻意保守的默认值——**未经真机 / `probe` 探测确认前不得打开**；A-4 的 buffer 策略改动还须独立 commit + 独立真机回归。
+21. **release 热点在「日志实参」而非日志调用（C-5①，2026-10-09）**：`ZLog.d/i/w` 的**调用**会被 R8 的 `-assumenosideeffects` 剥离，但**实参表达式不会**——`ZLog.d(TAG, ev.data.toString())` 在 release 仍执行 `toString()`。任何「重计算进日志参数」的写法必须自带 `BuildConfig.DEBUG` 门控（例外：`ZLog.e` 在 release 也输出，只允许字符串字面量元信息，CI 有断言守）。
+22. **桥看门狗决策是纯函数（2026-10-09）**：`RpcChannel.watchdogDecision`（Noop/Retry/Fail）由单测钉死——改看门狗行为（超时、重开次数）时先改它和对应单测，不要在 `scheduleBridgeWatchdog` 里散写判断（该路径真机无法构造，单测是唯一防线）。
 
 ## 6. 剩余任务（P0 → P2，含验收标准）
 

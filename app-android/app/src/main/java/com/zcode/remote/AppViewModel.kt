@@ -575,11 +575,16 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
                 conv.onEvent(ev, rowStore)
                 sidx.onEvent(ev)
                 wcfg.onEvent(ev)
-                val text = ev.data.toString()
-                // 每个 delta 一条，量大（HANDOVER 技术债）：降为 debug 级，不刷 info 日志
-                ZLog.d(TAG, "rpc event id=${ev.id}: ${text.take(400)}")
-                rpcEvents.add(0, text.take(4000))
-                if (rpcEvents.size > 50) rpcEvents.removeAt(rpcEvents.lastIndex)
+                // C-5①：观测面板只在 debug 构建保留——release 不再为**每个 delta** 做一次
+                // `ev.data.toString()`（全量 JSON 序列化，主线程 collector 内）与 4000 字符拷贝。
+                // ZLog.d 本身在 release 已被 R8 剥离（proguard -assumenosideeffects），但实参求值
+                // 不会——这才是真凶（任务书 §5 C-5① 纠正点：v1 误判为「ZLog 未剥离」）。
+                if (BuildConfig.DEBUG) {
+                    val text = ev.data.toString()
+                    ZLog.d(TAG, "rpc event id=${ev.id}: ${text.take(400)}")
+                    rpcEvents.add(0, text.take(4000))
+                    if (rpcEvents.size > 50) rpcEvents.removeAt(rpcEvents.lastIndex)
+                }
             }
         }
 

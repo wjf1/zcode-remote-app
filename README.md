@@ -64,7 +64,7 @@ ZCode 官方远程控制（`zcode.z.ai/remote`）的**原生安卓增强客户�
 - **强韧断网感知重连（Sprint 1）**：`NetworkGate` 常驻监听系统网络，断网立即重置并挂起，网络恢复即刻重连（事件链全程 <9s）。
 - **会话流附件 chip**：发送带附件的消息后，附件以 chip（图标 + 文件名 + 体积）显示在消息气泡上方，与官方客户端一致；附件字段随行缓存持久化，冷启动秒开时同样可见。
 - **会话异常原因可见**：出错会话在会话页显示完整错误原因（可一键复制），列表对已打开过的会话补齐原因——与桌面端信息对齐。
-- **完整回归测试保护网（Sprint 6 起持续扩充）**：VQL 二进制编解码金标准双向对拍测试（Python↔Kotlin 共享 fixture）、**142 项**纯函数与状态判定单测全绿（含主题对比度静态断言）、GitHub Actions CI 持续集成（含「UI 层不得出现裸英文错误串」断言）。
+- **完整回归测试保护网（Sprint 6 起持续扩充）**：VQL 二进制编解码金标准双向对拍测试（Python↔Kotlin 共享 fixture）、**144 项**纯函数与状态判定单测全绿（含主题对比度静态断言）、GitHub Actions CI 持续集成（含「UI 层不得出现裸英文错误串」与「`ZLog.e` 只写元信息」断言）。
 - **桌面 Widget**：主屏卡片实时显示待处理总数（审批 + 表单交互），点按直达 App；连接断开时明示「未连接」。
 - **可靠连接**：完整官方握手（HMAC proof）、心跳、指数退避重连、断线出站缓冲，单端在线互踢提示。
 
@@ -96,7 +96,7 @@ ZCode 官方远程控制（`zcode.z.ai/remote`）的**原生安卓增强客户�
 | **v1.0 判停** | **3 天日常使用观察（锁屏审批可达 / 杀后台 30min / 网络往返）** | ⏳ 进行中（唯一剩余事项）；观察窗口因 beta13/14/15/16/17 补丁**已重置**，自 beta17 真机验收通过日（2026-10-08）重新计时 |
 | 会话异常原因 + 输入栏对齐 | 会话页显示错误原因（可复制）、列表回填、标题双重序列化解包、输入栏控件对齐（48dp 触控档）、顶栏 phase 标签中文化 | ✅ 代码 + 单测 + **真机验收全通过**（v0.5.0-beta16，2026-10-07） |
 | 会话页排版全面对齐桌面端 + 会话级状态面板 | 工具行改无外框内联折叠、用户气泡改中性表面、助手正文去卡片外壳全宽 Markdown、完整 GFM + 代码语法高亮；新增只读「会话状态」面板（上下文/目标/进程/终端/智能体/排队输入）与「待发送队列条」；修复「运行中」状态退出会话页后不显示 | ✅ 代码 + 107 项单测 + release 构建通过 + **真机验收全通过**（v0.5.0-beta17，2026-10-08） |
-| 体验补强首批 + 无设备可验证项（C-1/C-2/C-4/C-6/C-7/C-8/C-10/C-11 + A-3/A-4 前置） | 发送本地回显（pending 气泡）、上传可取消/失败可重试（**uploadId 复用命中服务端幂等**）、深链配对确认弹窗、反馈横幅合并单队列、错误文案中文化（14 处）、浅色主题 WCAG AA 对比度 + CI 静态断言、缓存文件删除与 LRU；多机凭据改结构化序列化（含旧格式迁移）；103 退订与事件流缺口检测的前置代码（**开关默认关闭，待实测**） | ✅ 代码 + 142 项单测 + debug/release 构建通过；⏳ **真机验收待做**（2026-10-09，**未发布**） |
+| 体验补强首批 + 无设备可验证项 + C-5 静态部分（C-1/C-2/C-4/C-5①/C-6/C-7/C-8/C-10/C-11 + A-3/A-4 前置） | 发送本地回显（pending 气泡）、上传可取消/失败可重试（**uploadId 复用命中服务端幂等**）、深链配对确认弹窗、反馈横幅合并单队列、错误文案中文化（14 处）、浅色主题 WCAG AA 对比度 + CI 静态断言、缓存文件删除与 LRU；多机凭据改结构化序列化（含旧格式迁移）；release 主路径移除每 delta 的全量 JSON 序列化；103 退订与事件流缺口检测的前置代码、桥看门狗决策纯函数化（**开关默认关闭，待实测**） | ✅ 代码 + 144 项单测 + debug/release 构建通过；⏳ **真机验收待做**（2026-10-09，**未发布**） |
 
 ### 接力开发 / Handover
 
@@ -194,7 +194,7 @@ A **native Android client** for the official ZCode Remote Control relay (`zcode.
 - **Foreground Service Keep-Alive & Terminal Notifications (Sprint 1–2 / P0-A)**: `ConnectionService` promoted to a real `specialUse` Foreground Service with process-level `ConnectionScope` singleton to keep connections alive across lock-screen and task killing; persistent system notifications for KICKED / AUTH_FAILED / PROTOCOL_MISMATCH.
 - **Resilient Network-Aware Reconnection (Sprint 1)**: `NetworkGate` actively monitors network connectivity via `ConnectivityManager`, instantly resetting on connection loss and reconnecting in <9s upon network availability.
 - **Attachment Chips in the Conversation Stream**: messages sent with attachments render a chip (icon + file name + size) above the message bubble, matching the official client; the attachment field rides along in the row cache so chips also show on instant-open cold starts.
-- **Regression Safety Net (since Sprint 6, continuously extended)**: Bi-directional VQL binary codec golden fixture tests (Python↔Kotlin shared vectors), **142** pure-function & state-decision unit tests (including static theme-contrast assertions), and GitHub Actions CI automation (with a "no raw English error strings in the UI layer" assertion).
+- **Regression Safety Net (since Sprint 6, continuously extended)**: Bi-directional VQL binary codec golden fixture tests (Python↔Kotlin shared vectors), **144** pure-function & state-decision unit tests (including static theme-contrast assertions), and GitHub Actions CI automation (with "no raw English error strings in the UI layer" and "`ZLog.e` carries metadata only" assertions).
 - **Home-Screen Widget**: Live card showing total pending items, tap to jump into the app.
 - **Reliable Connectivity**: HMAC handshake proof, 30s heartbeat, exponential backoff, and offline outbound queue.
 
@@ -220,7 +220,7 @@ A **native Android client** for the official ZCode Remote Control relay (`zcode.
 | **v1.0 Judgment Line** | **3-day daily-use observation (lock-screen approval reachability / 30-min background kill / network round-trips)** | ⏳ In progress (only remaining item); window **reset** by the beta13–beta17 patches — restarts from beta17 real-device acceptance (2026-10-08) |
 | Session Error Reason + Composer Alignment | Full error reason shown in the session page (copyable), backfilled into the list, double-serialized title unwrapped, composer controls aligned to the 48dp touch tier, phase label localized | ✅ Code + unit tests + **real-device verification all PASS** (v0.5.0-beta16, 2026-10-07) |
 | Conversation Layout Aligned with Desktop + Session Status Panel | Tool rows became borderless inline collapsibles, user bubbles a neutral surface, assistant bodies card-less full-width Markdown, full GFM + code syntax highlighting; added a read-only **Session Status** panel (context / goal / plan / terminal / agents / queued input) and a queued-input strip; fixed the running session not showing in the list after leaving its page | ✅ Code + 107 unit tests + release build green + **real-device acceptance all PASS** (v0.5.0-beta17, 2026-10-08) |
-| UX Polish Batch #1 + No-Device Items (C-1/C-2/C-4/C-6/C-7/C-8/C-10/C-11 + A-3/A-4 groundwork) | Local echo on send (pending bubble), cancellable / retryable uploads (**uploadId reuse hitting the server's idempotent path**), deep-link pair confirmation dialog, unified feedback banner, localized error mapping (14 paths), light-theme WCAG AA contrast + CI assertions, cache cleanup & LRU; structured serialization for multi-device credentials (with legacy migration); groundwork for 103 EventDispose and event-stream gap detection (**switches default off, pending on-device probing**) | ✅ Code + 142 unit tests + debug/release builds green; ⏳ **real-device acceptance pending** (**unreleased**, 2026-10-09) |
+| UX Polish Batch #1 + No-Device Items (C-1/C-2/C-4/C-5①/C-6/C-7/C-8/C-10/C-11 + A-3/A-4 groundwork) | Local echo on send (pending bubble), cancellable / retryable uploads (**uploadId reuse hitting the server's idempotent path**), deep-link pair confirmation dialog, unified feedback banner, localized error mapping (14 paths), light-theme WCAG AA contrast + CI assertions, cache cleanup & LRU; structured serialization for multi-device credentials (with legacy migration); per-delta JSON serialization removed from the release path; groundwork for 103 EventDispose, event-stream gap detection, and a unit-tested bridge-watchdog decision (**switches default off, pending on-device probing**) | ✅ Code + 144 unit tests + debug/release builds green; ⏳ **real-device acceptance pending** (**unreleased**, 2026-10-09) |
 
 ### Releases
 
