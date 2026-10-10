@@ -20,7 +20,7 @@
 - `./build.sh testDebugUnitTest` → BUILD SUCCESSFUL；单测 **194/194** 全绿。
 - `lintDebug` + `lintRelease` → 0 error；`assembleRelease` → BUILD SUCCESSFUL。
 - 仪器化 `ConversationTopBarLayoutTest`（模拟器 test35 / SDK 35）：带修复 **PASS**；临时去修复 **FAIL（554.29dp）** —— 负向对照成立，断言确能捕获该缺陷。
-- C-14 属会话页核心布局，**真机装机回归待办**（修复逻辑为单行文本锁，风险极低）。
+- **真机复验通过（2026-10-10，小米 2410DPN6CC / HyperOS，release beta23，versionName=0.5.0-beta23）**：uiautomator 实测——顶栏（返回键/标题/元数据/胶囊）由修复前 **y≈520、行高约 855px** 回到 **y=161–251、单行**，标题「帮我下载CODEX」与元数据「已连接 · 运行中 · 共 164 行」均恢复可见，会话流首行从 y≈940 提前到 y=308。证据截图 `docs/screenshots/conv-layout-fixed-phone.png`。另：卸载重装（跨签名）后配对凭据保留、无需重扫码。
 
 ## 历史登记（已于 v0.5.0-beta23 修复）· 会话页顶部布局错乱（用户截图反馈，2026-10-10）
 
