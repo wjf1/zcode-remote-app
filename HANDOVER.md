@@ -270,7 +270,7 @@ ADB -s <serial> shell am broadcast -n com.zcode.remote/.debug.DebugApprovalRecei
   再按 `len(text) - text.rfind('```')` 判断代码块离最新内容多远（越小越靠底部，打开即见）。本轮真机复核就是靠它锁定「整理 commandcode-proxy 发行版」（末段即代码块）。
 - ⚠️ **装机签名陷阱（2026-10-09 实测）**：手机上的包可能是**别的 debug 密钥**签的（本轮实测手机为 `89:45:76:B3…`，而仓库 debug 为 `3A:B5:8F:A9…`、release 为 `1D:46:E9:E8…`）——此时 `adb install -r` 必报 `INSTALL_FAILED_UPDATE_INCOMPATIBLE`，只能**卸载重装**，而卸载会清掉配对凭据（需重新扫码）。**动手前先比指纹**：`python tools/_apk_cert_fp.py <apk>`（也能对 `adb shell pm path` 拉下来的包做）。
 - ⚠️ **HyperOS 装机与 USB 两个脾气（2026-10-09 实测）**：① 首次 `adb install` 大概率被 `INSTALL_FAILED_USER_RESTRICTED` 拦下，**重试 + 手机端点「允许」**即 Success（弹窗只在手机屏上，命令会一直挂着，用后台任务等它）；② USB 调试接口会自行掉线 —— 表现为 adb 里 `offline` 或设备消失、Windows 只剩 WPD「Xiaomi 15 Pro」，解法是手机侧把 USB 用途切「传输文件」+ 重新允许调试（或拔插数据线），必要时再 `adb kill-server` 重新枚举（重启 adb server 属常驻服务操作，须先取得用户确认）。
-- **git push**：`git -c http.proxy=http://127.0.0.1:7900 push ...`（本机代理；直连国际线路不稳定。端口随 Clash Verge 混合端口变更过：7897 → **7900**，仓库 `.git/config` 已固化 7900）。
+- **git push**：`git -c http.proxy=http://127.0.0.1:7900 push ...`（本机代理；直连国际线路不稳定。端口随 Clash Verge 混合端口变更过：7897 → **7900**，仓库 `.git/config` 已固化 7900）。**备用通道（2026-10-10 实测）**：若 HTTPS 报 `Connection was reset` / `github.com:443` 连接超时（手机热点链路会间歇性阻断国际线路，而 `api.github.com` 与 gh CLI 仍通），改用 **SSH**：`git push git@github.com:wjf1/zcode-remote-app.git master`（本机 `~/.ssh/id_ed25519` 已配置，`ssh -T git@github.com` 认证通过）。
 
 ## 4. 已完成基线（不要重做）
 
