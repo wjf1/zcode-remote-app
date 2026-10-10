@@ -338,6 +338,8 @@ ADB -s <serial> shell am broadcast -n com.zcode.remote/.debug.DebugApprovalRecei
      /f/AndroidTools/gradle-8.11.1/bin/gradle.bat assembleDebug :app:testDebugUnitTest --console=plain
    ```
    排查抓手：输出为空 + `_tmp/build.log` 时间戳没变 = build.sh 没真正启动生成任务。
+31. **「附件条并入输入栏容器」已试并回滚（C-3，2026-10-10）**：`AttachmentBar` 移入 `InputBar` 的 Surface 后，真机发现「键盘弹出 + 附件 chip」时输入栏容器高度被限制在 **186px**（= 无 chip 时的输入行自然高度），chip 挤占后输入框可见高度压到 ~55px，且顶栏 Row 下移至 y≈578、会话流 scrollable 节点从 dump 消失（收键盘再弹出稳定复现，非时序抖动）。疑似 `fillMaxSize` 根 Column + `imePadding` + 会话流 `weight(1f)` + Material3 `Surface`（内部 Box 传播 minConstraints）的测量交互，未完全定根因即回滚（不为视觉优化承担布局回归）。**量测矩阵（复现/回归对照用）**：无 chip 键盘弹 [1271,1457]（正常）｜有 chip 键盘收 [2060,2377] h=317（正常）｜**有 chip 键盘弹 [1271,1457] h=186（异常）**。后续若重做，先用 Layout Inspector 看测量约束链；`AttachmentBar.modifier` 参数已保留备用。
+30. **键盘 inset 真机量测结论（C-3，2026-10-10）：任务书假设的「键盘弹出多一条空隙」真机不成立**。量测（小米 15 Pro / 1080×2400 / 微信输入法）：IME `touchableRegion` 顶边 **1353**、键盘**可见**顶边 **≈1478**（微信输入法窗口顶部有 ~125px 透明区——`contentTopInsets` 是窗口边界，**不等于可见像素**）、Composer 容器键盘收起 y=[2185,2377] / 弹出 y=[1271,1457] → **上移 920px = 键盘可见高度（922）**，说明 `imePadding()` 正确消费系统 IME inset、`navigationBarsPadding()` 无双计；输入栏与键盘视觉间距 21px（≈7dp，正常）。**结论：inset 链无需改动（不上 edge-to-edge）**。量测方法（可复用）：① `dumpsys input_method | grep "Last computed insets"` 拿 IME insets；② 截图像素逐行采样（PIL）定位键盘可见顶边与 Composer 底边——**dump bounds 不能证明可见性**（被键盘覆盖的窗口仍在树里）；③ ⚠️ **字符串搜索 dump 会被会话流消息污染**：本次「发送指令到 PC 端 Agent…」在树里出现两个节点（一个是我在消息里引用过该句的气泡文本，一个才是真正的 EditText），必须看 class/祖先结构（EditText、Button 等）判别，**勿按文本子串直接点击**。
 
 ## 6. 剩余任务（P0 → P2，含验收标准）
 

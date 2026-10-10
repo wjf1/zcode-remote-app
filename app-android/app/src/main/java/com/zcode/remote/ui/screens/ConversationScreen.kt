@@ -1125,9 +1125,10 @@ private fun AttachmentBar(
     onCancelUpload: () -> Unit,
     onRetryUpload: () -> Unit,
     onDismissUploadFailure: () -> Unit,
+    modifier: Modifier = Modifier,
 ) {
     if (attachments.isEmpty() && uploadName == null && failedUpload == null) return
-    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+    Column(modifier = modifier, verticalArrangement = Arrangement.spacedBy(4.dp)) {
         uploadName?.let { name ->
             Row(
                 verticalAlignment = Alignment.CenterVertically,
@@ -1210,7 +1211,7 @@ private fun AttachmentBar(
                     modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
                     horizontalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
-                    Icon(Icons.Default.Share, null, modifier = Modifier.size(14.dp), tint = MaterialTheme.colorScheme.primary)
+                    Icon(Icons.Default.AttachFile, null, modifier = Modifier.size(14.dp), tint = MaterialTheme.colorScheme.primary)
                     Text(
                         text = a.fileName,
                         style = MaterialTheme.typography.bodySmall.copy(fontWeight = FontWeight.Medium),
@@ -1607,9 +1608,8 @@ private fun UserBubble(row: ConversationRow) {
                     modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
                 ) {
                     Icon(
-                        // 与输入栏附件 chip 保持同一图标（本工程只有 material-icons-core，
-                        // 无 Description / AttachFile 等扩展图标；C-3 已登记统一替换该图标）
-                        imageVector = Icons.Default.Share,
+                        // C-3：与输入栏附件 chip 同一图标（material-icons-extended 的 AttachFile）
+                        imageVector = Icons.Default.AttachFile,
                         contentDescription = "附件",
                         tint = MaterialTheme.colorScheme.primary,
                         modifier = Modifier.size(14.dp),

@@ -1,5 +1,25 @@
 # 变更记录 / Changelog
 
+## v0.5.0-beta22（2026-10-10）· C-3 输入栏并入容器与图标体系（+ 键盘 inset 量测定论）
+
+### 新增 / 变更（C-3）
+- **附件条并入容器：已尝试并回滚（附布局回归记录）**：`AttachmentBar` 移入 `InputBar` 的 Surface（顶部内嵌区）后**真机发现布局回归**——键盘弹出 + 附件 chip 同时存在时，输入栏容器高度被限制在「不含 chip 的测量值」186px，chip 挤入后输入框可见高度压到 ~55px（附件按钮压到 27px），且顶栏 Row 下移至 y≈578、会话流滚动节点从 uiautomator dump 消失；「收键盘再弹出」稳定复现。疑似 `Modifier.fillMaxSize()`（根 Column）+ `imePadding()` + 会话流 `weight(1f)` + Material3 `Surface`（内部 Box 传播 minConstraints）在「非 weight 子元素高度变化 + IME inset 变化」组合下的测量交互，未完全定位即回滚（工程判断：不为视觉优化承担布局回归）。**回滚后**附件 chip 维持容器外独立行（现状可用），`AttachmentBar` 获得 `modifier` 参数（无害保留）。**回滚后真机复验：键盘弹出 + chip 时输入栏不再压缩（见验证状态）**。
+- **Material 图标替换 emoji**：语音输入按钮的 🎤/🔴 改为 `Icons.Default.Mic`（聆听中改用错误色，语义＝点击停止拾音）；附件 chip 图标 `Share` → `AttachFile`（输入栏与会话流用户消息 chip 两处同步替换，原先注释「本工程只有 icons-core」已更新）。新增依赖 `androidx.compose.material:material-icons-extended`——**release 包体增量实测 216 字节**（4,968,857 → 4,969,073 B；R8 只保留被引用的 ImageVector）。
+
+### 量测结论文档化（C-3 前置，推翻任务书假设）
+- **「键盘弹出多一条空隙」真机不成立**：IME `touchableRegion` 顶边 1353、键盘可见顶边 ≈1478（微信输入法窗口顶部有 ~125px 透明区——`contentTopInsets` 是窗口边界、不等于可见像素）、Composer 上移 920px = 键盘可见高度（922px）→ `imePadding()` 正确消费系统 IME inset、`navigationBarsPadding()` 无双计、输入栏与键盘视觉间距 21px（≈7dp）正常。**结论：inset 链无需改动、不上 edge-to-edge**；可复用的量测方法与「dump 字符串搜索被消息文本污染」的坑见 HANDOVER 坑 30。
+
+### 布局回归线索（供后续定位，未完全定根因）
+- 键盘弹出时容器高度 = **186px**（= 键盘未弹、无 chip 时的输入行自然高度）——容器被限制在「不含 chip 的测量值」，chip 挤占后输入行被压缩；
+- 同状态下顶栏 Row 下移至 y≈578（正常 ~150）、会话流 scrollable 节点从 uiautomator dump 消失；
+- 量测矩阵：无 chip 键盘弹 [1271,1457]（h=186，正常）｜无 chip 键盘收 [2185,2377]（h=192）｜**有 chip 键盘收 [2060,2377]（h=317，正常）**｜**有 chip 键盘弹 [1271,1457]（h=186，异常）**；收键盘再弹出稳定复现（非时序抖动）；
+- 疑似 `Modifier.fillMaxSize()`（根 Column）+ `imePadding()` + 会话流 `weight(1f)` + Material3 `Surface`（内部 Box `propagateMinConstraints=true`）在「非 weight 子元素高度变化 + IME inset 变化」组合下的测量交互问题。后续若重做此优化，建议先用 Layout Inspector 看测量约束链。
+
+### 验证状态
+- `assembleDebug` + `testDebugUnitTest` BUILD SUCCESSFUL；`tools/check_test_count.py` 核对 **162/162 ✓**；`assembleRelease` 通过（新签名 `E1:57:1A:49:…`）。
+- ✅ **回滚后真机复验（2026-10-10，小米 15 Pro / release 包覆盖安装）**：① 附件 chip 恢复容器外独立行、输入栏容器 h=192（原状）；② 键盘弹出 + chip 时输入栏正常（附件按钮 h=135、EditText h=158——与改动前基线一致；对比未回滚版附件按钮被压至 27px / 输入框可见 ~55px 的严重回归，问题消除）；③ 附件选择 / 移除流程正常、无崩溃。
+- ⚠️ **既有小瑕疵（非本次引入，回滚前后一致；留档）**：键盘弹出 + 附件 chip 同时存在时，输入框语义边界（dump bounds）比容器底边低 ~37px——截图像素显示实际渲染正常（输入框底 ≈1455，键盘可见顶 1478，无遮挡），疑似 uiautomator 语义边界与渲染边界的差异；与「并入容器」重做一起用 Layout Inspector 复核。
+
 ## v0.5.0-beta21（2026-10-10）· C-5③④ 落地（会话行派生快照 + 派生解析缓存化）· 观察期移除
 
 ### 变更

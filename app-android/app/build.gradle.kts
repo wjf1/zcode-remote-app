@@ -22,11 +22,10 @@ android {
         applicationId = "com.zcode.remote"
         minSdk = 31
         targetSdk = 35
-        // 0.5.0-beta21 = beta20 + C-5③（会话行派生快照：rows 不再每次重组整表拷贝）
-        // / C-5④（会话页派生解析缓存化：流式期解析量 O(n)/token → 增量）
-        // 观察期（P0-2）已按用户决策移除（2026-10-10）
-        versionCode = 31
-        versionName = "0.5.0-beta21"
+        // 0.5.0-beta22 = beta21 + C-3（输入栏：附件条并入容器 + Material 图标替换 emoji；
+        // 键盘 inset 真机量测结论 = 现有链条正确、无需改动，详见 HANDOVER 坑 30）
+        versionCode = 32
+        versionName = "0.5.0-beta22"
         // 仪器化渲染回归网（src/androidTest）用 androidx.test 默认 runner。
         // 只在模拟器/真机上跑；CI runner 无设备，故 ci.yml 不接（见 HANDOVER §6.1 回归网）。
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
@@ -78,6 +77,9 @@ dependencies {
     implementation(composeBom)
     implementation("androidx.compose.ui:ui")
     implementation("androidx.compose.material3:material3")
+    // C-3：Material 图标替换 emoji（Mic / AttachFile 等不在 icons-core 小图标集里）。
+    // 包体影响：R8 只保留被引用的 ImageVector（每图标约 1KB 级），实测增量记入 CHANGELOG。
+    implementation("androidx.compose.material:material-icons-extended")
     implementation("androidx.compose.ui:ui-tooling-preview")
     implementation("androidx.activity:activity-compose:1.9.2")
     implementation("androidx.lifecycle:lifecycle-runtime-ktx:2.8.6")

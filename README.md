@@ -104,6 +104,8 @@ ZCode 官方远程控制（`zcode.z.ai/remote`）的**原生安卓增强客户�
 
 **功能开发已结清（2026-10-05）**：Sprint 0–6 全部完成并真机验收，后续开发计划（Sprint 7 等）经决策取消。当前仅剩「3 天日常使用观察 → 发 v1.0」一步。
 
+**2026-10-10 C-3 图标体系与键盘 inset 定论（v0.5.0-beta22）**：语音按钮 emoji（🎤/🔴）与附件图标（Share）替换为 Material 图标（`Mic` / `AttachFile`，新增 `material-icons-extended`，release 包体增量实测 **216 字节**）；**键盘 inset 真机量测定论**——「键盘弹出多一条空隙」假设不成立（`imePadding()` 消费正确、无双计、输入栏与键盘间距 21px 正常），inset 链无需改动；「附件条并入输入栏容器」尝试后因布局回归回滚（量测线索留档于 [CHANGELOG.md](CHANGELOG.md)）。单测 162 项全绿。
+
 **2026-10-10 C-5③④ 性能落地（v0.5.0-beta21）**：会话页两项性能改动 —— ① 会话行派生快照（`rowsSnapshot`，rows 不再每次重组整表拷贝、派生解析不再因无关重组反复失效）；② 派生解析缓存化（`PathCache` / `DiffCache` 按 rowId + 内容指纹增量解析，流式期解析量从 O(n)/token 降为增量）。单测 155 → **162 项**全绿；真机回归：长会话（1100+ 行）滚动 + 流式期 **1336 帧 0 janky、99th 8ms**。另含**观察期（P0-2）经用户决策移除**。详见 [CHANGELOG.md](CHANGELOG.md)。
 
 **2026-10-09/10 体验补强首批与真机故障修复（已随 v0.5.0-beta20 发布）**：经用户拍板推进 v1.1 候选里「用户可感知收益」的条目 —— 发送本地回显（C-6）、上传可取消/失败可重试且 **uploadId 复用命中服务端幂等**（C-1）、深链配对确认弹窗（C-10）、反馈横幅合并单队列并修复审批 Tab 文案滞留（C-11）、错误文案中文化映射层（C-2，14 处）、浅色主题 WCAG AA 对比度修正 + 思考折叠摘要（C-4，含 CI 静态断言）、缓存文件删除与 LRU（C-7）；另含 A-3 订阅退订实测启用、桥降级自愈（`scheduleBridgeReopen`，修复真机「桌面端已连接、手机显示异常」故障）、离线缓存读取移出主线程（C-5⑤）。单测 **155 项**全绿，debug/release 构建均通过，真机验收 7 项通过 / 1 项部分。发布细节见 [HANDOVER.md](HANDOVER.md) 顶部与 [CHANGELOG.md](CHANGELOG.md)。
@@ -120,7 +122,7 @@ ZCode 官方远程控制（`zcode.z.ai/remote`）的**原生安卓增强客户�
 ### 安装包 / Releases
 
 签名 APK 从 [GitHub Releases](https://github.com/wjf1/zcode-remote-app/releases) 下载
-（最新 `ZCodeRemote-0.5.0-beta21.apk`，minSdk 31，Android 12+）。
+（最新 `ZCodeRemote-0.5.0-beta22.apk`，minSdk 31，Android 12+）。
 
 > ⚠️ **签名更换提示（2026-10-10）**：本版起使用**新的 release 签名**（原 keystore 丢失）。
 > 已装任何历史版本的设备安装本版需**先卸载**（一般设备会丢配对凭据、需重新扫码；**本机小米 15 Pro / HyperOS 实测卸载后凭据未丢、无需重扫码**）；此后以新签名为准，可正常覆盖升级。
@@ -237,7 +239,7 @@ A **native Android client** for the official ZCode Remote Control relay (`zcode.
 ### Releases
 
 Download signed APKs from [GitHub Releases](https://github.com/wjf1/zcode-remote-app/releases)
-(latest: `ZCodeRemote-0.5.0-beta21.apk`, minSdk 31, Android 12+).
+(latest: `ZCodeRemote-0.5.0-beta22.apk`, minSdk 31, Android 12+).
 
 > ⚠️ **Signing key change (2026-10-10)**: starting with this release the app is signed with a **new release key**
 > (the original keystore was lost). Uninstall any previously installed build before installing this one
@@ -249,6 +251,8 @@ Download signed APKs from [GitHub Releases](https://github.com/wjf1/zcode-remote
 > **2026-10-09 defect-fix round (v0.5.0-beta18)**: to close beta17's leftover gap ("no sample of fenced code blocks or GFM tables"), an **instrumented render regression net** was added and run on the **emulator** — and its very first run caught a user-visible defect: the highlighting library returns plain RGB (`0x2BBAC5`-style, no alpha byte), which Compose's `Color(Int)` reads as ARGB, so alpha became 0 and **every highlighted keyword / string / comment was painted fully transparent and thus invisible** (`fun main() { val message = "hello zcode" }` rendered as the three fragments `main`, `message`, `println message`). The fix forces opaque alpha (`opaqueHighlightArgb`); the theme token-colour hit count went **0 → 1789**. Evidence: [before fix](docs/screenshots/render-code-block-before-fix.png), [after fix](docs/screenshots/render-code-block.png), [table sample](docs/screenshots/render-gfm-table.png). **No app features were added**; unit tests grew 107 → **111**, all green, and the instrumented suite passes **2/2** on the emulator (Android 15 / x86_64). > **2026-10-09 fix round (v0.5.0-beta19)**: a real-device report from the observation window — a question card belonging to session A appeared on session B's page. Root cause: pending items are merged from two sources (the conversation stream for the subscribed session, and the task-event stream covering the whole workspace) into one **global list**, which the conversation page rendered wholesale. Fix: new pure helpers `approvalsForSession` / `elicitationsForSession`; the conversation page now receives session-filtered lists, **items with an unknown `sessionId` stay visible** (fail-open), and the To-do tab and notifications keep their cross-session semantics. Unit tests grew 111 → **116**, all green. See [CHANGELOG.md](CHANGELOG.md) and [HANDOVER.md](HANDOVER.md).
 >
 > **2026-10-10 release (v0.5.0-beta20)**: the UX-polish batch from the v1.1 candidate list (local echo C-6, cancellable/retryable uploads C-1, deep-link pair confirmation C-10, unified feedback banner C-11, localized error mapping C-2, light-theme WCAG AA contrast C-4, cache cleanup & LRU C-7), A-3 subscription disposal enabled after on-wire verification, **bridge self-healing** after server-side degradation (`scheduleBridgeReopen`, driven by a real-device fault where the phone showed "abnormal" while the desktop stayed "connected"), offline-cache reads moved off the main thread (C-5⑤), and the merged cloud beta18/beta19 fixes. 155 unit tests green; on-device acceptance 7 pass / 1 partial. See [CHANGELOG.md](CHANGELOG.md).
+>
+> **2026-10-10 icon system & keyboard-inset verdict (v0.5.0-beta22)**: the voice-button emoji (🎤/🔴) and the attachment icon (Share) are replaced with Material icons (`Mic` / `AttachFile`; new `material-icons-extended` dependency, measured release size cost: **216 bytes**); a real-device measurement **disproved** the assumed "extra gap above the keyboard" (imePadding consumes the IME inset correctly, no double-counting, 21px normal spacing — no inset change needed); the "attachment bar into the composer container" refactor was attempted and rolled back after a layout regression (measurement clues archived in [CHANGELOG.md](CHANGELOG.md)). 162 unit tests green.
 >
 > **2026-10-10 performance release (v0.5.0-beta21)**: two conversation-page optimizations — ① a derived rows snapshot (`rowsSnapshot`) so the row list is no longer copied on every recomposition (and downstream derived parsing no longer thrashes on unrelated recompositions); ② per-row parse caches (`PathCache` / `DiffCache`, keyed by rowId + content fingerprint) making streaming-time parsing incremental instead of O(n) per token. Unit tests 155 → **162** green; on-device regression on an 1100+ row session scrolled while streaming: **1336 frames, 0 janky**, 99th 8 ms. Also: the P0-2 observation window was removed by user decision. See [CHANGELOG.md](CHANGELOG.md).
 

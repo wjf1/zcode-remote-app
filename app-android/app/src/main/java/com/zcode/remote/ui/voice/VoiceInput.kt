@@ -11,7 +11,10 @@ import android.speech.SpeechRecognizer
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.PaddingValues
-import androidx.compose.material3.Text
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Mic
+import androidx.compose.material3.Icon
+import androidx.compose.material3.LocalContentColor
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
@@ -113,7 +116,13 @@ fun VoiceInputButton(
         },
         contentPadding = PaddingValues(horizontal = 8.dp),
     ) {
-        Text(if (listening) "🔴" else "🎤", style = MaterialTheme.typography.titleMedium)
+        // C-3：Material 图标替换 emoji（原 🎤/🔴）——emoji 观感随系统字体漂移，
+        // 与输入栏其余图标体系不一致；聆听中改用错误色（点击即停止拾音）。
+        Icon(
+            imageVector = Icons.Default.Mic,
+            contentDescription = if (listening) "停止语音输入" else "语音输入",
+            tint = if (listening) MaterialTheme.colorScheme.error else LocalContentColor.current,
+        )
     }
 }
 
