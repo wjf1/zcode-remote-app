@@ -1,6 +1,6 @@
 # 变更记录 / Changelog
 
-## 未发布（2026-10-09）· v1.1 首批体验补强（C-1/C-2/C-4/C-6/C-7/C-10/C-11）+ 无设备可验证项（C-8 + A-3/A-4 前置）
+## v0.5.0-beta20（2026-10-10）· 桥降级自愈 + 主线程缓存线程化 + v1.1 首批体验补强（含云端 beta18/beta19 合并）
 
 **授权与范围**：用户拍板推进 v1.1 候选里「用户可感知收益」的条目（此前全部 `[需立项]`）。**A-3 / A-4 / C-3 / C-5 本轮不做**——A-3 的 103 帧 payload 无字段规格（须真机 + 桌面端在线探测）、A-4 与 C-5 改动 `RpcChannel`/状态机并发路径（自标高危，须独立灰度 + 独立真机回归）、C-3 的键盘 inset 根因须先真机量测（emoji 图标替换另需先评估 `material-icons-extended` 的包体影响），均以真机实测为前置（详见 `HANDOVER.md` §6.1 与《体验提升任务书 v2》§5）。
 
@@ -75,10 +75,11 @@
 **其余进展**：C-6 补验（发送瞬间气泡 <1s 窗口）经连拍 6 帧仍未捕获——标记「实机未直接观察（低于采样粒度）」；副作用累计 3 条测试消息进入服务端队列（协议无撤回）。
 
 ### 验证状态
-- `testDebugUnitTest` + `assembleDebug` **BUILD SUCCESSFUL**；`tools/check_test_count.py` 核对 **154/154 ✓（第五批 +1）**（本地四批 107 → 144；与云端 beta18/beta19 合并后 = 153；第五批 +1 = 154）；`assembleRelease`（R8 + 资源收缩）在本批代码上 BUILD SUCCESSFUL（见第三批段）。
+- `testDebugUnitTest` + `assembleDebug` **BUILD SUCCESSFUL**；`tools/check_test_count.py` 核对 **155/155 ✓**（本地四批 107 → 144；与云端 beta18/beta19 合并后 = 153；第五批桥自愈 +1 = 154；C-5⑤ +1 = 155）；`assembleRelease`（R8 + 资源收缩）在本批代码上 BUILD SUCCESSFUL（签名 release 包随本版发布）。
+- **发布（2026-10-10）**：tag `v0.5.0-beta20` @ 提交 `5be5634` 已推送（SSH 通道）；Release <https://github.com/wjf1/zcode-remote-app/releases/tag/v0.5.0-beta20>（附 `ZCodeRemote-0.5.0-beta20.apk`，versionCode 30，**新 release 签名** `E1:57:1A:49:…:2B:3F:DD`）；CI run `38030230595` **success**。
 - ✅ **真机验收全部执行完毕（2026-10-09 首轮 + 2026-10-10 补完，装于 beta20 包）**：**7 项通过、1 项部分通过** —— A-3 退订 ✅（20 次切会话 20 条 `rpc dispose`）、C-1 上传 ✅（全链路 begin/14 分片/commit/ref + **取消中止** `attachmentAbort sent`）、C-2 文案 ✅（`bridge not ready` → 「连接通道尚未就绪，请稍后重试」，英文未直出）、C-4 浅色 ✅、C-7 缓存 ✅（LRU 精确收敛 30）、C-10 深链 ✅、C-11 横幅 ✅（出现 + 自动消退）、C-6 回显部分通过（回显移除 + 队列条；发送瞬间 <1s 窗口未取证）。逐项证据与副作用见 `HANDOVER.md` 顶部验收清单。
 - ⚠️ **验收环境两个坑（2026-10-10 实测）**：① 手机给 PC 开热点时 `cmd connectivity airplane-mode enable` 会被系统自动恢复（HyperOS 保热点），断网窗口只够抓一次失败横幅（发送后 2–6 秒内连续 dump）；② UI 自动化坐标会漂移、且会话流里的消息文本会污染字符串检索（老坑重演）——一律用「`content-desc` 精确匹配 + 短文本节点」判读。
-- ⚠️ **签名与发布路径（2026-10-09 实测修正）**：本机 debug keystore（`89:45:76…`）与手机历史包的签名（`3A:B5:8F…`，另一执行环境所签）**不同**，覆盖安装必被拒（`INSTALL_FAILED_UPDATE_INCOMPATIBLE`），只能卸载重装（丢配对凭据，已获用户同意并执行）；`adb install --user 999`（XSpace 分身）**同样被拒**——Android 签名校验是**设备级**的，同包名无法在任意用户空间共存。本机**缺 release keystore**；云端的 beta18/beta19 签名 Release 由另一执行环境产出（其持有 `3A:B5:8F` debug 与 `1D:46:E9` release）。
+- ⚠️ **签名与发布路径（2026-10-09 实测修正）**：本机 debug keystore（`89:45:76…`）与手机历史包的签名（`3A:B5:8F…`，另一执行环境所签）**不同**，覆盖安装必被拒（`INSTALL_FAILED_UPDATE_INCOMPATIBLE`），只能卸载重装（丢配对凭据，已获用户同意并执行）；`adb install --user 999`（XSpace 分身）**同样被拒**——Android 签名校验是**设备级**的，同包名无法在任意用户空间共存。本机**缺 release keystore**；云端的 beta18/beta19 签名 Release 由另一执行环境产出（其持有 `3A:B5:8F` debug 与 `1D:46:E9` release）。**（2026-10-10 更新：新 release keystore 已生成并随 beta20 启用——见上方「发布准备」段；此后以新指纹 `E1:57:1A:49:…` 为准。）**
 ## v0.5.0-beta19（2026-10-09）· 待处理项跨会话泄漏修复（在别的会话弹出本会话的审批/提问）
 
 **起因（观测期真机反馈）**：用户在会话 B 的页面上看到了**属于会话 A** 的提问卡 —— 截图是一个还没有任何消息行的会话（`重试 / 状态 12% / cn:deepseek-…`），输入栏上方却铺着一张「提问 · 需要你的回答：本地 9 处含这两个名字的位置，实际删除范围定哪个？」（该问题属于另一个会话）。
