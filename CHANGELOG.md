@@ -59,9 +59,9 @@
 - **真机待办**：App 侧端到端（连续切 20 次会话，入站流量不随 N 增长）并入真机验收清单；探针上线会把桌面端短暂 KICKED（后者自动重连），属同 deviceSid 单 terminal 槽的预期行为。
 
 ### 验证状态
-- `testDebugUnitTest` + `assembleDebug` **BUILD SUCCESSFUL**；`assembleRelease`（R8 + 资源收缩）**BUILD SUCCESSFUL**；`tools/check_test_count.py` 核对 **144/144 ✓**（四批合计 107 → 144，+37 项）。
-- ⏳ **真机验收未做**（截至本记录，小米 15 Pro 不在线）：按项目既有门禁（「全部真机验收项通过前不打 tag、不推送」），本段改动**保持未发布**。C-6 回显气泡与移除时序、C-1 取消/重试交互、C-10 确认弹窗、C-4 浅色主题观感、C-2 各文案均需真机复核。
-- ⚠️ **环境阻塞（发布前置）**：本机 `toolchain/keys/zcode-remote.keystore` 与 `app-android/keystore.properties` **均不存在**（`toolchain/` 目录仅剩 `avd/`），无法产出签名 release 包。已安装 release 包的设备若要覆盖升级必须恢复该 keystore（否则只能卸载重装 → 丢失配对凭据，属破坏性操作，须用户同意）。
+- `testDebugUnitTest` + `assembleDebug` **BUILD SUCCESSFUL**；`tools/check_test_count.py` 核对 **153/153 ✓**（本地四批 107 → 144；**2026-10-09 与云端 beta18/beta19 合并后**并入其 9 项新单测 = 153，合并冲突 4 处已解）；`assembleRelease`（R8 + 资源收缩）在本批代码上 BUILD SUCCESSFUL（见第三批段）。
+- ✅ **真机首轮验收已执行（2026-10-09）**：A-3 退订 ✅ 通过（交替切会话 20 次 → 20 条 `rpc dispose listenId=…`，与服务端 probe 双验证形成证据链）、C-10 深链配对确认 ✅ 通过、C-6 回显部分通过（回显后气泡不残留 + 「待发送 N 条」队列条正常）；C-2/C-4/C-7/C-11 因设备掉线中断、C-1 未执行——逐项结论见 `HANDOVER.md` 顶部验收清单（含副作用记录：2 条测试消息进队列、无法撤回）。
+- ⚠️ **签名与发布路径（2026-10-09 实测修正）**：本机 debug keystore（`89:45:76…`）与手机历史包的签名（`3A:B5:8F…`，另一执行环境所签）**不同**，覆盖安装必被拒（`INSTALL_FAILED_UPDATE_INCOMPATIBLE`），只能卸载重装（丢配对凭据，已获用户同意并执行）；`adb install --user 999`（XSpace 分身）**同样被拒**——Android 签名校验是**设备级**的，同包名无法在任意用户空间共存。本机**缺 release keystore**；云端的 beta18/beta19 签名 Release 由另一执行环境产出（其持有 `3A:B5:8F` debug 与 `1D:46:E9` release）。
 ## v0.5.0-beta19（2026-10-09）· 待处理项跨会话泄漏修复（在别的会话弹出本会话的审批/提问）
 
 **起因（观测期真机反馈）**：用户在会话 B 的页面上看到了**属于会话 A** 的提问卡 —— 截图是一个还没有任何消息行的会话（`重试 / 状态 12% / cn:deepseek-…`），输入栏上方却铺着一张「提问 · 需要你的回答：本地 9 处含这两个名字的位置，实际删除范围定哪个？」（该问题属于另一个会话）。
