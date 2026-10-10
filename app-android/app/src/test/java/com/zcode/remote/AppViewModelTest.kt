@@ -1,8 +1,14 @@
 package com.zcode.remote
 
+import androidx.compose.runtime.derivedStateOf
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateListOf
+import com.zcode.remote.relay.ConversationRow
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNotSame
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertSame
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -109,5 +115,25 @@ class AppViewModelTest {
         // 加载期间已切走会话 → 丢弃
         assertFalse(AppViewModel.shouldApplyCachedRows("sess_b", "sess_a", true))
         assertFalse(AppViewModel.shouldApplyCachedRows(null, "sess_a", true))
+    }
+
+    // ---------- C-5③：会话行派生快照（引用稳定；无关重组不再整表拷贝） ----------
+
+    @Test
+    fun derivedRowsSnapshot_stableUntilContentChanges() {
+        // 该契约是 ④ 增量缓存生效的前提：快照实例不随无关重组变化，
+        // `remember(rows)` 的派生（SessionFiles / TurnChanges 逐行解析）才只在
+        // 行内容真的变化时重算，而不是每次 UI 重组都重算。
+        val rows = mutableStateListOf<ConversationRow>()
+        val snapshot by derivedStateOf { rows.toList() }
+
+        val first = snapshot
+        assertSame("无内容变化时必须复用同一实例（否则等价于每次重组都拷贝）", first, snapshot)
+
+        rows += ConversationRow(rowId = 1, kind = "assistantText", text = "hi")
+        val second = snapshot
+        assertNotSame("内容变化后必须产生新实例（否则下游 remember 不会重算）", first, second)
+        assertEquals(1, second.size)
+        assertSame("再次读取仍是同一新实例", second, snapshot)
     }
 }

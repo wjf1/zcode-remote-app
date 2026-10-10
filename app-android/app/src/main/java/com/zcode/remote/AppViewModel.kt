@@ -3,6 +3,7 @@ package com.zcode.remote
 import android.app.Application
 import android.net.ConnectivityManager
 import com.zcode.remote.util.ZLog
+import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
@@ -222,6 +223,17 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
     /** 当前会话的行（已按 rowId 排序，UI 直接渲染）。 */
     val rows = mutableStateListOf<ConversationRow>()
     private val rowStore = RowStore(rows)
+
+    /**
+     * C-5③：会话行的派生快照——仅在行内容变化时产生新实例。
+     *
+     * UI 侧原为每次重组都 `rows.toList()`：整表拷贝（长会话 1100+ 行）之外，
+     * 新实例还会让 `remember(rows)` 的派生（SessionFiles / TurnChanges 逐行 JSON 解析）
+     * 一起失效重算——输入框、滚动等无关重组也在付 O(n) 解析的代价。
+     * 派生快照把「拷贝 + 下游失效」收敛为「行内容真的变化时」一次。
+     * 契约（单测钉住）：内容不变 → 同一实例；内容变化 → 新实例。
+     */
+    val rowsSnapshot: List<ConversationRow> by derivedStateOf { rows.toList() }
     var conversationStatus by mutableStateOf<ConversationChannel.Status>(ConversationChannel.Status.Idle)
         private set
     var conversationMeta by mutableStateOf(ConversationChannel.ConversationMeta())

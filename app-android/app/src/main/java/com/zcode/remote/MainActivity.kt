@@ -127,7 +127,7 @@ class MainActivity : ComponentActivity() {
                             title = vm.conversationMeta.title ?: target.title,
                             status = vm.conversationStatus,
                             meta = vm.conversationMeta,
-                            rows = vm.rows.toList(),
+                            rows = vm.rowsSnapshot,
                             pendingUserMessages = vm.pendingUserMessages,
                             // 跨会话隔离（2026-10-09 真机反馈）：待处理项合并了
                             // 「任务事件流（全 workspace）」与「会话流（当前订阅）」两路，
