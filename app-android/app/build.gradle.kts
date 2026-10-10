@@ -22,8 +22,10 @@ android {
         applicationId = "com.zcode.remote"
         minSdk = 31
         targetSdk = 35
-        versionCode = 29
-        versionName = "0.5.0-beta19"
+        // 0.5.0-beta20 = beta19 + 本地未发布四批（A-3 实测启用 / 七项体验补强 / 无设备可验证项 /
+        // C-5① + 看门狗可测试化）合并后的验收版本（合并与验证见 CHANGELOG「未发布」段）
+        versionCode = 30
+        versionName = "0.5.0-beta20"
         // 仪器化渲染回归网（src/androidTest）用 androidx.test 默认 runner。
         // 只在模拟器/真机上跑；CI runner 无设备，故 ci.yml 不接（见 HANDOVER §6.1 回归网）。
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"

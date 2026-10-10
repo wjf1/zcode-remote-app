@@ -60,7 +60,8 @@
 
 ### 验证状态
 - `testDebugUnitTest` + `assembleDebug` **BUILD SUCCESSFUL**；`tools/check_test_count.py` 核对 **153/153 ✓**（本地四批 107 → 144；**2026-10-09 与云端 beta18/beta19 合并后**并入其 9 项新单测 = 153，合并冲突 4 处已解）；`assembleRelease`（R8 + 资源收缩）在本批代码上 BUILD SUCCESSFUL（见第三批段）。
-- ✅ **真机首轮验收已执行（2026-10-09）**：A-3 退订 ✅ 通过（交替切会话 20 次 → 20 条 `rpc dispose listenId=…`，与服务端 probe 双验证形成证据链）、C-10 深链配对确认 ✅ 通过、C-6 回显部分通过（回显后气泡不残留 + 「待发送 N 条」队列条正常）；C-2/C-4/C-7/C-11 因设备掉线中断、C-1 未执行——逐项结论见 `HANDOVER.md` 顶部验收清单（含副作用记录：2 条测试消息进队列、无法撤回）。
+- ✅ **真机验收全部执行完毕（2026-10-09 首轮 + 2026-10-10 补完，装于 beta20 包）**：**7 项通过、1 项部分通过** —— A-3 退订 ✅（20 次切会话 20 条 `rpc dispose`）、C-1 上传 ✅（全链路 begin/14 分片/commit/ref + **取消中止** `attachmentAbort sent`）、C-2 文案 ✅（`bridge not ready` → 「连接通道尚未就绪，请稍后重试」，英文未直出）、C-4 浅色 ✅、C-7 缓存 ✅（LRU 精确收敛 30）、C-10 深链 ✅、C-11 横幅 ✅（出现 + 自动消退）、C-6 回显部分通过（回显移除 + 队列条；发送瞬间 <1s 窗口未取证）。逐项证据与副作用见 `HANDOVER.md` 顶部验收清单。
+- ⚠️ **验收环境两个坑（2026-10-10 实测）**：① 手机给 PC 开热点时 `cmd connectivity airplane-mode enable` 会被系统自动恢复（HyperOS 保热点），断网窗口只够抓一次失败横幅（发送后 2–6 秒内连续 dump）；② UI 自动化坐标会漂移、且会话流里的消息文本会污染字符串检索（老坑重演）——一律用「`content-desc` 精确匹配 + 短文本节点」判读。
 - ⚠️ **签名与发布路径（2026-10-09 实测修正）**：本机 debug keystore（`89:45:76…`）与手机历史包的签名（`3A:B5:8F…`，另一执行环境所签）**不同**，覆盖安装必被拒（`INSTALL_FAILED_UPDATE_INCOMPATIBLE`），只能卸载重装（丢配对凭据，已获用户同意并执行）；`adb install --user 999`（XSpace 分身）**同样被拒**——Android 签名校验是**设备级**的，同包名无法在任意用户空间共存。本机**缺 release keystore**；云端的 beta18/beta19 签名 Release 由另一执行环境产出（其持有 `3A:B5:8F` debug 与 `1D:46:E9` release）。
 ## v0.5.0-beta19（2026-10-09）· 待处理项跨会话泄漏修复（在别的会话弹出本会话的审批/提问）
 
