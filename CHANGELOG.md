@@ -1,5 +1,19 @@
 # 变更记录 / Changelog
 
+## v0.5.0-beta24（2026-10-11）· 顶栏溢出菜单 + 表单应答修复 + 发布签名归一
+
+### 修复
+- **C-14 顶栏空间预算（溢出菜单）**：真机实测——仅加 `maxLines` 兜底后，右侧四个定宽胶囊（文件数 / 状态 / 模式 / 模型）仍把标题列挤到约 **11–16px**，标题与元数据被省略成空、肉眼不可见。把「📁文件数」「状态」从顶栏直排收进右侧「⋮」二级菜单，释放约 460px；真机实测标题/元数据节点由 16px 恢复到 **254px**、可见（用户确认 A：`← 标题… ⋮ build 模型`）。竖向撑高修复（元数据 `maxLines=1`）与仪器化断言见 v0.5.0-beta23。
+- **表单应答失败（`invalid_value @ answer.action`）**：全仓穷举 `"action"` 仅 5 处，四处为合法字面量；唯一**不带 `action`** 的分支是 `AppViewModel.answerElicitationFreeText`（只发 `{freeText}`）。Zod v4 的 `z.enum` 对 `undefined` 亦报 `Invalid option: expected one of …`，故缺字段即命中该错。已改为 `{action:"accept", freeText:text}`。**待真机复测**；若仍失败将临时放开该处日志脱敏、抓实际 wire 载荷精确定位。
+
+### 发布治理（重要）
+- **签名归一到本机 keystore**：历史发布签名 `e1571a49…` 的私钥**已不可得**（用户确认无备份）。自本版起以本机 keystore 为**唯一官方签名**：`toolchain/keys/zcode-remote.keystore`（SHA-256 `1d46e9e8:6748:A2B1:9846:6FFA:C2B5:8F9F:F4BD:BD37:FB68:C35E:1A50:4C65:ED24:BE55`）。**已装历史版本（e1571a49 签名）的设备升级本版需先卸载一次**；此后所有版本可正常覆盖升级。**务必备份 keystore 与口令**（丢失即再次触发全量卸载）。
+- 补齐此前只本地构建、未随 Release 分发的改动（溢出菜单、表单应答修复）。
+
+### 验证状态
+- `./build.sh testDebugUnitTest` → **194/194**；`lintDebug`/`lintRelease` 0 error；`assembleRelease` 通过。
+- 真机（2410DPN6CC / HyperOS）实测：顶栏 y=184–252（修复前 y≈520）、标题/元数据宽 **254px**（修复前 16px）、会话流首行 y=308。
+
 ## v0.5.0-beta23（2026-10-10）· C-14 顶栏布局修复 + 传输/日志安全止血 + CI/发布门禁
 
 ### 修复

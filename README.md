@@ -125,10 +125,12 @@ ZCode 官方远程控制（`zcode.z.ai/remote`）的**原生安卓增强客户�
 ### 安装包 / Releases
 
 签名 APK 从 [GitHub Releases](https://github.com/wjf1/zcode-remote-app/releases) 下载
-（最新 `ZCodeRemote-0.5.0-beta23.apk`，minSdk 31，Android 12+）。
+（最新 `ZCodeRemote-0.5.0-beta24.apk`，minSdk 31，Android 12+）。
 
-> ⚠️ **签名更换提示（2026-10-10）**：本版起使用**新的 release 签名**（原 keystore 丢失）。
-> 已装任何历史版本的设备安装本版需**先卸载**（一般设备会丢配对凭据、需重新扫码；**本机小米 15 Pro / HyperOS 实测卸载后凭据未丢、无需重扫码**）；此后以新签名为准，可正常覆盖升级。
+> ⚠️ **签名归一提示（2026-10-11）**：历史发布签名（`e1571a49…`）的私钥**已不可得**，自 `v0.5.0-beta24` 起以**本机 keystore 为唯一官方签名**：
+> `toolchain/keys/zcode-remote.keystore`，SHA-256 `1d46e9e8…:BE55`（完整指纹见 CHANGELOG）。
+> **已装历史版本的设备升级本版需先卸载一次**（一般设备会丢配对凭据、需重扫码；**本机小米 15 Pro / HyperOS 实测卸载后凭据未丢、无需重扫码**）；此后以本签名为准，可长期覆盖升级。
+> 🔑 **务必备份该 keystore 与口令**（`app-android/keystore.properties`，均不入库）——丢失即再次触发"全量卸载重装"。
 
 ### 快速开始
 

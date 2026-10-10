@@ -24,10 +24,9 @@ android {
         targetSdk = 35
         // 0.5.0-beta22 = beta21 + C-3（输入栏：Material 图标替换 emoji；
         // 键盘 inset 真机量测结论 = 现有链条正确、无需改动，详见 HANDOVER 坑 30）
-        // versionCode 35：beta23 —— C-14 顶栏布局修复 + 传输/日志安全止血 + CI 门禁
-        // + lint 抓出的 Vql API33 崩溃修复（versionCode 只递增以保证可覆盖安装）
-        versionCode = 35
-        versionName = "0.5.0-beta23"
+        // versionCode 36：beta24 —— 顶栏溢出菜单 + 表单应答修复 + 签名归一本机 keystore
+        versionCode = 36
+        versionName = "0.5.0-beta24"
         // 仪器化渲染回归网（src/androidTest）用 androidx.test 默认 runner。
         // 只在模拟器/真机上跑；CI runner 无设备，故 ci.yml 不接（见 HANDOVER §6.1 回归网）。
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
