@@ -68,6 +68,32 @@ jobs:
           fi
           echo "✓ ZLog.e 调用点均只写元信息"
 
+      - name: 组装 release（P0 安全止血门禁）
+        run: gradle assembleRelease --console=plain
+        working-directory: app-android
+
+      # P0 传输/日志止血（任务书 §11.3.2）：Release 产物必须
+      # ① 关闭明文流量 ② 不含任何 debug 组件 ③ debuggable=false。
+      # 直接对 release APK 的二进制 AndroidManifest 做断言（merged manifest 路径随 AGP 版本漂移，
+      # 对最终产物断言最稳）。
+      - name: 断言 Release 产物安全门禁（明文关停 / 无 debug 组件 / 不可调试）
+        run: |
+          set -euo pipefail
+          APK=app-android/app/build/outputs/apk/release/app-release-unsigned.apk
+          SDK="${ANDROID_HOME:-${ANDROID_SDK_ROOT:-/usr/local/lib/android/sdk}}"
+          AAPT2="$(ls -d "$SDK"/build-tools/*/aapt2 | tail -1)"
+          DUMP="$("$AAPT2" dump xmltree --file AndroidManifest.xml "$APK")"
+          if ! echo "$DUMP" | grep -qE 'usesCleartextTraffic\(0x[0-9a-fA-F]+\)=false'; then
+            echo "::error::Release 未关闭明文流量（usesCleartextTraffic 非 false）"; exit 1
+          fi
+          if echo "$DUMP" | grep -qiE 'DebugPairReceiver|DebugApprovalReceiver|DebugInjectionGuard'; then
+            echo "::error::Release 产物含 debug 组件"; exit 1
+          fi
+          if echo "$DUMP" | grep -qiE 'debuggable\(0x[0-9a-fA-F]+\)=true'; then
+            echo "::error::Release 产物可调试（debuggable=true）"; exit 1
+          fi
+          echo "✓ Release 产物：明文关停、无 debug 组件、不可调试"
+
       - name: 汇总测试结果
         if: always()
         run: |

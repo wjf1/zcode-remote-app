@@ -2,6 +2,7 @@ package com.zcode.remote
 
 import android.app.Application
 import android.net.ConnectivityManager
+import com.zcode.remote.util.LogRedactor
 import com.zcode.remote.util.ZLog
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
@@ -21,6 +22,7 @@ import com.zcode.remote.relay.NetworkGate
 import com.zcode.remote.relay.PendingApproval
 import com.zcode.remote.relay.PendingElicitation
 import com.zcode.remote.relay.RelayClient
+import com.zcode.remote.relay.RelayEndpointValidator
 import com.zcode.remote.relay.RelayState
 import com.zcode.remote.relay.SessionsIndexChannel
 import com.zcode.remote.relay.WorkspaceConfigChannel
@@ -84,7 +86,12 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
     private fun relayOverride(): String? = when (endpointMode) {
         SettingsStore.ENDPOINT_MAIN -> "wss://zcode.z.ai/ws"
         SettingsStore.ENDPOINT_BACKUP -> "wss://zcode.chatglm.site/ws"
-        SettingsStore.ENDPOINT_CUSTOM -> customRelayUrl.takeIf { it.startsWith("ws", ignoreCase = true) }
+        // 自建中继：必须过统一端点校验（Release 仅 wss://）。旧实现 startsWith("ws") 会
+        // 放过 ws:// 明文中继；校验失败返回 null，回退到配对推断的官方 wss 端点。
+        SettingsStore.ENDPOINT_CUSTOM ->
+            customRelayUrl.takeIf {
+                RelayEndpointValidator.isAcceptable(it, allowInsecure = BuildConfig.DEBUG)
+            }
         else -> null
     }
 
@@ -182,7 +189,7 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
                     )
                 )
             }.onFailure { err ->
-                ZLog.w(TAG, "checkForUpdate failed", err)
+                ZLog.w(TAG, "checkForUpdate failed ${LogRedactor.exceptionLabel(err)}")
                 updateState = UpdateState.Error("网络连接失败：${UserFacingError.map(err.message ?: "未知错误")}")
             }
         }
@@ -481,7 +488,8 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
                 // 静默失去全部审批能力（KICKED/配对失效/协议升级用户都必须立刻知道）。
                 val terminal = (st as? RelayState.Failed)?.takeIf {
                     it.reason == FailureReason.KICKED || it.reason == FailureReason.AUTH_FAILED ||
-                        it.reason == FailureReason.PROTOCOL_MISMATCH
+                        it.reason == FailureReason.PROTOCOL_MISMATCH ||
+                        it.reason == FailureReason.INVALID_ENDPOINT
                 }
                 if (terminal != null) {
                     TerminalNotifier.show(getApplication(), terminalTitle(terminal.reason), terminal.message)
@@ -604,7 +612,8 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
                 // 不会——这才是真凶（任务书 §5 C-5① 纠正点：v1 误判为「ZLog 未剥离」）。
                 if (BuildConfig.DEBUG) {
                     val text = ev.data.toString()
-                    ZLog.d(TAG, "rpc event id=${ev.id}: ${text.take(400)}")
+                    // P0 日志止血：logcat 里也不落会话正文（canary 验收要求 debug 日志同样零命中）
+                    ZLog.d(TAG, "rpc event id=${ev.id} data=${LogRedactor.payloadLabel(text)}")
                     rpcEvents.add(0, text.take(4000))
                     if (rpcEvents.size > 50) rpcEvents.removeAt(rpcEvents.lastIndex)
                 }
@@ -725,7 +734,7 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         val c = client ?: return
         val payload = BridgeFrames.mobileViewStateUpdate(activeWorkspaceKey, subscribedSessionId)
         c.sendPayload(payload)
-        ZLog.i(TAG, "view-state → ws=$activeWorkspaceKey task=${subscribedSessionId?.take(20)}")
+        ZLog.i(TAG, "view-state → ws=${LogRedactor.pathLabel(activeWorkspaceKey)} task=${LogRedactor.maskId(subscribedSessionId)}")
     }
 
     /** 通知栏按钮走这条路径：按 id 找回对象再应答。 */
@@ -1187,7 +1196,7 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
             }
         }
 
-        ZLog.i(TAG, "subscribe conversation session=${s.taskId} ws=$ws")
+        ZLog.i(TAG, "subscribe conversation session=${LogRedactor.maskId(s.taskId)} ws=${LogRedactor.pathLabel(ws)}")
         conv.subscribe(
             workspacePath = ws,
             workspaceIdentity = null,
@@ -1247,7 +1256,7 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         bridgeReopenJob = viewModelScope.launch {
             kotlinx.coroutines.delay(delayMs)
             if (bridgeState is RpcChannel.BridgeState.Ready) return@launch  // 期间已恢复（如 relay 重连撞回来）
-            ZLog.i(TAG, "桥失败，${delayMs}ms 后自动重开（第 $bridgeReopenCount 次）ws=$wsKey")
+            ZLog.i(TAG, "桥失败，${delayMs}ms 后自动重开（第 $bridgeReopenCount 次）ws=${LogRedactor.pathLabel(wsKey)}")
             channel?.openBridge(wsKey)
         }
     }
@@ -1324,7 +1333,7 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
             viewModelScope.launch {
                 result.fold(
                     onSuccess = { newSid ->
-                        ZLog.i(TAG, "createNewSession success: sid=$newSid ws=$ws " +
+                        ZLog.i(TAG, "createNewSession success: sid=${LogRedactor.maskId(newSid)} ws=${LogRedactor.pathLabel(ws)} " +
                                 "model=${modelConfig?.modelId ?: "inherit-default"}")
                         val item = SessionItem(
                             taskId = newSid,
@@ -1766,6 +1775,7 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         FailureReason.KICKED -> "控制权已在别处接管"
         FailureReason.AUTH_FAILED -> "配对已失效，请重新扫码"
         FailureReason.PROTOCOL_MISMATCH -> "中继协议可能已升级"
+        FailureReason.INVALID_ENDPOINT -> "中继地址不安全，已拒绝连接"
         else -> "连接已终止"
     }
 

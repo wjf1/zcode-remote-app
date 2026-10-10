@@ -12,11 +12,14 @@ import com.zcode.remote.storage.PairedDevice
  * 即按「启动时恢复活跃设备」路径自动连接。
  *
  *   adb shell am broadcast -n com.zcode.remote/.debug.DebugPairReceiver \
- *        -a com.zcode.remote.action.DEBUG_PAIR \
+ *        -a com.zcode.remote.action.DEBUG_PAIR --es dbg_token <token> \
  *        --es sid <deviceSid> --es hash <passHash> --es mid <deviceMid> [--es name <名>] [--es url <配对链接前缀>]
+ *
+ * 安全门（任务书 §11.3.2）：必须携带 DebugInjectionGuard 令牌，否则丢弃。
  */
 class DebugPairReceiver : BroadcastReceiver() {
     override fun onReceive(context: Context, intent: Intent) {
+        if (!DebugInjectionGuard.allow(context, intent, setOf(ACTION))) return
         val sid = intent.getStringExtra(EXTRA_SID)?.takeIf { it.isNotBlank() } ?: return
         val hash = intent.getStringExtra(EXTRA_HASH)?.takeIf { it.isNotBlank() } ?: return
         val dev = PairedDevice(

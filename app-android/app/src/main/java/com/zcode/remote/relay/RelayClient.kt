@@ -1,5 +1,7 @@
 package com.zcode.remote.relay
 
+import com.zcode.remote.BuildConfig
+import com.zcode.remote.util.LogRedactor
 import com.zcode.remote.util.ZLog
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -38,7 +40,7 @@ sealed interface RelayState {
     data class Failed(val reason: FailureReason, val message: String?) : RelayState
 }
 
-enum class FailureReason { KICKED, AUTH_FAILED, DEVICE_OFFLINE, NETWORK, INTERNAL, PROTOCOL_MISMATCH }
+enum class FailureReason { KICKED, AUTH_FAILED, DEVICE_OFFLINE, NETWORK, INTERNAL, PROTOCOL_MISMATCH, INVALID_ENDPOINT }
 
 /**
  * 重连退避（纯函数，便于 JVM 单测）：3s 起指数翻倍，48s 封顶。
@@ -155,12 +157,24 @@ class RelayClient(
         val myGen = generation
         runCatching { socket?.cancel() }
         // 官方终端会追加 mid 参数（PROTOCOL.md 3 节）；主机在线时中继强制校验，缺失直接 AUTH_FAILED
-        val wsUrl = relayWsUrlOverride ?: device.relayWsUrl
+        val rawWsUrl = relayWsUrlOverride ?: device.relayWsUrl
+        // P0 传输止血（任务书 §11.3.1）：Release 只接受绝对 wss://；ws:// 仅 debug 放行。
+        // 校验失败一律拒绝连接，绝不降级重试（旧实现 relayOverride 用 startsWith("ws") 放过了明文）。
+        val wsUrl = when (val v = RelayEndpointValidator.validate(rawWsUrl, allowInsecure = BuildConfig.DEBUG)) {
+            is RelayEndpointValidator.Result.Ok -> v.url
+            is RelayEndpointValidator.Result.Rejected -> {
+                // 只记事件码与原因枚举，不记原始 URL（避免二次泄漏）
+                ZLog.e(TAG, "relay endpoint rejected reason=${v.reason}")
+                fail(FailureReason.INVALID_ENDPOINT, v.message)
+                return
+            }
+        }
         val url = wsUrl +
             (device.deviceMid?.takeIf { it.isNotBlank() }?.let { "?mid=$it" } ?: "")
         // 中继校验 Origin 与线路一致性：从 ws 地址推导同源 https 地址（wss://host/ws → https://host）
-        val origin = wsUrl.removePrefix("wss://").removePrefix("ws://").substringBefore('/')
-            .let { host -> if (wsUrl.startsWith("wss://")) "https://$host" else "http://$host" }
+        val secure = wsUrl.startsWith("wss://", ignoreCase = true)
+        val host = wsUrl.substringAfter("//").substringBefore('/')
+        val origin = if (secure) "https://$host" else "http://$host"
         val request = Request.Builder()
             .url(url)
             .header("Origin", origin)
@@ -182,7 +196,8 @@ class RelayClient(
 
     fun send(obj: JsonObject): Boolean {
         val s = RelayProtocol.json.encodeToString(JsonObject.serializer(), obj)
-        ZLog.i(TAG, "ws send ${s.take(200)}")
+        // P0 日志止血：只记字节数，不记帧内容（含会话正文/凭据）
+        ZLog.i(TAG, "ws send ${LogRedactor.payloadLabel(s)}")
         return socket?.send(s) ?: false
     }
 
@@ -209,15 +224,16 @@ class RelayClient(
 
         override fun onMessage(webSocket: WebSocket, text: String) {
             if (stale()) return
-            ZLog.i(TAG, "ws recv $text")
+            // P0 日志止血：完整入站帧含全部会话正文；只记字节数
+            ZLog.i(TAG, "ws recv ${LogRedactor.payloadLabel(text)}")
             val frame = runCatching { RelayProtocol.parse(text) }.getOrNull() ?: return
             when (RelayProtocol.typeOf(frame)) {
                 "auth_challenge" -> {
                     val nonce = RelayProtocol.nonceOf(frame) ?: return
                     val proof = RelayProtocol.calculateProof(
                         device.passHash, nonce, RelayProtocol.ROLE_TERMINAL, device.deviceSid)
-                    // P0-C：proof 与 sid 是握手凭据，绝不能进 release 日志（ZLog release 静默 + R8 剥离）
-                    ZLog.i(TAG, "auth proof computed sid=${device.deviceSid} hashLen=${device.passHash.length}")
+                    // P0-C：proof 与 sid 是握手凭据，绝不能进日志（这里只记 SID 长度，连前缀都不留）
+                    ZLog.i(TAG, "auth proof computed sid=${LogRedactor.maskId(device.deviceSid)} hashLen=${device.passHash.length}")
                     send(RelayProtocol.authResponse(device.deviceSid, proof))
                 }
                 "auth_ack", "pair_status_ack" -> {
@@ -259,7 +275,8 @@ class RelayClient(
 
         override fun onFailure(webSocket: WebSocket, t: Throwable, response: Response?) {
             if (stale()) return
-            ZLog.w(TAG, "ws failure", t)
+            // P0 日志止血：不传原始 Throwable（其 message 常含 URL/路径），只记异常类名
+            ZLog.w(TAG, "ws failure ${LogRedactor.exceptionLabel(t)}")
             if (manuallyClosed) return
             scheduleReconnect()
         }
@@ -278,7 +295,7 @@ class RelayClient(
         // 终态失败不参与自动重连：重连会与占位的另一 terminal（官方 Web/桌面端面板内嵌页）
         // 形成 3s 级互踢死循环（2026-09-30 真机实测）。用户按横幅指引「断开→重新连接」恢复。
         if (reason == FailureReason.KICKED || reason == FailureReason.AUTH_FAILED ||
-            reason == FailureReason.PROTOCOL_MISMATCH) {
+            reason == FailureReason.PROTOCOL_MISMATCH || reason == FailureReason.INVALID_ENDPOINT) {
             terminalFailed = true
             reconnectAttempt = 0
         }
