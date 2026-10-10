@@ -16,6 +16,15 @@
 - **CI 第一层门禁补强**（`.github/workflows/ci.yml`）：新增 `gradle lintDebug lintRelease`（0 error 门禁，首个真实收益即抓出上面的 Vql API 33 缺陷）、`gradle assembleRelease` 组装、对 release APK **二进制 AndroidManifest** 的安全断言（明文关停 / 无 debug 组件 / 不可调试，规避 merged-manifest 路径随 AGP 漂移）、单测数量下限 `tools/check_test_count.py --min 194`（`--min/--expected` 阈值兜底，挡住「整文件/整类被删」的数量级回退）。
 - 单测 162 → **194 项**：新增 `RelayEndpointValidatorTest`（24 例）、`LogRedactorTest`（8 例，canary 输入零命中断言）。
 
+### 顶栏空间预算修复（溢出菜单，同日追加）
+- 真机实测：仅加 `maxLines` 兜底后，四个定宽胶囊仍把标题列挤到约 **11–16px**，标题与元数据被省略成空、肉眼不可见。
+- 把「📁文件数」「状态」从顶栏直排收进右侧「⋮」二级菜单（`overflowEntries`），释放约 460px；真机实测标题/元数据节点由 16px 恢复到 **254px**、可见，内容首行 y=308。**用户真机确认（选项 A：`← 标题… ⋮ build 模型`）通过。**
+
+### 问题登记（新复现，纳入整改）· 表单应答失败
+- **2026-10-10 用户在当前 beta23 上复现**（此前 HANDOVER 记为"待复现/疑似异源旧包"，结论更正）：应答 elicitation 时服务端拒收——
+  `{"code":"invalid_value","values":["accept","decline","cancel"],"path":["answer","action"],"message":"Invalid option: expected one of \"accept\"|\"decline\"|\"cancel\""}`。
+- 代码侧四个构造点（`AppViewModel.answerElicitation` / `declineElicitation` / `approveElicitationPlan`、`ElicitationNotifier`）写的都是 `accept`/`decline` 字面量，**越界值来源不在这些字面量**；嫌疑指向载荷外层结构或交互类型分支。待办：抓 `resolveElicitation` 实际 wire 载荷与桌面端 schema 对拍定位。
+
 ### 验证状态
 - `./build.sh testDebugUnitTest` → BUILD SUCCESSFUL；单测 **194/194** 全绿。
 - `lintDebug` + `lintRelease` → 0 error；`assembleRelease` → BUILD SUCCESSFUL。
