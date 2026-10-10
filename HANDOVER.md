@@ -1,15 +1,16 @@
 # 交接开发计划（HANDOVER）
 
-> ## ✅ 项目状态（2026-10-10）：**beta20 已发布**（桥降级自愈 + 主线程缓存线程化 + v1.1 首批体验补强）
+> ## ✅ 项目状态（2026-10-10 晚）：**beta21 已构建并装机**（C-5③④ 落地 + 观察期移除）
 >
-> - **当前版本 `v0.5.0-beta20`（versionCode 30）**：本地 v1.1「用户可感知收益」四批（C-1/C-2/C-4/C-6/C-7/C-8/C-10/C-11 + A-3 实测启用 + C-5① + 桥看门狗可测试化）+ 第五批真机故障修复（**桥降级自愈** `scheduleBridgeReopen`）+ **C-5⑤**（离线缓存读取移出主线程，含竞态防护）；**155 项单测全绿**（`check_test_count.py` 核对 155/155）+ debug/release 构建通过 + 真机验收全部执行（7 项通过、1 项部分通过，见下清单）。
+> - **当前版本 `v0.5.0-beta21`（versionCode 31，本地未发布）**：beta20 全部内容 + **C-5③**（会话行派生快照 `rowsSnapshot`，不再每次重组整表拷贝）+ **C-5④**（会话页派生解析缓存化 PathCache/DiffCache，流式期 O(n)/token → 增量）；**162 项单测全绿**（`check_test_count.py` 核对 162/162）。**观察期（P0-2）经用户决策移除（2026-10-10）**。release 包（新签名）已覆盖装机（同签名、凭据保留）；**真机交互回归待补**（装机时手机锁屏，UI 观测需解锁）。
+> - **beta20 已发布**（versionCode 30）：本地 v1.1「用户可感知收益」四批（C-1/C-2/C-4/C-6/C-7/C-8/C-10/C-11 + A-3 实测启用 + C-5① + 桥看门狗可测试化）+ 第五批真机故障修复（**桥降级自愈** `scheduleBridgeReopen`）+ **C-5⑤**（离线缓存读取移出主线程，含竞态防护）；155 项单测全绿 + debug/release 构建通过 + 真机验收全部执行（7 项通过、1 项部分通过，见下清单）。
 > - **master 已推送（2026-10-10，SSH 通道）**：提交 `5be5634`（HTTPS 间歇被阻的绕行方案见 §3）；CI run `38030230595` **success**。四批内容与 A-3 实测结论见下方 🆕 各段（与云端 beta18/beta19 的合并冲突 4 处已解）。
 > - **最近发布**：tag `v0.5.0-beta20` @ 提交 `5be5634`；Release <https://github.com/wjf1/zcode-remote-app/releases/tag/v0.5.0-beta20>（附 `ZCodeRemote-0.5.0-beta20.apk`，versionCode 30，**新 release 签名** `E1:57:1A:49:…:2B:3F:DD`）。上一个发布：tag `v0.5.0-beta19` @ 提交 `e7c65d0`（<https://github.com/wjf1/zcode-remote-app/releases/tag/v0.5.0-beta19>）；更早：beta18 @ `a82570a`。
-> - ✅ **装机完成（2026-10-10）**：beta20 release 包已装于小米 15 Pro（versionCode 30、指纹 `E1:57:1A:49:…`；装机脚本 `_tmp/hyperos_install_release.py` 自动确认 HyperOS 弹窗，adb 输出 `Success`）。**实测意外：卸载重装后配对凭据未丢**——App 启动直接「CHINAMI-DPNMO04 · 就绪」、71 个会话列表完整、会话页实时渲染，无需重新扫码（App 侧 `allowBackup=false`，疑为 HyperOS 系统级数据保留；机制未深入区分）；logcat 无 FATAL、无桥降级。留档 `docs/screenshots/beta20-installed.png`。**观察窗口自今日 2026-10-10 重启（预计 2026-10-13 收官）**。
+> - ✅ **装机完成（2026-10-10）**：beta20 release 包已装于小米 15 Pro（versionCode 30、指纹 `E1:57:1A:49:…`；装机脚本 `_tmp/hyperos_install_release.py` 自动确认 HyperOS 弹窗，adb 输出 `Success`）。**实测意外：卸载重装后配对凭据未丢**——App 启动直接「CHINAMI-DPNMO04 · 就绪」、71 个会话列表完整、会话页实时渲染，无需重新扫码（App 侧 `allowBackup=false`，疑为 HyperOS 系统级数据保留；机制未深入区分）；logcat 无 FATAL、无桥降级。留档 `docs/screenshots/beta20-installed.png`。（窗口原自该日重启，**2026-10-10 晚经用户决策移除观察期**。）
 > - ⚠️ **新签名装机提示（历史，已按此执行）**：已装历史版本装 beta20 release 包需**卸载重装一次**（一般设备会丢配对凭据 → 重新扫码；本机 HyperOS 实测未丢，见上）；此后以新签名为准可正常覆盖升级。
 > - **beta18 内容（本地验证驱动，非用户报障）**：为清掉 beta17 验收遗留的「围栏代码块与 GFM 表格没有样本」空洞，在模拟器上补**仪器化渲染回归网**，测试首轮即抓出**用户可见缺陷** —— 高亮库的 `ColorHighlight.rgb` 是纯 RGB，被 Compose `Color(Int)` 按 ARGB 解释后 alpha=0，**代码块里被高亮的字符被画成完全透明**（关键字/字符串/注释整段消失）。修复见 `ui/components/MarkdownView.kt` 的 `opaqueHighlightArgb`；证据 `docs/screenshots/render-code-block-before-fix.png` → `render-code-block.png`（token 色命中 0 → 1789）。**beta17 的 APK 含此缺陷**。
 > - **全部后续开发计划仍取消**（用户决策：Sprint 7 生物识别/自建中继 E2EE、P2-3 余项等一律不做）。
-> - **唯一剩余事项**：P0-2 三天日常使用观察 → 通过即发 **v1.0**（详见 §6.0 待办总览 + §6.0 P0-2 章节）。**C-5 ③④ 已立项**，按《体验提升任务书 v2》§10 执行卡推进（每项独立 commit + 独立真机回归）。
+> - **待办**：**C-5③④ 的真机交互回归**（长会话滚动 / 流式跟随 / 会话切换；装机时锁屏未做，解锁后补）+ C-5 ⑥⑦ 明确不做、A-4 等高危项按 §6.0 排队。**观察期已移除，v1.0 发布时机由用户拍板**（详见 §6.0 待办总览）。
 > - 接手者默认职责：**维护与缺陷修复**，不再新增功能；如需演进须用户重新拍板立项。
 >
 > ### 🩹 补丁与对齐轮次（v0.5.0-beta13 → beta18）
@@ -66,7 +67,7 @@
 > - ⚠️ **踩坑（勿重犯）**：beta13 轮次中一个 `@Test` 因被挤进行注释而**静默未执行**（构建仍全绿），导致当时「39 项全绿」实际只跑了 38 项。**任何「N 项单测全绿」的结论都必须同时确认 N == 实际执行的用例数**（跑 `tools/check_test_count.py`）。
 > - ⚠️ **跨 adb 做文本检索不可靠**（引号转义丢失会返回假阴性），一律先把文件 `pull` 到本地再解析；`grep` 检索代码用 `-F`（`.` 是任意字符）。
 > - ⚠️ **release（R8）包与 debug 包签名不同**（debug `3A:B5:8F…` / release `1D:46:E9…`）：手机上若已装 debug 包，`adb install -r` release 包会 `INSTALL_FAILED_UPDATE_INCOMPATIBLE`，需先卸载——**会丢失配对凭据**，属破坏性操作，动手前必须取得用户同意。beta16 的 release 包因此**未做真机冒烟**，上机验收用的是同源 debug 包。
-> - ⚠️ **观察窗口**：按 §6.0 P0-2 规则，v1.0 判停线自补丁/对齐轮**真机验收通过之日**重新计时。**beta20 release 包已于 2026-10-10 装机**（versionCode 30，见顶部状态块），窗口自该日重新计时（3 天观察，预计 **2026-10-13** 收官）。
+> - ⚠️ **观察期（P0-2）：经用户决策移除**（2026-10-10）——v1.0 判停不再以三天日常观察为阻塞项；v1.0 的发布时机由用户拍板。此前的窗口计时历史见 CHANGELOG 各轮次记录。
 > - ⚠️ **实测系统为 Android 17 / HyperOS**（旧记录为 Android 15）：跨两个大版本，接入时须把 USB 用途切到「传输文件」才暴露 ADB 接口。P0-2 第 2/3 项依赖 HyperOS 后台与通知策略，跨版本升级后务必重新观察。
 > - **未做项现状（2026-10-10 更新）**：**档 C 首批 7 项 + A-3 + 无设备可验证项（C-8、A-4 前置、C-5①、看门狗可测试化）+ C-5⑤ 均已落地并随 v0.5.0-beta20 发布**。**仍未做（有依据，勿当遗漏）**：**A-4 自愈与 buffer 策略** 与 **C-5 其余（③ rows 拷贝 / ④ Compose 解析缓存 / ⑦ 快照差分）**（改并发与 Compose 缓存语义，须真机观察 + 独立灰度）、**C-3**（emoji 图标替换需先评估 `material-icons-extended` 包体；键盘 inset 根因须真机量测）、**C-9/C-12**（加密存储需 Android Keystore 运行时验证；拆分为二期）、决策项（ws:// 明文中继、reverseLayout）。
 > - 🆕 **验证副作用（需知悉）**：验证附件 chip 时向真实会话 `sess_0f00b96b`（「zcode-dotfiles 优化方案可行性确认」）写入了一条测试消息（`attachment-render-check` + 89B 测试文件）。核对 `tasks-index` 确认**未调度 agent 轮次、未消耗额度**；协议无删除消息操作，无法程序化清理。
@@ -331,6 +332,12 @@ ADB -s <serial> shell am broadcast -n com.zcode.remote/.debug.DebugApprovalRecei
 26. **release 热点在「日志实参」而非日志调用（C-5①，2026-10-09）**：`ZLog.d/i/w` 的**调用**会被 R8 的 `-assumenosideeffects` 剥离，但**实参表达式不会**——`ZLog.d(TAG, ev.data.toString())` 在 release 仍执行 `toString()`。任何「重计算进日志参数」的写法必须自带 `BuildConfig.DEBUG` 门控（例外：`ZLog.e` 在 release 也输出，只允许字符串字面量元信息，CI 有断言守）。
 27. **桥看门狗决策是纯函数（2026-10-09）**：`RpcChannel.watchdogDecision`（Noop/Retry/Fail）由单测钉死——改看门狗行为（超时、重开次数）时先改它和对应单测，不要在 `scheduleBridgeWatchdog` 里散写判断（该路径真机无法构造，单测是唯一防线）。
 28. **「桌面端已连接、手机显示异常」是两层状态（2026-10-10 真机故障）**：中继层 `paired`（device↔terminal 配对）与会话桥层（RPC 通道）**相互独立**——前者正常不代表后者正常。本次故障链：App 主线程处理停摆（长会话 1100+ 行 × 高频入站帧 → 停止回 ack）→ 服务端重放未确认帧 → 判 `rpc-transport-fault` 下发 `bridge-degraded` → 手机「异常」而桌面端日志仍 `paired`。**App 侧自愈已补**：`AppViewModel.scheduleBridgeReopen`（退避 1/2/4s × 3 次，就绪归零）。诊断要点：`adb logcat -s RelayClient AppViewModel ConvChannel`——**logcat 缓冲会被会话帧大量冲掉，长观察必须先 `logcat -c` 并把输出落盘**；判「App 是否真的在处理帧」看 `RpcChannel` 解码日志与 `ConvChannel: 状态块更新` 是否与 `RelayClient: ws recv` 同步出现（只有 ws recv 在涨 = 处理停摆）。
+29. **本机构建必须直调 `F:/AndroidTools` 的 gradle（`build.sh` 会静默失败，2026-10-10 实测）**：`toolchain/` 里已无 jdk/gradle（只剩 `avd/`、`keys/`），`build.sh` 的 fallback `GRADLE="$(command -v gradle.bat || command -v gradle)"` 在两个 `command -v` 都失败时命令替换返回非零 → `set -e` 在任何输出前**静默退出**（stdout 0 字节、退出码 1；若外面套了 `| tail` 连退出码也被掩盖成 0，表现为「像是构建了但任务没跑」，本次据此白跑一轮）。正确命令（SDK 走 `local.properties` 的 `sdk.dir`，无需 ANDROID_HOME）：
+   ```
+   cd app-android && JAVA_HOME="F:/AndroidTools/jdk/jdk-17.0.20.1+1" \
+     /f/AndroidTools/gradle-8.11.1/bin/gradle.bat assembleDebug :app:testDebugUnitTest --console=plain
+   ```
+   排查抓手：输出为空 + `_tmp/build.log` 时间戳没变 = build.sh 没真正启动生成任务。
 
 ## 6. 剩余任务（P0 → P2，含验收标准）
 

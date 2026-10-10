@@ -1,5 +1,20 @@
 # 变更记录 / Changelog
 
+## v0.5.0-beta21（2026-10-10）· C-5③④ 落地（会话行派生快照 + 派生解析缓存化）· 观察期移除
+
+### 变更
+- **观察期（P0-2 三天日常使用观察）经用户决策移除**（2026-10-10）——不再作为 v1.0 判停的阻塞项；v1.0 里程碑的发布时机由用户拍板。
+
+### 性能（C-5 执行卡 ③④，每项独立 commit）
+- **③ 会话行派生快照（`AppViewModel.rowsSnapshot`）**：会话页此前每次重组都 `rows.toList()`——整表拷贝（长会话 1100+ 行）之外，新实例还会让 `remember(rows)` 的派生（SessionFiles / TurnChanges 逐行 JSON 解析）一起失效重算，输入框、滚动等无关重组也在付 O(n) 解析代价。改为 `derivedStateOf` 派生快照：仅行内容变化时产生新实例；契约单测钉住「内容不变→同一实例 / 内容变化→新实例」。
+- **④ 会话页派生解析缓存化（`SessionFiles.PathCache` / `TurnChanges.DiffCache`）**：以 rowId 为键、「toolName + inputText 的 hash/长度」为内容指纹；行对象被流式更新替换时指纹变化即重新解析，未变化的行复用——`ToolDiffParser.parse` 是 JSON 解析 + Myers diff，流式期从 O(n)/token 全量重解析降为 O(增量)。缓存实例由会话页 `remember` 持有，随会话页销毁（切会话即重置）。
+- 执行卡内的 ⑤ 已于 beta20 落地；⑥⑦ 明确不在本轮（有依据，见《体验提升任务书 v2》§10）。
+
+### 验证状态
+- `assembleDebug` + `testDebugUnitTest` **BUILD SUCCESSFUL**；`tools/check_test_count.py` 核对 **162/162 ✓**（beta20 的 155 + ③ 契约 1 项 + `ParseCacheTest` 6 项）。
+- release 包（新签名 `E1:57:1A:49:…`）构建通过并**覆盖安装**（新旧包同签名，无需卸载、配对凭据保留）。
+- ⏳ **真机交互回归待补**（装机时手机处于锁屏态，UI 观测需解锁后人工在场）：长会话滚动、流式跟随、会话切换三项按执行卡口径复验。
+
 ## v0.5.0-beta20（2026-10-10）· 桥降级自愈 + 主线程缓存线程化 + v1.1 首批体验补强（含云端 beta18/beta19 合并）
 
 **授权与范围**：用户拍板推进 v1.1 候选里「用户可感知收益」的条目（此前全部 `[需立项]`）。**A-3 / A-4 / C-3 / C-5 本轮不做**——A-3 的 103 帧 payload 无字段规格（须真机 + 桌面端在线探测）、A-4 与 C-5 改动 `RpcChannel`/状态机并发路径（自标高危，须独立灰度 + 独立真机回归）、C-3 的键盘 inset 根因须先真机量测（emoji 图标替换另需先评估 `material-icons-extended` 的包体影响），均以真机实测为前置（详见 `HANDOVER.md` §6.1 与《体验提升任务书 v2》§5）。

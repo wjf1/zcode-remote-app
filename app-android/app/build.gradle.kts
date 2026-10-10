@@ -22,10 +22,11 @@ android {
         applicationId = "com.zcode.remote"
         minSdk = 31
         targetSdk = 35
-        // 0.5.0-beta20 = beta19 + 本地未发布四批（A-3 实测启用 / 七项体验补强 / 无设备可验证项 /
-        // C-5① + 看门狗可测试化）合并后的验收版本（合并与验证见 CHANGELOG「未发布」段）
-        versionCode = 30
-        versionName = "0.5.0-beta20"
+        // 0.5.0-beta21 = beta20 + C-5③（会话行派生快照：rows 不再每次重组整表拷贝）
+        // / C-5④（会话页派生解析缓存化：流式期解析量 O(n)/token → 增量）
+        // 观察期（P0-2）已按用户决策移除（2026-10-10）
+        versionCode = 31
+        versionName = "0.5.0-beta21"
         // 仪器化渲染回归网（src/androidTest）用 androidx.test 默认 runner。
         // 只在模拟器/真机上跑；CI runner 无设备，故 ci.yml 不接（见 HANDOVER §6.1 回归网）。
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
