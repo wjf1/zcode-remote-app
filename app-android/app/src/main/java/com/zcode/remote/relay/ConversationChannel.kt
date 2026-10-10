@@ -1,6 +1,7 @@
 package com.zcode.remote.relay
 
 import android.util.Base64
+import com.zcode.remote.util.LogRedactor
 import com.zcode.remote.util.ZLog
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -260,7 +261,7 @@ class ConversationChannel(private val rpc: RpcChannel) {
         val data = event.data.asObj() ?: return
         val lf = ConversationFrames.parseLogicalFrame(data)
         if (lf == null) {
-            ZLog.w(TAG, "无法解析逻辑帧: ${data.toString().take(300)}")
+            ZLog.w(TAG, "无法解析逻辑帧 payload=${LogRedactor.payloadLabel(data.toString())}")
             return
         }
         if (lf.kind == "fragment") {
@@ -589,7 +590,10 @@ class ConversationChannel(private val rpc: RpcChannel) {
             onResult(ResolveResult.Failed("no-session", "未定位到表单所属会话或工作区，无法应答"))
             return
         }
-        ZLog.i(TAG, "resolveElicitation interaction=${el.interactionId} session=$session ws=${target["workspacePath"]} answer=$answer")
+        // P0 日志止血：不记会话 id / 工作区完整路径 / 用户答复正文
+        ZLog.i(TAG, "resolveElicitation interaction=${LogRedactor.maskId(el.interactionId)} " +
+            "session=${LogRedactor.maskId(session)} ws=${LogRedactor.pathLabel(target["workspacePath"]?.toString())} " +
+            "answer=${LogRedactor.payloadLabel(answer.toString())}")
         sendResolveInteraction(session, target,
             buildJsonObject {
                 put("interactionId", el.interactionId)
@@ -746,7 +750,7 @@ class ConversationChannel(private val rpc: RpcChannel) {
             "issuedAt" to System.currentTimeMillis(),
         )
 
-        ZLog.i(TAG, "createSession workspace=$workspacePath hasFirstInput=${!firstInputText.isNullOrBlank()} " +
+        ZLog.i(TAG, "createSession ws=${LogRedactor.pathLabel(workspacePath)} hasFirstInput=${!firstInputText.isNullOrBlank()} " +
                 "model=${modelConfig?.modelId ?: "inherit-default"} " +
                 "thought=${modelConfig?.thought ?: "(未指定)"} mode=${modelConfig?.mode ?: "(未指定)"}")
         rpc.call(RpcChannel.CHANNEL_AGENT, "sendConversationCommandV4", listOf(args),
@@ -817,7 +821,7 @@ class ConversationChannel(private val rpc: RpcChannel) {
             workspaceIdentity?.takeIf { it.isNotBlank() }?.let { put("workspaceIdentity", it) }
             put("preferWorkspaceDefaults", true)
         }
-        ZLog.i(TAG, "readWorkspaceState ws=$workspacePath")
+        ZLog.i(TAG, "readWorkspaceState ws=${LogRedactor.pathLabel(workspacePath)}")
         rpc.call(RpcChannel.CHANNEL_SESSION, "readWorkspaceState", listOf(args),
             timeoutMs = SEND_ACK_TIMEOUT_MS) { reply ->
             when (reply) {
@@ -1193,7 +1197,7 @@ class ConversationChannel(private val rpc: RpcChannel) {
         beginArgs["totalBytes"] = totalBytes
         beginArgs["totalChunks"] = totalChunks
         beginArgs["checksum"] = "sha256:" + digest
-        ZLog.i(TAG, "attachmentBegin file=$fileName mime=$mime bytes=$total chunks=$totalChunks")
+        ZLog.i(TAG, "attachmentBegin file=${LogRedactor.pathLabel(fileName)} mime=$mime bytes=$total chunks=$totalChunks")
         rpc.call(RpcChannel.CHANNEL_AGENT, "attachmentBeginV4", listOf(beginArgs)) { reply ->
             if (aborted) return@call
             when (reply) {

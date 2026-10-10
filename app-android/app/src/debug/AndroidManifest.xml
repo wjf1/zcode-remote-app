@@ -1,13 +1,20 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!--
-  仅 debug 构建合并进来。DebugApprovalReceiver 用来在没有真实审批时注入假的 pending，
+  仅 debug 构建合并进来（release 变体的 merged manifest 不含本文件任何组件）。
+  DebugApprovalReceiver 用来在没有真实审批时注入假的 pending，
   验证通知渲染 / 按钮回调 / 断线时的"没发出去"提示。
 
-  exported=true 是故意的：adb shell（uid=shell）无法把广播发给 exported=false 的组件。
-  release 构建不含此 receiver，因此不存在对外攻击面。
+  安全收紧（任务书 §11.3.2）：
+  - 两个 receiver 仍为 exported=true（adb shell uid 无法广播给 exported=false 的组件），
+    但 onReceive 里强制校验「严格 action + 一次性令牌（DebugInjectionGuard）」，无令牌一律拒绝。
+  - 明文流量只在 debug 放开（Release 由 src/main 的 usesCleartextTraffic=false 兜底），
+    供局域网 ws:// 中继调试；Release 不得出现本覆盖。
 -->
-<manifest xmlns:android="http://schemas.android.com/apk/res/android">
-    <application>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools">
+    <application
+        android:usesCleartextTraffic="true"
+        tools:replace="android:usesCleartextTraffic">
         <receiver
             android:name=".debug.DebugApprovalReceiver"
             android:exported="true">

@@ -14,14 +14,17 @@ import com.zcode.remote.relay.PendingElicitation
  * 通知渲染、按钮回调、RemoteInput 内联回复以及"连接不在时不能假装批准"这条路径。
  *
  *   adb shell am broadcast -n com.zcode.remote/.debug.DebugApprovalReceiver \
- *        -a com.zcode.remote.action.DEBUG_APPROVAL
+ *        -a com.zcode.remote.action.DEBUG_APPROVAL --es dbg_token <token>
  *   adb shell am broadcast -n com.zcode.remote/.debug.DebugApprovalReceiver \
- *        -a com.zcode.remote.action.DEBUG_ELICITATION
+ *        -a com.zcode.remote.action.DEBUG_ELICITATION --es dbg_token <token>
  *   adb shell am broadcast -n com.zcode.remote/.debug.DebugApprovalReceiver \
- *        -a com.zcode.remote.action.DEBUG_APPROVAL_CLEAR
+ *        -a com.zcode.remote.action.DEBUG_APPROVAL_CLEAR --es dbg_token <token>
+ *
+ * 安全门（任务书 §11.3.2）：必须携带 DebugInjectionGuard 令牌，否则丢弃。
  */
 class DebugApprovalReceiver : BroadcastReceiver() {
     override fun onReceive(context: Context, intent: Intent) {
+        if (!DebugInjectionGuard.allow(context, intent, ALLOWED_ACTIONS)) return
         when (intent.action) {
             ACTION_CLEAR -> {
                 ApprovalNotifier.clearAll(context)
@@ -82,5 +85,7 @@ class DebugApprovalReceiver : BroadcastReceiver() {
         const val ACTION_INJECT = "com.zcode.remote.action.DEBUG_APPROVAL"
         const val ACTION_ELICITATION = "com.zcode.remote.action.DEBUG_ELICITATION"
         const val ACTION_CLEAR = "com.zcode.remote.action.DEBUG_APPROVAL_CLEAR"
+
+        private val ALLOWED_ACTIONS = setOf(ACTION_INJECT, ACTION_ELICITATION, ACTION_CLEAR)
     }
 }

@@ -3,6 +3,7 @@ package com.zcode.remote.relay
 import android.os.Handler
 import android.os.Looper
 import android.util.Base64
+import com.zcode.remote.util.LogRedactor
 import com.zcode.remote.util.ZLog
 import kotlinx.coroutines.channels.BufferOverflow
 import kotlinx.coroutines.flow.MutableSharedFlow
@@ -185,7 +186,7 @@ class RpcChannel(private val relay: RelayClient) {
                 bridgeGeneration = payload["bridgeGeneration"]?.let {
                     runCatching { it.jsonPrimitive.content.toIntOrNull() }.getOrNull() }
                 recoveryId = payload["recoveryId"]?.let { runCatching { it.jsonPrimitive.content }.getOrNull() }
-                ZLog.i(TAG, "bridge-ready sid=$sid gen=$bridgeGeneration payload=${payload.toString().take(500)}")
+                ZLog.i(TAG, "bridge-ready sid=${LogRedactor.maskId(sid)} gen=$bridgeGeneration payload=${LogRedactor.payloadLabel(payload.toString())}")
                 if (sid != null) {
                     // 新桥 ack 序列空间全新：旧桥挂起请求立即失败收场，防止调用方状态卡死
                     failPending("bridge re-established")
@@ -193,7 +194,7 @@ class RpcChannel(private val relay: RelayClient) {
                 }
             }
             "workspace-bridge-error", "bridge-degraded" -> {
-                ZLog.w(TAG, "bridge error: ${payload.toString().take(300)}")
+                ZLog.w(TAG, "bridge error payload=${LogRedactor.payloadLabel(payload.toString())}")
                 _bridge.value = BridgeState.Failed(payload.toString().take(200))
             }
         }
@@ -383,7 +384,7 @@ class RpcChannel(private val relay: RelayClient) {
             val head = Vql.deserialize(bytes)
             val kind = head.value as? List<*>
             if (kind == null) {
-                ZLog.w(TAG, "rpc frame head not array: ${head.value?.toString()?.take(120)}")
+                ZLog.w(TAG, "rpc frame head not array type=${head.value?.let { it::class.simpleName }}")
                 return
             }
             type = (kind.getOrNull(0) as? Int) ?: -1
@@ -394,8 +395,8 @@ class RpcChannel(private val relay: RelayClient) {
             return
         }
 
-        // 调试期加长到 6000：workspace-config snapshot 帧较大，400 字符看不出 configOptions 结构
-        ZLog.i(TAG, "rpc recv type=$type id=$id data=${data?.toString()?.take(6000)}")
+        // P0 日志止血：不再打印 data 正文（旧实现 take(6000)，workspace-config 等帧含全文）
+        ZLog.i(TAG, "rpc recv type=$type id=$id data=${LogRedactor.payloadLabel(data?.toString())}")
         when (type) {
             TYPE_SUCCESS -> {
                 val cb = id?.let { pendingResponses.remove(it) }
@@ -406,7 +407,7 @@ class RpcChannel(private val relay: RelayClient) {
                 val el = toJsonElement(data)
                 val msg = el.let { runCatching { it.jsonObject["message"]?.jsonPrimitive?.content }.getOrNull() }
                     ?: el.toString().take(300)
-                ZLog.w(TAG, "rpc error id=$id: $msg")
+                ZLog.w(TAG, "rpc error id=$id msg=${LogRedactor.payloadLabel(msg)}")
                 val cb = id?.let { pendingResponses.remove(it) }
                 id?.let { cancelTimeout(it) }
                 cb?.invoke(RpcReply.Err(msg, el))

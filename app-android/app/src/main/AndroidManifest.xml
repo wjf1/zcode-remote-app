@@ -26,7 +26,12 @@
         android:label="ZCode Remote"
         android:icon="@drawable/ic_launcher"
         android:theme="@style/Theme.ZCodeRemote"
-        android:allowBackup="false">
+        android:allowBackup="false"
+        android:usesCleartextTraffic="false">
+        <!-- P0 传输止血（任务书 §11.3.1）：Release 关闭一切明文流量，中继连接强制 wss://。
+             本项目 minSdk 31、无 networkSecurityConfig，故该属性即为最低明文策略；
+             无任何本地回环（127.0.0.1/localhost）依赖，关闭明文不误伤既有能力。
+             debug 变体在 src/debug/AndroidManifest.xml 单独放开（仅用于局域网 ws:// 调试）。 -->
 
         <activity
             android:name=".MainActivity"
