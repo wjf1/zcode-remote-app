@@ -2,13 +2,14 @@
 
 > ## ✅ 当前项目状态（2026-10-10，权威覆盖层）
 >
-> - **当前主干**：`master @ 41f5376c`；构建配置为 `versionName=0.5.0-beta22`、`versionCode=34`。`versionCode=33` 仅用于 C-14 诊断，34 是回滚诊断改动后的可覆盖恢复构建。
-> - **最新发布**：tag/Release [`v0.5.0-beta22`](https://github.com/wjf1/zcode-remote-app/releases/tag/v0.5.0-beta22)，发布 APK 为 `versionCode=32`。Beta Release 当前仍被 GitHub 标为非 prerelease，发布治理阶段必须修正。
-> - **验证基线**：最新 CI 成功；JVM 单测 **162/162**；C-5③④真机性能回归已通过（长会话 1100+ 行、流式 1336 帧、0 janky、99th 8ms）。
-> - **当前发布阻断项**：**C-14 会话页布局错乱**。已定位为顶栏 `Row` 被测量到约 988px 高，消息区被压缩并裁切；已排除 IME top 分量、全部 inset padding、Row 内显式纵向撑满元素和消息流 `weight` 丢失。下一步必须从测量约束链入手，禁止继续把 IME 残留当根因。
-> - **当前工程主线**：停止扩功能，依次推进 C-14 → 安全止血 → Service 连接生命周期 → A-4 失同步恢复/协议完整性 → 缓存治理 → 大文件拆分 → CI/CD 与发布治理。完整执行卡见《体验提升任务书 v2》§11。
+> - **当前主干**：`master`（本轮含 2026-10-10 三线并行交付）；构建配置 `versionName=0.5.0-beta23`、`versionCode=35`。
+> - **最新发布**：tag/Release `v0.5.0-beta23`（C-14 修复 + 安全止血 + CI 门禁）。**发布治理已修正**：`v0.5.0-beta19..beta22` 的 Release 此前被 GitHub 标为非 prerelease，已统一改为 `prerelease=true`。
+> - **验证基线**：JVM 单测 **194/194**；`lintDebug`+`lintRelease` 0 error；`assembleRelease` 通过；仪器化 `ConversationTopBarLayoutTest` 在模拟器 PASS（负向对照去修复 FAIL 554.29dp）。
+> - **本轮已关闭的 P0**：① **C-14 会话页顶栏布局错乱**——根因＝顶栏标题列被四胶囊压到 ~20dp、元数据 `Text` 缺 `maxLines` 兜底而零宽换行成 20+ 行撑高整行；已加 `maxLines=1` 修复 + 仪器化断言。② **传输与日志安全止血**——Release 仅 `wss://`、明文关闭、日志脱敏、debug 组件令牌门、Release 产物断言。
+> - **附带修复**：`Vql.kt` 用了 API 33 的 `ByteArrayOutputStream#writeBytes`（minSdk 31 → Android 12/12L 崩溃），由新增 lint 门禁抓出并改为等价 `write(byte[])`。
+> - **当前工程主线（下一步）**：Service 连接生命周期 → A-4 失同步恢复/协议完整性 → 缓存治理 → 大文件拆分 → CI/CD 与发布治理。完整执行卡见《体验提升任务书 v2》§11。
 > - **观察期决策**：P0-2“三天观察期”已于 2026-10-10 取消，不再构成发布门禁；旧记录仅保留作历史证据。
-> - **交付边界**：本轮仅整理开发方案与接力文档，未修改业务代码、版本号、Tag 或 Release。
+> - **待办（需真机）**：C-14 修复属会话页核心布局，**真机装机回归待办**（修复为单行文本锁，风险极低）；顶栏胶囊空间预算不足（标题仍会被省略号截断）留作产品决策。
 >
 > 以下 beta13～beta21 状态块为**历史交付档案**，其中“当前版本”“最近发布”“唯一剩余项”等口径已由上方权威覆盖层取代；保留内容仅用于追溯实测、签名迁移和故障诊断证据。
 >

@@ -1,6 +1,28 @@
 # 变更记录 / Changelog
 
-## 未发布（问题登记）· 会话页顶部布局错乱（用户截图反馈，2026-10-10）
+## v0.5.0-beta23（2026-10-10）· C-14 顶栏布局修复 + 传输/日志安全止血 + CI/发布门禁
+
+### 修复
+- **C-14 会话页顶部布局错乱（P0 发布阻断）—— 根因定位并修复**：顶栏 `Row` 中部标题列 `Column(Modifier.weight(1f))` 被右侧四个定宽胶囊（文件数 / 状态 / 模式 / 模型）压到约 20dp；该列内**元数据 `Text` 缺 `maxLines` 兜底**，在近零宽下按 CJK 逐字符换行成 20+ 行，把整条顶栏 `Row` 撑到约 800–1000px、内容垂直居中 → 表现为「顶栏下移 + 上下双空白 + 会话流被压扁裁切」（真机顶栏恒在 y≈578）。触发条件：长模型名（`cn:deepseek-v4.1-flash-…`）+ 大字体，故此前未暴露。**修复**：元数据 `Text` 加 `maxLines = 1` + `TextOverflow.Ellipsis`，硬锁单行，杜绝零宽换行撑高整行。**验证**：新增仪器化断言 `ConversationTopBarLayoutTest`（复现压力条件：长模型名 + fontScale 1.3），模拟器实测——**修复前顶栏 554.29dp 断言失败、修复后 < 96dp 通过**（负向对照成立）。
+- **Vql.kt API 33 崩溃修复（由新增 lint 门禁抓出）**：VQL 编码使用 `ByteArrayOutputStream#writeBytes`（Android 13 / API 33 才引入），而 `minSdk = 31` —— 在 Android 12/12L 上会 `NoSuchMethodError` 崩溃（协议编码主路径）。改用语义等价的 `write(byte[])`（API 1）。
+
+### 安全加固（P0 传输与日志止血，任务书 §11.3）
+- **中继端点强校验**：新增 `relay/RelayEndpointValidator.kt`（`java.net.URI` 结构化解析）——Release 仅接受绝对 `wss://`，拒绝相对路径 / 无 scheme / 非 ws·wss scheme / userinfo / 无 host / 端口越界；移除旧 `startsWith("ws")` 弱校验。接入 `RelayClient.connect()`（不合规即拒绝连接、不降级重试，新增终态 `INVALID_ENDPOINT`）与 `AppViewModel.relayOverride()`（不合规回退官方 wss）。
+- **明文流量关闭**：主 Manifest `android:usesCleartextTraffic="false"`（minSdk 31、无 networkSecurityConfig，不误伤既有能力）；debug 变体单独 `tools:replace` 放开局域网 `ws://` 调试。
+- **日志脱敏**：新增纯函数 `util/LogRedactor.kt`（`maskId` / `pathLabel` / `payloadLabel` / `endpointLabel` / `exceptionLabel`）；改写 `RelayClient` / `RpcChannel` / `ConversationChannel` / `AppViewModel` 的高危日志点（整帧、`sid=` 原文、payload、工作区路径、文件路径、异常 message），保证**二维码 / SID / hash / 会话正文 / 文件路径 / payload / 中继 URL 不落日志**。
+- **调试组件令牌门**：新增 `debug/DebugInjectionGuard.kt`，两个 debug receiver 强制「严格 action + 一次性令牌」双校验，无令牌丢弃；保留 `exported=true`（adb shell 无法广播到 `exported=false`，改用令牌门）；Release 变体结构上不含（已用 aapt2 对 release APK 验证 0 命中）。
+
+### 新增（CI / 发布门禁）
+- **CI 第一层门禁补强**（`.github/workflows/ci.yml`）：新增 `gradle lintDebug lintRelease`（0 error 门禁，首个真实收益即抓出上面的 Vql API 33 缺陷）、`gradle assembleRelease` 组装、对 release APK **二进制 AndroidManifest** 的安全断言（明文关停 / 无 debug 组件 / 不可调试，规避 merged-manifest 路径随 AGP 漂移）、单测数量下限 `tools/check_test_count.py --min 194`（`--min/--expected` 阈值兜底，挡住「整文件/整类被删」的数量级回退）。
+- 单测 162 → **194 项**：新增 `RelayEndpointValidatorTest`（24 例）、`LogRedactorTest`（8 例，canary 输入零命中断言）。
+
+### 验证状态
+- `./build.sh testDebugUnitTest` → BUILD SUCCESSFUL；单测 **194/194** 全绿。
+- `lintDebug` + `lintRelease` → 0 error；`assembleRelease` → BUILD SUCCESSFUL。
+- 仪器化 `ConversationTopBarLayoutTest`（模拟器 test35 / SDK 35）：带修复 **PASS**；临时去修复 **FAIL（554.29dp）** —— 负向对照成立，断言确能捕获该缺陷。
+- C-14 属会话页核心布局，**真机装机回归待办**（修复逻辑为单行文本锁，风险极低）。
+
+## 历史登记（已于 v0.5.0-beta23 修复）· 会话页顶部布局错乱（用户截图反馈，2026-10-10）
 
 **现象**（用户截图 + 真机复现，稳定）：会话页顶栏下移至屏幕 1/3 处（真机量测 y=[578,713]，正常 ~[143,278]），其上方 435px 空白、与会话流之间再 450px 空白；会话流顶部行被裁切（截图里「任务」行文字上半缺失）、底部行被快捷胶囊行遮挡。**退出重进不恢复；列表页正常 → 会话页特有**；键盘弹出时同一现象（C-3 排查期间已见同一量测值，当时误判为键盘瞬态）。
 

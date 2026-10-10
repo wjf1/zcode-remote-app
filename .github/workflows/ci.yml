@@ -35,10 +35,18 @@ jobs:
         run: gradle testDebugUnitTest assembleDebug --console=plain
         working-directory: app-android
 
+      # 第一层门禁（任务书 §11.8）：lint 双变体 0 error。真实缺陷由 lint 抓出——
+      # Vql.kt 曾用 API 33 才有的 ByteArrayOutputStream#writeBytes（minSdk 31 →
+      # Android 12/12L 上会 NoSuchMethodError 崩溃），已修为等价 write(byte[])。
+      - name: lint（debug + release，0 error 门禁）
+        run: gradle lintDebug lintRelease --console=plain
+        working-directory: app-android
+
       # 防呆：@Test 若被注释掉或与注释粘连，JUnit 会静默跳过、构建照样全绿
       # （2026-10-07 实际发生过一次：测试数从 39 悄悄掉到 38）。做集合比对，丢用例即失败。
-      - name: 断言「声明的 @Test 全部被执行」
-        run: python tools/check_test_count.py
+      # --min 194：阈值兜底，挡住「整文件/整类被删」的数量级回退（集合比对管不住）。
+      - name: 断言「声明的 @Test 全部被执行」+ 数量下限
+        run: python tools/check_test_count.py --min 194
 
       # C-2：UI 层不得出现底层自造英文错误串（必须经 UserFacingError.map() 映射后才能展示）。
       # 这些字面量只允许存在于 relay/ 协议层（错误消息源）与映射表本身；

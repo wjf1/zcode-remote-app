@@ -42,10 +42,10 @@ object Vql {
         when (v) {
             null -> out.write(T_UNDEFINED)
             is String -> {
-                out.write(T_STRING); writeVarint(out, utf8(v).size); out.writeBytes(utf8(v))
+                out.write(T_STRING); writeVarint(out, utf8(v).size); out.write(utf8(v))
             }
             is ByteArray -> {
-                out.write(T_BUFFER); writeVarint(out, v.size); out.writeBytes(v)
+                out.write(T_BUFFER); writeVarint(out, v.size); out.write(v)
             }
             is List<*> -> {
                 out.write(T_ARRAY); writeVarint(out, v.size)
@@ -67,7 +67,7 @@ object Vql {
 
     private fun writeJson(out: ByteArrayOutputStream, el: JsonElement) {
         val b = utf8(el.toString())
-        out.write(T_OBJECT); writeVarint(out, b.size); out.writeBytes(b)
+        out.write(T_OBJECT); writeVarint(out, b.size); out.write(b)
     }
 
     private fun utf8(s: String) = s.toByteArray(Charsets.UTF_8)
