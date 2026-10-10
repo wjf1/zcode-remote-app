@@ -23,6 +23,7 @@
 ### 问题登记（新复现，纳入整改）· 表单应答失败
 - **2026-10-10 用户在当前 beta23 上复现**（此前 HANDOVER 记为"待复现/疑似异源旧包"，结论更正）：应答 elicitation 时服务端拒收——
   `{"code":"invalid_value","values":["accept","decline","cancel"],"path":["answer","action"],"message":"Invalid option: expected one of \"accept\"|\"decline\"|\"cancel\""}`。
+- **已定位并修复（初步）**：全仓穷举 `"action"` 仅 5 处、写的都是 `accept`/`decline` 字面量；唯一**不带 action** 的分支是 `AppViewModel.answerElicitationFreeText`（只发 `{freeText}`）。Zod v4 的 `z.enum` 对 `undefined` 同样报 "Invalid option: expected one of …"，故若 host 将 `action` 视为必填枚举，该分支即命中此错。修复：改为 `{action:"accept", freeText:text}`。**待真机复验**（重试一次"输入自定义回答"提交）。
 - 代码侧四个构造点（`AppViewModel.answerElicitation` / `declineElicitation` / `approveElicitationPlan`、`ElicitationNotifier`）写的都是 `accept`/`decline` 字面量，**越界值来源不在这些字面量**；嫌疑指向载荷外层结构或交互类型分支。待办：抓 `resolveElicitation` 实际 wire 载荷与桌面端 schema 对拍定位。
 
 ### 验证状态

@@ -1121,7 +1121,13 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         elicitations = elicitations.filter { it.interactionId != interId }
         recomputeSessionPending()
 
-        conv.resolveElicitation(el, buildJsonObject { put("freeText", text) }, fallbackWorkspacePath = ws) { r ->
+        // 服务端 resolveInteraction.answer 的 action 为枚举 accept|decline|cancel：
+        // 此前只发 {freeText} 缺 action，真机报 `invalid_value @ answer.action`（表单应答失败）。
+        conv.resolveElicitation(
+            el,
+            buildJsonObject { put("action", "accept"); put("freeText", text) },
+            fallbackWorkspacePath = ws,
+        ) { r ->
             handleElicitationResult(r, "已提交", el)
         }
     }
