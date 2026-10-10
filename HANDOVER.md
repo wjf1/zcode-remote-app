@@ -5,7 +5,8 @@
 > - **当前版本 `v0.5.0-beta20`（versionCode 30）**：本地 v1.1「用户可感知收益」四批（C-1/C-2/C-4/C-6/C-7/C-8/C-10/C-11 + A-3 实测启用 + C-5① + 桥看门狗可测试化）+ 第五批真机故障修复（**桥降级自愈** `scheduleBridgeReopen`）+ **C-5⑤**（离线缓存读取移出主线程，含竞态防护）；**155 项单测全绿**（`check_test_count.py` 核对 155/155）+ debug/release 构建通过 + 真机验收全部执行（7 项通过、1 项部分通过，见下清单）。
 > - **master 已推送（2026-10-10，SSH 通道）**：提交 `5be5634`（HTTPS 间歇被阻的绕行方案见 §3）；CI run `38030230595` **success**。四批内容与 A-3 实测结论见下方 🆕 各段（与云端 beta18/beta19 的合并冲突 4 处已解）。
 > - **最近发布**：tag `v0.5.0-beta20` @ 提交 `5be5634`；Release <https://github.com/wjf1/zcode-remote-app/releases/tag/v0.5.0-beta20>（附 `ZCodeRemote-0.5.0-beta20.apk`，versionCode 30，**新 release 签名** `E1:57:1A:49:…:2B:3F:DD`）。上一个发布：tag `v0.5.0-beta19` @ 提交 `e7c65d0`（<https://github.com/wjf1/zcode-remote-app/releases/tag/v0.5.0-beta19>）；更早：beta18 @ `a82570a`。
-> - ⚠️ **装机提示（新签名首个版本）**：任何已装历史版本（含当前手机上的 beta19 debug 包）装 beta20 release 包需**卸载重装一次**（丢配对凭据 → 重新扫码）；此后以新签名为准可正常覆盖升级。装机后按 P0-2 规则重启观察窗口。
+> - ✅ **装机完成（2026-10-10）**：beta20 release 包已装于小米 15 Pro（versionCode 30、指纹 `E1:57:1A:49:…`；装机脚本 `_tmp/hyperos_install_release.py` 自动确认 HyperOS 弹窗，adb 输出 `Success`）。**实测意外：卸载重装后配对凭据未丢**——App 启动直接「CHINAMI-DPNMO04 · 就绪」、71 个会话列表完整、会话页实时渲染，无需重新扫码（App 侧 `allowBackup=false`，疑为 HyperOS 系统级数据保留；机制未深入区分）；logcat 无 FATAL、无桥降级。留档 `docs/screenshots/beta20-installed.png`。**观察窗口自今日 2026-10-10 重启（预计 2026-10-13 收官）**。
+> - ⚠️ **新签名装机提示（历史，已按此执行）**：已装历史版本装 beta20 release 包需**卸载重装一次**（一般设备会丢配对凭据 → 重新扫码；本机 HyperOS 实测未丢，见上）；此后以新签名为准可正常覆盖升级。
 > - **beta18 内容（本地验证驱动，非用户报障）**：为清掉 beta17 验收遗留的「围栏代码块与 GFM 表格没有样本」空洞，在模拟器上补**仪器化渲染回归网**，测试首轮即抓出**用户可见缺陷** —— 高亮库的 `ColorHighlight.rgb` 是纯 RGB，被 Compose `Color(Int)` 按 ARGB 解释后 alpha=0，**代码块里被高亮的字符被画成完全透明**（关键字/字符串/注释整段消失）。修复见 `ui/components/MarkdownView.kt` 的 `opaqueHighlightArgb`；证据 `docs/screenshots/render-code-block-before-fix.png` → `render-code-block.png`（token 色命中 0 → 1789）。**beta17 的 APK 含此缺陷**。
 > - **全部后续开发计划仍取消**（用户决策：Sprint 7 生物识别/自建中继 E2EE、P2-3 余项等一律不做）。
 > - **唯一剩余事项**：P0-2 三天日常使用观察 → 通过即发 **v1.0**（详见 §6.0 待办总览 + §6.0 P0-2 章节）。**C-5 ③④ 已立项**，按《体验提升任务书 v2》§10 执行卡推进（每项独立 commit + 独立真机回归）。
@@ -65,7 +66,7 @@
 > - ⚠️ **踩坑（勿重犯）**：beta13 轮次中一个 `@Test` 因被挤进行注释而**静默未执行**（构建仍全绿），导致当时「39 项全绿」实际只跑了 38 项。**任何「N 项单测全绿」的结论都必须同时确认 N == 实际执行的用例数**（跑 `tools/check_test_count.py`）。
 > - ⚠️ **跨 adb 做文本检索不可靠**（引号转义丢失会返回假阴性），一律先把文件 `pull` 到本地再解析；`grep` 检索代码用 `-F`（`.` 是任意字符）。
 > - ⚠️ **release（R8）包与 debug 包签名不同**（debug `3A:B5:8F…` / release `1D:46:E9…`）：手机上若已装 debug 包，`adb install -r` release 包会 `INSTALL_FAILED_UPDATE_INCOMPATIBLE`，需先卸载——**会丢失配对凭据**，属破坏性操作，动手前必须取得用户同意。beta16 的 release 包因此**未做真机冒烟**，上机验收用的是同源 debug 包。
-> - ⚠️ **观察窗口**：按 §6.0 P0-2 规则，v1.0 判停线自补丁/对齐轮**真机验收通过之日**重新计时。beta20 的代码级真机验收已于 **2026-10-10** 全部执行（见上清单）；观察手机当前仍为 **beta19**（debug 包，versionCode 29）——**beta20 release 包（新签名）装机需卸载重装一次**，窗口自该次装机日起重新计时（3 天观察；若 2026-10-10 装机则 2026-10-13 收官）。
+> - ⚠️ **观察窗口**：按 §6.0 P0-2 规则，v1.0 判停线自补丁/对齐轮**真机验收通过之日**重新计时。**beta20 release 包已于 2026-10-10 装机**（versionCode 30，见顶部状态块），窗口自该日重新计时（3 天观察，预计 **2026-10-13** 收官）。
 > - ⚠️ **实测系统为 Android 17 / HyperOS**（旧记录为 Android 15）：跨两个大版本，接入时须把 USB 用途切到「传输文件」才暴露 ADB 接口。P0-2 第 2/3 项依赖 HyperOS 后台与通知策略，跨版本升级后务必重新观察。
 > - **未做项现状（2026-10-10 更新）**：**档 C 首批 7 项 + A-3 + 无设备可验证项（C-8、A-4 前置、C-5①、看门狗可测试化）+ C-5⑤ 均已落地并随 v0.5.0-beta20 发布**。**仍未做（有依据，勿当遗漏）**：**A-4 自愈与 buffer 策略** 与 **C-5 其余（③ rows 拷贝 / ④ Compose 解析缓存 / ⑦ 快照差分）**（改并发与 Compose 缓存语义，须真机观察 + 独立灰度）、**C-3**（emoji 图标替换需先评估 `material-icons-extended` 包体；键盘 inset 根因须真机量测）、**C-9/C-12**（加密存储需 Android Keystore 运行时验证；拆分为二期）、决策项（ws:// 明文中继、reverseLayout）。
 > - 🆕 **验证副作用（需知悉）**：验证附件 chip 时向真实会话 `sess_0f00b96b`（「zcode-dotfiles 优化方案可行性确认」）写入了一条测试消息（`attachment-render-check` + 89B 测试文件）。核对 `tasks-index` 确认**未调度 agent 轮次、未消耗额度**；协议无删除消息操作，无法程序化清理。

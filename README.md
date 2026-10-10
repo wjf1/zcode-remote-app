@@ -121,7 +121,7 @@ ZCode 官方远程控制（`zcode.z.ai/remote`）的**原生安卓增强客户�
 （最新 `ZCodeRemote-0.5.0-beta20.apk`，minSdk 31，Android 12+）。
 
 > ⚠️ **签名更换提示（2026-10-10）**：本版起使用**新的 release 签名**（原 keystore 丢失）。
-> 已装任何历史版本的设备安装本版需**先卸载**（配对凭据会丢失、需重新扫码配对）；此后以新签名为准，可正常覆盖升级。
+> 已装任何历史版本的设备安装本版需**先卸载**（一般设备会丢配对凭据、需重新扫码；**本机小米 15 Pro / HyperOS 实测卸载后凭据未丢、无需重扫码**）；此后以新签名为准，可正常覆盖升级。
 
 ### 快速开始
 
@@ -239,7 +239,8 @@ Download signed APKs from [GitHub Releases](https://github.com/wjf1/zcode-remote
 
 > ⚠️ **Signing key change (2026-10-10)**: starting with this release the app is signed with a **new release key**
 > (the original keystore was lost). Uninstall any previously installed build before installing this one
-> (pairing credentials are wiped; re-scan to pair). Future updates will overlay normally.
+> (pairing credentials are usually wiped — re-scan to pair; on our Xiaomi 15 Pro / HyperOS they survived the
+> reinstall). Future updates will overlay normally.
 
 > **2026-10-07 patch rounds**: **beta13** fixed four correctness/UX defects per the *Experience Improvement Task Book v2* (grades A/B) — cross-session attachment injection, missing handshake timeouts, the beta11/12 auto-scroll regression, and missing haptics. **beta14** adds attachment chips in the conversation stream (a user-requested feature). **beta15** fixes three connection-layer defects: the bridge handshake had no timeout (session stuck on an error forever while the relay showed "connected"), `bridge not ready` was not treated as retryable, and network recovery waited out a full backoff round (~47s). **beta16** surfaces the full session error reason, backfills it into the list, unwraps double-serialized titles, and aligns the composer controls. JVM tests and build are green; beta15 recovery latency verified on device (80s→5s, 150s→3s vs ~47s before). See [CHANGELOG.md](CHANGELOG.md) and [HANDOVER.md](HANDOVER.md).
 >
