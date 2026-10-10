@@ -70,6 +70,8 @@
 
 **修复（低风险防呆）**：`AppViewModel.scheduleBridgeReopen()`——桥失败后自动重开，**退避 1s/2s/4s、上限 3 次**（`bridgeReopenDelayMs` 纯函数 + 单测钉死），桥就绪即归零；用尽后停失败态交上层兜底，避免把「服务端持续降级」放大成重开风暴。新增单测 +1（153 → 154）。
 
+**发布准备（2026-10-10）**：原 release keystore（`1D:46:E9:…`）经全盘搜索确认丢失（本机仅存 debug keystore）→ 经用户拍板**生成新 release keystore**（RSA 2048 / PKCS12 / 10000 天，指纹 **`E1:57:1A:49:…:2B:3F:DD`**），配置于 `toolchain/keys/` + `app-android/keystore.properties`（**均不入库**，密码另存 `toolchain/keys/README-keystore.txt`）。**v0.5.0-beta20 为首个新签名版本**；已装设备（含 debug 包）需**卸载重装一次**（丢配对、重新扫码）。
+
 **其余进展**：C-6 补验（发送瞬间气泡 <1s 窗口）经连拍 6 帧仍未捕获——标记「实机未直接观察（低于采样粒度）」；副作用累计 3 条测试消息进入服务端队列（协议无撤回）。
 
 ### 验证状态

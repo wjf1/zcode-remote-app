@@ -263,7 +263,7 @@ ADB -s <serial> shell am broadcast -n com.zcode.remote/.debug.DebugPairReceiver 
 ADB -s <serial> shell am broadcast -n com.zcode.remote/.debug.DebugApprovalReceiver   -a com.zcode.remote.action.DEBUG_APPROVAL          # 注入两条假审批，验通知卡片渲染
 ```
 
-- **签名**：`toolchain/keys/zcode-remote.keystore` + `app-android/keystore.properties`（密码在此，**不入库、勿丢失**；PKCS12 约束 key 密码=store 密码）。
+- **签名（2026-10-10 更换）**：原 release keystore（指纹 `1D:46:E9:…:24:BE:55`）经全盘搜索确认丢失（本机仅存 debug keystore），**已由用户拍板生成新 keystore**：`toolchain/keys/zcode-remote.keystore`（RSA 2048 / PKCS12 / 10000 天，指纹 **`E1:57:1A:49:…:2B:3F:DD`**）+ `app-android/keystore.properties`（密码同目录 `README-keystore.txt`；**均不入库、勿外传**）。**新签名与历史 APK 不兼容**：已装设备（含手机上现有的 debug 包）装 release 包需**卸载重装一次**（丢配对、重新扫码）；此后以新指纹为准。
 - **PC 端凭据**（probe/App 配对用）：`~/.zcode/v2/setting.json`（deviceSid）+ `~/.zcode/v2/credentials.json`（pass_hash，解密算法见 `tools/probe.py` load_credentials）+ `~/.zcode/v2/telemetry-state.json`（deviceMid）。桌面端 rotate 后三处同步更新，App 用「添加设备→粘贴链接」重新配对。
 - **挑验证目标会话（2026-10-09 新增，零成本）**：桌面端把会话文本存进了 `~/.zcode/v2/tasks-index.sqlite` 的 `tasks.searchable_text`。要找「哪个会话最近出现过围栏代码块」不用翻手机列表：
   `select title, updated_at from tasks where workspace_key like 'F:%Zcode%' and searchable_text like '%```%' order by updated_at desc;`
