@@ -40,6 +40,7 @@ import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalHapticFeedback
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -304,9 +305,10 @@ fun ConversationScreen(
         verticalArrangement = Arrangement.spacedBy(8.dp),
     ) {
         // 1. 顶栏：标准返回导航键 + 标题 + 紧凑元数据
+        // C-14：testTag 供仪器化布局断言锁定顶栏高度（防「行高被内容换行撑爆」回归）。
         Row(
             verticalAlignment = Alignment.CenterVertically,
-            modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp)
+            modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp).testTag("conv-topbar")
         ) {
             IconButton(
                 onClick = onBack,
@@ -336,6 +338,11 @@ fun ConversationScreen(
                     style = MaterialTheme.typography.labelSmall,
                     color = if (status is ConversationChannel.Status.Failed) MaterialTheme.colorScheme.error
                     else MaterialTheme.colorScheme.onSurfaceVariant,
+                    // C-14：右侧胶囊（文件/状态/模式/模型）占满行宽时，本列会被压到 ~0 宽度；
+                    // 该文本此前无 maxLines 兜底，会在零宽下逐字符换行成十几行，把整条顶栏
+                    // Row 撑到近千像素（顶部布局错乱的直接成因）。此处硬锁单行。
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
                 )
             }
 
