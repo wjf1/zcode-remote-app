@@ -24,10 +24,54 @@ data class TurnDiffSummary(
 
 object TurnChanges {
     /**
+     * C-5④：按行缓存的 diff 解析（增量解析）。
+     *
+     * `ToolDiffParser.parse` 是逐行 JSON 解析 + Myers diff（O(m×n)），而会话页的
+     * Turn 聚合在流式期每个 token 重算一次——没有缓存就是全量重解析。缓存以
+     * rowId 为键、以「toolName + inputText 的 hash/长度」为内容指纹：流式更新
+     * 替换为新的行对象（同 rowId 新内容）时指纹变化即重新解析，否则复用。
+     *
+     * 生命周期由调用方（会话页 `remember`）持有，随会话页销毁——切会话即重置。
+     */
+    class DiffCache {
+        private class Cached(
+            val nameHash: Int, val nameLen: Int,
+            val textHash: Int, val textLen: Int,
+            val diff: ToolDiff?,
+        )
+
+        private val byRowId = HashMap<Int, Cached>()
+
+        /** 实际发生的解析次数（单测断言「增量」用，也可作诊断指标）。 */
+        var parseCount = 0
+            private set
+
+        fun diffFor(row: ConversationRow): ToolDiff? {
+            val name = row.toolName
+            val text = row.inputText
+            val nameHash = name?.hashCode() ?: 0
+            val nameLen = name?.length ?: -1
+            val textHash = text?.hashCode() ?: 0
+            val textLen = text?.length ?: -1
+            byRowId[row.rowId]?.let { hit ->
+                if (hit.nameHash == nameHash && hit.nameLen == nameLen &&
+                    hit.textHash == textHash && hit.textLen == textLen
+                ) {
+                    return hit.diff
+                }
+            }
+            val diff = ToolDiffParser.parse(row)
+            byRowId[row.rowId] = Cached(nameHash, nameLen, textHash, textLen, diff)
+            parseCount++
+            return diff
+        }
+    }
+
+    /**
      * 从会话行中抽取各 Turn 的文件写变更聚合。
      * 返回：以该 Turn 最后一个写操作的 rowId 为键的 Map，便于在 ConversationScreen 中精准挂载渲染。
      */
-    fun aggregate(rows: List<ConversationRow>): Map<Int, TurnDiffSummary> {
+    fun aggregate(rows: List<ConversationRow>, cache: DiffCache? = null): Map<Int, TurnDiffSummary> {
         val result = mutableMapOf<Int, TurnDiffSummary>()
         if (rows.isEmpty()) return result
 
@@ -50,7 +94,7 @@ object TurnChanges {
             var lastWriteRowId: Int? = null
 
             for (row in group) {
-                val diff = ToolDiffParser.parse(row)
+                val diff = if (cache != null) cache.diffFor(row) else ToolDiffParser.parse(row)
                 if (diff != null && diff.lines.isNotEmpty()) {
                     diffs += diff
                     lastWriteRowId = row.rowId

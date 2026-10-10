@@ -148,9 +148,13 @@ fun ConversationScreen(
     val listState = rememberLazyListState()
     val headerCount = if (rows.isEmpty()) 0 else 1
     // 剧本 B「最近文件」：从会话行派生文件清单（纯客户端零协议）
-    val sessionFiles = remember(rows) { com.zcode.remote.relay.SessionFiles.extract(rows) }
+    // C-5④：解析缓存跨 rows 版本存活——流式期只解析新增/变化的行（增量），
+    // 未变化的行复用上次结果；缓存随本 composable 销毁（切会话即重置）。
+    val filesParseCache = remember { com.zcode.remote.relay.SessionFiles.PathCache() }
+    val turnDiffCache = remember { com.zcode.remote.relay.TurnChanges.DiffCache() }
+    val sessionFiles = remember(rows) { com.zcode.remote.relay.SessionFiles.extract(rows, filesParseCache) }
     // Sprint 3 第三步：从会话行按 Turn 聚合文件写操作 Diff
-    val turnSummaries = remember(rows) { com.zcode.remote.relay.TurnChanges.aggregate(rows) }
+    val turnSummaries = remember(rows) { com.zcode.remote.relay.TurnChanges.aggregate(rows, turnDiffCache) }
     var showFiles by remember { mutableStateOf(false) }
     // C3：会话状态面板弹层
     var showStatus by remember { mutableStateOf(false) }

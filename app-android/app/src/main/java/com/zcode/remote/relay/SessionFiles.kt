@@ -17,13 +17,47 @@ object SessionFiles {
 
     data class Entry(val path: String, val toolName: String, val rowId: Int)
 
+    /**
+     * C-5④：按行缓存的路径抽取（增量解析）。
+     *
+     * 会话页对 rows 的派生每次重算都全量遍历——流式期 rows 每个 token 变化一次，
+     * 没有缓存就是 O(n) 行反复 JSON 解析。缓存以 rowId 为键、以「inputText 的
+     * hash + 长度」为内容指纹：流式更新会替换为新的行对象（同 rowId 新内容），
+     * 指纹不同即重新解析；未变化的行直接复用，解析量降为 O(增量)。
+     *
+     * 生命周期由调用方（会话页 `remember`）持有，随会话页销毁——切会话即重置。
+     */
+    class PathCache {
+        private class Cached(val textHash: Int, val textLen: Int, val path: String?)
+
+        private val byRowId = HashMap<Int, Cached>()
+
+        /** 实际发生的解析次数（单测断言「增量」用，也可作诊断指标）。 */
+        var parseCount = 0
+            private set
+
+        fun pathFor(row: ConversationRow): String? {
+            val text = row.inputText
+            val hash = text?.hashCode() ?: 0
+            val len = text?.length ?: -1
+            byRowId[row.rowId]?.let { hit ->
+                if (hit.textHash == hash && hit.textLen == len) return hit.path
+            }
+            val path = extractPath(text)
+            byRowId[row.rowId] = Cached(hash, len, path)
+            parseCount++
+            return path
+        }
+    }
+
     /** 从会话行抽取文件清单：按路径去重、最近操作者排前。 */
-    fun extract(rows: List<ConversationRow>): List<Entry> {
+    fun extract(rows: List<ConversationRow>, cache: PathCache? = null): List<Entry> {
         val byPath = LinkedHashMap<String, Entry>()
         for (row in rows) {
             val name = row.toolName?.lowercase()?.substringAfterLast('.') ?: continue
             if (PATH_TOOLS.none { name.contains(it) }) continue
-            val path = extractPath(row.inputText) ?: continue
+            val path = if (cache != null) cache.pathFor(row) else extractPath(row.inputText)
+            if (path == null) continue
             byPath.remove(path)                       // remove+put 使该路径移到末尾（最新）
             byPath[path] = Entry(path, row.toolName ?: "?", row.rowId)
         }
