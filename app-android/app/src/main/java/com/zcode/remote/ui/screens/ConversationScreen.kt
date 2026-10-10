@@ -369,56 +369,35 @@ fun ConversationScreen(
                 Spacer(Modifier.width(6.dp))
             }
 
-            // 顶栏右侧：最近文件入口（剧本 B）——显示本会话涉及的文件数，点开列表面板
-            if (sessionFiles.isNotEmpty()) {
-                Surface(
-                    onClick = { showFiles = true },
-                    shape = RoundedCornerShape(14.dp),
-                    color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.6f),
-                    border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
-                    modifier = Modifier.height(28.dp)
-                ) {
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        modifier = Modifier.padding(horizontal = 8.dp)
-                    ) {
-                        Text(
-                            text = "📁 ${sessionFiles.size}",
-                            style = MaterialTheme.typography.labelSmall.copy(
-                                fontWeight = FontWeight.SemiBold, fontSize = 11.sp
-                            ),
-                            color = MaterialTheme.colorScheme.primary,
-                            maxLines = 1
-                        )
-                    }
-                }
-                Spacer(Modifier.width(6.dp))
+            // 顶栏右侧：溢出菜单（C-14 空间预算）——把「文件数」「状态」从顶栏直排收进
+            // 「⋮」二级菜单。二者作为定宽胶囊会把中部标题列挤到约 16px（标题/元数据不可见，
+            // 真机实测），故改为二级入口，把宽度让给标题。仅在确有条目时出现。
+            val overflowEntries = buildList {
+                if (sessionFiles.isNotEmpty()) add("files" to "📁 文件（${sessionFiles.size}）")
+                StatusPanelLabels.entryLabel(sessionState)?.let { add("status" to it) }
             }
-
-            // 顶栏右侧：会话状态入口（C3）—— 有可展示内容时才出现，点开底部面板
-            StatusPanelLabels.entryLabel(sessionState)?.let { label ->
-                Surface(
-                    onClick = { showStatus = true },
-                    shape = RoundedCornerShape(14.dp),
-                    color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.6f),
-                    border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
-                    modifier = Modifier.height(28.dp)
-                ) {
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        modifier = Modifier.padding(horizontal = 8.dp)
-                    ) {
-                        Text(
-                            text = label,
-                            style = MaterialTheme.typography.labelSmall.copy(
-                                fontWeight = FontWeight.SemiBold, fontSize = 11.sp
-                            ),
-                            color = MaterialTheme.colorScheme.primary,
-                            maxLines = 1
+            if (overflowEntries.isNotEmpty()) {
+                Box {
+                    var overflow by remember { mutableStateOf(false) }
+                    IconButton(onClick = { overflow = true }, modifier = Modifier.size(32.dp)) {
+                        Icon(
+                            imageVector = Icons.Default.MoreVert,
+                            contentDescription = "更多",
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
                     }
+                    DropdownMenu(expanded = overflow, onDismissRequest = { overflow = false }) {
+                        overflowEntries.forEach { (kind, label) ->
+                            DropdownMenuItem(
+                                text = { Text(label, style = MaterialTheme.typography.bodySmall) },
+                                onClick = {
+                                    overflow = false
+                                    if (kind == "files") showFiles = true else showStatus = true
+                                },
+                            )
+                        }
+                    }
                 }
-                Spacer(Modifier.width(6.dp))
             }
 
             // 顶栏右侧：执行模式胶囊（P0-B）—— 当前模式常驻可见，yolo 红底警示；点击弹出切换菜单
