@@ -1,5 +1,15 @@
 # 变更记录 / Changelog
 
+## 未发布（问题登记）· 会话页顶部布局错乱（用户截图反馈，2026-10-10）
+
+**现象**（用户截图 + 真机复现，稳定）：会话页顶栏下移至屏幕 1/3 处（真机量测 y=[578,713]，正常 ~[143,278]），其上方 435px 空白、与会话流之间再 450px 空白；会话流顶部行被裁切（截图里「任务」行文字上半缺失）、底部行被快捷胶囊行遮挡。**退出重进不恢复；列表页正常 → 会话页特有**；键盘弹出时同一现象（C-3 排查期间已见同一量测值，当时误判为键盘瞬态）。
+
+**真机线索**：键盘已收起，但系统 **IME insets 仍报 `contentTopInsets=1353` / `touchableRegion(0,1353,1080,2400)`（未清零）**；头号嫌疑为 `imePadding()` 在 insets 异常/残留时的分量处理（若 ime insets 的 top 分量 >0 会被加到顶部 → 顶栏整体下移；会话流 `weight(1f)` 的分配被压缩后出现裁切）。会话页根布局：`Modifier.fillMaxSize().statusBarsPadding().navigationBarsPadding().imePadding().padding(14.dp, 8.dp)` + `Arrangement.spacedBy(8.dp)`（`ConversationScreen.kt:297-305`）。
+
+**证据**：`docs/screenshots/conv-layout-bug-report.jpg`（用户截图）+ 量测 dump（顶栏 [578,713] / 会话流 [1163,2054] / 退重进不恢复 / 列表页对照正常）。
+
+**状态**：**待立项**（2026-10-10 用户指示「分析后加入后续工作」）。前置：debug 临时日志实测 `WindowInsets.ime` 的 top/bottom/isVisible 三值（或单变量剔除 `imePadding()` 对照）后再定修法；会话页核心布局，改动须独立 commit + 真机回归。疑似与「附件条并入容器」回滚案（见下方 beta22 段「布局回归线索」）同源。
+
 ## v0.5.0-beta22（2026-10-10）· C-3 输入栏并入容器与图标体系（+ 键盘 inset 量测定论）
 
 ### 新增 / 变更（C-3）
