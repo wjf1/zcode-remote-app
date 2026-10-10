@@ -8,7 +8,12 @@
 
 **证据**：`docs/screenshots/conv-layout-bug-report.jpg`（用户截图）+ 量测 dump（顶栏 [578,713] / 会话流 [1163,2054] / 退重进不恢复 / 列表页对照正常）。
 
-**状态**：**待立项**（2026-10-10 用户指示「分析后加入后续工作」）。前置：debug 临时日志实测 `WindowInsets.ime` 的 top/bottom/isVisible 三值（或单变量剔除 `imePadding()` 对照）后再定修法；会话页核心布局，改动须独立 commit + 真机回归。疑似与「附件条并入容器」回滚案（见下方 beta22 段「布局回归线索」）同源。
+**诊断进展（2026-10-10 晚，真机构建实验 4 轮：only(Bottom) 候选修复 / 全去 inset padding / 三标记定位）**：
+- ✅ **确切机制定位**：「标记二分法」（在根 Column 首个子元素、顶栏 Row 后、会话流后插入可见标记 M-A/B/C）证明——根 Column 内容从屏幕顶部开始（M-A 在 y=23），但**顶栏 Row 在布局中被撑到 ~988px 高**（M-A→M-B 间距 1036px；顶栏内容 135px 在 Row 内垂直居中、返回键恰在 Row 垂直中心）→ 这就是「顶栏下移 + 双空白 + 会话流被压」的直接原因。
+- ✅ **已排除**（各自单变量构建 + 真机量测）：① `imePadding()` 的 top 分量（`only(WindowInsetsSides.Bottom)` 无效果）；② 全部 inset padding（statusBars/navigationBars/ime 三者同去后顶栏仍被撑高、只上移 127px）；③ 顶栏 Row 内部含纵向撑满元素（grep 无 `fillMaxHeight`/`verticalScroll`，仅横向 spacer 与横向 weight）；④ 会话流 weight 丢失（去 padding 后其高度同步增长，weight 正常）。
+- ⏭️ **下一步（需更强工具）**：Layout Inspector 看「顶栏 Row 的测量约束链」（哪个父级/修饰符授予大高度约束），或二分删除法（Row 内容逐个换单行 Text）。**高价值候选实验**：顶栏 Row 前加 `Spacer(Modifier.weight(1f))`——若它吃掉空间、顶栏回到顶部，则问题在 Column 的权重组装。
+
+**状态**：**待立项**（用户指示「分析后加入后续工作」；诊断已推进到「机制定位 + 排除清单」）。会话页核心布局，改动须独立 commit + 真机回归。**诊断构建已全部回滚**（手机上恢复为 beta22 正式包）。
 
 ## v0.5.0-beta22（2026-10-10）· C-3 输入栏并入容器与图标体系（+ 键盘 inset 量测定论）
 
