@@ -326,6 +326,7 @@ ADB -s <serial> shell am broadcast -n com.zcode.remote/.debug.DebugApprovalRecei
 25. **A-3 的 103 已实测启用（2026-10-09）**：字段规格 = 官方 bundle `[103, id]` + **undefined 参数段**（两段式，**勿省参数段**）；服务端静默接受、无 201/202/203 应答（fire-and-forget，勿等回包）。`SEND_EVENT_DISPOSE = true` 已启用；复现脚本 `probe.py dispose`（单次对照）与 `dispose-stress N`（N 次循环后按 listen_id 统计 204 帧分布）。**A-4 仍保守**：「缺口只记 WARN 日志、不触发重订阅」，buffer 策略改动须独立 commit + 独立真机回归。
 26. **release 热点在「日志实参」而非日志调用（C-5①，2026-10-09）**：`ZLog.d/i/w` 的**调用**会被 R8 的 `-assumenosideeffects` 剥离，但**实参表达式不会**——`ZLog.d(TAG, ev.data.toString())` 在 release 仍执行 `toString()`。任何「重计算进日志参数」的写法必须自带 `BuildConfig.DEBUG` 门控（例外：`ZLog.e` 在 release 也输出，只允许字符串字面量元信息，CI 有断言守）。
 27. **桥看门狗决策是纯函数（2026-10-09）**：`RpcChannel.watchdogDecision`（Noop/Retry/Fail）由单测钉死——改看门狗行为（超时、重开次数）时先改它和对应单测，不要在 `scheduleBridgeWatchdog` 里散写判断（该路径真机无法构造，单测是唯一防线）。
+28. **「桌面端已连接、手机显示异常」是两层状态（2026-10-10 真机故障）**：中继层 `paired`（device↔terminal 配对）与会话桥层（RPC 通道）**相互独立**——前者正常不代表后者正常。本次故障链：App 主线程处理停摆（长会话 1100+ 行 × 高频入站帧 → 停止回 ack）→ 服务端重放未确认帧 → 判 `rpc-transport-fault` 下发 `bridge-degraded` → 手机「异常」而桌面端日志仍 `paired`。**App 侧自愈已补**：`AppViewModel.scheduleBridgeReopen`（退避 1/2/4s × 3 次，就绪归零）。诊断要点：`adb logcat -s RelayClient AppViewModel ConvChannel`——**logcat 缓冲会被会话帧大量冲掉，长观察必须先 `logcat -c` 并把输出落盘**；判「App 是否真的在处理帧」看 `RpcChannel` 解码日志与 `ConvChannel: 状态块更新` 是否与 `RelayClient: ws recv` 同步出现（只有 ws recv 在涨 = 处理停摆）。
 
 ## 6. 剩余任务（P0 → P2，含验收标准）
 
@@ -558,7 +559,7 @@ FCM/小米推送主通道（IM Bot 通道兜底另议）、追功能广度（多
 | **A-4** | 事件流丢帧无缺口检测 → 会话静默停在旧状态 | 需改 `RpcChannel` buffer 策略（`extraBufferCapacity=256 / DROP_OLDEST` → 照抄 `RelayClient` 的 `512 / SUSPEND` + 单泵），**动并发路径，任务书自标高危**，须独立 commit + 独立真机回归；且与 C-5⑤⑦ 同动 `ConversationFrames`/RowStore 状态机，**排期必须串行** |
 | ✅ **T0**（**已 PASS 并回填**） | 握手/快照耗时打点（A-2 阈值的测量基础） | 整链路实测 **512–740ms**（见顶部真机验收清单第 5 条），**A-2 的 `HANDSHAKE_*_TIMEOUT_MS` 已据此校准为 4s/4s/5s**，不再是占位值 |
 | **A-5**（新登记 · 2026-10-09 由 D-1 核查析出） | **逻辑帧分片未处理**：wireVersion 3 的 `kind:"fragment"` 信封在 App 侧被静默丢弃（`ConversationChannel.kt:257-259`），若真机出现会**缺帧**且 UI 无提示 | **未立项**。前置：真机 + 桌面端在线抓到一条真实 `fragment` 帧（字段规格见 `FRAME-CODEC.md:681-686`，但无实测样本）；拿到样本前不得盲写重组逻辑。与 A-4 同属「事件流完整性」，若一起做须串行 |
-| **档 C 剩余（C-3/C-5/C-9/C-12）** | C-3 输入栏图标与键盘 inset 根因（须先真机量 inset；emoji 图标替换另需评估 `material-icons-extended` 包体）、C-5 性能与线程模型（自标高危，须独立灰度）、C-9 githubToken 加密存储（复用 MultiDeviceStore，勿引入 EncryptedSharedPreferences）、C-12 AppViewModel 拆分（二期） | 未拍板不得开工；**C-5 与 A-4 同动状态机，排期必须串行** |
+| **档 C 剩余（C-3/C-5/C-9/C-12）** | C-3 输入栏图标与键盘 inset 根因（须先真机量 inset；emoji 图标替换另需评估 `material-icons-extended` 包体）、**C-5 性能与线程模型**（自标高危，须独立灰度；**2026-10-10 已获真机实证**——长会话高频入站帧下主线程处理停摆 → 停 ack → 服务端判 `rpc-transport-fault` 降级桥 → 手机「异常」，见坑清单 28）、C-9 githubToken 加密存储（复用 MultiDeviceStore，勿引入 EncryptedSharedPreferences）、C-12 AppViewModel 拆分（二期） | 未拍板不得开工；**C-5 与 A-4 同动状态机，排期必须串行** |
 | **决策项** | `ws://` 明文中继（minSdk 31 + 无 `networkSecurityConfig` → 静态即可定论必失败）：要么删选项，要么显式补配置（削弱安全性，需用户同意）；`reverseLayout` 翻转待 B-1 落地后评估 | 用户拍板 |
 
 ### P1-1 elicitation（表单类交互）应答（✅ 2026-09-29 完成，协议层端到端验收通过）

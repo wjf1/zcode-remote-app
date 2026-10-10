@@ -58,8 +58,22 @@
 - **探针工具修复（实测踩坑）**：① websockets 17 的 `proxy` 默认 `True` = 读「操作系统代理」（Windows 注册表），本机系统代理指向未运行的 Clash 端口 → `ConnectionRefused`，probe 已显式 `proxy=None`（只读环境变量）直连；② 探针**必须带 `ZCODE_MID`**——缺失时 auth 返回 `pair_status=waiting`（配对绑定含机器 ID），补齐后 `matched`；③ 新增 `dispose` / `dispose-stress` 子命令。
 - **真机待办**：App 侧端到端（连续切 20 次会话，入站流量不随 N 增长）并入真机验收清单；探针上线会把桌面端短暂 KICKED（后者自动重连），属同 deviceSid 单 terminal 槽的预期行为。
 
+### 第五批（2026-10-10 真机故障修复：桥降级后无自愈）
+
+**现象（用户真机报告）**：桌面端显示「已连接」，手机端同时显示「未连接/异常」，连接反复断开又恢复。
+
+**诊断（真机 logcat + 桌面端日志双向取证）**：
+- **两层状态被混看**：中继层（device↔terminal 配对，桌面端 UI 显示的 `paired`）与会话桥层（RPC 通道）相互独立——「异常」来自后者，桌面端 `paired` 全程稳定。
+- **桥的完整生命周期**：`11:17:54 Ready(e9ec2790)` → 11:19:45 起 **App 停止回 ack（约 2 分钟）** → 服务端重放未确认帧（seq 274+）→ `11:20:25` 判定 **`rpc-transport-fault`** 主动下发 `bridge-degraded` → `11:21:34` 桥重建 → `11:21:35 Ready(4f7a6a3e)` 恢复。
+- **App 侧处理停摆的证据**：745 条 `ws recv` 到达 `RelayClient`，但 `RpcChannel` 解码日志、会话帧处理与 ack **全部缺席**——主线程处理被压住（长会话 1100+ 行 × 高频入站帧；高强度验收操作放大）。与任务书 **C-5「性能与线程模型」**指出的主线程热点吻合，是该卡的**首个真机实证**（观测期故障，非猜测）。
+- **暴露的缺陷**：桥置 `Failed`（服务端降级 / 看门狗用尽）后**没有任何自愈路径**——只有 relay 重新 Paired 或用户手动操作才会重开桥，故障窗口被拉长（本次靠上层重连撞回来）。
+
+**修复（低风险防呆）**：`AppViewModel.scheduleBridgeReopen()`——桥失败后自动重开，**退避 1s/2s/4s、上限 3 次**（`bridgeReopenDelayMs` 纯函数 + 单测钉死），桥就绪即归零；用尽后停失败态交上层兜底，避免把「服务端持续降级」放大成重开风暴。新增单测 +1（153 → 154）。
+
+**其余进展**：C-6 补验（发送瞬间气泡 <1s 窗口）经连拍 6 帧仍未捕获——标记「实机未直接观察（低于采样粒度）」；副作用累计 3 条测试消息进入服务端队列（协议无撤回）。
+
 ### 验证状态
-- `testDebugUnitTest` + `assembleDebug` **BUILD SUCCESSFUL**；`tools/check_test_count.py` 核对 **153/153 ✓**（本地四批 107 → 144；**2026-10-09 与云端 beta18/beta19 合并后**并入其 9 项新单测 = 153，合并冲突 4 处已解）；`assembleRelease`（R8 + 资源收缩）在本批代码上 BUILD SUCCESSFUL（见第三批段）。
+- `testDebugUnitTest` + `assembleDebug` **BUILD SUCCESSFUL**；`tools/check_test_count.py` 核对 **154/154 ✓（第五批 +1）**（本地四批 107 → 144；与云端 beta18/beta19 合并后 = 153；第五批 +1 = 154）；`assembleRelease`（R8 + 资源收缩）在本批代码上 BUILD SUCCESSFUL（见第三批段）。
 - ✅ **真机验收全部执行完毕（2026-10-09 首轮 + 2026-10-10 补完，装于 beta20 包）**：**7 项通过、1 项部分通过** —— A-3 退订 ✅（20 次切会话 20 条 `rpc dispose`）、C-1 上传 ✅（全链路 begin/14 分片/commit/ref + **取消中止** `attachmentAbort sent`）、C-2 文案 ✅（`bridge not ready` → 「连接通道尚未就绪，请稍后重试」，英文未直出）、C-4 浅色 ✅、C-7 缓存 ✅（LRU 精确收敛 30）、C-10 深链 ✅、C-11 横幅 ✅（出现 + 自动消退）、C-6 回显部分通过（回显移除 + 队列条；发送瞬间 <1s 窗口未取证）。逐项证据与副作用见 `HANDOVER.md` 顶部验收清单。
 - ⚠️ **验收环境两个坑（2026-10-10 实测）**：① 手机给 PC 开热点时 `cmd connectivity airplane-mode enable` 会被系统自动恢复（HyperOS 保热点），断网窗口只够抓一次失败横幅（发送后 2–6 秒内连续 dump）；② UI 自动化坐标会漂移、且会话流里的消息文本会污染字符串检索（老坑重演）——一律用「`content-desc` 精确匹配 + 短文本节点」判读。
 - ⚠️ **签名与发布路径（2026-10-09 实测修正）**：本机 debug keystore（`89:45:76…`）与手机历史包的签名（`3A:B5:8F…`，另一执行环境所签）**不同**，覆盖安装必被拒（`INSTALL_FAILED_UPDATE_INCOMPATIBLE`），只能卸载重装（丢配对凭据，已获用户同意并执行）；`adb install --user 999`（XSpace 分身）**同样被拒**——Android 签名校验是**设备级**的，同包名无法在任意用户空间共存。本机**缺 release keystore**；云端的 beta18/beta19 签名 Release 由另一执行环境产出（其持有 `3A:B5:8F` debug 与 `1D:46:E9` release）。

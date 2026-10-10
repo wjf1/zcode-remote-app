@@ -209,6 +209,12 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
      */
     private var handshakeRetryCount = 0
     private var handshakeRetryJob: kotlinx.coroutines.Job? = null
+    /**
+     * 桥自动重开计数与任务（2026-10-10 真机故障修复）：桥失败后此前无自愈路径，
+     * 详见 [scheduleBridgeReopen]。桥就绪即归零。
+     */
+    private var bridgeReopenCount = 0
+    private var bridgeReopenJob: kotlinx.coroutines.Job? = null
     /** 最近收到的 RPC 事件（原始 JSON，供 M2 阶段观测/渲染）。 */
     val rpcEvents = mutableStateListOf<String>()
 
@@ -557,6 +563,9 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
                 bridgeState = st
                 ZLog.i(TAG, "bridge=$st")
                 if (st is RpcChannel.BridgeState.Ready) {
+                    // 桥就绪：自动重开预算归零（下次失败可再走完整退避序列）
+                    bridgeReopenCount = 0
+                    bridgeReopenJob?.cancel(); bridgeReopenJob = null
                     // E-1：workspace 级 sessions-index 订阅（权威角标，一次订阅覆盖全部会话）
                     activeWorkspaceKey?.let { sidx.subscribe(it, null) }
                     // 从 PC 端 ~/.zcode/v2/provider_config.json 预加载已配置模型目录
@@ -566,6 +575,8 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
                     val target = sessions.firstOrNull { it.isRunning } ?: sessions.firstOrNull()
                     target?.let { subscribeConversation(it) }
                 }
+                // 桥失败（服务端降级 `bridge-degraded` 或看门狗用尽）→ 自动重开（2026-10-10 真机故障修复）
+                if (st is RpcChannel.BridgeState.Failed) scheduleBridgeReopen()
             }
         }
 
@@ -1192,6 +1203,35 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
+    /**
+     * 桥失败后的自动重开（2026-10-10 真机故障修复）。
+     *
+     * 背景：`bridge-degraded`（服务端判定 `rpc-transport-fault` 主动降级）与桥看门狗用尽都会置
+     * `BridgeState.Failed`，但此前**没有任何自愈路径**——只有 relay 重新 Paired 或用户手动操作
+     * 才会再次 `openBridge`。真机实测（2026-10-10）表现为「手机显示异常、桌面端仍显示已连接」
+     * 的长窗口不可用（本次约 2 分钟，靠上层重连撞回来；期间 App 不 ack 服务端帧，
+     * 反而触发服务端重放与降级，形成负反馈）。
+     *
+     * 策略：退避 1s/2s/4s、上限 3 次（[bridgeReopenDelayMs]）；桥就绪即归零；用尽后停失败态
+     * 交由上层兜底，不无限重试（避免把「服务端持续降级」放大成重开风暴）。
+     */
+    private fun scheduleBridgeReopen() {
+        val wsKey = activeWorkspaceKey ?: return
+        val delayMs = bridgeReopenDelayMs(bridgeReopenCount + 1)
+        if (delayMs == null) {
+            ZLog.w(TAG, "桥自动重开已用尽（$bridgeReopenCount 次），停在失败态等待上层重连")
+            return
+        }
+        bridgeReopenCount += 1
+        bridgeReopenJob?.cancel()
+        bridgeReopenJob = viewModelScope.launch {
+            kotlinx.coroutines.delay(delayMs)
+            if (bridgeState is RpcChannel.BridgeState.Ready) return@launch  // 期间已恢复（如 relay 重连撞回来）
+            ZLog.i(TAG, "桥失败，${delayMs}ms 后自动重开（第 $bridgeReopenCount 次）ws=$wsKey")
+            channel?.openBridge(wsKey)
+        }
+    }
+
     /** 用户手动重试订阅（A-2 的 UI 重试入口）：重置重订预算后重新发起订阅。 */
     fun retrySubscribe() {
         val s = subscribedSession ?: return
@@ -1788,6 +1828,13 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         /** 反馈横幅驻留时长（B-3）：失败 8s（4s 真机上易被错过），成功/提示 4s。 */
         internal fun flashDurationMs(kind: FlashKind): Long =
             if (kind == FlashKind.Failure) 8_000L else 4_000L
+
+        /**
+         * 桥自动重开的退避延迟（纯函数，单测覆盖）：第 1/2/3 次 → 1s/2s/4s；
+         * 超出上限（默认 3）返回 null = 不再重开（停失败态，等 relay 重连或用户操作兜底）。
+         */
+        internal fun bridgeReopenDelayMs(nextAttempt: Int, maxAttempts: Int = 3): Long? =
+            if (nextAttempt in 1..maxAttempts) 1_000L shl (nextAttempt - 1) else null
 
         /** 握手自动重订次数上限（A-2）：1 次。再失败即交回用户手动重试。 */
         private const val MAX_HANDSHAKE_RETRIES = 1
