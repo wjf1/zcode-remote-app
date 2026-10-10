@@ -62,6 +62,52 @@
 - `testDebugUnitTest` + `assembleDebug` **BUILD SUCCESSFUL**；`assembleRelease`（R8 + 资源收缩）**BUILD SUCCESSFUL**；`tools/check_test_count.py` 核对 **144/144 ✓**（四批合计 107 → 144，+37 项）。
 - ⏳ **真机验收未做**（截至本记录，小米 15 Pro 不在线）：按项目既有门禁（「全部真机验收项通过前不打 tag、不推送」），本段改动**保持未发布**。C-6 回显气泡与移除时序、C-1 取消/重试交互、C-10 确认弹窗、C-4 浅色主题观感、C-2 各文案均需真机复核。
 - ⚠️ **环境阻塞（发布前置）**：本机 `toolchain/keys/zcode-remote.keystore` 与 `app-android/keystore.properties` **均不存在**（`toolchain/` 目录仅剩 `avd/`），无法产出签名 release 包。已安装 release 包的设备若要覆盖升级必须恢复该 keystore（否则只能卸载重装 → 丢失配对凭据，属破坏性操作，须用户同意）。
+## v0.5.0-beta19（2026-10-09）· 待处理项跨会话泄漏修复（在别的会话弹出本会话的审批/提问）
+
+**起因（观测期真机反馈）**：用户在会话 B 的页面上看到了**属于会话 A** 的提问卡 —— 截图是一个还没有任何消息行的会话（`重试 / 状态 12% / cn:deepseek-…`），输入栏上方却铺着一张「提问 · 需要你的回答：本地 9 处含这两个名字的位置，实际删除范围定哪个？」（该问题属于另一个会话）。
+
+### 修复
+- **会话页内联的审批卡 / 提问卡改为按当前会话过滤**。待处理项有两路来源：会话流（只含当前订阅会话）与**任务事件流（覆盖整个 workspace，不限当前订阅会话）**，两路合并后是一个全局列表；会话页此前把整份列表直接铺在输入栏上方（`ConversationScreen` 的 `approvals.forEach` / `elicitations.forEach`），于是 A 会话的卡会出现在 B 会话上。
+  - 新增纯函数 `approvalsForSession(list, sessionId)` / `elicitationsForSession(list, sessionId)`（`relay/Interactions.kt`）；调用点 `MainActivity` 的会话页改传**按 `target.taskId` 过滤后**的列表（含顶栏「待审批 N」角标，随之自动收敛）。
+  - **归属未知（`sessionId == null`）按可见处理**（fail-open）：未知归属 ≠ 属于别的会话 —— 宁可多显示一条，也不能把当前会话的卡藏掉。若写成严格过滤，会把「会话流快照没带 sessionId」的正常条目一并隐藏，比原缺陷更难排查；这条已由单测钉住。
+  - **`待办` 页与通知栏保持全局语义不变**：它们的设计就是跨会话聚合（`ApprovalsTab` 已按会话分组、通知栏本就该提醒任意会话的待处理项），只修被误用的会话页。
+- 同一轮附带的排查记录：用户同晚报告的「应答失败：`answer.action` invalid_value」经核对 **host schema**（`research/asar/out/host/chunk-BG4MS6RN.js`：`action?: enum(["accept","decline","cancel"])`）与全仓 4 处 `action` 产出点，**当前代码不存在能产出非法 action 的路径**；该失败发生在 21:02，当时机上装的是来源不明的异源签名包（已卸载）。结论与复现步骤见 HANDOVER §6.0「观测期反馈」。
+
+### 测试
+- 新增 `relay/PendingScopeTest.kt`（5 项）：本会话保留 / 他会话剔除 / 归属未知 fail-open / 未选中会话时带归属者不放行 / 空输入。单测 111 → **116 项全绿**。
+
+### 验证状态
+- `assembleDebug` / `testDebugUnitTest` / `assembleRelease`（R8 + 资源收缩）三条构建均 BUILD SUCCESSFUL；`tools/check_test_count.py` 核对 **声明 116 = 实际执行 116**。
+- **真机装机冒烟通过**（2026-10-09，小米 15 Pro / Android 17 · HyperOS，debug 包 `versionCode 29`）：升级安装 → 启动 → 打开会话，消息行正常渲染、无待处理项时无卡片、`logcat` 无 `FATAL`。
+- ⚠️ **跨会话 A/B 的真机证据待补**：当前工作区**没有任何 pending 项**，无法当场构造「A 会话挂起 + 看 B 会话」的对照；仓库的 `DebugApprovalReceiver` 只作用于**通知层**（`ApprovalNotifier.sync`），注入不到 App 内存里的待处理列表，已确认无法替代。下次自然出现待处理项时按该场景核对即可。
+- 本版本为**观测期（P0-2）内抓出并修复**的缺陷，按仓库规则观察窗口自本次装机日 **2026-10-09** 重新计时。
+
+## v0.5.0-beta18（2026-10-09）· 代码块高亮「吞字」缺陷修复 + 模拟器仪器化渲染回归网
+
+**起因（本地验证抓出，非用户报障）**：beta17 的验收留下一个空洞 —— 抽样会话视口内没有出现围栏代码块与 GFM 表格，这两个组件当时只能标注「未取到真机样本」。本轮在**模拟器**上补一条仪器化渲染测试来堵这个洞，测试第一次运行就把一个**用户可见缺陷**照出来了。
+
+### 修复
+- **代码块里被高亮的字符整个消失（缺陷）**：`dev.snipme highlights` 的 `ColorHighlight.rgb` 是**纯 RGB**（如 `0x2BBAC5`，不含 alpha 位），而 Compose 的 `Color(Int)` 按 **ARGB** 解释 —— 直接把 `rgb` 传进去得到的是 `alpha=0x00` 的**全透明**色。症状不是「高亮没生效」，而是**关键字 / 字符串 / 注释被画成透明、肉眼看不见**，代码块只剩标识符与标点（例如 `fun main() { val message = "hello zcode" }` 会渲染成 `main`、`message`、`println message` 三行残句）。
+  - 修法：新增纯函数 `opaqueHighlightArgb(rgb)`（`rgb or 0xFF000000`）并在 `MarkdownView` 的高亮 span 处统一使用，见 `ui/components/MarkdownView.kt`。
+  - 证据（模拟器实测位图，已归档）：修复前 `docs/screenshots/render-code-block-before-fix.png`、修复后 `docs/screenshots/render-code-block.png`；主题 token 色命中像素 **0 → 1789**。
+  - **影响范围**：beta17 发布的 APK 含此缺陷；任何走 `MarkdownView` 的代码块（会话流里的代码卡片）都受影响。GFM 表格、行内代码、列表、链接不受影响（它们不走这套彩色 span）。
+
+### 新增（验证能力，不新增 App 功能）
+- **模拟器仪器化渲染回归网**（`app/src/androidTest/`，project 首次有 `androidTest` 源集）：用 fixture Markdown 直接渲染真实的 `MarkdownView`，不依赖中继与配对。
+  - `MarkdownRenderTest.gfmTableAndInlineMarkupRender`：表格单元格 / 标题 / 行内代码 / 链接 / 任务列表逐一存在，并对捕获位图断言**着墨像素**（证明真的画到了屏幕上，而不只是语义树里有节点）。
+  - `MarkdownRenderTest.fencedCodeBlockGetsSyntaxHighlighting`：围栏语言名解析 + **主题 token 色真的被画到屏幕上**（按 `#2BBAC5/#D55FDE/#89CA78` 逐像素比对）。**上面那条缺陷就是被这条断言抓出来的**。
+  - 捕获位图留证：`app files/render-evidence/*.png`（`adb exec-out run-as com.zcode.remote cat ...` 取出）。
+- **纯 JVM 高亮单测 `CodeHighlightTest`（4 项）**：把高亮流水线的三层分别钉住 —— 语言名解析、kotlin 代码产出 ≥3 段 ≥3 色高亮、**RGB→ARGB 必须补不透明 alpha**（缺陷成因的针对性回归），以及一条反直觉实测：**语言名不可识别时不是「不亮」，而是回落 DEFAULT 泛化高亮**（原先「未知语言 = 无高亮」的对照组假设因此作废）。
+- `app/build.gradle.kts`：`testInstrumentationRunner` + `animationsDisabled`（渲染断言要求稳定帧）+ androidTest 依赖（`ui-test-junit4` / `ui-test-manifest` / `androidx.test:*`，均为 test/debug 作用域，**不进 release 包**）。
+
+### 验证状态
+- `bash build.sh`（assembleDebug）**BUILD SUCCESSFUL**；`bash build.sh testDebugUnitTest` **BUILD SUCCESSFUL**；`bash build.sh assembleRelease`（R8 + 资源收缩）**BUILD SUCCESSFUL**。
+- 单测：**声明 111 = 实际执行 111 ✓**（beta17 的 107 项 + `CodeHighlightTest` 4 项，`tools/check_test_count.py` 核对）。
+- 仪器化：**模拟器 `apkrev35`（Android 15 / x86_64，AEHD 加速）上 2/2 PASS**（`connectedDebugAndroidTest`）。
+- 修复前后证据：见上文两条截图与 token 色命中像素 0 → 1789。
+- ✅ **真机复核通过（2026-10-09，小米 15 Pro / Android 17 · HyperOS，debug 包 `versionCode 28`）**：装机 → 重新扫码配对 → 打开会话「整理 commandcode-proxy 发行版」→ 屏幕上的 ` ```bash ` 代码卡**完整渲染且高亮分色**（注释灰、`-a` / `--tags` 青、字符串绿、数字橙红），**token 色命中 2365 像素**、肉眼可见 `git tag -a v4.23.0 -m "…"` 逐段着色，**未再出现 beta17 的「吞字」**（截图归档 `docs/screenshots/render-code-block-phone.png`）。即本轮为**双轨验收**：模拟器仪器化测试（可重复）+ 真机目视/像素复核。
+- ⚠️ **两个装机坑（真机复核时踩到，已记入 HANDOVER 避坑清单）**：① 手机上原有包是**异源 debug 密钥**签的（SHA-256 `89:45:76:B3…`，与仓库 debug `3A:B5:8F…`、release `1D:46:E9…` 都不同），`install -r` 必然 `INSTALL_FAILED_UPDATE_INCOMPATIBLE`，只能**卸载重装**（配对凭据随卸载清空 → 需重新扫码）；② HyperOS 首装会由「USB 安装」确认弹窗拦截（`INSTALL_FAILED_USER_RESTRICTED`），且本机 USB 调试接口会自行掉线（表现为只剩 WPD 设备、adb 里 `offline`/消失），需切「传输文件」+ 重新允许调试或拔插数据线。
+- 版本：`versionName 0.5.0-beta18` / `versionCode 28`。
 
 ## v0.5.0-beta17（2026-10-08）· 会话页排版全面对齐桌面端 + 会话级状态面板（含「运行中」状态回填修复）
 
@@ -117,6 +163,7 @@
   - **C1 增量补丁缺口已修复（关键实证）**：同一会话内顶栏「状态」百分比随流实时递增（`53% → 56% → 63% → 66%`），证明 `state.updated` 的会话级块不再只首帧正确。
   - **稳定性**：`logcat` 无异常、无 `FATAL`、**无 Compose 嵌套滚动告警**（面板滚动落在最外层）。
   - 如实标注未直接观察项：本轮抽样视口内**未出现围栏代码块与 GFM 表格**，故语法高亮与表格渲染未在真机直接取到样本（实现已接库并有单测覆盖，此处属「实机未直接观察」而非「已验」）。
+  - ⚠️ **2026-10-09 追记（beta18）**：上述空洞已由模拟器仪器化测试补上 —— 结果是**表格渲染正常**，而**代码块语法高亮当时是坏的**（高亮字符因 alpha=0 全透明而不可见，见 beta18 条目）。即：这条「未取到样本」如实标注救了一次误判，但缺陷本身确实漏到了发布包里。
 - 版本：`versionName 0.5.0-beta17` / `versionCode 27`。
 
 ## v0.5.0-beta16（2026-10-07）· 会话异常原因可见、标题解包与输入栏对齐（附顶栏标签中文化）

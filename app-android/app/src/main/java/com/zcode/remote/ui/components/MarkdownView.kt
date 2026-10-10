@@ -55,6 +55,18 @@ import dev.snipme.highlights.model.SyntaxLanguage
 import dev.snipme.highlights.model.SyntaxThemes
 
 /**
+ * `dev.snipme highlights` 的 `ColorHighlight.rgb` 是**纯 RGB**（如 `0x2BBAC5`，没有 alpha 位），
+ * 而 Compose 的 `Color(Int)` 按 **ARGB** 解释。直接把 `rgb` 传进 `Color(...)` 会得到 alpha=0x00
+ * 的**完全透明**色 —— 症状不是「高亮没颜色」，而是**被高亮的片段整个看不见**
+ * （关键字/字符串/注释凭空消失，只剩标识符与标点）。
+ *
+ * 2026-10-09 由模拟器仪器化测试（`MarkdownRenderTest.fencedCodeBlockGetsSyntaxHighlighting`）
+ * 抓出：捕获到位图里着墨像素正常但主题 token 色命中 0，截图可见 `fun` / `val` / 字符串整段缺失。
+ * 这里统一补上不透明 alpha，纯函数以便单测兜住（`CodeHighlightTest`）。
+ */
+internal fun opaqueHighlightArgb(rgb: Int): Int = rgb or 0xFF000000.toInt()
+
+/**
  * Markdown 正文渲染。签名与旧的手写解析版完全一致，调用点无需改动。
  *
  * 内部换成 GFM 完整实现（表格 / 任务列表 / 嵌套列表 / 链接 / 行内 HTML），
@@ -240,7 +252,8 @@ private fun HighlightedCodeText(code: String, language: String?, modifier: Modif
             append(result.getCode())
             spans.filterIsInstance<ColorHighlight>().forEach {
                 addStyle(
-                    SpanStyle(color = Color(it.rgb)),
+                    // 必须补 alpha：库给的是纯 RGB，直接 Color(it.rgb) 会是全透明（字都看不见）
+                    SpanStyle(color = Color(opaqueHighlightArgb(it.rgb))),
                     start = it.location.start,
                     end = it.location.end,
                 )

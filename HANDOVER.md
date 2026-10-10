@@ -1,15 +1,15 @@
 # 交接开发计划（HANDOVER）
 
-> ## ✅ 项目状态（2026-10-08）：会话页排版全面对齐桌面端 + 会话级状态面板（beta17）
+> ## ✅ 项目状态（2026-10-09）：代码块高亮「吞字」缺陷修复 + 模拟器仪器化渲染回归网（beta18）
 >
-> - **当前版本 `v0.5.0-beta17`（versionCode 27）**：代码完成、debug/release 构建通过、**107 项单测全绿**、**真机验收全通过**（小米 15 Pro / Android 17 · HyperOS，2026-10-08）。
-> - **最近发布**：tag `v0.5.0-beta17` @ 提交 `879bfd7`；Release <https://github.com/wjf1/zcode-remote-app/releases/tag/v0.5.0-beta17>（附 `ZCodeRemote-0.5.0-beta17.apk`，签名 release 包，versionCode 27）。上一个发布：tag `v0.5.0-beta16` @ 提交 `a0b81a3`。
-> - **beta17 内容（用户直接提出，超原定「仅维护」范围）**：按用户要求把会话页**显示逻辑与排版全面对齐桌面端**（工具行改无外框内联折叠行、用户气泡改中性半透明表面、助手正文去卡片外壳改全宽 Markdown、完整 GFM + 代码语法高亮），并新增**只读**「会话状态」面板与「待发送 N 条」只读队列条；顺带修复「运行中」会话退出会话页后不在列表显示的缺陷。
+> - **当前版本 `v0.5.0-beta19`（versionCode 29）**：代码完成、debug/release 构建通过、**116 项单测全绿**；修掉观测期真机反馈的「待处理项跨会话泄漏」（会话页内联的审批/提问卡改为按当前会话过滤）。真机冒烟已过，**跨会话 A/B 的真机证据待补**（需一条真实待处理项，见下方观测期反馈）。上一版 beta18（代码块高亮修复）模拟器 + 真机双轨验收均通过。
+> - **最近发布**：tag `v0.5.0-beta19` @ 提交 `e7c65d0`；Release <https://github.com/wjf1/zcode-remote-app/releases/tag/v0.5.0-beta19>（附 `ZCodeRemote-0.5.0-beta19.apk`，签名 release 包，versionCode 29）。上一个发布：tag `v0.5.0-beta18` @ 提交 `a82570a`（<https://github.com/wjf1/zcode-remote-app/releases/tag/v0.5.0-beta18>）。
+> - **beta18 内容（本地验证驱动，非用户报障）**：为清掉 beta17 验收遗留的「围栏代码块与 GFM 表格没有样本」空洞，在模拟器上补**仪器化渲染回归网**，测试首轮即抓出**用户可见缺陷** —— 高亮库的 `ColorHighlight.rgb` 是纯 RGB，被 Compose `Color(Int)` 按 ARGB 解释后 alpha=0，**代码块里被高亮的字符被画成完全透明**（关键字/字符串/注释整段消失）。修复见 `ui/components/MarkdownView.kt` 的 `opaqueHighlightArgb`；证据 `docs/screenshots/render-code-block-before-fix.png` → `render-code-block.png`（token 色命中 0 → 1789）。**beta17 的 APK 含此缺陷**。
 > - **全部后续开发计划仍取消**（用户决策：Sprint 7 生物识别/自建中继 E2EE、P2-3 余项等一律不做）。
 > - **唯一剩余事项**：P0-2 三天日常使用观察 → 通过即发 **v1.0**（详见 §6.0 待办总览 + §6.0 P0-2 章节）。
 > - 接手者默认职责：**维护与缺陷修复**，不再新增功能；如需演进须用户重新拍板立项。
 >
-> ### 🩹 补丁与对齐轮次（v0.5.0-beta13 → beta17）
+> ### 🩹 补丁与对齐轮次（v0.5.0-beta13 → beta18）
 >
 > **beta13**（缺陷修复，依据《体验提升任务书 v2》档 A/B）：A-1 上传跨会话附件注入、A-2 握手三跳无超时（阈值由 T0 实测校准为 4s/4s/5s）、B-1 贴底回归与「回到底部被翻页锚点覆盖」新缺陷、B-3 触觉与失败时长档位。
 > **beta14**（新增功能，**用户直接提出**、超出档 A/B 范围）：会话流渲染用户消息的附件 chip。
@@ -53,11 +53,14 @@
 > | beta16 四修 | ✅ 代码 + 单测（47 项全绿）+ **真机四项验收全通过**：① 错误原因横幅逐字等于 host `lastError.message` 且「复制」Toast 生效；② 列表/顶栏标题不再泄漏 `{"title":`；③ 输入栏三控件垂直中心偏差 **0px**、控件 135px = 48dp；④ error 会话顶栏由英文 `error` 变「异常」 |
 > | beta17 排版对齐 + 状态面板 | ✅ 代码 + **107 项单测全绿** + debug/release 构建通过 + **真机验收全通过**：① 「运行中」退出会话页后仍显示在列表（原始缺陷场景闭环）；② 排版像素实证 —— 工具行为无外框内联行（行带即页面底 `#202024`）、全图**琥珀色 0 像素**、用户气泡 `#37373A` 中性底 + 1px 边框、助手正文全宽无外壳、增删徽标深绿 `#253730`/深红 `#41292D`、思考紫 `#A78BFA`；③ 状态面板六分区全渲染（上下文 `78.9k/150k` + 缓存命中 `97.6%`、目标 `paused` 已运行 1 小时 17 分、进程 `6/6`、终端「1 个后台运行」、智能体「0 运行 · 4 已结束」）；④ C1 增量实证：顶栏状态百分比同会话内 `53%→56%→63%→66%` 递增；⑤ `logcat` 无异常、无 Compose 嵌套滚动告警 |
 >
-> - **验证状态**：`assembleDebug` / `testDebugUnitTest` / `assembleRelease`（R8 + 资源收缩，用于验证新引入 markdown 依赖可被正确压缩）三条 BUILD SUCCESSFUL；`tools/check_test_count.py` 核对 **声明 107 项 = 实际执行 107 项**。该脚本已接入 CI（`.github/workflows/ci.yml`）。
+> | beta18 代码块高亮修复 + 渲染回归网 | ✅ 代码 + **111 项单测全绿** + debug/release 构建通过 + **模拟器仪器化测试 2/2 PASS** + **真机复核通过（2026-10-09）**：① 缺陷复现 —— 修复前位图里「着墨正常但主题 token 色命中 0」，截图可见 `fun`/`val`/字符串/注释整段缺失；② 修复后 token 色命中 **1789** 像素（`#2BBAC5` 青 / `#D55FDE` 品红 / `#89CA78` 绿）；③ GFM 表格样本九项文本断言 + 着墨像素断言通过；④ **真机复核**：小米 15 Pro 装机（卸载重装 + 重扫配对）→ 打开会话「整理 commandcode-proxy 发行版」→ ` ```bash ` 代码卡完整渲染且高亮分色，**token 色命中 2365 像素**、肉眼可见逐段着色，未再「吞字」 |
+> | beta19 跨会话泄漏修复 | ✅ 代码 + **116 项单测全绿** + debug/release 构建通过 + 真机冒烟通过（装机 `versionCode 29`）；会话页内联卡按当前会话过滤，`sessionId==null` fail-open；待办页/通知栏维持跨会话聚合。**跨会话 A/B 真机证据待补**（当前工作区无 pending 项可复现；已确认 `DebugApprovalReceiver` 只作用于通知层，无法替代） |
+>
+> - **验证状态（beta18）**：`assembleDebug` / `testDebugUnitTest` / `assembleRelease` 三条 BUILD SUCCESSFUL；`tools/check_test_count.py` 核对 **声明 111 项 = 实际执行 111 项**（含新增 `ui/components/CodeHighlightTest.kt` 4 项）；`connectedDebugAndroidTest` 在模拟器 `apkrev35`（Android 15 / x86_64，AEHD）**2/2 PASS**。仪器化测试**不进 CI**（runner 无设备），只在本地模拟器/真机上跑。
 > - ⚠️ **踩坑（勿重犯）**：beta13 轮次中一个 `@Test` 因被挤进行注释而**静默未执行**（构建仍全绿），导致当时「39 项全绿」实际只跑了 38 项。**任何「N 项单测全绿」的结论都必须同时确认 N == 实际执行的用例数**（跑 `tools/check_test_count.py`）。
 > - ⚠️ **跨 adb 做文本检索不可靠**（引号转义丢失会返回假阴性），一律先把文件 `pull` 到本地再解析；`grep` 检索代码用 `-F`（`.` 是任意字符）。
 > - ⚠️ **release（R8）包与 debug 包签名不同**（debug `3A:B5:8F…` / release `1D:46:E9…`）：手机上若已装 debug 包，`adb install -r` release 包会 `INSTALL_FAILED_UPDATE_INCOMPATIBLE`，需先卸载——**会丢失配对凭据**，属破坏性操作，动手前必须取得用户同意。beta16 的 release 包因此**未做真机冒烟**，上机验收用的是同源 debug 包。
-> - ⚠️ **观察窗口已重置**：按 §6.0 P0-2 规则，v1.0 判停线自补丁/对齐轮**真机验收通过之日**重新计时；最近一次重置因 **beta17**，且 **beta17 真机验收已于 2026-10-08 通过**，窗口自该日起重新计时（预计 2026-10-11 收官）。
+> - ⚠️ **观察窗口**：按 §6.0 P0-2 规则，v1.0 判停线自补丁/对齐轮**真机验收通过之日**重新计时。beta19（跨会话泄漏修复）于 **2026-10-09** 装机，窗口自该日起重新计时（预计 2026-10-12 收官）；观察手机已升级到 **beta19**（debug 包，versionCode 29）。
 > - ⚠️ **实测系统为 Android 17 / HyperOS**（旧记录为 Android 15）：跨两个大版本，接入时须把 USB 用途切到「传输文件」才暴露 ADB 接口。P0-2 第 2/3 项依赖 HyperOS 后台与通知策略，跨版本升级后务必重新观察。
 > - **未做项现状（2026-10-09 更新）**：**档 C 首批 7 项 + A-3 + 无设备可验证项（C-8、A-4 前置、C-5①、看门狗可测试化）已落地**。**仍未做（有依据，勿当遗漏）**：**A-4 自愈与 buffer 策略** 与 **C-5 其余（③ rows 拷贝 / ④ Compose 解析缓存 / ⑤⑦ 并发与快照差分）**（改并发与 Compose 缓存语义，须真机观察 + 独立灰度）、**C-3**（emoji 图标替换需先评估 `material-icons-extended` 包体；键盘 inset 根因须真机量测）、**C-9/C-12**（加密存储需 Android Keystore 运行时验证；拆分为二期）、决策项（ws:// 明文中继、reverseLayout）。
 > - 🆕 **验证副作用（需知悉）**：验证附件 chip 时向真实会话 `sess_0f00b96b`（「zcode-dotfiles 优化方案可行性确认」）写入了一条测试消息（`attachment-render-check` + 89B 测试文件）。核对 `tasks-index` 确认**未调度 agent 轮次、未消耗额度**；协议无删除消息操作，无法程序化清理。
@@ -200,8 +203,9 @@
      本机 `assembleRelease` 通过且签名一致 → 新版本可直接覆盖升级已装设备。
      **旧文档中「toolchain 丢失、需回退 F:/AndroidTools」的说法作废**：本机 `toolchain/` 完整
      （jdk17 + gradle 8.7 + android-sdk platform-35/build-tools-35），`F:/AndroidTools` 不存在。
-  2. **本机无法跑模拟器**：CPU 是兆芯 KX-7000（无 Intel/AMD 虚拟化扩展），emulator 的 qemu 静默退出；
-     ZCode 自带 android-emulator 插件底层同为该 qemu，同样不可用。**App UI 层验收一律待真机或 Intel/AMD 机器**。
+  2. **本机模拟器已可用（2026-10-09 更正，旧结论作废）**：旧记录写「CPU 是兆芯 KX-7000、qemu 静默退出、UI 层验收一律待真机」——**该结论已不成立**。2026-10-09 实测：SDK 在 `F:\Android\Sdk`，`android_preflight` 报 **AEHD 2.2 installed and usable**，AVD `apkrev35`（pixel_6 / Android 15 / x86_64）启动成功（`sys.boot_completed=1`），并跑通 `connectedDebugAndroidTest`（2/2 PASS）。
+     **唯二实测脾气**：① **GUI 模式实例可能中途静默退出**（本轮遇到一次：进程消失、adb 里设备一起没了），改 `-no-window -gpu swiftshader_indirect` 无头模式后稳定；② 无头模式仍需 `-no-audio -no-boot-anim`，启动到 boot_completed 约 25–40s。
+     **结论**：UI/渲染类验证优先在模拟器上做（快、可重复、不用碰用户手机），**真机复核仍是发布前必走的一步**（见 §8 红线）。
 - **已知外部事件**：桌面端 rotate 凭据后旧 sid 失效；桌面端「移动端远程控制」面板关闭/超时后 `pair_status` 回到 `waiting`（面板打开期间才 matched）。App 侧均已适配。
 
 ## 2. 必读文档索引（按此顺序读）
@@ -259,7 +263,12 @@ ADB -s <serial> shell am broadcast -n com.zcode.remote/.debug.DebugApprovalRecei
 
 - **签名**：`toolchain/keys/zcode-remote.keystore` + `app-android/keystore.properties`（密码在此，**不入库、勿丢失**；PKCS12 约束 key 密码=store 密码）。
 - **PC 端凭据**（probe/App 配对用）：`~/.zcode/v2/setting.json`（deviceSid）+ `~/.zcode/v2/credentials.json`（pass_hash，解密算法见 `tools/probe.py` load_credentials）+ `~/.zcode/v2/telemetry-state.json`（deviceMid）。桌面端 rotate 后三处同步更新，App 用「添加设备→粘贴链接」重新配对。
-- **git push**：`git -c http.proxy=http://127.0.0.1:7897 push ...`（本机代理；直连国际线路不稳定）。
+- **挑验证目标会话（2026-10-09 新增，零成本）**：桌面端把会话文本存进了 `~/.zcode/v2/tasks-index.sqlite` 的 `tasks.searchable_text`。要找「哪个会话最近出现过围栏代码块」不用翻手机列表：
+  `select title, updated_at from tasks where workspace_key like 'F:%Zcode%' and searchable_text like '%```%' order by updated_at desc;`
+  再按 `len(text) - text.rfind('```')` 判断代码块离最新内容多远（越小越靠底部，打开即见）。本轮真机复核就是靠它锁定「整理 commandcode-proxy 发行版」（末段即代码块）。
+- ⚠️ **装机签名陷阱（2026-10-09 实测）**：手机上的包可能是**别的 debug 密钥**签的（本轮实测手机为 `89:45:76:B3…`，而仓库 debug 为 `3A:B5:8F:A9…`、release 为 `1D:46:E9:E8…`）——此时 `adb install -r` 必报 `INSTALL_FAILED_UPDATE_INCOMPATIBLE`，只能**卸载重装**，而卸载会清掉配对凭据（需重新扫码）。**动手前先比指纹**：`python tools/_apk_cert_fp.py <apk>`（也能对 `adb shell pm path` 拉下来的包做）。
+- ⚠️ **HyperOS 装机与 USB 两个脾气（2026-10-09 实测）**：① 首次 `adb install` 大概率被 `INSTALL_FAILED_USER_RESTRICTED` 拦下，**重试 + 手机端点「允许」**即 Success（弹窗只在手机屏上，命令会一直挂着，用后台任务等它）；② USB 调试接口会自行掉线 —— 表现为 adb 里 `offline` 或设备消失、Windows 只剩 WPD「Xiaomi 15 Pro」，解法是手机侧把 USB 用途切「传输文件」+ 重新允许调试（或拔插数据线），必要时再 `adb kill-server` 重新枚举（重启 adb server 属常驻服务操作，须先取得用户确认）。
+- **git push**：`git -c http.proxy=http://127.0.0.1:7900 push ...`（本机代理；直连国际线路不稳定。端口随 Clash Verge 混合端口变更过：7897 → **7900**，仓库 `.git/config` 已固化 7900）。
 
 ## 4. 已完成基线（不要重做）
 
@@ -275,12 +284,13 @@ ADB -s <serial> shell am broadcast -n com.zcode.remote/.debug.DebugApprovalRecei
 | 保活引导页 / debug 注入 receiver | ✅ | `ui/screens/KeepAliveGuideScreen.kt` `app/src/debug/` |
 | 前台服务 | ✅ 实测（FGS specialUse + 进程级 ConnectionScope 单例，断网重连与保活全通） | `service/ConnectionService.kt` |
 | 会话页排版对齐 + 会话级状态面板（beta17） | ✅ 代码 + 单测 + **真机视觉验收通过** | `ui/components/CollapsibleRow.kt` `ui/components/SessionStatusPanel.kt` `ui/components/ToolKindLabels.kt` `ui/theme/Typography.kt` `ui/theme/Dimens.kt` `ui/screens/ConversationScreen.kt` `relay/ConversationFrames.kt` |
+| 代码块高亮「吞字」修复 + 模拟器渲染回归网（beta18） | ✅ 代码 + 单测 + **模拟器仪器化验收通过**（真机复核待办） | `ui/components/MarkdownView.kt`（`opaqueHighlightArgb`）`app/src/androidTest/java/com/zcode/remote/ui/components/MarkdownRenderTest.kt` `app/src/test/java/com/zcode/remote/ui/components/CodeHighlightTest.kt` `app/build.gradle.kts`（androidTest 基建） |
 | 体验补强首批 C-1/C-2/C-4/C-6/C-7/C-10/C-11（2026-10-09，**未发布**） | ✅ 代码 + 单测 + debug/release 构建通过；**⏳ 真机验收待做** | `relay/UserFacingError.kt` `relay/ConversationChannel.kt` `AppViewModel.kt` `ui/screens/ConversationScreen.kt` `ui/screens/ApprovalsTab.kt` `ui/theme/Theme.kt` `storage/SessionCacheStore.kt` `MainActivity.kt` |
 | 无设备可验证项 + C-5① + 看门狗可测试化 + **A-3 实测启用**（2026-10-09，**未发布**） | ✅ 代码 + 144 项单测 + debug/release 构建通过；**A-3 经 probe 静态 + 动态双确认并启用** | `storage/DevicesCodec.kt` `relay/RpcChannel.kt` `relay/ConversationChannel.kt` `AppViewModel.kt` `tools/probe.py` `.github/workflows/ci.yml` |
 
 版本序列：`v0.2.0-m2` → `v0.2.1-m2b` → `v0.2.2-m3a` → `v0.2.3-m3b` → `v0.3.0-m3` →
 `v0.4.0-beta1…beta6`（发版内测 → 真机修复 → 16KB 对齐 → 互踢修复 → 扫码重构 → 排版对齐）→
-`v0.5.0-beta1…beta5`（模型档位链路，versionCode 15）→ `v0.5.0-beta6`（P0 结清 + 最近文件 + Diff 视图，versionCode 16）→ `v0.5.0-beta7`（智能贴底 + 快捷胶囊，versionCode 17）→ `v0.5.0-beta8`（通知栏 RemoteInput + Share Sheet，versionCode 18）→ `v0.5.0-beta9`（单轮 Turn 变更聚合，versionCode 19）→ `v0.5.0-beta10`（Deep Link + 触觉反馈，versionCode 20）→ `v0.5.0-beta11`（会话列表离线持久化秒开，versionCode 21）→ `v0.5.0-beta12`（会话消息流离线持久化与点进秒开，versionCode 22）→ `v0.5.0-beta13…beta16`（正确性缺陷修复 → 附件 chip → 连接层修复 → 异常原因与输入栏对齐）→ `v0.5.0-beta17`（**当前**，会话页排版全面对齐桌面端 + 会话级状态面板，versionCode 27）。
+`v0.5.0-beta1…beta5`（模型档位链路，versionCode 15）→ `v0.5.0-beta6`（P0 结清 + 最近文件 + Diff 视图，versionCode 16）→ `v0.5.0-beta7`（智能贴底 + 快捷胶囊，versionCode 17）→ `v0.5.0-beta8`（通知栏 RemoteInput + Share Sheet，versionCode 18）→ `v0.5.0-beta9`（单轮 Turn 变更聚合，versionCode 19）→ `v0.5.0-beta10`（Deep Link + 触觉反馈，versionCode 20）→ `v0.5.0-beta11`（会话列表离线持久化秒开，versionCode 21）→ `v0.5.0-beta12`（会话消息流离线持久化与点进秒开，versionCode 22）→ `v0.5.0-beta13…beta16`（正确性缺陷修复 → 附件 chip → 连接层修复 → 异常原因与输入栏对齐）→ `v0.5.0-beta17`（会话页排版全面对齐桌面端 + 会话级状态面板，versionCode 27）→ `v0.5.0-beta18`（**当前**，代码块高亮「吞字」修复 + 模拟器仪器化渲染回归网，versionCode 28）。
 
 ## 5. 关键技术结论（浓缩坑清单，动手前必读）
 
@@ -301,14 +311,19 @@ ADB -s <serial> shell am broadcast -n com.zcode.remote/.debug.DebugApprovalRecei
 12. **增量 patch 只合并白名单键**：`ConversationChannel` 的 `state.updated` 处理原仅合并 `pendingInteractions`/`elicitations`，其余会话级键被忽略 → 即使快照补齐，数据也只在首帧正确、之后永不更新。beta17 已补齐缺口；新增会话级块时**必须同步改这里**。
 13. **Compose 实测坑（beta17 新增，均已在代码注释留痕）**：① LazyColumn 回收滚出视野的行 → 行内 `remember` 折叠态丢失，**必须提升到屏幕层**，且折叠态用 `List<String>` 而非 `Set`（`rememberSaveable` 写 Bundle 不保证任意 Set 实现可反序列化）；② LazyColumn 项内高度约束无限 → `fillMaxHeight` 退化为 0 高，`IntrinsicSize.Min` 与 `verticalScroll` 不兼容 → 画竖线只能用 `drawBehind`；③ **嵌套同方向 `verticalScroll` 会运行时告警** → 面板把滚动统一放在最外层一层，内部折叠行展开体一律不限高；④ `CollapsibleRow` 的 `label` 槽位**不是 RowScope**（不能挂 `weight`），需要撑开中间时用 `primary = { Spacer(Modifier.weight(1f)) }`。
 14. **Markdown/高亮依赖的版本上限**：`com.mikepenz:multiplatform-markdown-renderer-m3/-code:0.27.0` —— **0.30.0 起改用 Kotlin 2.1+ 编译，本项目 Kotlin 插件 2.0.20 读不了其元数据（硬报错）**，0.27.0 是最后一个 Kotlin 2.0.x 编译版，**升级 Kotlin 插件前不得上调**。安全边界：显式传 `NoOpImageTransformerImpl` 不加载外链图片；链接走 http/https 白名单（`ui/components/SafeUriHandler.kt`）。
-15. **上传重试必须复用 uploadId（C-1，2026-10-09）**：服务端按 `uploadId` 幂等——`attachmentBeginV4` 对已 committed 的 id 直接返回 ref（分片不重传）。`uploadId` 现由 `AppViewModel` 生成并保存在失败态（`FailedUpload`）里；**换文件（名字或大小不同）必须换新 id**，否则服务端会把旧文件内容当新文件提交（`uploadIdForAttempt` 纯函数 + 单测钉死）。
-16. **主题感知色值必须走 `statusPendingTone()` / `toolCallTrajectoryTone()`（C-4，2026-10-09）**：亮橙 `#FF8A30` 与轨迹 `#F59E0B` 只允许出现在深色主题（浅色下对比度仅 2.15~2.35:1）。`ContrastTest` 有两条反向断言防止低对比色值回流；新增「浅色下要可读的文字/图标」时先看该测试再选色。
-17. **用户可见错误必须过 `UserFacingError.map()`（C-2，2026-10-09）**：本地自造英文（`bridge not ready` / `timeout after` / `channel reset`…）与服务端 fault code 不得直出 UI；新增失败路径时在展示点调用它（`UserFacingErrorTest` 有「不得泄漏裸英文」断言）。
-18. **本地回显气泡与会话绑定（C-6，2026-10-09）**：`AppViewModel.pendingUserMessages` 在切会话 / 断开时清空；服务端回显按「文本 trim 相等」匹配移除（回显可能是桌面端发的消息，不能误删本机 pending）。
-19. **`devices_v2` 凭据文件是新旧双格式（C-8，2026-10-09）**：新格式为 kotlinx.serialization 结构化 JSON；**旧格式（0x01 拼接行、控制字符未转义、按 JSON 规范非法）用 kotlinx 读不出来是正常现象**——`DevicesCodec.decode` 失败后必须走 `decodeLegacy`（读到即迁移）。改存储结构前先看 `DevicesCodecTest` 的双格式用例。
-20. **A-3 的 103 已实测启用（2026-10-09）**：字段规格 = 官方 bundle `[103, id]` + **undefined 参数段**（两段式，**勿省参数段**）；服务端静默接受、无 201/202/203 应答（fire-and-forget，勿等回包）。`SEND_EVENT_DISPOSE = true` 已启用；复现脚本 `probe.py dispose`（单次对照）与 `dispose-stress N`（N 次循环后按 listen_id 统计 204 帧分布）。**A-4 仍保守**：「缺口只记 WARN 日志、不触发重订阅」，buffer 策略改动须独立 commit + 独立真机回归。
-21. **release 热点在「日志实参」而非日志调用（C-5①，2026-10-09）**：`ZLog.d/i/w` 的**调用**会被 R8 的 `-assumenosideeffects` 剥离，但**实参表达式不会**——`ZLog.d(TAG, ev.data.toString())` 在 release 仍执行 `toString()`。任何「重计算进日志参数」的写法必须自带 `BuildConfig.DEBUG` 门控（例外：`ZLog.e` 在 release 也输出，只允许字符串字面量元信息，CI 有断言守）。
-22. **桥看门狗决策是纯函数（2026-10-09）**：`RpcChannel.watchdogDecision`（Noop/Retry/Fail）由单测钉死——改看门狗行为（超时、重开次数）时先改它和对应单测，不要在 `scheduleBridgeWatchdog` 里散写判断（该路径真机无法构造，单测是唯一防线）。
+15. **高亮色是纯 RGB，不是 ARGB（beta18 抓出的真缺陷，勿重犯）**：`dev.snipme highlights` 的 `ColorHighlight.rgb` 形如 `0x2BBAC5`（**无 alpha 位**），而 Compose 的 `Color(Int)` 按 **ARGB** 解释 → 直接 `Color(it.rgb)` 得到 `alpha=0x00` 的**全透明**色，症状是**被高亮的字符整段看不见**（关键字/字符串/注释凭空消失，不是「没颜色」）。必须走 `opaqueHighlightArgb(rgb) = rgb or 0xFF000000`（`ui/components/MarkdownView.kt`，纯函数有单测）。**同类坑适用一切「库给 RGB、Compose 要 ARGB」的转换。**
+16. **未知围栏语言不是「不亮」而是「泛化高亮」**：`SyntaxLanguage.getByName("nosuchlang") == null`，但不设 language 时库会用 DEFAULT 规则继续给字符串/注释/数字上色 —— 所以**不能拿「未知语言 = 无高亮」当渲染测试的对照组**（beta18 实测推翻该假设，改为直接断言主题 token 色像素）。
+17. **`ColorHighlight.rgb` 主题色实测值**（`SyntaxThemes.atom(dark=true)`）：`#2BBAC5` 青 / `#D55FDE` 品红 / `#89CA78` 绿 / `#5C6370` 灰（注释，饱和度低）。模拟器渲染断言按前三色逐像素比对（容差 10），主题一改就会失败 —— 那是期望行为。
+18. **仪器化渲染测试的两个实操坑（beta18）**：① AGP 跑完 `connectedDebugAndroidTest` **默认会把 APK 卸载**，测试里写到应用内部目录的截图会一起消失 —— 要取证据需加 `-Pandroid.injected.androidTest.leaveApksInstalledAfterRun=true`，再用 `adb exec-out run-as com.zcode.remote cat files/render-evidence/*.png` 取出；② 断言文本时用 `onAllNodesWithText(useUnmergedTree = true).onFirst()`：表格/代码块既有叶子又有合并父节点，`onNodeWithText` 会因「命中 2 个节点」直接失败（是断言写法问题，不是渲染问题）。
+19. **D-1 核查结论（2026-10-09，有界核查）**：`v4/conversation/frame` 的 **delta op 层三方已对齐、无差集**（桌面 host bundle ↔ `CONVERSATION-PROTOCOL.md:142-146` ↔ `relay/ConversationFrames.kt:515-538`，5 个 op：`row.appended/row.upserted/row.removed/row.delta/state.updated`；`row.delta.path ∈ text|inputText|output.text|summaryText`）。自该帧析出的两个**真缺口**已按「未立项待办」登记在 §6：**① 逻辑帧 `kind:"fragment"` 被静默丢弃**（`ConversationChannel.kt:257-259`，无实测样本，触发即缺帧）；**② 桌面 frame 业务 schema 与完整 row kind 联合仍未还原**（有 `PlainRow` 兜底，最坏样式降级）。未知 op / 未知 payload kind 一律「只记日志、UI 无告警」——**这条本身就是需要知悉的行为**：出问题时要先看 logcat，不要期待界面报错。
+20. **上传重试必须复用 uploadId（C-1，2026-10-09）**：服务端按 `uploadId` 幂等——`attachmentBeginV4` 对已 committed 的 id 直接返回 ref（分片不重传）。`uploadId` 现由 `AppViewModel` 生成并保存在失败态（`FailedUpload`）里；**换文件（名字或大小不同）必须换新 id**，否则服务端会把旧文件内容当新文件提交（`uploadIdForAttempt` 纯函数 + 单测钉死）。
+21. **主题感知色值必须走 `statusPendingTone()` / `toolCallTrajectoryTone()`（C-4，2026-10-09）**：亮橙 `#FF8A30` 与轨迹 `#F59E0B` 只允许出现在深色主题（浅色下对比度仅 2.15~2.35:1）。`ContrastTest` 有两条反向断言防止低对比色值回流；新增「浅色下要可读的文字/图标」时先看该测试再选色。
+22. **用户可见错误必须过 `UserFacingError.map()`（C-2，2026-10-09）**：本地自造英文（`bridge not ready` / `timeout after` / `channel reset`…）与服务端 fault code 不得直出 UI；新增失败路径时在展示点调用它（`UserFacingErrorTest` 有「不得泄漏裸英文」断言）。
+23. **本地回显气泡与会话绑定（C-6，2026-10-09）**：`AppViewModel.pendingUserMessages` 在切会话 / 断开时清空；服务端回显按「文本 trim 相等」匹配移除（回显可能是桌面端发的消息，不能误删本机 pending）。
+24. **`devices_v2` 凭据文件是新旧双格式（C-8，2026-10-09）**：新格式为 kotlinx.serialization 结构化 JSON；**旧格式（0x01 拼接行、控制字符未转义、按 JSON 规范非法）用 kotlinx 读不出来是正常现象**——`DevicesCodec.decode` 失败后必须走 `decodeLegacy`（读到即迁移）。改存储结构前先看 `DevicesCodecTest` 的双格式用例。
+25. **A-3 的 103 已实测启用（2026-10-09）**：字段规格 = 官方 bundle `[103, id]` + **undefined 参数段**（两段式，**勿省参数段**）；服务端静默接受、无 201/202/203 应答（fire-and-forget，勿等回包）。`SEND_EVENT_DISPOSE = true` 已启用；复现脚本 `probe.py dispose`（单次对照）与 `dispose-stress N`（N 次循环后按 listen_id 统计 204 帧分布）。**A-4 仍保守**：「缺口只记 WARN 日志、不触发重订阅」，buffer 策略改动须独立 commit + 独立真机回归。
+26. **release 热点在「日志实参」而非日志调用（C-5①，2026-10-09）**：`ZLog.d/i/w` 的**调用**会被 R8 的 `-assumenosideeffects` 剥离，但**实参表达式不会**——`ZLog.d(TAG, ev.data.toString())` 在 release 仍执行 `toString()`。任何「重计算进日志参数」的写法必须自带 `BuildConfig.DEBUG` 门控（例外：`ZLog.e` 在 release 也输出，只允许字符串字面量元信息，CI 有断言守）。
+27. **桥看门狗决策是纯函数（2026-10-09）**：`RpcChannel.watchdogDecision`（Noop/Retry/Fail）由单测钉死——改看门狗行为（超时、重开次数）时先改它和对应单测，不要在 `scheduleBridgeWatchdog` 里散写判断（该路径真机无法构造，单测是唯一防线）。
 
 ## 6. 剩余任务（P0 → P2，含验收标准）
 
@@ -335,8 +350,8 @@ P1-2 多会话看板、P1-4 协议常量结清、P1-3 附件+语音、E-1 权威
 | **Sprint 3** | 工具调用 Diff 视图 + 最近文件面板与远程只读代码预览（`file.readTextFile`）+ 单轮 Turn 变更聚合 | ✅ 全部结清并通过真机端到端验收 |
 | **Sprint 4** | 通知层升级：RemoteInput 内联回复（真机实测） | ✅ 核心完成（v0.5.0-beta8） |
 | **Sprint 5** | 配对 Deep Link + 触觉反馈 + Share Sheet + 快捷指令 chips + 双离线持久化秒开 | ✅ 全部完成（v0.5.0-beta12） |
-| **Sprint 6** | 回归网：VQL 金标准对拍 + 26 项纯函数单测 + CI + `build.sh` 可移植化 | ✅ 全部结清，本地与 CI 全绿 |
-| **P0-2（唯一剩余项）** | **日常使用观察 3 天**：锁屏通知可达性、HyperOS 杀后台 30min 后审批可达 | ⏳ 待观察（前台服务实测运行中）；窗口因 **beta17** 再次重置，自 **2026-10-08**（beta17 真机验收通过日）重新计时 |
+| **Sprint 6** | 回归网：VQL 金标准对拍 + 26 项纯函数单测 + CI + `build.sh` 可移植化；**beta18 起扩到仪器化渲染层**（`androidTest` 用 fixture 渲染真实 Composable，本地模拟器跑，不进 CI） | ✅ 全部结清，本地与 CI 全绿；仪器化套件模拟器 2/2 通过 |
+| **P0-2（唯一剩余项）** | **日常使用观察 3 天**：锁屏通知可达性、HyperOS 杀后台 30min 后审批可达 | ⏳ 待观察（前台服务实测运行中）；窗口因 **beta19**（跨会话泄漏修复）重置，**自 2026-10-09 重新计时**，预计 2026-10-12 收官；观察机已升级 beta19 |
 | ⛔ 后续开发计划 | Sprint 7（生物识别/凭据生命周期/自建中继 E2EE）、P2-3 余项、O-1/O-2 增强 | ❌ **2026-10-05 用户决策：全部取消，不再开发** |
 
 > **📌 唯一路径（v1.0 判停线）**：Sprint 0–6 已全部完成，**全部后续开发计划已取消**。
@@ -483,17 +498,49 @@ FCM/小米推送主通道（IM Bot 通道兜底另议）、追功能广度（多
 > 观察用的 APK 换成 `ZCodeRemote-0.5.0-beta17.apk`（或同源 debug 包）。观察清单第 4 项（飞行模式往返 <9s）沿用 beta15 基线：
 > 应看到可读中文失败 + 一次自动重订，属**符合预期**而非新缺陷。beta17 的排版对齐与状态面板**属纯展示层改动**，
 > 不应影响连接/审批路径；若观察期内出现卡顿、闪退或嵌套滚动告警，属新缺陷，按同款流程修复并再次重置窗口。
+>
+> 🔄 **2026-10-09 更新（v0.5.0-beta18 代码块高亮修复轮）**：beta18 修掉一个 beta17 引入的用户可见缺陷
+> （代码块里被高亮的字符整段不可见）。**验收已闭环**：模拟器仪器化测试（可重复）+ **真机复核通过（2026-10-09）** ——
+> 小米 15 Pro 装机后打开会话「整理 commandcode-proxy 发行版」，` ```bash ` 代码卡完整渲染且高亮分色
+> （token 色命中 2365 像素），未再「吞字」。
+> 因此按下方「若发现问题」规则，**观察窗口自 2026-10-09 重新计时**（预计 2026-10-12 收官），观察机为 beta18。
 
-- **状态**：功能开发与真机验收已全部完成（v0.5.0-beta12 → beta17 各轮**均已真机验收通过**）。本项是**发布 v1.0 前的最后一步**。
+- **状态**：功能开发与真机验收已全部完成（v0.5.0-beta12 → beta17 各轮**均已真机验收通过**；**beta18 为模拟器验收，真机复核待办**）。本项是**发布 v1.0 前的最后一步**。
 - **目标**：连续 3 天日常使用无失联、审批通知始终可达。
 - **观察清单（无需写代码，仅记录）**：
-  1. 安装 v0.5.0-beta17 APK（或 debug 包）→ 正常配对与使用；
+  1. 安装 v0.5.0-beta18 APK（或 debug 包）→ 正常配对与使用；
   2. **锁屏审批可达**：锁屏收通知 → 通知栏批准/直接回复 → 桌面端放行；
   3. **杀后台场景**：从最近任务划掉 App / 锁屏 30min 后，PC 触发审批，手机是否仍收到通知；
   4. **网络往返**：飞行模式/切 Wi-Fi 往返后连接自动恢复（预期 <9s，已有实测基线）；
   5. 日常迭代：新建会话、发送/停止、附件、Diff、最近文件预览等常规路径无异常。
 - **判停线**：3 天内无新缺陷 → **达到 v1.0 发布条件**（`HANDOVER §6.1` 里程碑定义）。
 - **若发现问题**：按「真机实测抓出并已修复的问题」同款流程修复 → 补丁版本 → 重置 3 天观察窗口。
+
+> 📮 **2026-10-09 观测期反馈（两条）**
+>
+> **① 待处理项跨会话泄漏 —— 已修（v0.5.0-beta19）**：用户在会话 B 的页面上看到属于会话 A 的提问卡。根因是待处理项两路来源（会话流 / 任务事件流）合并成全局列表后被会话页整份渲染（`ConversationScreen.kt:595/598` 的 `forEach`）。修法：`approvalsForSession` / `elicitationsForSession` 纯函数 + 会话页按 `target.taskId` 过滤（`MainActivity.kt:98-99`），归属未知 fail-open；单测见 `relay/PendingScopeTest.kt`（5 项）。**待补**：真机 A/B 证据 —— 需要一条真实待处理项（本次工作区 pending 为空），下次自然出现时按「A 会话挂起 + 看 B 会话」核对即可，或按下面第 ② 条的探针路径造一条。
+>
+**② 表单应答失败 —— 待复现，暂不计为缺陷**
+>
+> **现象**：用户真机截图（21:02）显示「应答失败：[{code:"invalid_value", path:["answer","action"],
+> values:["accept","decline","cancel"], message:"Invalid option: expected one of …"}]」，对应一条
+> 带选项的表单交互（截图徽标「需要你的输入回答」⇒ `el.questions` 非空，见 `ApprovalsTab.kt:419`）。
+>
+> **host 侧 schema（权威证据）**：`research/asar/out/host/chunk-BG4MS6RN.js` 内联定义
+> `resolveInteraction: answer:{optionId?, freeText?, action?:enum(["accept","decline","cancel"]), content?}` ——
+> `action` 是**可选枚举**，报错说明实际发出的 `action` 是**枚举外的值**（`{freeText}` 这种「不带 action」不触发该错）。
+>
+> **代码侧排查（2026-10-09，全仓穷举）**：能产出 `action` 的位置只有 4 处 ——
+> `AppViewModel.kt:958`（accept）、`:976`（decline）、`:991`（accept）、`notify/ElicitationNotifier.kt:179/186`（accept/decline）
+> —— **不存在能产出非法 action 的路径**，且 `content` 为 `Record<string,unknown>` 亦合规。
+>
+> **最可能来源**：失败发生在 21:02，当时机上装的是一个**我们无法签名、来源不明的异源 debug 包**
+> （SHA-256 `89:45:76:B3…`，本轮已卸载换成 beta18）。该包代码是否与本仓库一致**未知**。
+>
+> **待办（复现即定论）**：① 打开桌面端「移动端远程控制」面板（关着时中继回 `pair_status=waiting`，手机与探针都连不上，
+> 本轮探针实测）；② 若该交互仍在 pending，从 **beta18** 重新提交一次；③ 同时抓
+> `adb logcat -s ConvChannel` 中的 `resolveElicitation … answer=<JSON>` 原始载荷与 host 返回 —— 一次即可判定
+> 「beta18 无此问题」或「确有缺陷」，后者按同款流程修复并重置观察窗口。
 
 ### v1.1 候选待办（未立项，仅登记 · 2026-10-07；2026-10-09 更新首批落地）
 
@@ -507,8 +554,9 @@ FCM/小米推送主通道（IM Bot 通道兜底另议）、追功能广度（多
 | ✅ **重连退避不重置**（**已修 · beta15 · 真机 PASS**） | `RelayClient` 退避 3s→6s→12s→24s→48s（封顶 48s），**网络恢复事件不重置退避**：约 90s 飞行模式往返后实测恢复 ~47s（基线 `<9s`）。修法：`NetworkGate.onAvailable` → `RelayClient.onNetworkAvailable()` 重置计数并**掐断正在 sleep 的退避**立即重连（须只对 `Paired`/`WaitingPeer` 提前返回，见 CHANGELOG 复盘）。**真机实测：断网 80s → 5s、150s → 3s** | 残留：`onLost` 的 `probeNow()` 去抖守卫仍会误判导致断网期空烧退避（不影响恢复延迟）——改动前需先验证其双网去抖理由 |
 | ✅ **A-3**（**已落地 · 2026-10-09 · 未发布**） | 订阅监听泄漏：`TYPE_EVENT_DISPOSE = 103` 零调用 → 现已在切会话 / 重置时发 103 释放旧监听 | 字段规格（官方 bundle 实证 + `probe` 动态实测）与服务端行为（dispose 后事件流停止、10 次循环无泄漏）**均已确认**，`SEND_EVENT_DISPOSE = true`。**App 端到端（真机切 20 次会话）待并入真机验收** |
 | **A-4** | 事件流丢帧无缺口检测 → 会话静默停在旧状态 | 需改 `RpcChannel` buffer 策略（`extraBufferCapacity=256 / DROP_OLDEST` → 照抄 `RelayClient` 的 `512 / SUSPEND` + 单泵），**动并发路径，任务书自标高危**，须独立 commit + 独立真机回归；且与 C-5⑤⑦ 同动 `ConversationFrames`/RowStore 状态机，**排期必须串行** |
-| **T0** | 握手/快照耗时打点（A-2 阈值的测量基础） | 无需立项，属测量工作；见顶部真机验收清单第 5 条。**A-2 的 `HANDSHAKE_*_TIMEOUT_MS` 当前是占位值，必须以 T0 实测分布校准** |
-| **档 C 剩余（C-3/C-5/C-8/C-9/C-12）** | C-3 输入栏图标与键盘 inset 根因（须先真机量 inset；emoji 图标替换另需评估 `material-icons-extended` 包体）、C-5 性能与线程模型（自标高危，须独立灰度）、C-8 手拼 JSON 改序列化、C-9 githubToken 加密存储（复用 MultiDeviceStore，勿引入 EncryptedSharedPreferences）、C-12 AppViewModel 拆分（二期） | 未拍板不得开工；**C-5 与 A-4 同动状态机，排期必须串行** |
+| ✅ **T0**（**已 PASS 并回填**） | 握手/快照耗时打点（A-2 阈值的测量基础） | 整链路实测 **512–740ms**（见顶部真机验收清单第 5 条），**A-2 的 `HANDSHAKE_*_TIMEOUT_MS` 已据此校准为 4s/4s/5s**，不再是占位值 |
+| **A-5**（新登记 · 2026-10-09 由 D-1 核查析出） | **逻辑帧分片未处理**：wireVersion 3 的 `kind:"fragment"` 信封在 App 侧被静默丢弃（`ConversationChannel.kt:257-259`），若真机出现会**缺帧**且 UI 无提示 | **未立项**。前置：真机 + 桌面端在线抓到一条真实 `fragment` 帧（字段规格见 `FRAME-CODEC.md:681-686`，但无实测样本）；拿到样本前不得盲写重组逻辑。与 A-4 同属「事件流完整性」，若一起做须串行 |
+| **档 C 剩余（C-3/C-5/C-9/C-12）** | C-3 输入栏图标与键盘 inset 根因（须先真机量 inset；emoji 图标替换另需评估 `material-icons-extended` 包体）、C-5 性能与线程模型（自标高危，须独立灰度）、C-9 githubToken 加密存储（复用 MultiDeviceStore，勿引入 EncryptedSharedPreferences）、C-12 AppViewModel 拆分（二期） | 未拍板不得开工；**C-5 与 A-4 同动状态机，排期必须串行** |
 | **决策项** | `ws://` 明文中继（minSdk 31 + 无 `networkSecurityConfig` → 静态即可定论必失败）：要么删选项，要么显式补配置（削弱安全性，需用户同意）；`reverseLayout` 翻转待 B-1 落地后评估 | 用户拍板 |
 
 ### P1-1 elicitation（表单类交互）应答（✅ 2026-09-29 完成，协议层端到端验收通过）
@@ -537,7 +585,7 @@ FCM/小米推送主通道（IM Bot 通道兜底另议）、追功能广度（多
 - **可选增强**：会话级权威角标来源 `pendingInteractionSummary{permissionCount, userInputCount}`
   在 conversation 的 `sessions-index/<workspaceId>` overlay 里（需订阅该 topic，当前用任务事件流推导）。
 
-### P1-3 文件上传 / 语音输入（✅ 2026-09-30 全链路完成，UI 待真机）
+### P1-3 文件上传 / 语音输入（✅ 全链路完成；附件已真机验收，语音按钮在无识别引擎的设备上按设计不渲染）
 
 - **已完成（附件上传）**：
   - **协议实机验证**（`tools/_p13_probe.py`）：四件套 `attachmentBeginV4 → ChunkV4 × N → CommitV4`
@@ -553,9 +601,9 @@ FCM/小米推送主通道（IM Bot 通道兜底另议）、追功能广度（多
 - **已完成（语音输入，2026-09-30）**：`ui/voice/VoiceInput.kt`——系统 `SpeechRecognizer` 转文字
   （官方 web 无语音功能，App 自研；零协议改动），🎤 按钮点击开始/提前结束，partial 实时上屏，
   最终文本追加输入草稿；RECORD_AUDIO 运行时权限按需请求；不可用设备按钮不渲染。
-- **遗留**：
-  1. UI 交互验收（🎤 按压反馈 / 附件 chip / 语音状态条）待真机或 Intel/AMD 机器（并入 X-2）。
-  2. 真机验证设备端识别引擎可用性（小米 15 Pro 为小爱语音引擎）。
+- **遗留（2026-10-09 校正口径）**：
+  1. 附件 chip 的真机端到端验收**已通过**（beta14：📎 → 小米 SAF 选文件 → 流内 chip 显示 → 发送 → userInput 行回显 chip），不再是待验项。
+  2. ~~真机验证设备端识别引擎可用性~~ → **已有结论**：小米 15 Pro 国行裁剪了提供 `RecognitionService` 的引擎（Google app `enabled=0`、小爱不实现系统 `RecognitionService`），`SpeechRecognizer.isRecognitionAvailable=false` → 🎤 按钮**按设计不渲染**，降级路径正确（实测见 §1 时间线 2026-09-30）。因此「🎤 按压反馈 / 语音状态条」**在本机无设备可验**：要验需先装一个提供 RecognitionService 的引擎（如 Google app）。
   3. ~~大文件整块读进内存~~ → **已流式化（2026-09-30）**：`uploadAttachment` 改
      `openStream + totalBytes` 签名，两遍流（sha256 → 分片），内存峰值一倍分片；
      选中后文件被移删会在上传时报错（行为变化见 CHANGELOG 六轮）。
@@ -598,8 +646,27 @@ FCM/小米推送主通道（IM Bot 通道兜底另议）、追功能广度（多
   修正（原 `rows.lastIndex` 漏算占位项，停在倒数第二行）；0 行时会话有 `rows.isNotEmpty()` 守卫。
 - ✅ ~~elicitation 仅能在会话页应答~~ → D-3 通知栏快捷应答已实现。
 
-**仍待处理**：
-- 会话流 `v4/conversation/frame` 二进制细节字段未穷举（不影响当前功能，未知 op 已有 Unknown 分支兜底）——见 D-1。
+**仍待处理（2026-10-09 按 D-1 核查结果重写）**：
+
+> 原条目「会话流 `v4/conversation/frame` 二进制细节字段未穷举」经**有界核查**后收窄为下面两条。
+> 核查结论先说：**delta op 层三方已完全对齐、无差集** —— 桌面端 host bundle
+> （`research/asar/out/host/chunk-BG4MS6RN.js` 的 `mr=discriminatedUnion("op",[...])`，字节 ~2018/2264）
+> 的 5 个 op `row.appended` / `row.upserted` / `row.removed` / `row.delta`（path 枚举 `text|inputText|output.text|summaryText`）
+> / `state.updated` ↔ 文档 `CONVERSATION-PROTOCOL.md:142-146` ↔ App `relay/ConversationFrames.kt:515-538` 三方一致；
+> 未知 op 走 `Delta.Unknown`（`ConversationChannel.kt:387-388` 仅记日志）。
+
+- **① 逻辑帧分片未实现（新登记，此前没写在任何待办里）**：wireVersion 3 的 logical frame 有两种信封，
+  `kind:"fragment"` 形态（`logicalFrameId` / `logicalFrameOrdinal` …，见 `FRAME-CODEC.md:681-686`）
+  在 App 侧**被静默丢弃**（`relay/ConversationChannel.kt:257-259` 只记一条日志）。若真机出现该分支，
+  表现为**会话流缺帧 / 卡在旧状态**，且 UI 无任何提示。
+  - 现状判定：**无任何抓包证据表明该分支会被触发**（历史所有真机会话流均为 `kind:"complete"`）。
+  - 开工前置：真机 + 桌面端在线抓一次 `kind:"fragment"` 的真实帧，拿到字段规格再实现重组；
+    在拿到证据前**不盲目实现**（协议未验证的代码只会在坏路径上更难排查）。
+- **② 桌面端 frame 业务 schema / 完整 row kind 联合仍未还原**：`FRAME-CODEC.md:773` 自认该表置信度低；
+  本轮在 bundle 里只抓到 3 个 kind literal（`turnHeader` / `hookInvocation` / `timelineMarker`，见
+  `research/asar/out/preload/index.cjs:40` 一带），未取全。风险可控：App 已渲染 8 种 kind
+  （`ui/screens/ConversationScreen.kt:1493-1502`），其余落到 `PlainRow` 显示 `"{kind} #{rowId}"` 原文，
+  **最坏是样式降级，不崩、不丢行**。若要继续穷举，需在 preload 的 zod 定义处按 `kind:e.literal(` 全量提取。
 
 ### P1-4 协议【待验证】项补全（✅ 2026-09-29 完成）
 
@@ -630,4 +697,5 @@ FCM/小米推送主通道（IM Bot 通道兜底另议）、追功能广度（多
   只为查看 Agent 产物；写路径等价于把整台桌面交给手机——配对链接一旦泄露即远程任意写。
   若确有需求，单独走一轮安全评审再排期。
 - **会话状态面板严格只读**（2026-10-08 beta17）：不新增任何控制类命令（cancelBackgroundWork / queueEdit / pauseGoal / resumeGoal / fork / compact），**不为面板新开查询 RPC**（因此不做「计划」分区，见 §5.11）。面板所需数据只能来自既有会话快照帧。
-- **排版真机验收**（2026-10-08，beta17 已满足）：beta17 的排版对齐与状态面板已在小米 15 Pro（Android 17 · HyperOS）真机验收全通过，见 §4 基线表与 CHANGELOG；第三方 Markdown 库的语法高亮与 GFM 表格因抽样视口内未出现围栏代码块而**未取到真机样本**，属「实机未直接观察」项，已在 CHANGELOG 如实标注。上机前须先用 `adb devices` 确认设备在线（adb 属常驻服务，操作受硬约束）。
+- **排版真机验收**（2026-10-08，beta17 已满足）：beta17 的排版对齐与状态面板已在小米 15 Pro（Android 17 · HyperOS）真机验收全通过，见 §4 基线表与 CHANGELOG。上机前须先用 `adb devices` 确认设备在线（adb 属常驻服务，操作受硬约束）。
+- **模拟器验证 ≠ 真机验收**（2026-10-09 beta18 实践）：仪器化渲染测试跑在 AVD 上，证明的是「该渲染路径在 Android 15 + Compose 该版本下按预期绘制」，**不能**替代真机（Android 17 / HyperOS、真实字体与密度）验收。beta18 已按此原则走完两步：先模拟器（修复前 token 色命中 0 → 修复后 1789），再真机复核（2026-10-09，小米 15 Pro：token 色命中 2365、目视分色正常）——**两步都完成才算验收通过**。今后凡「模拟器/仪器化测试通过」的结论，一律走同样的补验流程，不得直接写成「真机已验证」。
