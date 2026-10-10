@@ -1159,12 +1159,20 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         clearAttachments()   // 附件与会话绑定，切会话即清空
         pendingUserMessages = emptyList()   // C-6：本地回显气泡同样与会话绑定
 
-        // Sprint 5 离线缓存秒开：点击会话卡片首帧立即同步呈现历史消息行
+        // Sprint 5 离线缓存秒开：点击会话卡片首帧立即呈现历史消息行。
+        // C-5⑤（2026-10-10，真机故障后立项）：读取**移出主线程**——原实现同步 readText + JSON 解码
+        // 阻塞 UI（大缓存会话进页首帧卡顿的来源之一）；改 IO 线程加载，且**仅在权威快照未落地时应用**
+        // （否则慢磁盘读会覆盖已到达的新快照 = 旧盖新）；期间切走会话则丢弃。
         rowStore.clear()
-        val cached = SessionCacheStore.loadRows(getApplication(), s.taskId)
-        if (cached.isNotEmpty()) {
-            rowStore.replaceAll(cached)
-            ZLog.i(TAG, "离线缓存秒开: 首帧加载 ${cached.size} 行历史消息 session=${s.taskId.take(24)}")
+        viewModelScope.launch(kotlinx.coroutines.Dispatchers.IO) {
+            val cached = SessionCacheStore.loadRows(getApplication(), s.taskId)
+            if (cached.isEmpty()) return@launch
+            viewModelScope.launch(kotlinx.coroutines.Dispatchers.Main) {
+                if (shouldApplyCachedRows(subscribedSessionId, s.taskId, rowStore.snapshot().isEmpty())) {
+                    rowStore.replaceAll(cached)
+                    ZLog.i(TAG, "离线缓存秒开（异步）: ${cached.size} 行 session=${s.taskId.take(24)}")
+                }
+            }
         }
 
         ZLog.i(TAG, "subscribe conversation session=${s.taskId} ws=$ws")
@@ -1835,6 +1843,17 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
          */
         internal fun bridgeReopenDelayMs(nextAttempt: Int, maxAttempts: Int = 3): Long? =
             if (nextAttempt in 1..maxAttempts) 1_000L shl (nextAttempt - 1) else null
+
+        /**
+         * 异步加载的离线缓存是否应落地（C-5⑤ 竞态判定，纯函数）：
+         * 仅当「仍订阅着该会话」且「rowStore 为空（权威快照尚未 replaceAll）」时应用——
+         * 否则慢磁盘读会把已到达的新快照覆盖成旧数据（旧盖新）。
+         */
+        internal fun shouldApplyCachedRows(
+            subscribedSessionId: String?,
+            taskId: String,
+            storeIsEmpty: Boolean,
+        ): Boolean = subscribedSessionId == taskId && storeIsEmpty
 
         /** 握手自动重订次数上限（A-2）：1 次。再失败即交回用户手动重试。 */
         private const val MAX_HANDSHAKE_RETRIES = 1

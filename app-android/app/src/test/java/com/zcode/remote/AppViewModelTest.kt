@@ -1,7 +1,9 @@
 package com.zcode.remote
 
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 /**
@@ -94,5 +96,18 @@ class AppViewModelTest {
         assertNull("超过上限应停手，避免重开风暴", AppViewModel.bridgeReopenDelayMs(4))
         assertNull(AppViewModel.bridgeReopenDelayMs(0))
         assertNull(AppViewModel.bridgeReopenDelayMs(-1))
+    }
+
+    // ---------- C-5⑤：异步离线缓存的竞态判定（2026-10-10 立项） ----------
+
+    @Test
+    fun shouldApplyCachedRows_onlyWhenSameSessionAndStoreEmpty() {
+        // 正常路径：仍在该会话 + 权威快照尚未落地 → 应用缓存
+        assertTrue(AppViewModel.shouldApplyCachedRows("sess_a", "sess_a", true))
+        // 快照已到（rowStore 非空）→ 丢弃缓存——否则旧缓存会覆盖新快照
+        assertFalse(AppViewModel.shouldApplyCachedRows("sess_a", "sess_a", false))
+        // 加载期间已切走会话 → 丢弃
+        assertFalse(AppViewModel.shouldApplyCachedRows("sess_b", "sess_a", true))
+        assertFalse(AppViewModel.shouldApplyCachedRows(null, "sess_a", true))
     }
 }

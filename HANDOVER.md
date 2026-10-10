@@ -559,7 +559,7 @@ FCM/小米推送主通道（IM Bot 通道兜底另议）、追功能广度（多
 | **A-4** | 事件流丢帧无缺口检测 → 会话静默停在旧状态 | 需改 `RpcChannel` buffer 策略（`extraBufferCapacity=256 / DROP_OLDEST` → 照抄 `RelayClient` 的 `512 / SUSPEND` + 单泵），**动并发路径，任务书自标高危**，须独立 commit + 独立真机回归；且与 C-5⑤⑦ 同动 `ConversationFrames`/RowStore 状态机，**排期必须串行** |
 | ✅ **T0**（**已 PASS 并回填**） | 握手/快照耗时打点（A-2 阈值的测量基础） | 整链路实测 **512–740ms**（见顶部真机验收清单第 5 条），**A-2 的 `HANDSHAKE_*_TIMEOUT_MS` 已据此校准为 4s/4s/5s**，不再是占位值 |
 | **A-5**（新登记 · 2026-10-09 由 D-1 核查析出） | **逻辑帧分片未处理**：wireVersion 3 的 `kind:"fragment"` 信封在 App 侧被静默丢弃（`ConversationChannel.kt:257-259`），若真机出现会**缺帧**且 UI 无提示 | **未立项**。前置：真机 + 桌面端在线抓到一条真实 `fragment` 帧（字段规格见 `FRAME-CODEC.md:681-686`，但无实测样本）；拿到样本前不得盲写重组逻辑。与 A-4 同属「事件流完整性」，若一起做须串行 |
-| **档 C 剩余（C-3/C-5/C-9/C-12）** | C-3 输入栏图标与键盘 inset 根因（须先真机量 inset；emoji 图标替换另需评估 `material-icons-extended` 包体）、**C-5 性能与线程模型**（自标高危，须独立灰度；**2026-10-10 已获真机实证**——长会话高频入站帧下主线程处理停摆 → 停 ack → 服务端判 `rpc-transport-fault` 降级桥 → 手机「异常」，见坑清单 28）、C-9 githubToken 加密存储（复用 MultiDeviceStore，勿引入 EncryptedSharedPreferences）、C-12 AppViewModel 拆分（二期） | 未拍板不得开工；**C-5 与 A-4 同动状态机，排期必须串行** |
+| **档 C 剩余（C-3/C-5/C-9/C-12）** | C-3 输入栏图标与键盘 inset 根因（须先真机量 inset；emoji 图标替换另需评估 `material-icons-extended` 包体）、**C-5 性能与线程模型**（**2026-10-10 已立项**；真机实证见坑清单 28；执行卡与范围见任务书 §10——③rows 拷贝/④解析缓存/⑤主线程 IO 三项，⑤已落地；⑥⑦明确不在本轮）、C-9 githubToken 加密存储（复用 MultiDeviceStore，勿引入 EncryptedSharedPreferences）、C-12 AppViewModel 拆分（二期） | 未拍板不得开工；**C-5 与 A-4 同动状态机，排期必须串行** |
 | **决策项** | `ws://` 明文中继（minSdk 31 + 无 `networkSecurityConfig` → 静态即可定论必失败）：要么删选项，要么显式补配置（削弱安全性，需用户同意）；`reverseLayout` 翻转待 B-1 落地后评估 | 用户拍板 |
 
 ### P1-1 elicitation（表单类交互）应答（✅ 2026-09-29 完成，协议层端到端验收通过）
