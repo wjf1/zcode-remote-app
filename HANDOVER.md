@@ -2,7 +2,7 @@
 
 > ## ✅ 项目状态（2026-10-10 晚）：**beta21 已构建并装机**（C-5③④ 落地 + 观察期移除）
 >
-> - **当前版本 `v0.5.0-beta21`（versionCode 31，本地未发布）**：beta20 全部内容 + **C-5③**（会话行派生快照 `rowsSnapshot`，不再每次重组整表拷贝）+ **C-5④**（会话页派生解析缓存化 PathCache/DiffCache，流式期 O(n)/token → 增量）；**162 项单测全绿**（`check_test_count.py` 核对 162/162）。**观察期（P0-2）经用户决策移除（2026-10-10）**。release 包（新签名）已覆盖装机（同签名、凭据保留）；**真机交互回归待补**（装机时手机锁屏，UI 观测需解锁）。
+> - **当前版本 `v0.5.0-beta21`（versionCode 31，本地未发布）**：beta20 全部内容 + **C-5③**（会话行派生快照 `rowsSnapshot`，不再每次重组整表拷贝）+ **C-5④**（会话页派生解析缓存化 PathCache/DiffCache，流式期 O(n)/token → 增量）；**162 项单测全绿**（`check_test_count.py` 核对 162/162）。**观察期（P0-2）经用户决策移除（2026-10-10）**。release 包（新签名）已覆盖装机（同签名、凭据保留，机身 `versionCode=31` 已核验）；**真机交互回归已通过**：长会话（1100+ 行）滚动 + 流式期 **1336 帧 0 janky（0.00%）**、99th 帧 8ms，消息实时渲染、会话切换 A→B→A 正常、最近文件面板输出正确、logcat 无 FATAL。
 > - **beta20 已发布**（versionCode 30）：本地 v1.1「用户可感知收益」四批（C-1/C-2/C-4/C-6/C-7/C-8/C-10/C-11 + A-3 实测启用 + C-5① + 桥看门狗可测试化）+ 第五批真机故障修复（**桥降级自愈** `scheduleBridgeReopen`）+ **C-5⑤**（离线缓存读取移出主线程，含竞态防护）；155 项单测全绿 + debug/release 构建通过 + 真机验收全部执行（7 项通过、1 项部分通过，见下清单）。
 > - **master 已推送（2026-10-10，SSH 通道）**：提交 `5be5634`（HTTPS 间歇被阻的绕行方案见 §3）；CI run `38030230595` **success**。四批内容与 A-3 实测结论见下方 🆕 各段（与云端 beta18/beta19 的合并冲突 4 处已解）。
 > - **最近发布**：tag `v0.5.0-beta20` @ 提交 `5be5634`；Release <https://github.com/wjf1/zcode-remote-app/releases/tag/v0.5.0-beta20>（附 `ZCodeRemote-0.5.0-beta20.apk`，versionCode 30，**新 release 签名** `E1:57:1A:49:…:2B:3F:DD`）。上一个发布：tag `v0.5.0-beta19` @ 提交 `e7c65d0`（<https://github.com/wjf1/zcode-remote-app/releases/tag/v0.5.0-beta19>）；更早：beta18 @ `a82570a`。
