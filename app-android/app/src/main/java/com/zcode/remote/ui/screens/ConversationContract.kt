@@ -3,6 +3,7 @@ package com.zcode.remote.ui.screens
 import android.net.Uri
 import com.zcode.remote.AppViewModel
 import com.zcode.remote.repo.AttachmentUploader
+import com.zcode.remote.repo.ConversationRepository
 import com.zcode.remote.relay.ApprovalOption
 import com.zcode.remote.relay.ConversationChannel
 import com.zcode.remote.relay.ConversationRow
@@ -23,7 +24,7 @@ data class ConversationUiState(
     val meta: ConversationChannel.ConversationMeta,
     val rows: List<ConversationRow>,
     /** C-6：已发出但服务端尚未回显的消息（本地 pending 气泡，渲染在消息流末尾）。 */
-    val pendingUserMessages: List<AppViewModel.PendingUserMessage> = emptyList(),
+    val pendingUserMessages: List<ConversationRepository.PendingUserMessage> = emptyList(),
     val approvals: List<PendingApproval> = emptyList(),
     val elicitations: List<PendingElicitation> = emptyList(),
     val earlier: ConversationChannel.EarlierState = ConversationChannel.EarlierState(),
@@ -72,8 +73,6 @@ data class ConversationAction(
     val onAttachmentPicked: (uri: Uri, name: String, mime: String, size: Long) -> Unit = { _, _, _, _ -> },
     val onRemoveAttachment: (ConversationChannel.AttachmentRef) -> Unit = {},
     val onSwitchModel: (WorkspaceConfigChannel.ModelOption) -> Unit = {},
-    /** 历史遗留：无调用点（原顶栏自定义模型输入已移除），保留待后续轮次清理。 */
-    val onSwitchModelCustom: (String) -> Unit = {},
     /** 进入会话页时触发一次模型目录刷新（PC 端配置变更准实时同步）。 */
     val onLoadModels: () -> Unit = {},
     /** 切换执行模式（协议语义：仅对下一轮 agent turn 生效）。 */

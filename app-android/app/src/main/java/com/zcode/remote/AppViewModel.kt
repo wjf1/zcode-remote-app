@@ -46,8 +46,11 @@ import com.zcode.remote.notify.TerminalNotifier
 import com.zcode.remote.storage.MultiDeviceStore
 import com.zcode.remote.storage.PairedDevice
 import com.zcode.remote.storage.SessionCacheStore
+import com.zcode.remote.repo.ApprovalRepository
 import com.zcode.remote.repo.AttachmentUploader
+import com.zcode.remote.repo.ConversationRepository
 import com.zcode.remote.repo.ModelConfigRepository
+import com.zcode.remote.repo.NotificationCoordinator
 import com.zcode.remote.repo.UpdateRepository
 import com.zcode.remote.storage.SettingsStore
 import kotlinx.coroutines.launch
@@ -84,9 +87,38 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         workspaceConfig = { workspaceConfig },
         activeWorkspaceKey = { activeWorkspaceKey },
         firstSessionWorkspace = { sessions.firstOrNull()?.workspacePath },
-        conversationProvider = { conversationMeta.provider },
         onWorkspaceMode = { sessionModeFromWorkspace = it },
         flash = { msg, failure -> if (failure) flash(msg, FlashKind.Failure) else flash(msg) },
+    )
+
+    private val convRepo = ConversationRepository(
+        viewModelScope, app,
+        conversation = { conversation },
+        activeWorkspaceKey = { activeWorkspaceKey },
+        flash = { msg, failure -> if (failure) flash(msg, FlashKind.Failure) else flash(msg) },
+        onNewSubscription = {
+            handshakeRetryJob?.cancel(); handshakeRetryJob = null
+            handshakeRetryCount = 0
+        },
+        clearAttachments = { uploader.clearAttachments() },
+    )
+    private val approvalRepo = ApprovalRepository(
+        viewModelScope, app,
+        conversation = { conversation },
+        activeWorkspaceKey = { activeWorkspaceKey },
+        firstSessionWorkspace = { sessions.firstOrNull()?.workspacePath },
+        flash = { msg, failure -> if (failure) flash(msg, FlashKind.Failure) else flash(msg) },
+        onPendingChanged = { recomputeSessionPending() },
+    )
+
+    private val notifyCoordinator: NotificationCoordinator = NotificationCoordinator(
+        app,
+        client = { client },
+        sessionsIndex = { sessionsIndex },
+        relayState = { relayState },
+        activeWorkspaceKey = { activeWorkspaceKey },
+        subscribedSessionId = { subscribedSessionId },
+        approvalsRepo = approvalRepo,
     )
 
     /** 活跃设备（当前连接的这台）。 */
@@ -147,11 +179,6 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         private set
     var activeWorkspaceKey by mutableStateOf<String?>(null)
         private set
-    var subscribedSessionId by mutableStateOf<String?>(null)
-        private set
-
-    /** 最近一次订阅的会话条目（A-2 自动重订需要原始 workspacePath/sessionId）。 */
-    private var subscribedSession: SessionItem? = null
 
     /**
      * 握手自动重订计数（A-2）：每次新会话订阅归零；`Status.Live` 到达也归零。
@@ -161,74 +188,59 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
     private var handshakeRetryJob: kotlinx.coroutines.Job? = null
     /**
      * 桥自动重开计数与任务（2026-10-10 真机故障修复）：桥失败后此前无自愈路径，
-     * 详见 [scheduleBridgeReopen]。桥就绪即归零。
+     * 详见 scheduleBridgeReopen。桥就绪即归零。
      */
     private var bridgeReopenCount = 0
     private var bridgeReopenJob: kotlinx.coroutines.Job? = null
     /** 最近收到的 RPC 事件（原始 JSON，供 M2 阶段观测/渲染）。 */
     val rpcEvents = mutableStateListOf<String>()
-
-    // ---- 会话流 ----
+    // ---- 会话流（§11.7 拆分：实现在 repo/ConversationRepository，此处转发保持签名不变）----
+    /** 当前订阅中的会话 id（看板/调度/删除复位共用）。 */
+    val subscribedSessionId: String? get() = convRepo.subscribedSessionId
     /** 当前会话的行（已按 rowId 排序，UI 直接渲染）。 */
-    val rows = mutableStateListOf<ConversationRow>()
-    private val rowStore = RowStore(rows)
-
-    /**
-     * C-5③：会话行的派生快照——仅在行内容变化时产生新实例。
-     *
-     * UI 侧原为每次重组都 `rows.toList()`：整表拷贝（长会话 1100+ 行）之外，
-     * 新实例还会让 `remember(rows)` 的派生（SessionFiles / TurnChanges 逐行 JSON 解析）
-     * 一起失效重算——输入框、滚动等无关重组也在付 O(n) 解析的代价。
-     * 派生快照把「拷贝 + 下游失效」收敛为「行内容真的变化时」一次。
-     * 契约（单测钉住）：内容不变 → 同一实例；内容变化 → 新实例。
-     */
-    val rowsSnapshot: List<ConversationRow> by derivedStateOf { rows.toList() }
-    var conversationStatus by mutableStateOf<ConversationChannel.Status>(ConversationChannel.Status.Idle)
-        private set
-    var conversationMeta by mutableStateOf(ConversationChannel.ConversationMeta())
-        private set
+    val rows get() = convRepo.rows
+    /** C-5③：会话行的派生快照——仅在行内容变化时产生新实例。 */
+    val rowsSnapshot: List<ConversationRow> get() = convRepo.rowsSnapshot
+    val conversationStatus: ConversationChannel.Status get() = convRepo.conversationStatus
+    val conversationMeta: ConversationChannel.ConversationMeta get() = convRepo.conversationMeta
     /** 向上翻页状态（加载中/hasMore/pulled）。 */
-    var earlier by mutableStateOf(ConversationChannel.EarlierState())
-        private set
+    val earlier: ConversationChannel.EarlierState get() = convRepo.earlier
+    /** B-1：权威快照是否已落地（含 seq）。 */
+    val snapshotAligned: ConversationChannel.SnapshotAligned? get() = convRepo.snapshotAligned
+    /** C3：会话级状态（上下文用量 / 目标 / 待办 / 后台任务 / 子智能体 / 排队输入）。 */
+    val sessionState: ConversationFrames.SessionState get() = convRepo.sessionState
+    /** C-6：本地 pending 回显气泡。 */
+    val pendingUserMessages: List<ConversationRepository.PendingUserMessage> get() = convRepo.pendingUserMessages
+    fun retrySubscribe() = convRepo.retrySubscribe()
+    fun loadEarlier() = convRepo.loadEarlier()
+    private fun consumePendingEcho(echoText: String?) = convRepo.consumePendingEcho(echoText)
 
-    /**
-     * 当前会话的权威快照是否已落地（B-1）。UI 据此在「缓存行数 == 快照行数」
-     * （rows.size 不变、旧触发器完全不跑）时也能定位到最新一行。
-     */
-    var snapshotAligned by mutableStateOf<ConversationChannel.SnapshotAligned?>(null)
-        private set
-
-    /**
-     * 当前会话的会话级状态（上下文用量 / 目标 / 待办 / 后台任务 / 子智能体 / 排队输入）。
-     * 面板与顶栏「状态」入口都读它；全空时 [ConversationFrames.SessionState.hasContent]
-     * 为 false，入口不出现。
-     */
-    var sessionState by mutableStateOf(ConversationFrames.SessionState())
-        private set
-
-    // ---- 权限审批 ----
+    // ---- 权限审批与表单交互（§11.7 拆分：实现在 repo/ApprovalRepository，此处转发保持签名不变）----
     /** 当前会话的待审批项（会话流 pendingInteractions + 任务事件流两条来源合并）。 */
-    var approvals by mutableStateOf<List<PendingApproval>>(emptyList())
-        private set
-    /** 任务事件流（桌面端实证的审批推送路径）来的待审批，按 interactionId 索引。主线程专用。 */
-    private val taskApprovals = LinkedHashMap<String, PendingApproval>()
-
-    // ---- 表单交互（elicitation，P1-1）----
+    val approvals: List<PendingApproval> get() = approvalRepo.approvals
     /** 当前会话的待应答表单（会话帧 userInput 条目 + 任务事件流 elicitation_request 合并）。 */
-    var elicitations by mutableStateOf<List<PendingElicitation>>(emptyList())
-        private set
-    private val taskElicitations = LinkedHashMap<String, PendingElicitation>()
+    val elicitations: List<PendingElicitation> get() = approvalRepo.elicitations
+    fun resolveById(interactionId: String, optionId: String) = approvalRepo.resolveById(interactionId, optionId)
+    fun resolve(approval: PendingApproval, option: ApprovalOption) = approvalRepo.resolve(approval, option)
+    fun answerElicitation(el: PendingElicitation, answers: Map<Int, List<String>>) = approvalRepo.answerElicitation(el, answers)
+    fun declineElicitation(el: PendingElicitation) = approvalRepo.declineElicitation(el)
+    fun approveElicitationPlan(el: PendingElicitation) = approvalRepo.approveElicitationPlan(el)
+    fun answerElicitationFreeText(el: PendingElicitation, text: String) = approvalRepo.answerElicitationFreeText(el, text)
+    private fun refreshApprovals() = approvalRepo.refreshApprovals()
+    private fun refreshElicitations() = approvalRepo.refreshElicitations()
+    private fun resolveElicitationById(interactionId: String, answerJson: String): Boolean =
+        approvalRepo.resolveElicitationById(interactionId, answerJson)
 
-    // ---- 多会话看板（P1-2）----
-    /**
-     * 每个会话的待处理条数（taskId → 审批 + 表单）。来源＝任务事件流（覆盖所有会话，
-     * 不限于当前订阅的那个），订阅中的会话以会话流数据优先（更实时）。
-     */
-    var sessionPending by mutableStateOf<Map<String, Int>>(emptyMap())
-        private set
+    // ---- 多会话看板 / Widget / 视图上报（§11.7 拆分：实现在 repo/NotificationCoordinator，此处转发）----
+    /** 每个会话的待处理条数（taskId → 审批 + 表单）。 */
+    val sessionPending: Map<String, Int> get() = notifyCoordinator.sessionPending
     /** 桌面端当前活动会话（workspace-list 的 activeTaskId，用于「PC 正在看哪个」提示）。 */
-    var desktopActiveTaskId by mutableStateOf<String?>(null)
-        private set
+    val desktopActiveTaskId: String? get() = notifyCoordinator.desktopActiveTaskId
+    private fun recomputeSessionPending() = notifyCoordinator.recomputeSessionPending()
+    private fun syncWidget(pendingTotal: Int = notifyCoordinator.sessionPending.values.sum()) =
+        notifyCoordinator.syncWidget(pendingTotal)
+    private fun reportViewState() = notifyCoordinator.reportViewState()
+    private fun terminalTitle(reason: FailureReason): String = NotificationCoordinator.terminalTitle(reason)
 
     /** 首页会话搜索关键字（P2-3：按标题/工作区过滤，忽略大小写）。 */
     var sessionQuery by mutableStateOf("")
@@ -490,27 +502,17 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
                         // permission_request 建卡，permission_resolved 按 requestId 撤卡。
                         when (ev.type) {
                             "permission_request" ->
-                                PendingApproval.fromTaskEvent(ev.raw, ev.taskId)?.let {
-                                    taskApprovals[it.interactionId] = it
-                                    refreshApprovals()
-                                }
+                                PendingApproval.fromTaskEvent(ev.raw, ev.taskId)?.let { approvalRepo.ingestTaskApproval(it) }
                             "permission_resolved" ->
                                 ev.raw["requestId"]?.let {
                                     runCatching { it.jsonPrimitive.content }.getOrNull()
-                                }?.let {
-                                    if (taskApprovals.remove(it) != null) refreshApprovals()
-                                }
+                                }?.let { approvalRepo.resolveTaskApproval(it) }
                             "elicitation_request" ->
-                                PendingElicitation.fromTaskEvent(ev.raw, ev.taskId)?.let {
-                                    taskElicitations[it.interactionId] = it
-                                    refreshElicitations()
-                                }
+                                PendingElicitation.fromTaskEvent(ev.raw, ev.taskId)?.let { approvalRepo.ingestTaskElicitation(it) }
                             "elicitation_resolved" ->
                                 ev.raw["requestId"]?.let {
                                     runCatching { it.jsonPrimitive.content }.getOrNull()
-                                }?.let {
-                                    if (taskElicitations.remove(it) != null) refreshElicitations()
-                                }
+                                }?.let { approvalRepo.resolveTaskElicitation(it) }
                         }
                         // 列表状态实时化：任务事件是 host 推的实时流（PROTOCOL.md §6.2），而列表的
                         // displayStatus 只在 bootstrap 取过一次快照——不回写就会出现「会话页在跑、
@@ -546,7 +548,7 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
                     // 模型注册表：各模型的合法思考档位（createSession/switchModelConfig 必需）
                     loadModelReasoningLevels()
                     val target = sessions.firstOrNull { it.isRunning } ?: sessions.firstOrNull()
-                    target?.let { subscribeConversation(it) }
+                    target?.let { convRepo.subscribeConversation(it) }
                 }
                 // 桥失败（服务端降级 `bridge-degraded` 或看门狗用尽）→ 自动重开（2026-10-10 真机故障修复）
                 if (st is RpcChannel.BridgeState.Failed) scheduleBridgeReopen()
@@ -560,7 +562,7 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         RemoteConnectionManager.launchCollector {
             ch.events.collect { ev ->
                 // 会话帧优先交给会话层解析；sessions-index 帧交给 E-1 权威角标通道
-                conv.onEvent(ev, rowStore)
+                conv.onEvent(ev, convRepo.rowStore)
                 sidx.onEvent(ev)
                 wcfg.onEvent(ev)
                 // C-5①：观测面板只在 debug 构建保留——release 不再为**每个 delta** 做一次
@@ -580,7 +582,7 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         // §11.4 阶段③：会话状态流迁入进程级作用域 —— 握手瞬态失败的自动重订（A-2）是连接韧性本体。
         RemoteConnectionManager.launchCollector {
             conv.status.collect { st ->
-                conversationStatus = st
+                convRepo.conversationStatus = st
                 // 换会话/重订阅时清掉上一个会话的模式乐观覆盖，回到订阅 ack 的真实值
                 if (st is ConversationChannel.Status.Idle) sessionModeOverride = null
                 // 模型目录订阅需要会话握手完成（真机实证：bridge Ready 即订会报
@@ -595,10 +597,10 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
                 }
             }
         }
-        viewModelScope.launch { conv.meta.collect { conversationMeta = it } }
-        viewModelScope.launch { conv.snapshotAligned.collect { snapshotAligned = it } }
-        viewModelScope.launch { conv.sessionState.collect { sessionState = it } }
-        viewModelScope.launch { conv.earlier.collect { earlier = it } }
+        viewModelScope.launch { conv.meta.collect { convRepo.conversationMeta = it } }
+        viewModelScope.launch { conv.snapshotAligned.collect { convRepo.snapshotAligned = it } }
+        viewModelScope.launch { conv.sessionState.collect { convRepo.sessionState = it } }
+        viewModelScope.launch { conv.earlier.collect { convRepo.earlier = it } }
         // §11.4 阶段②（续）：审批/表单「通知链路」迁入进程级作用域 —— 通知是锁屏可达性的本体，
         // 必须在 VM 被清后仍能发出。refreshApprovals/refreshElicitations 内部无 viewModelScope
         // 依赖（getApplication 在 VM 被清后仍可用），故原样换作用域。
@@ -618,132 +620,9 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
-    /**
-     * 合并两条审批来源（会话流 pendingInteractions + 任务事件流）并对齐通知栏：
-     * 新审批弹通知，桌面端已处理/自动决议的自动撤下。
-     */
-    private fun refreshApprovals() {
-        val merged = LinkedHashMap<String, PendingApproval>()
-        conversation?.interactions?.value?.forEach { merged[it.interactionId] = it }
-        taskApprovals.forEach { (k, v) -> merged[k] = v }
-        val next = merged.values.toList()
-        if (next == approvals) return
-        approvals = next
-        ZLog.i(TAG, "approvals → ${next.size} 条 " +
-                next.joinToString(",") { "${it.toolName ?: "?"}#${it.interactionId.take(18)}" })
-        runCatching { ApprovalNotifier.sync(getApplication(), next) }
-            .onFailure { ZLog.w(TAG, "通知栏刷新失败", it) }
-        recomputeSessionPending()
-    }
 
-    /** 合并表单交互双来源（会话帧 userInput 条目 + 任务事件流），interactionId 去重。 */
-    private fun refreshElicitations() {
-        val merged = LinkedHashMap<String, PendingElicitation>()
-        conversation?.elicitations?.value?.forEach { merged[it.interactionId] = it }
-        taskElicitations.forEach { (k, v) -> merged.putIfAbsent(k, v) }
-        val next = merged.values.toList()
-        if (next == elicitations) return
-        elicitations = next
-        ZLog.i(TAG, "elicitations → ${next.size} 条 " +
-                next.joinToString(",") { "${it.toolName ?: "?"}#${it.interactionId.take(18)}" })
-        runCatching { ElicitationNotifier.sync(getApplication(), next) }
-            .onFailure { ZLog.w(TAG, "表单通知栏刷新失败", it) }
-        recomputeSessionPending()
-    }
 
-    /**
-     * 多会话看板（P1-2 / E-1）：汇总每个会话的待处理条数。
-     * 权威来源＝sessions-index 订阅（服务端 pendingInteractionSummary，覆盖全部会话、消解即清零）；
-     * 事件流推导作为回退（仅补权威索引里没有的会话，如订阅失败/未就绪）；
-     * 当前订阅会话以会话流明细数覆盖（最实时、含会话帧路径条目），明细为 0 时仍信权威。
-     */
-    private fun recomputeSessionPending() {
-        val counts = HashMap<String, Int>()
-        val authoritative = sessionsIndex?.summaries?.value ?: emptyMap()
-        if (authoritative.isNotEmpty()) {
-            authoritative.forEach { (sid, s) -> if (s.total > 0) counts[sid] = s.total }
-            taskApprovals.values.forEach { a ->
-                a.sessionId?.let { sid -> if (sid !in authoritative) counts[sid] = (counts[sid] ?: 0) + 1 }
-            }
-            taskElicitations.values.forEach { e ->
-                e.sessionId?.let { sid -> if (sid !in authoritative) counts[sid] = (counts[sid] ?: 0) + 1 }
-            }
-        } else {
-            taskApprovals.values.forEach { a -> a.sessionId?.let { counts[it] = (counts[it] ?: 0) + 1 } }
-            taskElicitations.values.forEach { e -> e.sessionId?.let { counts[it] = (counts[it] ?: 0) + 1 } }
-        }
-        subscribedSessionId?.let { sid ->
-            val n = approvals.size + elicitations.size
-            when {
-                n > 0 -> counts[sid] = n
-                (authoritative[sid]?.total ?: 0) <= 0 -> counts.remove(sid)
-            }
-        }
-        if (counts != sessionPending) sessionPending = counts
-        syncWidget(counts.values.sum())
-    }
 
-    /** 桌面 Widget（P2-3）状态推送：计数或连接变化都走这里。 */
-    private fun syncWidget(pendingTotal: Int = sessionPending.values.sum()) {
-        val connected = relayState is RelayState.Paired
-        runCatching { PendingWidgetProvider.sync(getApplication(), pendingTotal, connected) }
-            .onFailure { ZLog.w(TAG, "widget 同步失败", it) }
-    }
-
-    /** 上报手机端视图状态（P1-2）：PC 据此在界面上指出"手机正在看这个会话"。 */
-    private fun reportViewState() {
-        val c = client ?: return
-        val payload = BridgeFrames.mobileViewStateUpdate(activeWorkspaceKey, subscribedSessionId)
-        c.sendPayload(payload)
-        ZLog.i(TAG, "view-state → ws=${LogRedactor.pathLabel(activeWorkspaceKey)} task=${LogRedactor.maskId(subscribedSessionId)}")
-    }
-
-    /** 通知栏按钮走这条路径：按 id 找回对象再应答。 */
-    private fun resolveById(interactionId: String, optionId: String) {
-        val a = approvals.firstOrNull { it.interactionId == interactionId }
-        val opt = a?.options?.firstOrNull { it.optionId == optionId }
-        if (a == null || opt == null) {
-            flash("这条审批已经不在待处理列表里了（可能桌面端已处理）")
-            return
-        }
-        resolve(a, opt)
-    }
-
-    /** 应答一次审批（乐观消除 + 会话隔离修复）。 */
-    fun resolve(approval: PendingApproval, option: ApprovalOption) {
-        val conv = conversation ?: run {
-            flash("连接已断开，未发出", FlashKind.Failure)
-            return
-        }
-        val ws = activeWorkspaceKey ?: sessions.firstOrNull()?.workspacePath
-        val interId = approval.interactionId
-
-        // 乐观消除：点击瞬间立即从本地列表移除，并刷新系统通知栏
-        taskApprovals.remove(interId)
-        approvals = approvals.filter { it.interactionId != interId }
-        runCatching { ApprovalNotifier.sync(getApplication(), approvals) }
-        recomputeSessionPending()
-
-        conv.resolve(approval, option, fallbackWorkspacePath = ws) { r ->
-            viewModelScope.launch {
-                val (feedback, kind) = when (r) {
-                    is ConversationChannel.ResolveResult.Accepted -> when (r.status) {
-                        "accepted" -> (if (option.isAllow) "已批准" else "已拒绝") to FlashKind.Info
-                        "duplicate" -> "已收到（重复提交，服务端只认第一次）" to FlashKind.Info
-                        else -> "服务端已消解（可能桌面端先处理了）" to FlashKind.Info
-                    }
-                    is ConversationChannel.ResolveResult.Failed -> {
-                        // 失败回滚：放回审批列表中
-                        taskApprovals[interId] = approval
-                        refreshApprovals()
-                        "发送失败：${UserFacingError.map(r.message)}" to FlashKind.Failure
-                    }
-                }
-                flash(feedback, kind)
-                ZLog.i(TAG, "resolve result=$r interaction=$interId feedback=$feedback")
-            }
-        }
-    }
 
     // ---- 发送消息 / 停止（P0-1）----
 
@@ -751,23 +630,6 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
     var promptDraft by mutableStateOf("")
         private set
 
-    /**
-     * 本地回显的待确认消息（C-6）：发送瞬间插入一条 pending 气泡，解决「按了没反应」的空窗期——
-     * sendText ack 之后服务端要等 turn 排队才回显 userInput 行（快则几百毫秒、慢则数分钟）。
-     *
-     * 移除时机：服务端回显同文本的 userInput 行（[ConversationChannel.onUserInputEcho]）→ 移除；
-     * 发送失败 → 立即撤回（错误横幅已说明原因）；切会话 / 断开连接 → 清空（气泡与会话绑定）。
-     */
-    data class PendingUserMessage(val id: Long, val text: String, val attachmentNames: List<String>)
-
-    var pendingUserMessages by mutableStateOf<List<PendingUserMessage>>(emptyList())
-        private set
-    private var pendingSeq = 0L
-
-    /** 服务端回显到达时按文本匹配移除（多条 pending 时只移除最先插入的那条）。 */
-    private fun consumePendingEcho(echoText: String?) {
-        pendingUserMessages = consumePendingByEcho(pendingUserMessages, echoText)
-    }
     var sending by mutableStateOf(false)
         private set
     /**
@@ -812,9 +674,7 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         val conv = conversation ?: run { flash("连接已断开，未发送", FlashKind.Failure); return }
         sending = true
         // C-6：发送瞬间先插一条本地回显气泡（发送失败时撤回，服务端回显到达时移除）
-        pendingSeq += 1
-        val pending = PendingUserMessage(pendingSeq, content, atts.mapNotNull { it.fileName })
-        pendingUserMessages = pendingUserMessages + pending
+        val pending = convRepo.addPendingMessage(content, atts.mapNotNull { it.fileName })
         conv.sendPrompt(content, atts) { r ->
             viewModelScope.launch {
                 sending = false
@@ -826,7 +686,7 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
                     },
                     onFailure = {
                         // 撤回本地气泡：错误横幅已说明原因，不留下只在手机上存在的「幽灵消息」
-                        pendingUserMessages = pendingUserMessages.filterNot { it.id == pending.id }
+                        convRepo.removePendingMessage(pending.id)
                         flash("发送失败：${UserFacingError.map(it.message)}", FlashKind.Failure)
                     },
                 )
@@ -871,176 +731,6 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
 
     // ---- 表单交互应答（P1-1，构造规则见 PROTOCOL.md §6.5）----
 
-    /**
-     * 提交表单答案：[answers] 为 题号 → 该题答案值列表（含自定义文本）。
-     * 官方 web rut 构造：单题 content.answer、多题 content.answer_N，
-     * 同时附 answers:{问题文本: "合并答案"} 便于桌面端日志可读。
-     */
-    fun answerElicitation(el: PendingElicitation, answers: Map<Int, List<String>>) {
-        val conv = conversation ?: run { flash("连接已断开，未发送", FlashKind.Failure); return }
-        val ws = activeWorkspaceKey ?: sessions.firstOrNull()?.workspacePath
-        val interId = el.interactionId
-
-        // 乐观消除：点击后立即从本地列表移除
-        taskElicitations.remove(interId)
-        elicitations = elicitations.filter { it.interactionId != interId }
-        recomputeSessionPending()
-
-        val content = buildJsonObject {
-            val readable = LinkedHashMap<String, String>()
-            answers.forEach { (idx, values) ->
-                if (values.isEmpty()) return@forEach
-                val q = el.questions.getOrNull(idx)
-                val jsonValues = buildJsonArray { values.forEach { add(JsonPrimitive(it)) } }
-                if (el.questions.size == 1) {
-                    put("answer", if (q?.multiSelect == true) jsonValues else JsonPrimitive(values.first()))
-                } else {
-                    put("answer_$idx", if (q?.multiSelect == true) jsonValues else JsonPrimitive(values.first()))
-                }
-                q?.let { readable[it.question] = values.joinToString(", ") }
-            }
-            if (readable.isNotEmpty()) {
-                put("answers", buildJsonObject { readable.forEach { (k, v) -> put(k, JsonPrimitive(v)) } })
-            }
-        }
-        val answer = buildJsonObject {
-            put("action", "accept")
-            put("content", content)
-        }
-        conv.resolveElicitation(el, answer, fallbackWorkspacePath = ws) { r ->
-            handleElicitationResult(r, "已提交回答", el)
-        }
-    }
-
-    /** 拒绝表单/计划。 */
-    fun declineElicitation(el: PendingElicitation) {
-        val conv = conversation ?: run { flash("连接已断开，未发送", FlashKind.Failure); return }
-        val ws = activeWorkspaceKey ?: sessions.firstOrNull()?.workspacePath
-        val interId = el.interactionId
-
-        taskElicitations.remove(interId)
-        elicitations = elicitations.filter { it.interactionId != interId }
-        recomputeSessionPending()
-
-        conv.resolveElicitation(el, buildJsonObject { put("action", "decline") }, fallbackWorkspacePath = ws) { r ->
-            handleElicitationResult(r, "已拒绝", el)
-        }
-    }
-
-    /** 计划批准（plan_approval）。 */
-    fun approveElicitationPlan(el: PendingElicitation) {
-        val conv = conversation ?: run { flash("连接已断开，未发送", FlashKind.Failure); return }
-        val ws = activeWorkspaceKey ?: sessions.firstOrNull()?.workspacePath
-        val interId = el.interactionId
-
-        taskElicitations.remove(interId)
-        elicitations = elicitations.filter { it.interactionId != interId }
-        recomputeSessionPending()
-
-        conv.resolveElicitation(el, buildJsonObject { put("action", "accept") }, fallbackWorkspacePath = ws) { r ->
-            handleElicitationResult(r, "已批准计划", el)
-        }
-    }
-
-    /** 自由文本应答（无 questions 的 userInput 条目，freeText=true）。 */
-    fun answerElicitationFreeText(el: PendingElicitation, text: String) {
-        val conv = conversation ?: run { flash("连接已断开，未发送", FlashKind.Failure); return }
-        val ws = activeWorkspaceKey ?: sessions.firstOrNull()?.workspacePath
-        val interId = el.interactionId
-
-        taskElicitations.remove(interId)
-        elicitations = elicitations.filter { it.interactionId != interId }
-        recomputeSessionPending()
-
-        // 服务端 resolveInteraction.answer 的 action 为枚举 accept|decline|cancel：
-        // 此前只发 {freeText} 缺 action，真机报 `invalid_value @ answer.action`（表单应答失败）。
-        conv.resolveElicitation(
-            el,
-            buildJsonObject { put("action", "accept"); put("freeText", text) },
-            fallbackWorkspacePath = ws,
-        ) { r ->
-            handleElicitationResult(r, "已提交", el)
-        }
-    }
-
-    private fun handleElicitationResult(r: ConversationChannel.ResolveResult, okText: String, el: PendingElicitation) {
-        viewModelScope.launch {
-            when (r) {
-                is ConversationChannel.ResolveResult.Accepted -> flash(okText)
-                is ConversationChannel.ResolveResult.Failed -> {
-                    taskElicitations[el.interactionId] = el
-                    refreshElicitations()
-                    flash("应答失败：${UserFacingError.map(r.message)}", FlashKind.Failure)
-                }
-            }
-        }
-    }
-
-    /**
-     * 通知栏快捷应答（D-3）：携带预构造好的 answer JSON 直接提交。
-     * 返回 false = 当前无连接（由 receiver 显示"没发出去"）。
-     */
-    private fun resolveElicitationById(interactionId: String, answerJson: String): Boolean {
-        val conv = conversation ?: return false
-        val el = elicitations.firstOrNull { it.interactionId == interactionId } ?: return false
-        val answer = runCatching {
-            kotlinx.serialization.json.Json.parseToJsonElement(answerJson).jsonObject
-        }.getOrNull() ?: return false
-        conv.resolveElicitation(el, answer) { r -> flashResolve(r, "已提交") }
-        return true
-    }
-
-    private fun flashResolve(r: ConversationChannel.ResolveResult, okText: String) {
-        viewModelScope.launch {
-            when (r) {
-                is ConversationChannel.ResolveResult.Accepted -> flash(okText)
-                is ConversationChannel.ResolveResult.Failed ->
-                    flash("应答失败：${UserFacingError.map(r.message)}", FlashKind.Failure)
-            }
-        }
-    }
-
-    /**
-     * 订阅某会话的流式内容。
-     *
-     * 走 zcode-agent 通道的官方序列：listen → hello → initialize → subscribe
-     * （见 research/CONVERSATION-PROTOCOL.md §4）。
-     */
-    private fun subscribeConversation(s: SessionItem) {
-        val conv = conversation ?: return
-        val ws = s.workspacePath ?: activeWorkspaceKey ?: return
-        subscribedSession = s
-        subscribedSessionId = s.taskId
-        // A-2：新会话订阅重置自动重订预算
-        handshakeRetryJob?.cancel(); handshakeRetryJob = null
-        handshakeRetryCount = 0
-        clearAttachments()   // 附件与会话绑定，切会话即清空
-        pendingUserMessages = emptyList()   // C-6：本地回显气泡同样与会话绑定
-
-        // Sprint 5 离线缓存秒开：点击会话卡片首帧立即呈现历史消息行。
-        // C-5⑤（2026-10-10，真机故障后立项）：读取**移出主线程**——原实现同步 readText + JSON 解码
-        // 阻塞 UI（大缓存会话进页首帧卡顿的来源之一）；改 IO 线程加载，且**仅在权威快照未落地时应用**
-        // （否则慢磁盘读会覆盖已到达的新快照 = 旧盖新）；期间切走会话则丢弃。
-        rowStore.clear()
-        viewModelScope.launch(kotlinx.coroutines.Dispatchers.IO) {
-            val cached = SessionCacheStore.loadRows(getApplication(), s.taskId)
-            if (cached.isEmpty()) return@launch
-            viewModelScope.launch(kotlinx.coroutines.Dispatchers.Main) {
-                if (shouldApplyCachedRows(subscribedSessionId, s.taskId, rowStore.snapshot().isEmpty())) {
-                    rowStore.replaceAll(cached)
-                    ZLog.i(TAG, "离线缓存秒开（异步）: ${cached.size} 行 session=${s.taskId.take(24)}")
-                }
-            }
-        }
-
-        ZLog.i(TAG, "subscribe conversation session=${LogRedactor.maskId(s.taskId)} ws=${LogRedactor.pathLabel(ws)}")
-        conv.subscribe(
-            workspacePath = ws,
-            workspaceIdentity = null,
-            session = s.taskId,
-            store = rowStore,
-        )
-    }
 
     /**
      * A-2：握手超时等瞬态失败后的自动重订（退避 1s → 2s，上限 1 次）。
@@ -1049,7 +739,7 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
      * 再失败则停在 Failed，重试权交回用户（见 [retrySubscribe]）。
      */
     private fun scheduleHandshakeRetry() {
-        val s = subscribedSession ?: return
+        val s = convRepo.subscribedSession ?: return
         if (handshakeRetryCount >= MAX_HANDSHAKE_RETRIES) {
             ZLog.w(TAG, "握手自动重订已用尽（$handshakeRetryCount 次），停在失败态等用户重试")
             return
@@ -1062,11 +752,11 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         handshakeRetryJob = RemoteConnectionManager.scope.launch {
             kotlinx.coroutines.delay(delayMs)
             // 期间用户可能已切走会话，此时重订无意义
-            if (subscribedSessionId != s.taskId) return@launch
+            if (convRepo.subscribedSessionId != s.taskId) return@launch
             val conv = conversation ?: return@launch
             val ws = s.workspacePath ?: activeWorkspaceKey ?: return@launch
             ZLog.i(TAG, "自动重订 session=${s.taskId}")
-            conv.subscribe(ws, null, s.taskId, rowStore)
+            conv.subscribe(ws, null, s.taskId, convRepo.rowStore)
         }
     }
 
@@ -1099,26 +789,9 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
-    /** 用户手动重试订阅（A-2 的 UI 重试入口）：重置重订预算后重新发起订阅。 */
-    fun retrySubscribe() {
-        val s = subscribedSession ?: return
-        handshakeRetryJob?.cancel(); handshakeRetryJob = null
-        handshakeRetryCount = 0
-        val conv = conversation ?: run {
-            flash("连接已断开，无法重试", FlashKind.Failure)
-            return
-        }
-        val ws = s.workspacePath ?: activeWorkspaceKey ?: run {
-            flash("未定位到工作区，无法重试", FlashKind.Failure)
-            return
-        }
-        ZLog.i(TAG, "用户重试订阅 session=${s.taskId}")
-        conv.subscribe(ws, null, s.taskId, rowStore)
-    }
-
     /** 手动订阅指定会话（UI 点击会话卡片时调用）。 */
     fun openSession(s: SessionItem) {
-        subscribeConversation(s)
+        convRepo.subscribeConversation(s)
         reportViewState()   // P1-2：切换会话即上报，PC 端可提示"手机正在看这个会话"
     }
 
@@ -1213,17 +886,8 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
     fun loadWorkspaceModels() = modelRepo.loadWorkspaceModels()
     fun loadModelsFromConfigFile(onDone: () -> Unit = {}) = modelRepo.loadModelsFromConfigFile(onDone)
     fun switchCurrentSessionModel(modelOption: WorkspaceConfigChannel.ModelOption) = modelRepo.switchCurrentSessionModel(modelOption)
-    fun switchCurrentSessionModelCustom(modelId: String, providerId: String? = null) = modelRepo.switchCurrentSessionModelCustom(modelId, providerId)
     /** 取该模型应当下发的思考档位（无合法档位信息时返回 null）。实现在 ModelConfigRepository。 */
     private fun pickReasoningLevel(providerId: String, modelId: String): String? = modelRepo.pickReasoningLevel(providerId, modelId)
-
-    /** 向上拉一页更早历史（会话页滚到顶部时触发）。 */
-    fun loadEarlier() {
-        val conv = conversation ?: return
-        conv.loadEarlier(rowStore) { r ->
-            r.onFailure { ZLog.w(TAG, "loadEarlier: ${it.message}") }
-        }
-    }
 
     /**
      * 删除会话（官方移动端同款链路）：
@@ -1256,11 +920,11 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
                         SessionCacheStore.deleteRows(getApplication(), item.taskId)
                         viewModelScope.launch { SessionCacheStore.save(getApplication(), sessions.toList()) }
                         // 若删除的是当前订阅中的会话，复位订阅与草稿状态
-                        if (subscribedSessionId == item.taskId) {
-                            subscribedSessionId = null
-                            subscribedSession = null
+                        if (convRepo.subscribedSessionId == item.taskId) {
+                            convRepo.subscribedSessionId = null
+                            convRepo.subscribedSession = null
                             handshakeRetryCount = 0
-                            rowStore.clear()
+                            convRepo.rowStore.clear()
                             promptDraft = ""
                             attachments.clear()
                             conversation?.reset()
@@ -1311,22 +975,19 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         // A-2：连接没了，作废在途的握手自动重订与重试上下文
         handshakeRetryJob?.cancel(); handshakeRetryJob = null
         handshakeRetryCount = 0
-        subscribedSession = null
+        convRepo.subscribedSession = null
         // 连接没了就没人能应答：摘掉桥并撤掉通知，避免用户点了个"假批准"
         ApprovalBridge.handler = null
         ElicitationBridge.handler = null
         runCatching { ApprovalNotifier.clearAll(getApplication()) }
         runCatching { ElicitationNotifier.clearAll(getApplication()) }
-        taskApprovals.clear()
-        taskElicitations.clear()
-        approvals = emptyList()
-        elicitations = emptyList()
-        sessionPending = emptyMap()
+        approvalRepo.clearAll()
+        notifyCoordinator.clearPending()
         syncWidget(0)
         clearAttachments()
         promptDraft = ""
         // C-6：连接没了，本地回显气泡无从确认，清掉避免误导
-        pendingUserMessages = emptyList()
+        convRepo.clearPendingMessages()
     }
 
     fun forget() {
@@ -1336,19 +997,11 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         events.clear()
         sessions.clear()
         rpcEvents.clear()
-        rows.clear()
-        subscribedSessionId = null
-        subscribedSession = null
+        convRepo.rows.clear()
+        convRepo.subscribedSessionId = null
+        convRepo.subscribedSession = null
     }
 
-    /** 连接终态通知的短标题（Sprint 2 / A 组）。 */
-    private fun terminalTitle(reason: FailureReason): String = when (reason) {
-        FailureReason.KICKED -> "控制权已在别处接管"
-        FailureReason.AUTH_FAILED -> "配对已失效，请重新扫码"
-        FailureReason.PROTOCOL_MISMATCH -> "中继协议可能已升级"
-        FailureReason.INVALID_ENDPOINT -> "中继地址不安全，已拒绝连接"
-        else -> "连接已终止"
-    }
 
     // ---- 执行模式（P0-B）----
 
@@ -1386,22 +1039,6 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         private const val TAG = "AppViewModel"
 
 
-        /**
-         * 服务端回显到达时的 pending 匹配移除（C-6 纯函数）：按文本 trim 相等匹配，
-         * 只移除最先插入的一条；不匹配 / 空文本时原样返回
-         * （回显可能是桌面端发的消息，不能误删本机的 pending 气泡）。
-         */
-        internal fun consumePendingByEcho(
-            pending: List<PendingUserMessage>,
-            echoText: String?,
-        ): List<PendingUserMessage> {
-            val text = echoText?.trim().orEmpty()
-            if (text.isEmpty() || pending.isEmpty()) return pending
-            val idx = pending.indexOfFirst { it.text.trim() == text }
-            if (idx < 0) return pending
-            return pending.filterIndexed { i, _ -> i != idx }
-        }
-
         /** 反馈横幅驻留时长（B-3）：失败 8s（4s 真机上易被错过），成功/提示 4s。 */
         internal fun flashDurationMs(kind: FlashKind): Long =
             if (kind == FlashKind.Failure) 8_000L else 4_000L
@@ -1412,17 +1049,6 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
          */
         internal fun bridgeReopenDelayMs(nextAttempt: Int, maxAttempts: Int = 3): Long? =
             if (nextAttempt in 1..maxAttempts) 1_000L shl (nextAttempt - 1) else null
-
-        /**
-         * 异步加载的离线缓存是否应落地（C-5⑤ 竞态判定，纯函数）：
-         * 仅当「仍订阅着该会话」且「rowStore 为空（权威快照尚未 replaceAll）」时应用——
-         * 否则慢磁盘读会把已到达的新快照覆盖成旧数据（旧盖新）。
-         */
-        internal fun shouldApplyCachedRows(
-            subscribedSessionId: String?,
-            taskId: String,
-            storeIsEmpty: Boolean,
-        ): Boolean = subscribedSessionId == taskId && storeIsEmpty
 
         /** 握手自动重订次数上限（A-2）：1 次。再失败即交回用户手动重试。 */
         private const val MAX_HANDSHAKE_RETRIES = 1

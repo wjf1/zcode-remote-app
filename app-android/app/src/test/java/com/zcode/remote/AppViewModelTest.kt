@@ -5,6 +5,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateListOf
 import com.zcode.remote.relay.ConversationRow
 import com.zcode.remote.repo.AttachmentUploader
+import com.zcode.remote.repo.ConversationRepository
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotSame
@@ -14,7 +15,7 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 /**
- * [AppViewModel.consumePendingByEcho] 的纯函数单测（C-6 本地回显气泡的移除判定）。
+ * [ConversationRepository.consumePendingByEcho] 的纯函数单测（C-6 本地回显气泡的移除判定）。
  *
  * 判错的两个方向都不可接受：该移除时不移除 → 气泡与服务端回显重复显示；
  * 不该移除时移除 → 用户刚发的消息从界面上消失（比「按了没反应」更糟）。
@@ -22,41 +23,41 @@ import org.junit.Test
 class AppViewModelTest {
 
     private fun pending(id: Long, text: String) =
-        AppViewModel.PendingUserMessage(id, text, emptyList())
+        ConversationRepository.PendingUserMessage(id, text, emptyList())
 
     @Test
     fun matchingEcho_removesOldestPending() {
         val list = listOf(pending(1, "第一条"), pending(2, "第二条"))
-        assertEquals(listOf(pending(2, "第二条")), AppViewModel.consumePendingByEcho(list, "第一条"))
+        assertEquals(listOf(pending(2, "第二条")), ConversationRepository.consumePendingByEcho(list, "第一条"))
     }
 
     @Test
     fun echoTextIsTrimmedBeforeMatch() {
         val list = listOf(pending(1, "  hello  "))
         assertEquals(
-            emptyList<AppViewModel.PendingUserMessage>(),
-            AppViewModel.consumePendingByEcho(list, "hello"),
+            emptyList<ConversationRepository.PendingUserMessage>(),
+            ConversationRepository.consumePendingByEcho(list, "hello"),
         )
     }
 
     @Test
     fun unrelatedEcho_keepsAllPending() {
         val list = listOf(pending(1, "手机发的"))
-        assertEquals(list, AppViewModel.consumePendingByEcho(list, "桌面端发的"))
+        assertEquals(list, ConversationRepository.consumePendingByEcho(list, "桌面端发的"))
     }
 
     @Test
     fun blankEcho_keepsAllPending() {
         val list = listOf(pending(1, "手机发的"))
-        assertEquals(list, AppViewModel.consumePendingByEcho(list, null))
-        assertEquals(list, AppViewModel.consumePendingByEcho(list, "   "))
+        assertEquals(list, ConversationRepository.consumePendingByEcho(list, null))
+        assertEquals(list, ConversationRepository.consumePendingByEcho(list, "   "))
     }
 
     @Test
     fun emptyPending_returnsEmpty() {
         assertEquals(
-            emptyList<AppViewModel.PendingUserMessage>(),
-            AppViewModel.consumePendingByEcho(emptyList(), "任何文本"),
+            emptyList<ConversationRepository.PendingUserMessage>(),
+            ConversationRepository.consumePendingByEcho(emptyList(), "任何文本"),
         )
     }
 
@@ -110,12 +111,12 @@ class AppViewModelTest {
     @Test
     fun shouldApplyCachedRows_onlyWhenSameSessionAndStoreEmpty() {
         // 正常路径：仍在该会话 + 权威快照尚未落地 → 应用缓存
-        assertTrue(AppViewModel.shouldApplyCachedRows("sess_a", "sess_a", true))
+        assertTrue(ConversationRepository.shouldApplyCachedRows("sess_a", "sess_a", true))
         // 快照已到（rowStore 非空）→ 丢弃缓存——否则旧缓存会覆盖新快照
-        assertFalse(AppViewModel.shouldApplyCachedRows("sess_a", "sess_a", false))
+        assertFalse(ConversationRepository.shouldApplyCachedRows("sess_a", "sess_a", false))
         // 加载期间已切走会话 → 丢弃
-        assertFalse(AppViewModel.shouldApplyCachedRows("sess_b", "sess_a", true))
-        assertFalse(AppViewModel.shouldApplyCachedRows(null, "sess_a", true))
+        assertFalse(ConversationRepository.shouldApplyCachedRows("sess_b", "sess_a", true))
+        assertFalse(ConversationRepository.shouldApplyCachedRows(null, "sess_a", true))
     }
 
     // ---------- C-5③：会话行派生快照（引用稳定；无关重组不再整表拷贝） ----------

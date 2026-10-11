@@ -32,7 +32,6 @@ class ModelConfigRepository(
     private val workspaceConfig: () -> WorkspaceConfigChannel?,
     private val activeWorkspaceKey: () -> String?,
     private val firstSessionWorkspace: () -> String?,
-    private val conversationProvider: () -> String?,
     private val onWorkspaceMode: (String) -> Unit,
     private val flash: (String, Boolean) -> Unit,
 ) {
@@ -295,20 +294,6 @@ class ModelConfigRepository(
             scope.launch {
                 result.fold(
                     onSuccess = { flash("模型已切换为 $mid" + (thought?.let { " · $it" } ?: ""), false) },
-                    onFailure = { flash("切换模型失败: ${UserFacingError.map(it.message)}", true) }
-                )
-            }
-        }
-    }
-
-    /** 手动输入模型 ID 切换。 */
-    fun switchCurrentSessionModelCustom(modelId: String, providerId: String? = null) {
-        val conv = conversation() ?: run { flash("连接尚未就绪", true); return }
-        val pid = providerId ?: conversationProvider() ?: "glm"
-        conv.switchModelConfig(provider = pid, model = modelId.trim(), thought = pickReasoningLevel(pid, modelId.trim())) { result ->
-            scope.launch {
-                result.fold(
-                    onSuccess = { flash("模型已切换为 $modelId", false) },
                     onFailure = { flash("切换模型失败: ${UserFacingError.map(it.message)}", true) }
                 )
             }
