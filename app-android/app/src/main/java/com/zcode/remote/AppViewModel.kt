@@ -449,6 +449,8 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         c.networkWait = gate::waitBeforeReconnect
         gate.startWatch()
         val ch = RpcChannel(c)
+        // A-4：事件流 seq 缺口 → 会话重订阅（缺口帧已 ack、服务端不重发，重取权威快照是唯一自愈路径）。
+        ch.onSequenceGap = { retrySubscribe() }
         val conv = ConversationChannel(ch)
         conv.onRowsUpdated = { sid, updatedRows ->
             viewModelScope.launch {

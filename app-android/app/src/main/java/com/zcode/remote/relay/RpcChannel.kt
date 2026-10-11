@@ -61,8 +61,17 @@ class RpcChannel(private val relay: RelayClient) {
     /** 204 EventFire：带请求 id（事件监听的应答都挂在该监听的 id 上）。 */
     data class RpcEvent(val id: Int?, val data: JsonElement)
 
+    // A-4：SUSPEND + 单泵 —— 慢消费时由发射端（onRpcFrame，跑在入站单泵协程里）背压挂起，
+    // 而非 DROP_OLDEST 丢帧：丢帧 = seq 缺口 = 会话静默停在旧状态。容量 512 对齐 RelayClient._inbound。
     private val _events = MutableSharedFlow<RpcEvent>(
-        extraBufferCapacity = 256, onBufferOverflow = BufferOverflow.DROP_OLDEST)
+        extraBufferCapacity = 512, onBufferOverflow = BufferOverflow.SUSPEND)
+
+    /**
+     * A-4：事件流 seq 缺口回调（缺口帧已 ack、服务端不重发，会话将静默停在旧状态）。
+     * 连接层不自知会话语义，由上层挂「重订阅」（服务端重放权威快照）实现自愈。
+     * 在入站泵协程上回调；实现方须可跨线程调用。
+     */
+    var onSequenceGap: (() -> Unit)? = null
     val events: SharedFlow<RpcEvent> = _events
 
     private val _bridge = MutableStateFlow<BridgeState>(BridgeState.Closed)
@@ -315,7 +324,7 @@ class RpcChannel(private val relay: RelayClient) {
      * 单分片（fragmentCount<=1）直通；多分片按 messageSeq 缓冲、收齐后按 index 升序拼接，
      * checksum/messageBytes 校验通过才解码与 ack（不通过则不 ack，服务端会按 messageSeq 重放）。
      */
-    fun onRpcFrame(payload: JsonObject) {
+    suspend fun onRpcFrame(payload: JsonObject) {
         val b64 = payload["dataBase64"]?.let { runCatching { it.jsonPrimitive.content }.getOrNull() } ?: return
         val bytes = runCatching { Base64.decode(b64, Base64.NO_WRAP) }.getOrNull() ?: return
         val messageSeq = payload["messageSeq"]?.let {
@@ -356,11 +365,11 @@ class RpcChannel(private val relay: RelayClient) {
             joined
         }
         messageSeq?.let { seq ->
-            // A-4 前置：事件流缺口检测（纯函数判定 + WARN 日志）。
-            // 本轮只落地「检测与可观测」——「触发重订阅」与「buffer 策略改 SUSPEND/单泵」
-            // 属高危改动（任务书自标），须独立 commit + 独立真机回归，见 HANDOVER §6.1。
+            // A-4：事件流缺口 = 中间有帧被丢（ack 已发、服务端不重发）→ 会话会静默停在旧状态。
+            // 唯一自愈路径是**重订阅**（服务端重放权威快照）；连接层不自知会话语义，经回调交上层。
             if (lastAckedMessageSeq > 0 && hasSeqGap(seq, lastAckedMessageSeq)) {
-                ZLog.w(TAG, "事件流缺口检测: seq=$seq lastAcked=$lastAckedMessageSeq（中间有帧未收到）")
+                ZLog.w(TAG, "事件流缺口检测: seq=$seq lastAcked=$lastAckedMessageSeq（中间有帧未收到）→ 触发会话重订阅")
+                onSequenceGap?.invoke()
             }
             ack(seq, bridgeSessionId)
         }
@@ -376,7 +385,7 @@ class RpcChannel(private val relay: RelayClient) {
     }
 
     /** 解码一条完整消息（VQL head + payload）并按类型路由。 */
-    private fun handleMessage(bytes: ByteArray) {
+    private suspend fun handleMessage(bytes: ByteArray) {
         var type = -1
         var id: Int? = null
         var data: Any? = null
@@ -412,7 +421,7 @@ class RpcChannel(private val relay: RelayClient) {
                 id?.let { cancelTimeout(it) }
                 cb?.invoke(RpcReply.Err(msg, el))
             }
-            TYPE_EVENT_FIRE -> _events.tryEmit(RpcEvent(id, toJsonElement(data)))
+            TYPE_EVENT_FIRE -> _events.emit(RpcEvent(id, toJsonElement(data)))
             else -> Unit
         }
     }
