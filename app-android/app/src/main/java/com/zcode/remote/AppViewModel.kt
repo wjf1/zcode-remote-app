@@ -485,7 +485,9 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         workspaceConfig = wcfg
         c.connect()
 
-        viewModelScope.launch {
+        // §11.4 阶段③：relay 状态流迁入进程级作用域 —— 终态通知（KICKED/配对失效等）是
+        // 锁屏可达性本体，VM 被清后也必须能发；引导触发与 Widget 刷新随流同迁。
+        RemoteConnectionManager.launchCollector {
             c.state.collect { st ->
                 relayState = st
                 // Sprint 2 / A 组第 3 项：终态失败发常驻系统通知 —— 手机在兜里时不能
@@ -582,7 +584,8 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
             }
         }
 
-        viewModelScope.launch {
+        // §11.4 阶段③：桥状态流迁入进程级作用域 —— 桥降级后的自动重开是连接韧性本体。
+        RemoteConnectionManager.launchCollector {
             ch.bridge.collect { st ->
                 bridgeState = st
                 ZLog.i(TAG, "bridge=$st")
@@ -628,7 +631,8 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
             }
         }
 
-        viewModelScope.launch {
+        // §11.4 阶段③：会话状态流迁入进程级作用域 —— 握手瞬态失败的自动重订（A-2）是连接韧性本体。
+        RemoteConnectionManager.launchCollector {
             conv.status.collect { st ->
                 conversationStatus = st
                 // 换会话/重订阅时清掉上一个会话的模式乐观覆盖，回到订阅 ack 的真实值
@@ -658,7 +662,7 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         RemoteConnectionManager.launchCollector {
             conv.elicitations.collect { refreshElicitations() }
         }
-        viewModelScope.launch {
+        RemoteConnectionManager.launchCollector {
             sidx.summaries.collect { recomputeSessionPending() }
         }
         // 通知按钮 → AppViewModel 应答（连接只活在这里，所以桥必须在连接建立时挂上）
@@ -1238,7 +1242,8 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         val delayMs = if (handshakeRetryCount == 1) 1_000L else 2_000L
         ZLog.i(TAG, "握手失败，${delayMs}ms 后自动重订（第 $handshakeRetryCount 次）")
         handshakeRetryJob?.cancel()
-        handshakeRetryJob = viewModelScope.launch {
+        // §11.4 阶段③：重试调度改挂进程级作用域 —— VM 被清后自动重订仍要生效（连接韧性）。
+        handshakeRetryJob = RemoteConnectionManager.scope.launch {
             kotlinx.coroutines.delay(delayMs)
             // 期间用户可能已切走会话，此时重订无意义
             if (subscribedSessionId != s.taskId) return@launch
@@ -1270,7 +1275,7 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         }
         bridgeReopenCount += 1
         bridgeReopenJob?.cancel()
-        bridgeReopenJob = viewModelScope.launch {
+        bridgeReopenJob = RemoteConnectionManager.scope.launch {
             kotlinx.coroutines.delay(delayMs)
             if (bridgeState is RpcChannel.BridgeState.Ready) return@launch  // 期间已恢复（如 relay 重连撞回来）
             ZLog.i(TAG, "桥失败，${delayMs}ms 后自动重开（第 $bridgeReopenCount 次）ws=${LogRedactor.pathLabel(wsKey)}")
