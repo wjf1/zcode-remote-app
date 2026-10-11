@@ -4,6 +4,7 @@ import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateListOf
 import com.zcode.remote.relay.ConversationRow
+import com.zcode.remote.repo.AttachmentUploader
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotSame
@@ -65,7 +66,7 @@ class AppViewModelTest {
     fun uploadIdReuse_sameFileReusesPreviousId() {
         assertEquals(
             "upload-abc",
-            AppViewModel.uploadIdForAttempt("report.pdf", 1024L, "upload-abc", "report.pdf", 1024L, "upload-new"),
+            AttachmentUploader.uploadIdForAttempt("report.pdf", 1024L, "upload-abc", "report.pdf", 1024L, "upload-new"),
         )
     }
 
@@ -75,11 +76,11 @@ class AppViewModelTest {
         // 否则服务端会把旧文件内容当作新文件提交
         assertEquals(
             "upload-new",
-            AppViewModel.uploadIdForAttempt("report.pdf", 1024L, "upload-abc", "other.pdf", 1024L, "upload-new"),
+            AttachmentUploader.uploadIdForAttempt("report.pdf", 1024L, "upload-abc", "other.pdf", 1024L, "upload-new"),
         )
         assertEquals(
             "upload-new",
-            AppViewModel.uploadIdForAttempt("report.pdf", 1024L, "upload-abc", "report.pdf", 2048L, "upload-new"),
+            AttachmentUploader.uploadIdForAttempt("report.pdf", 1024L, "upload-abc", "report.pdf", 2048L, "upload-new"),
         )
     }
 
@@ -87,7 +88,7 @@ class AppViewModelTest {
     fun uploadIdReuse_withoutPreviousFailureGetsFreshId() {
         assertEquals(
             "upload-new",
-            AppViewModel.uploadIdForAttempt(null, -1L, null, "a.txt", 1L, "upload-new"),
+            AttachmentUploader.uploadIdForAttempt(null, -1L, null, "a.txt", 1L, "upload-new"),
         )
     }
 

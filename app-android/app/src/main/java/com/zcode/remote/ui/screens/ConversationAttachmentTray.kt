@@ -29,7 +29,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import com.zcode.remote.AppViewModel
+import com.zcode.remote.repo.AttachmentUploader
 import com.zcode.remote.relay.ConversationChannel
 import com.zcode.remote.ui.theme.ZCodeType
 
@@ -77,7 +77,7 @@ internal fun AttachmentBar(
     uploadPercent: Int,
     onPick: () -> Unit,
     onRemove: (ConversationChannel.AttachmentRef) -> Unit,
-    failedUpload: AppViewModel.FailedUpload?,
+    failedUpload: AttachmentUploader.FailedUpload?,
     onCancelUpload: () -> Unit,
     onRetryUpload: () -> Unit,
     onDismissUploadFailure: () -> Unit,

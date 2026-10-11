@@ -46,6 +46,9 @@ import com.zcode.remote.notify.TerminalNotifier
 import com.zcode.remote.storage.MultiDeviceStore
 import com.zcode.remote.storage.PairedDevice
 import com.zcode.remote.storage.SessionCacheStore
+import com.zcode.remote.repo.AttachmentUploader
+import com.zcode.remote.repo.ModelConfigRepository
+import com.zcode.remote.repo.UpdateRepository
 import com.zcode.remote.storage.SettingsStore
 import kotlinx.coroutines.launch
 import kotlinx.serialization.json.Json
@@ -65,6 +68,26 @@ import kotlinx.serialization.json.put
 class AppViewModel(app: Application) : AndroidViewModel(app) {
     private val multiStore = MultiDeviceStore(app)
     private val settings = SettingsStore(app)
+
+    // ---- §11.7 结构性拆分：职责域 repository（实现见 repo/，此处装配并转发）----
+    private val updateRepo = UpdateRepository(viewModelScope, settings)
+    private val uploader = AttachmentUploader(
+        viewModelScope, app,
+        conversation = { conversation },
+        subscribedSessionId = { subscribedSessionId },
+        flash = { msg, failure -> if (failure) flash(msg, FlashKind.Failure) else flash(msg) },
+    )
+    private val modelRepo = ModelConfigRepository(
+        viewModelScope,
+        channel = { channel },
+        conversation = { conversation },
+        workspaceConfig = { workspaceConfig },
+        activeWorkspaceKey = { activeWorkspaceKey },
+        firstSessionWorkspace = { sessions.firstOrNull()?.workspacePath },
+        conversationProvider = { conversationMeta.provider },
+        onWorkspaceMode = { sessionModeFromWorkspace = it },
+        flash = { msg, failure -> if (failure) flash(msg, FlashKind.Failure) else flash(msg) },
+    )
 
     /** 活跃设备（当前连接的这台）。 */
     var device by mutableStateOf(multiStore.load().let { s ->
@@ -108,93 +131,11 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         themeMode = mode
     }
 
-    // ---- 软件版本与在线更新（设置面板）----
-    data class UpdateInfo(
-        val tagName: String,
-        val downloadUrl: String?,
-        val body: String?,
-        val hasNew: Boolean,
-    )
-
-    sealed interface UpdateState {
-        data object Idle : UpdateState
-        data object Checking : UpdateState
-        data class Success(val info: UpdateInfo) : UpdateState
-        data class Error(val message: String) : UpdateState
-    }
-
-    var updateState by mutableStateOf<UpdateState>(UpdateState.Idle)
-        private set
-    var githubToken by mutableStateOf(settings.githubToken)
-        private set
-
-    fun updateGithubToken(token: String) {
-        settings.githubToken = token
-        githubToken = token
-    }
-
-    fun checkForUpdate() {
-        if (updateState is UpdateState.Checking) return
-        updateState = UpdateState.Checking
-        viewModelScope.launch(kotlinx.coroutines.Dispatchers.IO) {
-            runCatching {
-                val client = okhttp3.OkHttpClient.Builder()
-                    .connectTimeout(10, java.util.concurrent.TimeUnit.SECONDS)
-                    .readTimeout(15, java.util.concurrent.TimeUnit.SECONDS)
-                    .build()
-                val reqBuilder = okhttp3.Request.Builder()
-                    .url("https://api.github.com/repos/wjf1/zcode-remote-app/releases/latest")
-                    .header("Accept", "application/vnd.github+json")
-                    .header("User-Agent", "ZCodeRemote-Android")
-
-                val token = settings.githubToken.trim()
-                if (token.isNotEmpty()) {
-                    reqBuilder.header("Authorization", "Bearer $token")
-                }
-
-                val response = client.newCall(reqBuilder.build()).execute()
-                val bodyStr = response.body?.string()
-                if (!response.isSuccessful || bodyStr == null) {
-                    val code = response.code
-                    val errMsg = when (code) {
-                        404, 401 -> if (token.isEmpty()) "私有仓库需配置 GitHub Token 后拉取更新" else "未找到 Release 或 Token 无权限 ($code)"
-                        else -> "检查更新失败: HTTP $code"
-                    }
-                    updateState = UpdateState.Error(errMsg)
-                    return@launch
-                }
-
-                val json = kotlinx.serialization.json.Json { ignoreUnknownKeys = true }
-                val root = json.parseToJsonElement(bodyStr).jsonObject
-                val tagName = root["tag_name"]?.jsonPrimitive?.content ?: ""
-                val releaseBody = root["body"]?.jsonPrimitive?.content ?: ""
-                val assets = root["assets"]?.jsonArray ?: kotlinx.serialization.json.JsonArray(emptyList())
-                val downloadUrl = assets.firstNotNullOfOrNull { el ->
-                    val asset = el.jsonObject
-                    val name = asset["name"]?.jsonPrimitive?.content.orEmpty()
-                    if (name.endsWith(".apk", ignoreCase = true)) {
-                        asset["browser_download_url"]?.jsonPrimitive?.content
-                    } else null
-                }
-
-                val curVer = BuildConfig.VERSION_NAME.removePrefix("v").trim()
-                val remoteVer = tagName.removePrefix("v").trim()
-                val hasNew = remoteVer.isNotBlank() && isNewerVersion(curVer, remoteVer)
-
-                updateState = UpdateState.Success(
-                    UpdateInfo(
-                        tagName = tagName.ifBlank { "最新版" },
-                        downloadUrl = downloadUrl,
-                        body = releaseBody,
-                        hasNew = hasNew,
-                    )
-                )
-            }.onFailure { err ->
-                ZLog.w(TAG, "checkForUpdate failed ${LogRedactor.exceptionLabel(err)}")
-                updateState = UpdateState.Error("网络连接失败：${UserFacingError.map(err.message ?: "未知错误")}")
-            }
-        }
-    }
+    // ---- 软件版本与在线更新（§11.7 拆分：实现在 repo/UpdateRepository，此处转发保持签名不变）----
+    val updateState: UpdateRepository.UpdateState get() = updateRepo.updateState
+    val githubToken: String get() = updateRepo.githubToken
+    fun updateGithubToken(token: String) = updateRepo.updateGithubToken(token)
+    fun checkForUpdate() = updateRepo.checkForUpdate()
     var relayState by mutableStateOf<RelayState>(RelayState.Idle)
         private set
 
@@ -893,150 +834,20 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
-    // ---- 附件上传（P1-3，协议见 PROTOCOL.md §6.6）----
-
+    // ---- 附件上传（§11.7 拆分：实现在 repo/AttachmentUploader，此处转发保持签名不变）----
     /** 已上传完成、随下一条消息发出去的附件。 */
-    val attachments = mutableStateListOf<ConversationChannel.AttachmentRef>()
-
-    /** 上传中的附件（UI 显示进度；同一时刻只允许一个）。 */
-    var attachUpload by mutableStateOf<AttachUpload?>(null)
-        private set
-
-    data class AttachUpload(val name: String, val uploaded: Long, val total: Long) {
-        val percent: Int get() = if (total <= 0) 0 else ((uploaded * 100) / total).toInt()
-    }
-
-    /** 在途上传句柄（A-1）：切会话 / 清理附件时用于终止，防止跨会话回写。 */
-    private var attachUploadHandle: ConversationChannel.UploadHandle? = null
-
-    /**
-     * C-1：上传失败态（可重试）。记录重试所需的全部信息——**特别是 uploadId**：
-     * 重试必须复用同一 id 才能命中服务端幂等分支（`state=="committed"` 直接返回 ref，
-     * 已上传分片不重传）；原实现 `ConversationChannel` 每次随机生成 id，幂等分支永不命中。
-     */
-    data class FailedUpload(
-        val uri: android.net.Uri,
-        val fileName: String,
-        val mime: String,
-        val size: Long,
-        val uploadId: String,
-        val message: String,
-    )
-
-    var attachFailed by mutableStateOf<FailedUpload?>(null)
-        private set
-
-    private fun newUploadId(): String = "upload-${java.util.UUID.randomUUID()}"
-
-    /** C-1：取消在途上传（用户主动放弃，不记失败态）。 */
-    fun cancelAttachmentUpload() {
-        attachUploadHandle?.abort()
-        attachUploadHandle = null
-        attachUpload = null
-    }
-
-    /** C-1：失败后重试——复用原 uploadId（同一文件不重传已提交的分片）。 */
-    fun retryAttachmentUpload() {
-        val f = attachFailed ?: return
-        attachFailed = null
-        startUpload(f.uri, f.fileName, f.mime, f.size, f.uploadId)
-    }
-
-    /** C-1：放弃失败的上传（清掉失败态）。 */
-    fun dismissAttachFailure() { attachFailed = null }
-
-    /**
-     * 附件上传成/败信号（B-3）：tick 每次自增，UI 侧以 `LaunchedEffect(tick)` 消费一次触觉。
-     * 上传完成是异步的（由 VM 驱动），Compose 侧拿不到点击上下文，故需要一条信号桥。
-     */
-    data class AttachmentFeedback(val ok: Boolean, val tick: Long)
-
-    var attachmentFeedback by mutableStateOf<AttachmentFeedback?>(null)
-        private set
-    private var attachmentFeedbackSeq = 0L
-
-    private fun signalAttachmentFeedback(ok: Boolean) {
-        attachmentFeedbackSeq += 1
-        attachmentFeedback = AttachmentFeedback(ok, attachmentFeedbackSeq)
-    }
-
-    /**
-     * 上传一个附件。走 conversation 通道的四步流程（begin/chunk/commit），
-     * 成功后加入 [attachments]，UI 显示 chip，发送时随 sendPrompt 带走。
-     * P2-3 流式改造：只持 uri，内容经 openStream 分片读（内存峰值一倍分片），
-     * 不再整文件读进内存；选中后文件被移动/删除会在上传时报错提示。
-     *
-     * A-1：上传发起时把「发起会话」捕获进闭包，所有回调先校验会话归属——否则在途上传
-     * 完成后会把文件塞进用户已经切过去的另一个会话的附件条（数据正确性 + 隐私风险）。
-     *
-     * C-1：失败进 [attachFailed] 失败态（UI 提供重试/取消）；重选同一文件复用 uploadId。
-     */
-    fun addAttachment(uri: android.net.Uri, fileName: String, mime: String, size: Long) {
-        val prev = attachFailed
-        val id = uploadIdForAttempt(
-            prev?.fileName, prev?.size ?: -1L, prev?.uploadId, fileName, size, newUploadId())
-        attachFailed = null
-        startUpload(uri, fileName, mime, size, id)
-    }
-
-    private fun startUpload(uri: android.net.Uri, fileName: String, mime: String, size: Long, uploadId: String) {
-        val conv = conversation ?: run { flash("连接已断开，无法上传", FlashKind.Failure); return }
-        if (attachUpload != null) { flash("还有附件在上传中"); return }
-        if (size > ConversationChannel.MAX_ATTACHMENT_BYTES) {
-            flash("附件超过 20MiB 上限")
-            return
-        }
-        val originSession = subscribedSessionId
-        attachUpload = AttachUpload(fileName, 0, size)
-        val app = getApplication<android.app.Application>()
-        attachUploadHandle = conv.uploadAttachment(uploadId, fileName, mime, size,
-            openStream = {
-                app.contentResolver.openInputStream(uri)
-                    ?: throw IllegalStateException("无法打开所选文件（可能已被移动或删除）")
-            },
-            onProgress = { up, total ->
-                // 切走会话后旧上传的进度不得再点亮新会话的进度条
-                if (uploadBelongsTo(originSession, subscribedSessionId)) {
-                    attachUpload = AttachUpload(fileName, up, total)
-                }
-            },
-        ) { r ->
-            viewModelScope.launch {
-                if (!uploadBelongsTo(originSession, subscribedSessionId)) {
-                    ZLog.i(TAG, "丢弃跨会话上传回调 origin=$originSession current=$subscribedSessionId")
-                    return@launch
-                }
-                attachUpload = null
-                r.fold(
-                    onSuccess = {
-                        attachments.add(it)
-                        attachFailed = null
-                        signalAttachmentFeedback(ok = true)
-                        flash("已添加附件 ${it.fileName}")
-                    },
-                    onFailure = {
-                        signalAttachmentFeedback(ok = false)
-                        // C-1：记录失败态供「重试/取消」；重试复用同一 uploadId
-                        attachFailed = FailedUpload(uri, fileName, mime, size, uploadId, it.message ?: "上传失败")
-                        flash("附件上传失败：${UserFacingError.map(it.message)}", FlashKind.Failure)
-                    },
-                )
-            }
-        }
-    }
-
-    fun removeAttachment(ref: ConversationChannel.AttachmentRef) {
-        attachments.remove(ref)
-    }
-
-    private fun clearAttachments() {
-        // A-1：切会话/清理时终止在途上传，避免其回调在别的会话里落地
-        attachUploadHandle?.abort()
-        attachUploadHandle = null
-        attachments.clear()
-        attachUpload = null
-        attachFailed = null   // C-1：失败态同样与会话绑定
-    }
+    val attachments get() = uploader.attachments
+    val attachUpload: AttachmentUploader.AttachUpload? get() = uploader.attachUpload
+    /** C-1：上传失败态（UI 显示重试/取消）。 */
+    val attachFailed: AttachmentUploader.FailedUpload? get() = uploader.attachFailed
+    /** B-3：附件上传成/败信号（tick 变化触发一次触觉）。 */
+    val attachmentFeedback: AttachmentUploader.AttachmentFeedback? get() = uploader.attachmentFeedback
+    fun addAttachment(uri: android.net.Uri, fileName: String, mime: String, size: Long) = uploader.addAttachment(uri, fileName, mime, size)
+    fun removeAttachment(ref: ConversationChannel.AttachmentRef) = uploader.removeAttachment(ref)
+    fun cancelAttachmentUpload() = uploader.cancelAttachmentUpload()
+    fun retryAttachmentUpload() = uploader.retryAttachmentUpload()
+    fun dismissAttachFailure() = uploader.dismissAttachFailure()
+    private fun clearAttachments() = uploader.clearAttachments()
 
     /** 停止当前运行（envelope `stop` 命令，官方 web 同款）。 */
     fun stopSession() {
@@ -1392,286 +1203,19 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
-    // ---- 模型目录（新建会话弹窗与会话内切模型的数据源）----
-
-    /** 工作区模型状态（workspace-config 订阅推送，snapshot/deltas 双路更新）。 */
-    val workspaceModelState: WorkspaceConfigChannel.WorkspaceState?
-        get() = workspaceConfig?.state?.value
-
-    /** 从 zcode-session::readWorkspaceState 读取的模型列表。 */
-    var workspaceSessionModels by mutableStateOf<List<WorkspaceConfigChannel.ModelOption>>(emptyList())
-        private set
-
-    /** 综合可用模型列表（优先配置订阅，回退 session 目录）。 */
-    val allAvailableModels: List<WorkspaceConfigChannel.ModelOption>
-        get() {
-            val fromConfig = workspaceConfig?.state?.value?.models ?: emptyList()
-            if (fromConfig.isNotEmpty()) return fromConfig
-            if (workspaceSessionModels.isNotEmpty()) return workspaceSessionModels
-            return emptyList()
-        }
-
-    var modelStateLoading by mutableStateOf(false)
-        private set
-
-    /**
-     * 各模型合法的思考档位：key = "providerId/modelId" → 合法档位值列表。
-     * 来源 = PC 端 model-selection::getView（registry 视图，含 model.config.optionSpecs.reasoningLevel.values）。
-     * 官方 registry 对推理模型强制校验 reasoningLevel：值不在合法列表里就直接报
-     * "Reasoning level is required"（或 not supported）导致会话失败，所以必须按模型真实档位下发。
-     */
-    var modelReasoningLevels by mutableStateOf<Map<String, List<String>>>(emptyMap())
-        private set
-
-    /**
-     * 取该模型应当下发的思考档位；无合法档位信息时返回 null（不下发，交由 PC 默认）。
-     * 挑选策略：优先启用推理（首个非 disabled 档位），全为 disabled 时才用 disabled。
-     * 例如 deepseek [disabled,low,high,max] → "low"；gemini [disabled,enabled] → "enabled"。
-     */
-    private fun pickReasoningLevel(providerId: String, modelId: String): String? {
-        val levels = modelReasoningLevels["$providerId/$modelId"] ?: return null
-        return levels.firstOrNull { !it.equals("disabled", ignoreCase = true) }
-            ?: levels.firstOrNull()
-    }
-
-    /**
-     * 拉取 PC 端模型注册表视图（model-selection::getView），提取每个模型的合法思考档位。
-     * 非推理模型不会出现在结果里；拉取失败静默降级为不下发 thought。
-     */
-    fun loadModelReasoningLevels() {
-        val ch = channel ?: return
-        ch.call(RpcChannel.CHANNEL_MODEL_SELECTION, "getView", listOf<Any>()) { reply ->
-            when (reply) {
-                is RpcChannel.RpcReply.Err ->
-                    ZLog.w(TAG, "model-selection.getView 失败: ${reply.message}")
-                is RpcChannel.RpcReply.Ok -> {
-                    val raw = reply.data?.toString() ?: ""
-                    ZLog.i(TAG, "model-selection.getView 原始响应(截断): ${raw.take(3000)}")
-                    val parsed = parseReasoningLevels(reply.data)
-                    if (parsed.isNotEmpty()) {
-                        modelReasoningLevels = parsed
-                        ZLog.i(TAG, "模型思考档位加载成功: " +
-                                parsed.entries.joinToString(", ") { "${it.key}->${it.value}" })
-                    }
-                }
-            }
-        }
-    }
-
-    /**
-     * 从 getView 响应中按多种可能的嵌套形态提取 models[].config.optionSpecs.reasoningLevel.values。
-     * 兼容：根即视图 / 包在 view|snapshot 里；model 标识在 modelId / ref.modelId / config.modelId。
-     */
-    private fun parseReasoningLevels(data: kotlinx.serialization.json.JsonElement?): Map<String, List<String>> {
-        val out = LinkedHashMap<String, List<String>>()
-        fun objOf(e: kotlinx.serialization.json.JsonElement?) =
-            runCatching { e?.jsonObject }.getOrNull()
-
-        val root = objOf(data) ?: return out
-        // 视图可能被包一层
-        val view = objOf(root["view"]) ?: objOf(root["snapshot"]) ?: objOf(root["registry"]) ?: root
-        val providers = runCatching { view["providers"]?.jsonArray }.getOrNull() ?: return out
-
-        for (pEl in providers) {
-            val p = objOf(pEl) ?: continue
-            val pid = runCatching { p["providerId"]?.jsonPrimitive?.content }.getOrNull() ?: continue
-            val models = runCatching { p["models"]?.jsonArray }.getOrNull() ?: continue
-            for (mEl in models) {
-                val m = objOf(mEl) ?: continue
-                val cfg = objOf(m["config"])
-                val mid = runCatching { m["modelId"]?.jsonPrimitive?.content }.getOrNull()
-                    ?: runCatching { objOf(m["ref"])?.get("modelId")?.jsonPrimitive?.content }.getOrNull()
-                    ?: runCatching { cfg?.get("modelId")?.jsonPrimitive?.content }.getOrNull()
-                    ?: continue
-                val levels = runCatching {
-                    objOf(cfg?.get("optionSpecs"))
-                        ?.get("reasoningLevel")?.jsonObject
-                        ?.get("values")?.jsonArray
-                        ?.mapNotNull { it.jsonPrimitive.content }
-                }.getOrNull()
-                if (!levels.isNullOrEmpty()) out["$pid/$mid"] = levels
-            }
-        }
-        return out
-    }
-
-    /**
-     * 触发一次模型目录刷新：三路并发探测（provider_config 配置文件直读 + workspace-config resync + readWorkspaceState），
-     * 只要有一路返回模型数据即可填充到 UI。
-     */
-    fun loadWorkspaceModels() {
-        val ws = activeWorkspaceKey ?: sessions.firstOrNull()?.workspacePath ?: return
-        modelStateLoading = true
-        // 1) 最稳定的直接链路：通过 file 服务的 resolvePath/readTextFile 读取 ~/.zcode/v2/provider_config.json
-        loadModelsFromConfigFile {
-            modelStateLoading = false
-        }
-        // 2) 远程会话目录链路（若支持）
-        conversation?.readWorkspaceState(ws) { res ->
-            viewModelScope.launch {
-                res.onSuccess { state ->
-                    // 执行模式的权威来源（P0-B）：settings.mode.current——
-                    // 勿用订阅 ack 的 mode（那是订阅模式 snapshot/live，与执行模式撞名）
-                    state.currentMode?.takeIf { it.isNotBlank() }?.let {
-                        sessionModeFromWorkspace = it
-                    }
-                    val list = state.available.map {
-                        WorkspaceConfigChannel.ModelOption(
-                            value = "${it.providerId}/${it.modelId}",
-                            name = it.displayName(),
-                            providerId = it.providerId,
-                            providerName = it.providerLabel,
-                        )
-                    }
-                    if (list.isNotEmpty()) {
-                        workspaceSessionModels = list
-                        ZLog.i(TAG, "readWorkspaceState 模型加载成功: ${list.size} 个模型")
-                    }
-                }
-            }
-        }
-        // 3) 配置流 resync
-        workspaceConfig?.resync(ws)
-    }
-
-    /**
-     * 从 PC 端 ~/.zcode/v2/provider_config.json 配置文件中直接拉取用户已配置的模型目录。
-     * （先通过 system::info 获取真实的 homedir，再通过 file::readTextFile 读取配置文件，100% 绕过远程 RPC 限制）。
-     */
-    fun loadModelsFromConfigFile(onDone: () -> Unit = {}) {
-        val ch = channel ?: run { onDone(); return }
-
-        fun readConfigByPath(realPath: String) {
-            ZLog.i(TAG, "正在读取 PC 端模型配置: $realPath")
-            ch.call(RpcChannel.CHANNEL_FILE, "readTextFile", listOf(mapOf("path" to realPath))) { r2 ->
-                viewModelScope.launch {
-                    when (r2) {
-                        is RpcChannel.RpcReply.Err -> {
-                            ZLog.w(TAG, "readTextFile 失败 ($realPath): ${r2.message}")
-                        }
-                        is RpcChannel.RpcReply.Ok -> {
-                            val content = runCatching {
-                                r2.data?.jsonObject?.get("content")?.jsonPrimitive?.content
-                            }.getOrNull()
-                            if (!content.isNullOrBlank()) {
-                                val parsed = parseProviderConfigModels(content)
-                                if (parsed.isNotEmpty()) {
-                                    workspaceSessionModels = parsed
-                                    ZLog.i(TAG, "从 provider_config.json 成功解析 ${parsed.size} 个可用模型: ${parsed.map { it.name }}")
-                                }
-                            }
-                        }
-                    }
-                    onDone()
-                }
-            }
-        }
-
-        // 1) 优先调用 system::info 获取桌面系统真实 homedir
-        ch.call(RpcChannel.CHANNEL_SYSTEM, "info", listOf<Any>()) { rSys ->
-            when (rSys) {
-                is RpcChannel.RpcReply.Ok -> {
-                    val homedir = runCatching {
-                        rSys.data?.jsonObject?.get("homedir")?.jsonPrimitive?.content
-                    }.getOrNull()
-                    if (!homedir.isNullOrBlank()) {
-                        val fullPath = "${homedir.trimEnd('\\', '/')}/.zcode/v2/provider_config.json"
-                        readConfigByPath(fullPath)
-                        return@call
-                    }
-                    // homedir 缺失则回退 resolvePath
-                    fallbackResolvePath(ch, ::readConfigByPath, onDone)
-                }
-                is RpcChannel.RpcReply.Err -> {
-                    ZLog.w(TAG, "system.info 失败: ${rSys.message}，回退 resolvePath")
-                    fallbackResolvePath(ch, ::readConfigByPath, onDone)
-                }
-            }
-        }
-    }
-
-    private fun fallbackResolvePath(ch: RpcChannel, onPath: (String) -> Unit, onDone: () -> Unit) {
-        val pathArg = mapOf("path" to "~/.zcode/v2/provider_config.json")
-        ch.call(RpcChannel.CHANNEL_FILE, "resolvePath", listOf(pathArg)) { r1 ->
-            when (r1) {
-                is RpcChannel.RpcReply.Err -> {
-                    ZLog.w(TAG, "resolvePath 兜底亦失败: ${r1.message}")
-                    onDone()
-                }
-                is RpcChannel.RpcReply.Ok -> {
-                    val realPath = r1.data?.let {
-                        runCatching { it.jsonPrimitive.content }.getOrNull()
-                    } ?: runCatching {
-                        r1.data?.jsonObject?.get("path")?.jsonPrimitive?.content
-                    }.getOrNull() ?: "~/.zcode/v2/provider_config.json"
-                    onPath(realPath)
-                }
-            }
-        }
-    }
-
-    /** 解析 provider_config.json 结构中的全部模型。 */
-    private fun parseProviderConfigModels(jsonStr: String): List<WorkspaceConfigChannel.ModelOption> {
-        val result = mutableListOf<WorkspaceConfigChannel.ModelOption>()
-        runCatching {
-            val root = Json.parseToJsonElement(jsonStr).jsonObject
-            val config = root["config"]?.jsonObject
-            val rules = config?.get("providerConfigRules")?.jsonObject?.get("providerRules")?.jsonArray
-            rules?.forEach { rEl ->
-                val r = rEl.jsonObject
-                val pid = r["providerId"]?.jsonPrimitive?.content ?: ""
-                val pname = r["providerName"]?.jsonPrimitive?.content
-                val cfg = r["config"]?.jsonObject
-                val modelIds = (cfg?.get("personalModelIds")?.jsonArray ?: cfg?.get("modelOrder")?.jsonArray)
-                    ?.mapNotNull { runCatching { it.jsonPrimitive.content }.getOrNull() }
-                    ?: emptyList()
-                for (mid in modelIds) {
-                    result.add(
-                        WorkspaceConfigChannel.ModelOption(
-                            value = "$pid/$mid",
-                            name = mid,
-                            providerId = pid,
-                            providerName = pname,
-                        )
-                    )
-                }
-            }
-        }.onFailure { ZLog.w(TAG, "parseProviderConfigModels 解析异常", it) }
-        return result
-    }
-
-    /**
-     * 在已有会话中动态切换模型（官方 V4 switchModelConfig 原生信封链路）。
-     * 成功后服务端广播 state.updated 增量帧，顶栏模型回显即时更新。
-     */
-    fun switchCurrentSessionModel(modelOption: WorkspaceConfigChannel.ModelOption) {
-        val conv = conversation ?: run { flash("连接尚未就绪", FlashKind.Failure); return }
-        val (pid, mid) = WorkspaceConfigChannel.splitModelValue(modelOption.value)
-        // 用户选了档位就用选的，否则按该模型自动挑一个合法档位，避免 registry 校验失败
-        val thought = modelOption.thought ?: pickReasoningLevel(pid, mid)
-        conv.switchModelConfig(provider = pid, model = mid, thought = thought) { result ->
-            viewModelScope.launch {
-                result.fold(
-                    onSuccess = { flash("模型已切换为 $mid" + (thought?.let { " · $it" } ?: "")) },
-                    onFailure = { flash("切换模型失败: ${UserFacingError.map(it.message)}", FlashKind.Failure) }
-                )
-            }
-        }
-    }
-
-    /** 手动输入模型 ID 切换。 */
-    fun switchCurrentSessionModelCustom(modelId: String, providerId: String? = null) {
-        val conv = conversation ?: run { flash("连接尚未就绪", FlashKind.Failure); return }
-        val pid = providerId ?: conversationMeta.provider ?: "glm"
-        conv.switchModelConfig(provider = pid, model = modelId.trim(), thought = pickReasoningLevel(pid, modelId.trim())) { result ->
-            viewModelScope.launch {
-                result.fold(
-                    onSuccess = { flash("模型已切换为 $modelId") },
-                    onFailure = { flash("切换模型失败: ${UserFacingError.map(it.message)}", FlashKind.Failure) }
-                )
-            }
-        }
-    }
+    // ---- 模型目录（§11.7 拆分：实现在 repo/ModelConfigRepository，此处转发保持签名不变）----
+    val workspaceModelState: WorkspaceConfigChannel.WorkspaceState? get() = modelRepo.workspaceModelState
+    val workspaceSessionModels: List<WorkspaceConfigChannel.ModelOption> get() = modelRepo.workspaceSessionModels
+    val allAvailableModels: List<WorkspaceConfigChannel.ModelOption> get() = modelRepo.allAvailableModels
+    val modelStateLoading: Boolean get() = modelRepo.modelStateLoading
+    val modelReasoningLevels: Map<String, List<String>> get() = modelRepo.modelReasoningLevels
+    fun loadModelReasoningLevels() = modelRepo.loadModelReasoningLevels()
+    fun loadWorkspaceModels() = modelRepo.loadWorkspaceModels()
+    fun loadModelsFromConfigFile(onDone: () -> Unit = {}) = modelRepo.loadModelsFromConfigFile(onDone)
+    fun switchCurrentSessionModel(modelOption: WorkspaceConfigChannel.ModelOption) = modelRepo.switchCurrentSessionModel(modelOption)
+    fun switchCurrentSessionModelCustom(modelId: String, providerId: String? = null) = modelRepo.switchCurrentSessionModelCustom(modelId, providerId)
+    /** 取该模型应当下发的思考档位（无合法档位信息时返回 null）。实现在 ModelConfigRepository。 */
+    private fun pickReasoningLevel(providerId: String, modelId: String): String? = modelRepo.pickReasoningLevel(providerId, modelId)
 
     /** 向上拉一页更早历史（会话页滚到顶部时触发）。 */
     fun loadEarlier() {
@@ -1841,30 +1385,6 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
     companion object {
         private const val TAG = "AppViewModel"
 
-        /**
-         * 上传回调的会话归属判定（A-1）。仅当发起上传时的会话仍是当前打开的会话时才允许
-         * 回写 VM 状态；任一侧为空（未订阅 / 已断开）一律判「不属于」并丢弃回调。
-         */
-        internal fun uploadBelongsTo(originSession: String?, currentSession: String?): Boolean =
-            originSession != null && originSession == currentSession
-
-        /**
-         * C-1：上传 id 的复用判定（纯函数，参数化以避免测试依赖 android.net.Uri）。
-         * 名字与大小都相同视为同一附件 → 复用原 id 命中服务端幂等（已 committed 直接返回 ref）；
-         * 换了文件必须换新 id，否则服务端会把旧文件内容当作新文件提交（数据正确性）。
-         * previous* 传 null 表示没有可复用的失败态。
-         */
-        internal fun uploadIdForAttempt(
-            previousFileName: String?,
-            previousSize: Long,
-            previousUploadId: String?,
-            fileName: String,
-            size: Long,
-            freshId: String,
-        ): String =
-            if (previousFileName != null && previousUploadId != null &&
-                previousFileName == fileName && previousSize == size
-            ) previousUploadId else freshId
 
         /**
          * 服务端回显到达时的 pending 匹配移除（C-6 纯函数）：按文本 trim 相等匹配，
@@ -1907,39 +1427,5 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         /** 握手自动重订次数上限（A-2）：1 次。再失败即交回用户手动重试。 */
         private const val MAX_HANDSHAKE_RETRIES = 1
 
-        /**
-         * 语义化版本比较（检查更新用，2026-10-05 修）：原实现用字符串不等判断——
-         * 远端旧版本（0.4.0 < 0.5.0-beta5）会误报"有新版本"。规则按 semver 直觉：
-         * 数字段逐位比较；核心版本相等时，remote 无 prerelease 且 current 有 → newer；
-         * prerelease 之间按「字母前缀 + 数字」比较（beta10 > beta9，字典序会错）。
-         */
-        internal fun isNewerVersion(current: String, remote: String): Boolean {
-            fun coreOf(v: String): List<Int> =
-                v.substringBefore('-').split('.').map { it.filter { c -> c.isDigit() }.toIntOrNull() ?: 0 }
-            fun preOf(v: String): String = v.substringAfter('-', "")
-            fun preKey(p: String): Pair<String, Int> {
-                val digits = p.takeLastWhile { it.isDigit() }
-                return p.dropLast(digits.length) to (digits.toIntOrNull() ?: 0)
-            }
-            val cCore = coreOf(current)
-            val rCore = coreOf(remote)
-            for (i in 0 until maxOf(cCore.size, rCore.size)) {
-                val c = cCore.getOrElse(i) { 0 }
-                val r = rCore.getOrElse(i) { 0 }
-                if (r != c) return r > c
-            }
-            val cPre = preOf(current)
-            val rPre = preOf(remote)
-            return when {
-                rPre.isEmpty() && cPre.isNotEmpty() -> true   // 同核心版本，remote 是正式版、current 是预发布
-                rPre.isNotEmpty() && cPre.isEmpty() -> false
-                rPre.isNotEmpty() && cPre.isNotEmpty() -> {
-                    val rk = preKey(rPre)
-                    val ck = preKey(cPre)
-                    if (rk.first != ck.first) rk.first > ck.first else rk.second > ck.second
-                }
-                else -> false
-            }
-        }
     }
 }

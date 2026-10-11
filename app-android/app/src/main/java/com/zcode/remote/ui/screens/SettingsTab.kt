@@ -33,6 +33,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.zcode.remote.AppViewModel
+import com.zcode.remote.repo.UpdateRepository
 import com.zcode.remote.BuildConfig
 import com.zcode.remote.relay.FailureReason
 import com.zcode.remote.relay.RelayState
@@ -56,7 +57,7 @@ fun SettingsTab(
     endpointMode: String,
     customRelayUrl: String,
     themeMode: String,
-    updateState: AppViewModel.UpdateState,
+    updateState: UpdateRepository.UpdateState,
     githubToken: String,
     onSwitchDevice: (String) -> Unit,
     onRemoveDevice: (String) -> Unit,
@@ -397,11 +398,11 @@ fun SettingsTab(
                             }
                             Button(
                                 onClick = onCheckUpdate,
-                                enabled = updateState !is AppViewModel.UpdateState.Checking,
+                                enabled = updateState !is UpdateRepository.UpdateState.Checking,
                                 contentPadding = PaddingValues(horizontal = 14.dp, vertical = 0.dp),
                                 modifier = Modifier.height(34.dp)
                             ) {
-                                if (updateState is AppViewModel.UpdateState.Checking) {
+                                if (updateState is UpdateRepository.UpdateState.Checking) {
                                     CircularProgressIndicator(
                                         modifier = Modifier.size(14.dp),
                                         strokeWidth = 2.dp,
@@ -417,7 +418,7 @@ fun SettingsTab(
 
                         // 更新状态展示
                         when (updateState) {
-                            is AppViewModel.UpdateState.Success -> {
+                            is UpdateRepository.UpdateState.Success -> {
                                 val info = updateState.info
                                 if (info.hasNew) {
                                     Surface(
@@ -463,7 +464,7 @@ fun SettingsTab(
                                     )
                                 }
                             }
-                            is AppViewModel.UpdateState.Error -> {
+                            is UpdateRepository.UpdateState.Error -> {
                                 Text(
                                     text = "检查失败: ${updateState.message}",
                                     style = MaterialTheme.typography.bodySmall,

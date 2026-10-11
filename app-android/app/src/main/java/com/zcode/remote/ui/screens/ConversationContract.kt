@@ -2,6 +2,7 @@ package com.zcode.remote.ui.screens
 
 import android.net.Uri
 import com.zcode.remote.AppViewModel
+import com.zcode.remote.repo.AttachmentUploader
 import com.zcode.remote.relay.ApprovalOption
 import com.zcode.remote.relay.ConversationChannel
 import com.zcode.remote.relay.ConversationRow
@@ -40,7 +41,7 @@ data class ConversationUiState(
     val attachUploadName: String? = null,
     val attachUploadPercent: Int = 0,
     /** C-1：上传失败态（UI 显示重试/取消）；重试复用原 uploadId，已传分片不重来。 */
-    val attachFailed: AppViewModel.FailedUpload? = null,
+    val attachFailed: AttachmentUploader.FailedUpload? = null,
     val availableModels: List<WorkspaceConfigChannel.ModelOption> = emptyList(),
     /** 各模型合法思考档位：key = "providerId/modelId"（会话内切模型时用于二级档位菜单）。 */
     val modelReasoningLevels: Map<String, List<String>> = emptyMap(),
@@ -51,7 +52,7 @@ data class ConversationUiState(
     /** B-1：权威快照是否已落地（含 seq，用于「缓存行数 == 快照行数」时仍能定位最新行）。 */
     val snapshotAligned: ConversationChannel.SnapshotAligned? = null,
     /** B-3：附件上传成/败信号（tick 变化触发一次触觉）。 */
-    val attachmentFeedback: AppViewModel.AttachmentFeedback? = null,
+    val attachmentFeedback: AttachmentUploader.AttachmentFeedback? = null,
 )
 
 /** 会话页全部用户意图（原 21 个 callback + 返回导航）。 */
