@@ -27,6 +27,7 @@ import com.zcode.remote.relay.RelayState
 import com.zcode.remote.relay.SessionsIndexChannel
 import com.zcode.remote.relay.WorkspaceConfigChannel
 import com.zcode.remote.service.ConnectionScope
+import com.zcode.remote.service.RemoteConnectionManager
 import com.zcode.remote.service.ConnectionService
 import com.zcode.remote.widget.PendingWidgetProvider
 import com.zcode.remote.relay.RowStore
@@ -426,6 +427,9 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         ConnectionScope.manuallyDisconnected = false
         // P0-A：前台服务保住进程 —— App 在后台/锁屏时连接与审批通知才可达（招牌功能的性命）
         ConnectionService.start(getApplication())
+        // §11.4 阶段②：重建连接栈前先取消旧 collector —— 否则重连会叠加旧流，
+        // 旧流继续写旧实例（重复订阅 / 重复审批卡 / 重复通知）。
+        RemoteConnectionManager.cancelCollectors()
         client?.close()
         channel?.reset()
         conversation?.reset()
@@ -600,7 +604,11 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
             }
         }
 
-        viewModelScope.launch {
+        // §11.4 阶段②：首条迁入进程级作用域的事件流 —— rpc 事件是会话流 / 会话角标 / 配置
+        // 三通道的唯一入口，此前跑在 viewModelScope：Activity 销毁、VM 被清后这条流一断，
+        // 锁屏审批、离线缓存、会话角标全部停摆（连接对象虽存活、事件却断流）。
+        // 逻辑原样搬迁，仅换作用域；其余流在后续提交逐条迁移（每条独立 commit 可回退）。
+        RemoteConnectionManager.launchCollector {
             ch.events.collect { ev ->
                 // 会话帧优先交给会话层解析；sessions-index 帧交给 E-1 权威角标通道
                 conv.onEvent(ev, rowStore)
@@ -641,10 +649,13 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         viewModelScope.launch { conv.snapshotAligned.collect { snapshotAligned = it } }
         viewModelScope.launch { conv.sessionState.collect { sessionState = it } }
         viewModelScope.launch { conv.earlier.collect { earlier = it } }
-        viewModelScope.launch {
+        // §11.4 阶段②（续）：审批/表单「通知链路」迁入进程级作用域 —— 通知是锁屏可达性的本体，
+        // 必须在 VM 被清后仍能发出。refreshApprovals/refreshElicitations 内部无 viewModelScope
+        // 依赖（getApplication 在 VM 被清后仍可用），故原样换作用域。
+        RemoteConnectionManager.launchCollector {
             conv.interactions.collect { refreshApprovals() }
         }
-        viewModelScope.launch {
+        RemoteConnectionManager.launchCollector {
             conv.elicitations.collect { refreshElicitations() }
         }
         viewModelScope.launch {

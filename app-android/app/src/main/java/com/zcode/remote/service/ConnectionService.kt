@@ -39,6 +39,16 @@ class ConnectionService : Service() {
 
     override fun onBind(intent: Intent?): IBinder? = null
 
+    /**
+     * §11.4：连接栈的统一清理收口。服务无论因「用户断开」还是被系统回收而止，
+     * 都在此关闭连接栈并回收进程级协程作用域 —— 此前连接对象挂在静态字段上，
+     * 服务止后无人回收（泄漏 + 重连时旧 socket 悬挂）。
+     */
+    override fun onDestroy() {
+        RemoteConnectionManager.shutdown()
+        super.onDestroy()
+    }
+
     /** Android 15 前台服务超时兜底（specialUse 正常不触发；触发则主动让位，避免被系统强杀崩溃）。 */
     override fun onTimeout(startId: Int, fgsType: Int) {
         stopSelf()
