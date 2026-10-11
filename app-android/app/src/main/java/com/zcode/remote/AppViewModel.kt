@@ -649,10 +649,13 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         viewModelScope.launch { conv.snapshotAligned.collect { snapshotAligned = it } }
         viewModelScope.launch { conv.sessionState.collect { sessionState = it } }
         viewModelScope.launch { conv.earlier.collect { earlier = it } }
-        viewModelScope.launch {
+        // §11.4 阶段②（续）：审批/表单「通知链路」迁入进程级作用域 —— 通知是锁屏可达性的本体，
+        // 必须在 VM 被清后仍能发出。refreshApprovals/refreshElicitations 内部无 viewModelScope
+        // 依赖（getApplication 在 VM 被清后仍可用），故原样换作用域。
+        RemoteConnectionManager.launchCollector {
             conv.interactions.collect { refreshApprovals() }
         }
-        viewModelScope.launch {
+        RemoteConnectionManager.launchCollector {
             conv.elicitations.collect { refreshElicitations() }
         }
         viewModelScope.launch {

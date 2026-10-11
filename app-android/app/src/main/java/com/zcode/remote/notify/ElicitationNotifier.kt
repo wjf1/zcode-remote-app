@@ -39,7 +39,12 @@ class ElicitationReceiver : BroadcastReceiver() {
             ACTION_REPLY_TEXT -> {
                 val results = android.app.RemoteInput.getResultsFromIntent(intent)
                 val text = results?.getCharSequence(KEY_TEXT_REPLY)?.toString()?.trim()
-                if (text.isNullOrBlank()) null else """{"freeText":${ElicitationNotifier.quote(text)}}"""
+                // 服务端 resolveInteraction.answer 的 action 为必填枚举 accept|decline|cancel：
+                // 此前只发 {"freeText":…}，通知栏内联回复必报 invalid_value @ answer.action
+                //（真机 2026-10-11 锁屏存活测试实测复现）。补 action=accept，与
+                // AppViewModel.answerElicitationFreeText 同源同修。
+                if (text.isNullOrBlank()) null
+                else """{"action":"accept","freeText":${ElicitationNotifier.quote(text)}}"""
             }
             else -> intent.getStringExtra(EXTRA_ANSWER)
         }
