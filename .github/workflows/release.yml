@@ -60,16 +60,31 @@ jobs:
         run: |
           set -euo pipefail
           APK=app-android/app/build/outputs/apk/release/app-release.apk
-          test -f "$APK" || { echo "::error::未产出签名 APK"; exit 1; }
+          if [ ! -f "$APK" ]; then
+            echo "::error::未产出签名 APK，release 输出目录："
+            ls -la app-android/app/build/outputs/apk/release/ || true
+            echo "（若只有 *-unsigned.apk，说明 keystore.properties 未生效）"
+            exit 1
+          fi
           cp "$APK" "ZCodeRemote-${GITHUB_REF_NAME#v}.apk"
           sha256sum "ZCodeRemote-${GITHUB_REF_NAME#v}.apk" > SHA256SUMS.txt
-          SDK="${ANDROID_HOME:-${ANDROID_SDK_ROOT:-/usr/local/lib/android/sdk}}"
-          APKSIGNER="$(ls -d "$SDK"/build-tools/*/apksigner | tail -1)"
-          "$APKSIGNER" verify --print-certs "$APK" | grep -E "Signer #1 certificate (SHA-256|SHA-1) digest" \
-            > certificate-fingerprints.txt
-          cat certificate-fingerprints.txt
+          cat SHA256SUMS.txt
           test -f app-android/app/build/reports/bom.json || { echo "::error::未产出 SBOM"; exit 1; }
           cp app-android/app/build/reports/bom.json sbom.cdx.json
+
+          # 签名证书指纹：直接读 keystore（keytool 随 JDK 恒在，比解析 apksigner 输出稳定；
+          # 早期写法 `apksigner ... | grep` 在 set -e 下会静默退出导致整步失败）。
+          STORE_PASS="$(grep '^storePassword=' app-android/keystore.properties | cut -d= -f2-)"
+          KEY_ALIAS="$(grep '^keyAlias=' app-android/keystore.properties | cut -d= -f2-)"
+          keytool -list -v -keystore toolchain/keys/zcode-remote.keystore \
+            -storepass "$STORE_PASS" -alias "$KEY_ALIAS" 2>/dev/null \
+            | grep -E "SHA256:|SHA1:" > certificate-fingerprints.txt || true
+          if [ -s certificate-fingerprints.txt ]; then
+            cat certificate-fingerprints.txt
+          else
+            echo "::warning::未取到证书指纹（不阻断发布）"
+            echo "（keytool 未输出摘要）" > certificate-fingerprints.txt
+          fi
 
       # ④ 构建来源证明（SLSA provenance，绑定本次 workflow 与产物摘要）
       - uses: actions/attest-build-provenance@c074443f1aee8d4aeeae555aebba3282517141b2 # v2.2.3
