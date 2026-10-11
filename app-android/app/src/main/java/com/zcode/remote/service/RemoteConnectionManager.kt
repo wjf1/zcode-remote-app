@@ -7,8 +7,10 @@ import com.zcode.remote.relay.SessionsIndexChannel
 import com.zcode.remote.relay.WorkspaceConfigChannel
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
+import kotlinx.coroutines.launch
 
 /**
  * 进程级连接管理器（任务书 §11.4 阶段①「旁路」落地）。
@@ -43,6 +45,23 @@ object RemoteConnectionManager {
     var manuallyDisconnected: Boolean = false
 
     val isAlive: Boolean get() = client != null
+
+    // ---- §11.4 阶段②：单事件流迁移的落位基础设施 ----
+    private val collectorJobs = mutableListOf<Job>()
+
+    /**
+     * 在进程级作用域里启动一条事件流 collector。
+     * connect() 重建连接栈前经 [cancelCollectors] 统一取消 —— 否则每次重连都会
+     * 叠加一条旧流，旧流继续写旧实例（重复订阅/重复通知）。
+     */
+    fun launchCollector(block: suspend CoroutineScope.() -> Unit): Job =
+        scope.launch(block = block).also { collectorJobs += it }
+
+    /** 取消当前全部 collector（connect() 重建连接栈前调用）。 */
+    fun cancelCollectors() {
+        collectorJobs.forEach { it.cancel() }
+        collectorJobs.clear()
+    }
 
     /**
      * 统一清理（§11.4：onDestroy 收口）。关闭连接栈并回收进程级协程作用域；
