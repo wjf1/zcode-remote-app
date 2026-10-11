@@ -2,8 +2,8 @@
 
 > ## ✅ 当前项目状态（2026-10-10，权威覆盖层）
 >
-> - **当前主干**：`master`；构建配置 `versionName=0.5.0-beta25`、`versionCode=37`。
-> - **§11.4 阶段①②已落地并真机验证（2026-10-11）**：进程级 RemoteConnectionManager + 通知链路迁移；**锁屏存活金标准通过**（UI 销毁后通知弹出、手机通知上作答直达桌面端）。阶段③（编排整体迁入）待做。
+> - **当前主干**：`master`；构建配置 `versionName=0.5.0-beta26`、`versionCode=38`。
+> - **§11.4 已完结（2026-10-11，阶段①②③）**：进程级 RemoteConnectionManager + 全部连接韧性流/重试调度器迁入进程级作用域；**锁屏存活金标准通过**（UI 销毁后通知弹出、手机通知上作答直达桌面端）。纯代码组织的「编排整体搬迁」列入后续清理（不影响行为）。
 > - **最新发布**：tag/Release `v0.5.0-beta23`（C-14 修复 + 安全止血 + CI 门禁）。**发布治理已修正**：`v0.5.0-beta19..beta22` 的 Release 此前被 GitHub 标为非 prerelease，已统一改为 `prerelease=true`。
 > - **验证基线**：JVM 单测 **194/194**；`lintDebug`+`lintRelease` 0 error；`assembleRelease` 通过；仪器化 `ConversationTopBarLayoutTest` 在模拟器 PASS（负向对照去修复 FAIL 554.29dp）。
 > - **本轮已关闭的 P0**：① **C-14 会话页顶栏布局错乱**——根因＝顶栏标题列被四胶囊压到 ~20dp、元数据 `Text` 缺 `maxLines` 兜底而零宽换行成 20+ 行撑高整行；已加 `maxLines=1` 修复 + 仪器化断言。② **传输与日志安全止血**——Release 仅 `wss://`、明文关闭、日志脱敏、debug 组件令牌门、Release 产物断言。

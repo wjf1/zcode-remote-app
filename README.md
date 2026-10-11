@@ -125,7 +125,7 @@ ZCode 官方远程控制（`zcode.z.ai/remote`）的**原生安卓增强客户�
 ### 安装包 / Releases
 
 签名 APK 从 [GitHub Releases](https://github.com/wjf1/zcode-remote-app/releases) 下载
-（最新 `ZCodeRemote-0.5.0-beta24.apk`，minSdk 31，Android 12+）。
+（最新 `ZCodeRemote-0.5.0-beta26.apk`，minSdk 31，Android 12+）。
 
 > ⚠️ **签名归一提示（2026-10-11）**：历史发布签名（`e1571a49…`）的私钥**已不可得**，自 `v0.5.0-beta24` 起以**本机 keystore 为唯一官方签名**：
 > `toolchain/keys/zcode-remote.keystore`，SHA-256 `1d46e9e8…:BE55`（完整指纹见 CHANGELOG）。
