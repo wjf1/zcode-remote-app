@@ -49,6 +49,7 @@ import com.zcode.remote.storage.SessionCacheStore
 import com.zcode.remote.repo.ApprovalRepository
 import com.zcode.remote.repo.AttachmentUploader
 import com.zcode.remote.repo.ModelConfigRepository
+import com.zcode.remote.repo.NotificationCoordinator
 import com.zcode.remote.repo.UpdateRepository
 import com.zcode.remote.storage.SettingsStore
 import kotlinx.coroutines.launch
@@ -96,6 +97,16 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         firstSessionWorkspace = { sessions.firstOrNull()?.workspacePath },
         flash = { msg, failure -> if (failure) flash(msg, FlashKind.Failure) else flash(msg) },
         onPendingChanged = { recomputeSessionPending() },
+    )
+
+    private val notifyCoordinator: NotificationCoordinator = NotificationCoordinator(
+        app,
+        client = { client },
+        sessionsIndex = { sessionsIndex },
+        relayState = { relayState },
+        activeWorkspaceKey = { activeWorkspaceKey },
+        subscribedSessionId = { subscribedSessionId },
+        approvalsRepo = approvalRepo,
     )
 
     /** 活跃设备（当前连接的这台）。 */
@@ -231,16 +242,16 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
     private fun resolveElicitationById(interactionId: String, answerJson: String): Boolean =
         approvalRepo.resolveElicitationById(interactionId, answerJson)
 
-    // ---- 多会话看板（P1-2）----
-    /**
-     * 每个会话的待处理条数（taskId → 审批 + 表单）。来源＝任务事件流（覆盖所有会话，
-     * 不限于当前订阅的那个），订阅中的会话以会话流数据优先（更实时）。
-     */
-    var sessionPending by mutableStateOf<Map<String, Int>>(emptyMap())
-        private set
+    // ---- 多会话看板 / Widget / 视图上报（§11.7 拆分：实现在 repo/NotificationCoordinator，此处转发）----
+    /** 每个会话的待处理条数（taskId → 审批 + 表单）。 */
+    val sessionPending: Map<String, Int> get() = notifyCoordinator.sessionPending
     /** 桌面端当前活动会话（workspace-list 的 activeTaskId，用于「PC 正在看哪个」提示）。 */
-    var desktopActiveTaskId by mutableStateOf<String?>(null)
-        private set
+    val desktopActiveTaskId: String? get() = notifyCoordinator.desktopActiveTaskId
+    private fun recomputeSessionPending() = notifyCoordinator.recomputeSessionPending()
+    private fun syncWidget(pendingTotal: Int = notifyCoordinator.sessionPending.values.sum()) =
+        notifyCoordinator.syncWidget(pendingTotal)
+    private fun reportViewState() = notifyCoordinator.reportViewState()
+    private fun terminalTitle(reason: FailureReason): String = NotificationCoordinator.terminalTitle(reason)
 
     /** 首页会话搜索关键字（P2-3：按标题/工作区过滤，忽略大小写）。 */
     var sessionQuery by mutableStateOf("")
@@ -622,52 +633,6 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
 
 
 
-    /**
-     * 多会话看板（P1-2 / E-1）：汇总每个会话的待处理条数。
-     * 权威来源＝sessions-index 订阅（服务端 pendingInteractionSummary，覆盖全部会话、消解即清零）；
-     * 事件流推导作为回退（仅补权威索引里没有的会话，如订阅失败/未就绪）；
-     * 当前订阅会话以会话流明细数覆盖（最实时、含会话帧路径条目），明细为 0 时仍信权威。
-     */
-    private fun recomputeSessionPending() {
-        val counts = HashMap<String, Int>()
-        val authoritative = sessionsIndex?.summaries?.value ?: emptyMap()
-        if (authoritative.isNotEmpty()) {
-            authoritative.forEach { (sid, s) -> if (s.total > 0) counts[sid] = s.total }
-            approvalRepo.taskApprovals.values.forEach { a ->
-                a.sessionId?.let { sid -> if (sid !in authoritative) counts[sid] = (counts[sid] ?: 0) + 1 }
-            }
-            approvalRepo.taskElicitations.values.forEach { e ->
-                e.sessionId?.let { sid -> if (sid !in authoritative) counts[sid] = (counts[sid] ?: 0) + 1 }
-            }
-        } else {
-            approvalRepo.taskApprovals.values.forEach { a -> a.sessionId?.let { counts[it] = (counts[it] ?: 0) + 1 } }
-            approvalRepo.taskElicitations.values.forEach { e -> e.sessionId?.let { counts[it] = (counts[it] ?: 0) + 1 } }
-        }
-        subscribedSessionId?.let { sid ->
-            val n = approvalRepo.approvals.size + approvalRepo.elicitations.size
-            when {
-                n > 0 -> counts[sid] = n
-                (authoritative[sid]?.total ?: 0) <= 0 -> counts.remove(sid)
-            }
-        }
-        if (counts != sessionPending) sessionPending = counts
-        syncWidget(counts.values.sum())
-    }
-
-    /** 桌面 Widget（P2-3）状态推送：计数或连接变化都走这里。 */
-    private fun syncWidget(pendingTotal: Int = sessionPending.values.sum()) {
-        val connected = relayState is RelayState.Paired
-        runCatching { PendingWidgetProvider.sync(getApplication(), pendingTotal, connected) }
-            .onFailure { ZLog.w(TAG, "widget 同步失败", it) }
-    }
-
-    /** 上报手机端视图状态（P1-2）：PC 据此在界面上指出"手机正在看这个会话"。 */
-    private fun reportViewState() {
-        val c = client ?: return
-        val payload = BridgeFrames.mobileViewStateUpdate(activeWorkspaceKey, subscribedSessionId)
-        c.sendPayload(payload)
-        ZLog.i(TAG, "view-state → ws=${LogRedactor.pathLabel(activeWorkspaceKey)} task=${LogRedactor.maskId(subscribedSessionId)}")
-    }
 
 
     // ---- 发送消息 / 停止（P0-1）----
@@ -1114,7 +1079,7 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         runCatching { ApprovalNotifier.clearAll(getApplication()) }
         runCatching { ElicitationNotifier.clearAll(getApplication()) }
         approvalRepo.clearAll()
-        sessionPending = emptyMap()
+        notifyCoordinator.clearPending()
         syncWidget(0)
         clearAttachments()
         promptDraft = ""
@@ -1134,14 +1099,6 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         subscribedSession = null
     }
 
-    /** 连接终态通知的短标题（Sprint 2 / A 组）。 */
-    private fun terminalTitle(reason: FailureReason): String = when (reason) {
-        FailureReason.KICKED -> "控制权已在别处接管"
-        FailureReason.AUTH_FAILED -> "配对已失效，请重新扫码"
-        FailureReason.PROTOCOL_MISMATCH -> "中继协议可能已升级"
-        FailureReason.INVALID_ENDPOINT -> "中继地址不安全，已拒绝连接"
-        else -> "连接已终止"
-    }
 
     // ---- 执行模式（P0-B）----
 
