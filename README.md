@@ -28,6 +28,7 @@ ZCode 官方远程控制（`zcode.z.ai/remote`）的**原生安卓增强客户�
 └──────────────────┘              └──────────────────┘              └──────────────────┘
 ```
 
+- **C-12 大文件拆分（§11.7，v0.5.0-beta29）**：会话页由 2210 行收敛至 494 行，按任务书槽位图拆为 Timeline / TopBar / PendingCards / AttachmentTray / Composer / Dialogs 六个组件文件，并以 **`ConversationUiState` + `ConversationAction`** 契约替代 46 个散落参数（`ConversationContract.kt`，MainActivity 单向装配）；`AppViewModel` 1945 → 1428 行，更新 / 附件上传 / 模型目录三职责域抽为 `repo/` 包独立类（转发层保持 UI 调用签名零变化）。纯代码组织、行为不变，201 项单测 + 真机冒烟全通过。
 - **现代化 3-Tab 移动端架构**：彻底告别单页混乱堆叠，采用「会话工作台 / 待办审批 / 设置中心」标准底部导航架构；全面接入系统级物理返回键拦截（`BackHandler`），杜绝手势误杀退出的问题。
 - **深度对标官方 ZCode 工业级设计**：
   - 全量接入官方 `theme-zai-dark`（`#161616`）与 `theme-zai-light`（`#F8F8FA`）色彩体系，搭配官方 15% 微边框（Hairline Border）；
@@ -125,7 +126,7 @@ ZCode 官方远程控制（`zcode.z.ai/remote`）的**原生安卓增强客户�
 ### 安装包 / Releases
 
 签名 APK 从 [GitHub Releases](https://github.com/wjf1/zcode-remote-app/releases) 下载
-（最新 `ZCodeRemote-0.5.0-beta28.apk`，minSdk 31，Android 12+）。
+（最新 `ZCodeRemote-0.5.0-beta29.apk`，minSdk 31，Android 12+）。
 
 > ⚠️ **签名归一提示（2026-10-11）**：历史发布签名（`e1571a49…`）的私钥**已不可得**，自 `v0.5.0-beta24` 起以**本机 keystore 为唯一官方签名**：
 > `toolchain/keys/zcode-remote.keystore`，SHA-256 `1d46e9e8…:BE55`（完整指纹见 CHANGELOG）。
@@ -185,6 +186,7 @@ A **native Android client** for the official ZCode Remote Control relay (`zcode.
   - Official `ToolCallCard`: **borderless inline collapsible row** (icon + type label + primary text + chevron), matching the desktop where tool calls are *not* cards; the expanded body splits into Parameters / Result / Error, each capped at 240dp, with collapse state remembered per tool-call id.
 - **Conversation-Page Layout Fully Aligned with Desktop (v0.5.0-beta17)**: the conversation stream was reworked to match the desktop's **component shapes, information hierarchy and numeric conventions** (desktop messages are a single narrow `max-w-4xl` column) — user bubbles switched to a neutral translucent surface (12dp radius, 2dp top-right), assistant bodies dropped their card shell for full-width Markdown, and reasoning / tool / hook rows share one collapsible-row skeleton. Markdown was upgraded to full GFM (tables, task lists, nested lists, links, inline HTML) with real syntax highlighting for code blocks. **Links are restricted to an http/https whitelist and remote images are never loaded.**
 - **Session Status Panel (v0.5.0-beta17)**: a top-bar "Status" entry opens a bottom sheet that **read-only** surfaces session-level state — context usage (ratio bar, per-category breakdown, cache hit rate shown only at ≥78%), goal (status, ticking elapsed time, budget), plan (todos, folded to 6 by default), terminal (background works), agents (running / ended) and queued input; sections with no data hide themselves. A read-only "N queued" strip appears above the composer while `queue.items` is non-empty.
+- **C-12 Structural Split (§11.7, v0.5.0-beta29)**: the conversation screen shrank from 2210 to 494 lines, decomposed into six slot files per the task-book layout (Timeline / TopBar / PendingCards / AttachmentTray / Composer / Dialogs), with a **`ConversationUiState` + `ConversationAction`** contract replacing 46 scattered parameters (`ConversationContract.kt`, assembled one-way by MainActivity); `AppViewModel` shrank from 1945 to 1428 lines as the update / attachment-upload / model-catalog domains moved into standalone `repo/` classes (forwarding layer keeps every UI call signature unchanged). Pure code reorganization, zero behavior change; 201 unit tests + on-device smoke tests all green.
 - **Create New Sessions from Mobile**: One-tap "+ New Session" on the workbench header powered by the official V4 envelope command (`sendConversationCommandV4(type: "createSession", sessionId: null)`), with text or speech recognition input.
 - **Centralized Approvals Inbox**: Dedicated tab with live Badge counter for pending permissions and form interactions (`AskUserQuestion`, plan approvals) with desktop auto-resolution countdown.
 - **Lock-screen Notifications (Key Differentiator)**: Approve/deny directly from system notifications without unlocking the screen.

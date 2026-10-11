@@ -1,5 +1,33 @@
 # 变更记录 / Changelog
 
+## v0.5.0-beta29（2026-10-11）· C-12 大文件拆分（§11.7）：会话页槽位化 + UiState/Action 契约 + 三域 repository
+
+### 拆分（纯代码组织，行为不变、不加功能）
+- **ConversationScreen 2210 → 494 行**（目标 300–500 达成），按任务书槽位图拆出 7 个文件：
+  - `ConversationTimeline.kt`：行渲染器群（RowItem 分发 + UserBubble/PendingUserBubble/AssistantText/ReasoningBlock/ToolCallRow/TurnHeaderRow/SubagentRow/TimelineMarkerRow/HookInvocationRow/PlainRow）+ 消息流容器（LazyColumn + 悬浮「回到底部」胶囊）。
+  - `ConversationTopBar.kt`：顶栏整体（返回/标题元数据/A-2 重试胶囊/溢出菜单/模型两级菜单/ModeChip/statusLabel/phaseLabel）；弹窗开关转 `onOpenFiles`/`onOpenStatus` 回调。
+  - `ConversationPendingCards.kt`：ApprovalCard + ElicitationCard。
+  - `ConversationAttachmentTray.kt`：inspectAttachment + AttachmentBar + humanBytes。
+  - `ConversationComposer.kt`：ActionChipsBar + InputBar。
+  - `ConversationDialogs.kt`：SessionFilesPanel。
+  - `ConversationContract.kt`：**`ConversationUiState`（25 数据字段）+ `ConversationAction`（22 回调）** 替代原 46 个散落参数；主入口以 `with(ui)/with(actions)` 解构，函数体逐行不变；MainActivity 单向装配。
+- **AppViewModel 1945 → 1428 行**，最自包含三域抽为 `repo/` 包（ViewModel 保留同名转发属性/方法，UI 调用签名零变化）：
+  - `UpdateRepository`：检查更新 + `isNewerVersion` 语义比较（原样迁出）。
+  - `AttachmentUploader`：上传全链路（C-1 取消/重试、A-1 会话归属、`uploadBelongsTo`/`uploadIdForAttempt` 纯函数原样迁出）；连接栈经 getter 注入。
+  - `ModelConfigRepository`：模型目录三路探测 + 思考档位注册表 + 会话内切模型；执行模式回写经 `onWorkspaceMode` 回调。
+- 嵌套类型引用随迁：SettingsTab → `UpdateRepository.UpdateState`（5 处）；Contract/AttachmentTray → `AttachmentUploader.FailedUpload/AttachmentFeedback`；单测引用随纯函数迁移（AppViewModelTest 4 处、PureFunctionsTest 14 处），**用例数不变**。
+
+### 修复
+- **TimelineArea 恢复 `weight(1f)`**：拆分④把 else 分支 Box 换成独立组件时丢了布局权重，LazyColumn `fillMaxSize` 无界把附件条/快捷胶囊/输入栏挤出屏幕（JVM 单测不渲染布局未覆盖；真机冒烟截图实证后修复，复验逐像素恢复）。
+
+### 验证
+- 单测 **201/201**（`check_test_count.py` 核对声明 = 实际执行）；`lintDebug`/`lintRelease` 0 error；`assembleDebug`/`assembleRelease` 通过。
+- 真机（2410DPN6CC，WiFi adb，release 包同签名覆盖装机）：启动连接就绪（71 会话）、顶栏单行（C-14 阴影回归无复发）、时间线全行型渲染（思考/终端/子智能体/Markdown）、快捷胶囊 + 输入栏（停止态）、模型两级菜单数据完整、溢出菜单 → 会话状态面板（上下文 48k/1M、缓存命中 79.8%）、检查更新链路无异常、logcat FATAL=0。
+
+### §11.7 后续轮次（本轮不做，已具门槛）
+- AppViewModel 剩余域：审批/表单 Repository、Session/会话流 Repository、`connect()` 编排迁 ConnectionCoordinator（与 A-4/§11.4 刚稳定的连接路径纠缠，需独立灰度）。
+- 死参数 `onSwitchModelCustom` 清理（历史遗留无调用点，已在 Contract 注明）。
+
 ## v0.5.0-beta28（2026-10-11）· 缓存治理（§11.6）：C-9 凭据入 Keystore + 缓存 TTL/上限/串行化
 
 ### 安全（C-9）

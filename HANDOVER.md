@@ -2,8 +2,9 @@
 
 > ## ✅ 当前项目状态（2026-10-10，权威覆盖层）
 >
-> - **当前主干**：`master`；构建配置 `versionName=0.5.0-beta28`、`versionCode=40`。
+> - **当前主干**：`master`；构建配置 `versionName=0.5.0-beta29`、`versionCode=41`。
 > - **A-4 已完结（2026-10-11）**：缺口触发重订阅 + SUSPEND 单泵，真机回归通过（缺口 0 条、流式正常）。
+> - **C-12 大文件拆分（§11.7）阶段成果（2026-10-11，分支 refactor/split-viewmodel 六个提交 + weight 回归修复，已 merge）**：`ConversationScreen` 2210 → 494 行（Timeline/TopBar/PendingCards/AttachmentTray/Composer/Dialogs 六槽位 + `ConversationUiState/Action` 契约）；`AppViewModel` 1945 → 1428 行（UpdateRepository / AttachmentUploader / ModelConfigRepository 三域入 `repo/`，VM 保留转发层）。201 项单测全绿、lint 0 error、真机（2410DPN6CC，WiFi adb）冒烟通过——**真机抓到并修复一例布局回归**（TimelineArea 丢 `weight(1f)` 把输入栏挤出屏幕，详见 CHANGELOG beta29）。**剩余**：审批/表单 Repository、Session/会话流 Repository、`connect()` 编排迁 ConnectionCoordinator（与连接韧性路径纠缠，须独立灰度）；死参数 `onSwitchModelCustom` 清理。
 > - **缓存治理（§11.6）已完结（2026-10-11）**：C-9 Token 入 Keystore（TokenStore，复用 CredentialCrypto）+ 缓存 TTL 7 天/读侧行数上限/单文件 2MiB/写串行化/删设备清缓存；单测 201/201。
 > - **§11.4 已完结（2026-10-11，阶段①②③）**：进程级 RemoteConnectionManager + 全部连接韧性流/重试调度器迁入进程级作用域；**锁屏存活金标准通过**（UI 销毁后通知弹出、手机通知上作答直达桌面端）。纯代码组织的「编排整体搬迁」列入后续清理（不影响行为）。
 > - **最新发布**：tag/Release `v0.5.0-beta23`（C-14 修复 + 安全止血 + CI 门禁）。**发布治理已修正**：`v0.5.0-beta19..beta22` 的 Release 此前被 GitHub 标为非 prerelease，已统一改为 `prerelease=true`。
@@ -14,7 +15,7 @@
 > - **观察期决策**：P0-2“三天观察期”已于 2026-10-10 取消，不再构成发布门禁；旧记录仅保留作历史证据。
 > - **真机复验（2026-10-10）**：C-14 已在小米 2410DPN6CC / HyperOS 真机（release beta23）复验通过——uiautomator 实测顶栏由 y≈520/行高≈855px 回到 y=161–251/单行，标题与元数据恢复可见（证据 `docs/screenshots/conv-layout-fixed-phone.png`）。卸载重装（跨签名）后配对凭据保留、无需重扫码。
 > - **签名决策（2026-10-11）**：历史发布密钥 `e1571a49…` 不可得 → **以本机 keystore（`toolchain/keys/zcode-remote.keystore`，SHA-256 `1d46e9e8…`）为唯一官方签名**；历史设备升级需卸载一次，此后可覆盖升级；**必须备份该 keystore 与口令**。
-> - **待办（下一轮入口）**：**C-12 大文件拆分**——`AppViewModel` 约 1900 行 / `ConversationScreen` 约 2200 行，目标收敛到 400–600 / 300–500 行，引入 `ConversationUiState/Action`；前置门已满足（§11.4 / A-4 / 缓存治理均稳定且回归网 201 项），**建议新会话承接**：先读本文件与《体验提升任务书 v2》§11.7，立 `refactor/split-viewmodel` 分支小步拆（每步跑 201 项单测 + WiFi adb 真机回归）。
+> - **待办（下一轮入口）**：**§11.7 剩余拆分**（审批/表单 Repository、Session/会话流 Repository、`connect()` 编排迁 ConnectionCoordinator——与 A-4/§11.4 刚稳定的连接韧性路径纠缠，小步 + 每步 201 项单测 + WiFi adb 真机回归 + 独立灰度）；预期 `AppViewModel` 再收敛至 400–600 行区间。本轮分支 `refactor/split-viewmodel` 已合入并发布 beta29，可沿用同一模式继续。
 > - **表单应答（invalid_value）已修**：两处 freeText 同源缺陷清零；锁屏存活金标准（通知→RemoteInput→resolveInteraction→桌面）真机通过。
 >
 > 以下 beta13～beta21 状态块为**历史交付档案**，其中“当前版本”“最近发布”“唯一剩余项”等口径已由上方权威覆盖层取代；保留内容仅用于追溯实测、签名迁移和故障诊断证据。
