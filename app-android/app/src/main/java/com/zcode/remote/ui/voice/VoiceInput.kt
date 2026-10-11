@@ -15,8 +15,8 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Mic
 import androidx.compose.material3.Icon
 import androidx.compose.material3.LocalContentColor
-import androidx.compose.material3.TextButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.getValue
@@ -54,62 +54,84 @@ fun VoiceInputButton(
         onDispose { recognizer.destroy() }
     }
 
-    fun report(listeningNow: Boolean, live: String?) {
+    fun report(
+        listeningNow: Boolean,
+        live: String?,
+    ) {
         listening = listeningNow
         onStateChange(listeningNow, live)
     }
 
     fun start() {
-        val intent = Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH).apply {
-            putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL,
-                RecognizerIntent.LANGUAGE_MODEL_FREE_FORM)
-            putExtra(RecognizerIntent.EXTRA_PARTIAL_RESULTS, true)
-        }
+        val intent =
+            Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH).apply {
+                putExtra(
+                    RecognizerIntent.EXTRA_LANGUAGE_MODEL,
+                    RecognizerIntent.LANGUAGE_MODEL_FREE_FORM,
+                )
+                putExtra(RecognizerIntent.EXTRA_PARTIAL_RESULTS, true)
+            }
         report(true, null)
         recognizer.startListening(intent)
     }
 
-    recognizer.setRecognitionListener(object : RecognitionListener {
-        override fun onReadyForSpeech(params: Bundle?) {}
-        override fun onBeginningOfSpeech() {}
-        override fun onRmsChanged(rmsdB: Float) {}
-        override fun onBufferReceived(buffer: ByteArray?) {}
-        override fun onEndOfSpeech() {}
-        override fun onEvent(eventType: Int, params: Bundle?) {}
+    recognizer.setRecognitionListener(
+        object : RecognitionListener {
+            override fun onReadyForSpeech(params: Bundle?) {}
 
-        override fun onPartialResults(partialResults: Bundle?) {
-            val text = partialResults
-                ?.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION)
-                ?.firstOrNull() ?: return
-            report(true, text)
+            override fun onBeginningOfSpeech() {}
+
+            override fun onRmsChanged(rmsdB: Float) {}
+
+            override fun onBufferReceived(buffer: ByteArray?) {}
+
+            override fun onEndOfSpeech() {}
+
+            override fun onEvent(
+                eventType: Int,
+                params: Bundle?,
+            ) {}
+
+            override fun onPartialResults(partialResults: Bundle?) {
+                val text =
+                    partialResults
+                        ?.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION)
+                        ?.firstOrNull() ?: return
+                report(true, text)
+            }
+
+            override fun onResults(results: Bundle?) {
+                val text =
+                    results
+                        ?.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION)
+                        ?.firstOrNull()
+                report(false, null)
+                if (!text.isNullOrBlank()) onFinalText(text.trim())
+            }
+
+            override fun onError(error: Int) {
+                report(false, null)
+                onStateChange(false, errorText(error))
+            }
+        },
+    )
+
+    val permLauncher =
+        rememberLauncherForActivityResult(
+            ActivityResultContracts.RequestPermission(),
+        ) { granted ->
+            hasPermission = granted
+            if (granted) {
+                start()
+            } else {
+                onStateChange(false, "⚠️ 需要麦克风权限才能语音输入")
+            }
         }
-
-        override fun onResults(results: Bundle?) {
-            val text = results
-                ?.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION)
-                ?.firstOrNull()
-            report(false, null)
-            if (!text.isNullOrBlank()) onFinalText(text.trim())
-        }
-
-        override fun onError(error: Int) {
-            report(false, null)
-            onStateChange(false, errorText(error))
-        }
-    })
-
-    val permLauncher = rememberLauncherForActivityResult(
-        ActivityResultContracts.RequestPermission()
-    ) { granted ->
-        hasPermission = granted
-        if (granted) start()
-        else onStateChange(false, "⚠️ 需要麦克风权限才能语音输入")
-    }
 
     TextButton(
         onClick = {
             when {
-                listening -> recognizer.stopListening()   // onResults 随后回调收尾
+                listening -> recognizer.stopListening() // onResults 随后回调收尾
                 hasPermission -> start()
                 else -> permLauncher.launch(Manifest.permission.RECORD_AUDIO)
             }
@@ -130,10 +152,12 @@ private fun hasRecordAudio(context: Context): Boolean =
     context.checkSelfPermission(Manifest.permission.RECORD_AUDIO) ==
         PackageManager.PERMISSION_GRANTED
 
-private fun errorText(error: Int): String = "⚠️ " + when (error) {
-    SpeechRecognizer.ERROR_NO_MATCH, SpeechRecognizer.ERROR_SPEECH_TIMEOUT -> "未识别到语音"
-    SpeechRecognizer.ERROR_INSUFFICIENT_PERMISSIONS -> "缺少麦克风权限"
-    SpeechRecognizer.ERROR_NETWORK, SpeechRecognizer.ERROR_NETWORK_TIMEOUT -> "识别服务网络错误"
-    SpeechRecognizer.ERROR_RECOGNIZER_BUSY -> "识别服务忙，稍后再试"
-    else -> "语音识别出错（$error）"
-}
+private fun errorText(error: Int): String =
+    "⚠️ " +
+        when (error) {
+            SpeechRecognizer.ERROR_NO_MATCH, SpeechRecognizer.ERROR_SPEECH_TIMEOUT -> "未识别到语音"
+            SpeechRecognizer.ERROR_INSUFFICIENT_PERMISSIONS -> "缺少麦克风权限"
+            SpeechRecognizer.ERROR_NETWORK, SpeechRecognizer.ERROR_NETWORK_TIMEOUT -> "识别服务网络错误"
+            SpeechRecognizer.ERROR_RECOGNIZER_BUSY -> "识别服务忙，稍后再试"
+            else -> "语音识别出错（$error）"
+        }

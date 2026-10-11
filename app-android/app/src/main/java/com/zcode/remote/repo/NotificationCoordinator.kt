@@ -4,7 +4,6 @@ import android.content.Context
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
-import com.zcode.remote.widget.PendingWidgetProvider
 import com.zcode.remote.relay.BridgeFrames
 import com.zcode.remote.relay.FailureReason
 import com.zcode.remote.relay.RelayClient
@@ -12,6 +11,7 @@ import com.zcode.remote.relay.RelayState
 import com.zcode.remote.relay.SessionsIndexChannel
 import com.zcode.remote.util.LogRedactor
 import com.zcode.remote.util.ZLog
+import com.zcode.remote.widget.PendingWidgetProvider
 
 /**
  * 多会话看板 / Widget / 视图上报（§11.7 结构性拆分：自 `AppViewModel` 原样搬出，只移动不改行为）。
@@ -28,7 +28,6 @@ class NotificationCoordinator(
     private val subscribedSessionId: () -> String?,
     private val approvalsRepo: ApprovalRepository,
 ) {
-    private val TAG = "NotifyCoord"
 
     /**
      * 每个会话的待处理条数（taskId → 审批 + 表单）。来源＝任务事件流（覆盖所有会话，
@@ -36,6 +35,7 @@ class NotificationCoordinator(
      */
     var sessionPending by mutableStateOf<Map<String, Int>>(emptyMap())
         private set
+
     /** 桌面端当前活动会话（workspace-list 的 activeTaskId，用于「PC 正在看哪个」提示）。 */
     var desktopActiveTaskId by mutableStateOf<String?>(null)
         private set
@@ -93,13 +93,15 @@ class NotificationCoordinator(
     }
 
     companion object {
+        private const val TAG = "NotifyCoord"
         /** 连接终态通知的短标题（Sprint 2 / A 组）。 */
-        internal fun terminalTitle(reason: FailureReason): String = when (reason) {
-            FailureReason.KICKED -> "控制权已在别处接管"
-            FailureReason.AUTH_FAILED -> "配对已失效，请重新扫码"
-            FailureReason.PROTOCOL_MISMATCH -> "中继协议可能已升级"
-            FailureReason.INVALID_ENDPOINT -> "中继地址不安全，已拒绝连接"
-            else -> "连接已终止"
-        }
+        internal fun terminalTitle(reason: FailureReason): String =
+            when (reason) {
+                FailureReason.KICKED -> "控制权已在别处接管"
+                FailureReason.AUTH_FAILED -> "配对已失效，请重新扫码"
+                FailureReason.PROTOCOL_MISMATCH -> "中继协议可能已升级"
+                FailureReason.INVALID_ENDPOINT -> "中继地址不安全，已拒绝连接"
+                else -> "连接已终止"
+            }
     }
 }

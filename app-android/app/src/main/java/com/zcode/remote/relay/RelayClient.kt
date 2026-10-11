@@ -7,9 +7,9 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancel
 import kotlinx.coroutines.channels.BufferOverflow
 import kotlinx.coroutines.channels.Channel
-import kotlinx.coroutines.cancel
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -33,10 +33,15 @@ import java.util.concurrent.TimeUnit
  */
 sealed interface RelayState {
     data object Idle : RelayState
+
     data object Connecting : RelayState
+
     data object Authenticating : RelayState
-    data object WaitingPeer : RelayState   // pair_status=waiting：PC 端未开启远程控制
-    data object Paired : RelayState        // pair_status=matched
+
+    data object WaitingPeer : RelayState // pair_status=waiting：PC 端未开启远程控制
+
+    data object Paired : RelayState // pair_status=matched
+
     data class Failed(val reason: FailureReason, val message: String?) : RelayState
 }
 
@@ -57,10 +62,11 @@ class RelayClient(
     /** 线路覆盖（设置里强制主线/备线/自建中继）；null=按配对二维码推断。 */
     private val relayWsUrlOverride: String? = null,
 ) {
-    private val client = OkHttpClient.Builder()
-        .pingInterval(20, TimeUnit.SECONDS)
-        .connectTimeout(10, TimeUnit.SECONDS)
-        .build()
+    private val client =
+        OkHttpClient.Builder()
+            .pingInterval(20, TimeUnit.SECONDS)
+            .connectTimeout(10, TimeUnit.SECONDS)
+            .build()
 
     private val io = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private var heartbeatJob: Job? = null
@@ -107,15 +113,21 @@ class RelayClient(
         reconnectAttempt = 0
         // 掐断可能正在 sleep 的退避等待（最多 48s）：否则要白等到退避到期才重连。
         // 被取消的调度由 scheduleReconnect 内的 `if (!isActive) return@launch` 保证不再 connect。
-        reconnectJob?.cancel(); reconnectJob = null
+        reconnectJob?.cancel()
+        reconnectJob = null
         connect()
     }
 
     private val _state = MutableStateFlow<RelayState>(RelayState.Idle)
     val state: StateFlow<RelayState> = _state
 
-    private val _inbound = MutableSharedFlow<JsonObject>(
-        replay = 0, extraBufferCapacity = 512, onBufferOverflow = BufferOverflow.SUSPEND)
+    private val _inbound =
+        MutableSharedFlow<JsonObject>(
+            replay = 0,
+            extraBufferCapacity = 512,
+            onBufferOverflow = BufferOverflow.SUSPEND,
+        )
+
     /** 内层 data.payload（zcode_type 路由后），UI/会话层订阅。 */
     val inbound: SharedFlow<JsonObject> = _inbound
 
@@ -125,20 +137,27 @@ class RelayClient(
      */
     private val frameQueue = Channel<JsonObject>(Channel.UNLIMITED)
 
-    init { startPump() }
+    init {
+        startPump()
+    }
 
     private fun startPump() {
         if (pumpJob?.isActive == true) return
-        pumpJob = io.launch {
-            for (payload in frameQueue) _inbound.emit(payload)
-        }
+        pumpJob =
+            io.launch {
+                for (payload in frameQueue) _inbound.emit(payload)
+            }
     }
 
     private var socket: WebSocket? = null
+
     @Volatile private var manuallyClosed = false
+
     /** 终态失败（互踢/配对失效/协议不匹配）：不参与自动重连，等用户手动恢复。 */
     @Volatile private var terminalFailed = false
+
     @Volatile private var reconnectAttempt = 0
+
     /**
      * 连接代次（2026-10-05 竞态修复）：旧 socket 的 onFailure/onClosed 可能迟到到新连接
      * 建立之后才触发（真机实证 OkHttp 失败回调可延迟数秒冒出），会穿过防重入守卫错误调度
@@ -152,7 +171,8 @@ class RelayClient(
         _state.value = RelayState.Connecting
         startPump()
         // 显式 connect 即作废一切挂起的重连调度与旧 socket（其迟到回调由代次守卫拦截）
-        reconnectJob?.cancel(); reconnectJob = null
+        reconnectJob?.cancel()
+        reconnectJob = null
         generation += 1
         val myGen = generation
         runCatching { socket?.cancel() }
@@ -160,32 +180,36 @@ class RelayClient(
         val rawWsUrl = relayWsUrlOverride ?: device.relayWsUrl
         // P0 传输止血（任务书 §11.3.1）：Release 只接受绝对 wss://；ws:// 仅 debug 放行。
         // 校验失败一律拒绝连接，绝不降级重试（旧实现 relayOverride 用 startsWith("ws") 放过了明文）。
-        val wsUrl = when (val v = RelayEndpointValidator.validate(rawWsUrl, allowInsecure = BuildConfig.DEBUG)) {
-            is RelayEndpointValidator.Result.Ok -> v.url
-            is RelayEndpointValidator.Result.Rejected -> {
-                // 只记事件码与原因枚举，不记原始 URL（避免二次泄漏）
-                ZLog.e(TAG, "relay endpoint rejected reason=${v.reason}")
-                fail(FailureReason.INVALID_ENDPOINT, v.message)
-                return
+        val wsUrl =
+            when (val v = RelayEndpointValidator.validate(rawWsUrl, allowInsecure = BuildConfig.DEBUG)) {
+                is RelayEndpointValidator.Result.Ok -> v.url
+                is RelayEndpointValidator.Result.Rejected -> {
+                    // 只记事件码与原因枚举，不记原始 URL（避免二次泄漏）
+                    ZLog.e(TAG, "relay endpoint rejected reason=${v.reason}")
+                    fail(FailureReason.INVALID_ENDPOINT, v.message)
+                    return
+                }
             }
-        }
-        val url = wsUrl +
-            (device.deviceMid?.takeIf { it.isNotBlank() }?.let { "?mid=$it" } ?: "")
+        val url =
+            wsUrl +
+                (device.deviceMid?.takeIf { it.isNotBlank() }?.let { "?mid=$it" } ?: "")
         // 中继校验 Origin 与线路一致性：从 ws 地址推导同源 https 地址（wss://host/ws → https://host）
         val secure = wsUrl.startsWith("wss://", ignoreCase = true)
         val host = wsUrl.substringAfter("//").substringBefore('/')
         val origin = if (secure) "https://$host" else "http://$host"
-        val request = Request.Builder()
-            .url(url)
-            .header("Origin", origin)
-            .build()
+        val request =
+            Request.Builder()
+                .url(url)
+                .header("Origin", origin)
+                .build()
         socket = client.newWebSocket(request, makeListener(myGen))
     }
 
     fun close() {
         manuallyClosed = true
         stopHeartbeat()
-        reconnectJob?.cancel(); reconnectJob = null
+        reconnectJob?.cancel()
+        reconnectJob = null
         socket?.close(1000, "client-close")
         socket = null
         _state.value = RelayState.Idle
@@ -203,99 +227,138 @@ class RelayClient(
 
     /** 业务负载必须包 data 信封并带 client_ts（官方 prepare() 实证）。 */
     fun sendPayload(payload: JsonObject): Boolean {
-        val wrapped = kotlinx.serialization.json.buildJsonObject {
-            put("type", "data")
-            put("payload", payload)
-            put("client_ts", System.currentTimeMillis())
-        }
+        val wrapped =
+            kotlinx.serialization.json.buildJsonObject {
+                put("type", "data")
+                put("payload", payload)
+                put("client_ts", System.currentTimeMillis())
+            }
         return send(wrapped)
     }
 
     /** 每次连接独立 listener：回调首行校验代次，旧 socket 的迟到回调一律丢弃。 */
-    private fun makeListener(gen: Int): WebSocketListener = object : WebSocketListener() {
-        private fun stale(): Boolean = gen != generation
+    private fun makeListener(gen: Int): WebSocketListener =
+        object : WebSocketListener() {
+            private fun stale(): Boolean = gen != generation
 
-        override fun onOpen(webSocket: WebSocket, response: Response) {
-            if (stale()) return
-            ZLog.i(TAG, "ws open http=${response.code}")
-            _state.value = RelayState.Authenticating
-            send(RelayProtocol.authInit(device.deviceSid, appVersion))
-        }
+            override fun onOpen(
+                webSocket: WebSocket,
+                response: Response,
+            ) {
+                if (stale()) return
+                ZLog.i(TAG, "ws open http=${response.code}")
+                _state.value = RelayState.Authenticating
+                send(RelayProtocol.authInit(device.deviceSid, appVersion))
+            }
 
-        override fun onMessage(webSocket: WebSocket, text: String) {
-            if (stale()) return
-            // P0 日志止血：完整入站帧含全部会话正文；只记字节数
-            ZLog.i(TAG, "ws recv ${LogRedactor.payloadLabel(text)}")
-            val frame = runCatching { RelayProtocol.parse(text) }.getOrNull() ?: return
-            when (RelayProtocol.typeOf(frame)) {
-                "auth_challenge" -> {
-                    val nonce = RelayProtocol.nonceOf(frame) ?: return
-                    val proof = RelayProtocol.calculateProof(
-                        device.passHash, nonce, RelayProtocol.ROLE_TERMINAL, device.deviceSid)
-                    // P0-C：proof 与 sid 是握手凭据，绝不能进日志（这里只记 SID 长度，连前缀都不留）
-                    ZLog.i(TAG, "auth proof computed sid=${LogRedactor.maskId(device.deviceSid)} hashLen=${device.passHash.length}")
-                    send(RelayProtocol.authResponse(device.deviceSid, proof))
-                }
-                "auth_ack", "pair_status_ack" -> {
-                    when (val st = RelayProtocol.pairStatusOf(frame)) {
-                        "waiting" -> { _state.value = RelayState.WaitingPeer; startHeartbeat() }
-                        "matched" -> { reconnectAttempt = 0; _state.value = RelayState.Paired; startHeartbeat() }
-                        // 协议变更兜底（M3）：关键握手帧出现未知结构，别再静默忽略
-                        else -> {
-                            ZLog.w(TAG, "unknown pair_status=$st")
-                            if (frame["type"]?.toString()?.contains("auth_ack") == true) {
-                                fail(FailureReason.PROTOCOL_MISMATCH,
-                                    "握手应答结构未知（pair_status=${st ?: "缺失"}），官方协议可能已升级，请更新 App")
+            override fun onMessage(
+                webSocket: WebSocket,
+                text: String,
+            ) {
+                if (stale()) return
+                // P0 日志止血：完整入站帧含全部会话正文；只记字节数
+                ZLog.i(TAG, "ws recv ${LogRedactor.payloadLabel(text)}")
+                val frame = runCatching { RelayProtocol.parse(text) }.getOrNull() ?: return
+                when (RelayProtocol.typeOf(frame)) {
+                    "auth_challenge" -> {
+                        val nonce = RelayProtocol.nonceOf(frame) ?: return
+                        val proof =
+                            RelayProtocol.calculateProof(
+                                device.passHash,
+                                nonce,
+                                RelayProtocol.ROLE_TERMINAL,
+                                device.deviceSid,
+                            )
+                        // P0-C：proof 与 sid 是握手凭据，绝不能进日志（这里只记 SID 长度，连前缀都不留）
+                        ZLog.i(TAG, "auth proof computed sid=${LogRedactor.maskId(device.deviceSid)} hashLen=${device.passHash.length}")
+                        send(RelayProtocol.authResponse(device.deviceSid, proof))
+                    }
+                    "auth_ack", "pair_status_ack" -> {
+                        when (val st = RelayProtocol.pairStatusOf(frame)) {
+                            "waiting" -> {
+                                _state.value = RelayState.WaitingPeer
+                                startHeartbeat()
+                            }
+                            "matched" -> {
+                                reconnectAttempt = 0
+                                _state.value = RelayState.Paired
+                                startHeartbeat()
+                            }
+                            // 协议变更兜底（M3）：关键握手帧出现未知结构，别再静默忽略
+                            else -> {
+                                ZLog.w(TAG, "unknown pair_status=$st")
+                                if (frame["type"]?.toString()?.contains("auth_ack") == true) {
+                                    fail(
+                                        FailureReason.PROTOCOL_MISMATCH,
+                                        "握手应答结构未知（pair_status=${st ?: "缺失"}），官方协议可能已升级，请更新 App",
+                                    )
+                                }
                             }
                         }
                     }
-                }
-                "data" -> {
-                    val payload = frame["payload"]?.let {
-                        runCatching { it.jsonObject }.getOrNull()
-                    } ?: return
-                    frameQueue.trySend(payload)
-                }
-                "error" -> {
-                    val err = RelayProtocol.RelayError.from(RelayProtocol.errorCodeOf(frame))
-                    when (err) {
-                        RelayProtocol.RelayError.KICKED ->
-                            fail(FailureReason.KICKED, "会话已在别处打开（与官方 Web 版互踢）")
-                        RelayProtocol.RelayError.AUTH_FAILED,
-                        RelayProtocol.RelayError.WRONG_PARAM ->
-                            fail(FailureReason.AUTH_FAILED, "配对失效，请重新扫码")
-                        RelayProtocol.RelayError.DEVICE_OFFLINE -> {
-                            _state.value = RelayState.WaitingPeer; scheduleReconnect()
+                    "data" -> {
+                        val payload =
+                            frame["payload"]?.let {
+                                runCatching { it.jsonObject }.getOrNull()
+                            } ?: return
+                        frameQueue.trySend(payload)
+                    }
+                    "error" -> {
+                        val err = RelayProtocol.RelayError.from(RelayProtocol.errorCodeOf(frame))
+                        when (err) {
+                            RelayProtocol.RelayError.KICKED ->
+                                fail(FailureReason.KICKED, "会话已在别处打开（与官方 Web 版互踢）")
+                            RelayProtocol.RelayError.AUTH_FAILED,
+                            RelayProtocol.RelayError.WRONG_PARAM,
+                            ->
+                                fail(FailureReason.AUTH_FAILED, "配对失效，请重新扫码")
+                            RelayProtocol.RelayError.DEVICE_OFFLINE -> {
+                                _state.value = RelayState.WaitingPeer
+                                scheduleReconnect()
+                            }
+                            else -> fail(FailureReason.INTERNAL, "中继内部错误")
                         }
-                        else -> fail(FailureReason.INTERNAL, "中继内部错误")
                     }
                 }
             }
+
+            override fun onFailure(
+                webSocket: WebSocket,
+                t: Throwable,
+                response: Response?,
+            ) {
+                if (stale()) return
+                // P0 日志止血：不传原始 Throwable（其 message 常含 URL/路径），只记异常类名
+                ZLog.w(TAG, "ws failure ${LogRedactor.exceptionLabel(t)}")
+                if (manuallyClosed) return
+                scheduleReconnect()
+            }
+
+            override fun onClosed(
+                webSocket: WebSocket,
+                code: Int,
+                reason: String,
+            ) {
+                if (stale()) return
+                ZLog.i(TAG, "ws closed code=$code")
+                if (!manuallyClosed) scheduleReconnect()
+            }
         }
 
-        override fun onFailure(webSocket: WebSocket, t: Throwable, response: Response?) {
-            if (stale()) return
-            // P0 日志止血：不传原始 Throwable（其 message 常含 URL/路径），只记异常类名
-            ZLog.w(TAG, "ws failure ${LogRedactor.exceptionLabel(t)}")
-            if (manuallyClosed) return
-            scheduleReconnect()
-        }
-
-        override fun onClosed(webSocket: WebSocket, code: Int, reason: String) {
-            if (stale()) return
-            ZLog.i(TAG, "ws closed code=$code")
-            if (!manuallyClosed) scheduleReconnect()
-        }
+    companion object {
+        private const val TAG = "RelayClient"
     }
 
-    companion object { private const val TAG = "RelayClient" }
-
-    private fun fail(reason: FailureReason, message: String?) {
+    private fun fail(
+        reason: FailureReason,
+        message: String?,
+    ) {
         stopHeartbeat()
         // 终态失败不参与自动重连：重连会与占位的另一 terminal（官方 Web/桌面端面板内嵌页）
         // 形成 3s 级互踢死循环（2026-09-30 真机实测）。用户按横幅指引「断开→重新连接」恢复。
         if (reason == FailureReason.KICKED || reason == FailureReason.AUTH_FAILED ||
-            reason == FailureReason.PROTOCOL_MISMATCH || reason == FailureReason.INVALID_ENDPOINT) {
+            reason == FailureReason.PROTOCOL_MISMATCH || reason == FailureReason.INVALID_ENDPOINT
+        ) {
             terminalFailed = true
             reconnectAttempt = 0
         }
@@ -304,50 +367,55 @@ class RelayClient(
 
     private fun startHeartbeat() {
         if (heartbeatJob?.isActive == true) return
-        heartbeatJob = io.launch {
-            while (isActive && !manuallyClosed) {
-                runCatching { send(RelayProtocol.heartbeat(device.deviceSid)) }
-                delay(30_000)
+        heartbeatJob =
+            io.launch {
+                while (isActive && !manuallyClosed) {
+                    runCatching { send(RelayProtocol.heartbeat(device.deviceSid)) }
+                    delay(30_000)
+                }
             }
-        }
     }
 
-    private fun stopHeartbeat() { heartbeatJob?.cancel(); heartbeatJob = null }
+    private fun stopHeartbeat() {
+        heartbeatJob?.cancel()
+        heartbeatJob = null
+    }
 
     private fun scheduleReconnect() {
         stopHeartbeat()
         if (manuallyClosed || terminalFailed) return
         // onClosed/onFailure 可能双触发：已有一个重连调度在等网络时不再叠加
-        //（否则第二次 cancel 掉第一次的挂起点，造成竞态）
+        // （否则第二次 cancel 掉第一次的挂起点，造成竞态）
         if (reconnectJob?.isActive == true) {
             ZLog.i(TAG, "reconnect: 已有调度在等待（attempt=$reconnectAttempt），跳过重复调度")
             return
         }
-        val delayMs = reconnectBackoffMs(reconnectAttempt)  // 3s,6s,12s,24s,48s 封顶
+        val delayMs = reconnectBackoffMs(reconnectAttempt) // 3s,6s,12s,24s,48s 封顶
         reconnectAttempt++
-        reconnectJob = io.launch {
-            val myGen = generation
-            // 挂起点：注入 NetworkGate 后，无网时等网络恢复即刻重连，而非空转到下一轮退避
-            ZLog.i(TAG, "reconnect: 调度 attempt=$reconnectAttempt 退避 ${delayMs}ms")
-            runCatching { networkWait(delayMs) }
-                .onFailure { ZLog.w(TAG, "reconnect: networkWait 异常", it) }
-            // ⚠️ 必须显式判 isActive：上面的 runCatching 会把取消异常一并吞掉，此后协程虽已取消
-            // 仍会继续执行到 connect() —— 而 onNetworkAvailable 已在取消后自行重连，重复 connect
-            // 会造成双连接/代次错乱（真机修复 2026-10-07）。
-            if (!isActive) {
-                ZLog.i(TAG, "reconnect: 本次调度已被取消（网络恢复已直接重连），不再 connect")
-                return@launch
+        reconnectJob =
+            io.launch {
+                val myGen = generation
+                // 挂起点：注入 NetworkGate 后，无网时等网络恢复即刻重连，而非空转到下一轮退避
+                ZLog.i(TAG, "reconnect: 调度 attempt=$reconnectAttempt 退避 ${delayMs}ms")
+                runCatching { networkWait(delayMs) }
+                    .onFailure { ZLog.w(TAG, "reconnect: networkWait 异常", it) }
+                // ⚠️ 必须显式判 isActive：上面的 runCatching 会把取消异常一并吞掉，此后协程虽已取消
+                // 仍会继续执行到 connect() —— 而 onNetworkAvailable 已在取消后自行重连，重复 connect
+                // 会造成双连接/代次错乱（真机修复 2026-10-07）。
+                if (!isActive) {
+                    ZLog.i(TAG, "reconnect: 本次调度已被取消（网络恢复已直接重连），不再 connect")
+                    return@launch
+                }
+                if (myGen != generation) {
+                    ZLog.i(TAG, "reconnect: 代次已变（期间发生显式 connect），作废本次调度")
+                    return@launch
+                }
+                if (!manuallyClosed && !terminalFailed) {
+                    ZLog.i(TAG, "reconnect: 放行，执行 connect()")
+                    connect()
+                } else {
+                    ZLog.i(TAG, "reconnect: 跳过重连（manuallyClosed=$manuallyClosed terminalFailed=$terminalFailed）")
+                }
             }
-            if (myGen != generation) {
-                ZLog.i(TAG, "reconnect: 代次已变（期间发生显式 connect），作废本次调度")
-                return@launch
-            }
-            if (!manuallyClosed && !terminalFailed) {
-                ZLog.i(TAG, "reconnect: 放行，执行 connect()")
-                connect()
-            } else {
-                ZLog.i(TAG, "reconnect: 跳过重连（manuallyClosed=$manuallyClosed terminalFailed=$terminalFailed）")
-            }
-        }
     }
 }

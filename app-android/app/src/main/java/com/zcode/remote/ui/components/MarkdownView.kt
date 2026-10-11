@@ -87,49 +87,54 @@ fun MarkdownView(
     val borderColor = if (dark) ZCodeTokens.BorderSubtleDark else ZCodeTokens.BorderSubtleLight
     val inlineCodeBg = if (dark) ZCodeTokens.OverlaySurfaceHoverDark else ZCodeTokens.OverlaySurfaceHoverLight
 
-    val colors = markdownColor(
-        text = textColor,
-        codeText = textColor,
-        inlineCodeText = textColor,
-        linkText = MaterialTheme.colorScheme.primary,
-        // 代码块自带卡片底色，这里把库内底色置空，避免叠出双层不规则色块
-        codeBackground = Color.Transparent,
-        inlineCodeBackground = inlineCodeBg,
-        dividerColor = borderColor,
-    )
+    val colors =
+        markdownColor(
+            text = textColor,
+            codeText = textColor,
+            inlineCodeText = textColor,
+            linkText = MaterialTheme.colorScheme.primary,
+            // 代码块自带卡片底色，这里把库内底色置空，避免叠出双层不规则色块
+            codeBackground = Color.Transparent,
+            inlineCodeBackground = inlineCodeBg,
+            dividerColor = borderColor,
+        )
 
     val body = TextStyle(fontSize = ZCodeType.Base, lineHeight = ZCodeType.BodyLineHeight)
-    val typography = markdownTypography(
-        h1 = TextStyle(fontSize = 22.sp, lineHeight = 30.sp, fontWeight = ZCodeType.SemiBold),
-        h2 = TextStyle(fontSize = ZCodeType.Xl, lineHeight = 26.sp, fontWeight = ZCodeType.SemiBold),
-        h3 = TextStyle(fontSize = ZCodeType.Lg, lineHeight = 24.sp, fontWeight = ZCodeType.SemiBold),
-        h4 = TextStyle(fontSize = ZCodeType.Base, lineHeight = 22.sp, fontWeight = ZCodeType.SemiBold),
-        h5 = TextStyle(fontSize = ZCodeType.Caption, lineHeight = 20.sp, fontWeight = ZCodeType.SemiBold),
-        h6 = TextStyle(fontSize = ZCodeType.Sm, lineHeight = 18.sp, fontWeight = ZCodeType.SemiBold),
-        text = body,
-        paragraph = body,
-        ordered = body,
-        bullet = body,
-        list = body,
-        quote = body,
-        link = body.copy(textDecoration = TextDecoration.Underline),
-        code = TextStyle(
-            fontFamily = FontFamily.Monospace,
-            fontSize = ZCodeType.Sm,
-            lineHeight = ZCodeType.CodeLineHeight,
-        ),
-        inlineCode = TextStyle(
-            fontFamily = FontFamily.Monospace,
-            fontSize = ZCodeType.Caption,
-            lineHeight = 20.sp,
-        ),
-    )
+    val typography =
+        markdownTypography(
+            h1 = TextStyle(fontSize = 22.sp, lineHeight = 30.sp, fontWeight = ZCodeType.SemiBold),
+            h2 = TextStyle(fontSize = ZCodeType.Xl, lineHeight = 26.sp, fontWeight = ZCodeType.SemiBold),
+            h3 = TextStyle(fontSize = ZCodeType.Lg, lineHeight = 24.sp, fontWeight = ZCodeType.SemiBold),
+            h4 = TextStyle(fontSize = ZCodeType.Base, lineHeight = 22.sp, fontWeight = ZCodeType.SemiBold),
+            h5 = TextStyle(fontSize = ZCodeType.Caption, lineHeight = 20.sp, fontWeight = ZCodeType.SemiBold),
+            h6 = TextStyle(fontSize = ZCodeType.Sm, lineHeight = 18.sp, fontWeight = ZCodeType.SemiBold),
+            text = body,
+            paragraph = body,
+            ordered = body,
+            bullet = body,
+            list = body,
+            quote = body,
+            link = body.copy(textDecoration = TextDecoration.Underline),
+            code =
+                TextStyle(
+                    fontFamily = FontFamily.Monospace,
+                    fontSize = ZCodeType.Sm,
+                    lineHeight = ZCodeType.CodeLineHeight,
+                ),
+            inlineCode =
+                TextStyle(
+                    fontFamily = FontFamily.Monospace,
+                    fontSize = ZCodeType.Caption,
+                    lineHeight = 20.sp,
+                ),
+        )
 
-    val components = markdownComponents(
-        codeFence = { model -> HighlightedCodeCard(model) },
-        codeBlock = { model -> HighlightedIndentedCodeCard(model) },
-        image = { model -> MarkdownImageNotice() },
-    )
+    val components =
+        markdownComponents(
+            codeFence = { model -> HighlightedCodeCard(model) },
+            codeBlock = { model -> HighlightedIndentedCodeCard(model) },
+            image = { model -> MarkdownImageNotice() },
+        )
 
     val uriHandler = rememberSafeUriHandler()
 
@@ -169,7 +174,10 @@ private fun HighlightedIndentedCodeCard(model: MarkdownComponentModel) {
 }
 
 @Composable
-private fun CodeBlockCard(code: String, language: String?) {
+private fun CodeBlockCard(
+    code: String,
+    language: String?,
+) {
     val context = LocalContext.current
     val dark = LocalZCodeDark.current
     val bg = if (dark) ZCodeTokens.CodeBgDark else ZCodeTokens.CodeBgLight
@@ -181,18 +189,20 @@ private fun CodeBlockCard(code: String, language: String?) {
     var copied by remember { mutableStateOf(false) }
 
     Column(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(vertical = 6.dp)
-            .clip(shape)
-            .background(bg)
-            .border(1.dp, border, shape),
+        modifier =
+            Modifier
+                .fillMaxWidth()
+                .padding(vertical = 6.dp)
+                .clip(shape)
+                .background(bg)
+                .border(1.dp, border, shape),
     ) {
         Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .background(headerBg)
-                .padding(horizontal = ZCodeDimens.PadBlock, vertical = 6.dp),
+            modifier =
+                Modifier
+                    .fillMaxWidth()
+                    .background(headerBg)
+                    .padding(horizontal = ZCodeDimens.PadBlock, vertical = 6.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Text(
@@ -205,22 +215,24 @@ private fun CodeBlockCard(code: String, language: String?) {
                 text = if (copied) "已复制" else "复制",
                 style = MaterialTheme.typography.labelSmall,
                 color = if (copied) ZCodeTokens.StatusOnline else MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier
-                    .clip(RoundedCornerShape(ZCodeDimens.RadiusSm))
-                    .clickable {
-                        copyToClipboard(context, code)
-                        copied = true
-                    }
-                    .padding(horizontal = 6.dp, vertical = 2.dp),
+                modifier =
+                    Modifier
+                        .clip(RoundedCornerShape(ZCodeDimens.RadiusSm))
+                        .clickable {
+                            copyToClipboard(context, code)
+                            copied = true
+                        }
+                        .padding(horizontal = 6.dp, vertical = 2.dp),
             )
         }
 
         HighlightedCodeText(
             code = code,
             language = language,
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = ZCodeDimens.PadBlock, vertical = 10.dp),
+            modifier =
+                Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = ZCodeDimens.PadBlock, vertical = 10.dp),
         )
     }
 }
@@ -233,40 +245,46 @@ private fun CodeBlockCard(code: String, language: String?) {
  * （同款 `Highlights` + `ColorHighlight` → `SpanStyle`），外观完全自控。
  */
 @Composable
-private fun HighlightedCodeText(code: String, language: String?, modifier: Modifier = Modifier) {
+private fun HighlightedCodeText(
+    code: String,
+    language: String?,
+    modifier: Modifier = Modifier,
+) {
     val dark = LocalZCodeDark.current
 
-    val result = remember(code, language, dark) {
-        val builder = Highlights.Builder().theme(SyntaxThemes.atom(dark))
-        // 语言名来自模型输出，可能是不存在的别名，getByName 返回 null 时退化为无高亮
-        language?.trim()?.takeIf { it.isNotEmpty() }
-            ?.let { SyntaxLanguage.getByName(it) }
-            ?.let { builder.language(it) }
-        builder.code(code).build()
-    }
+    val result =
+        remember(code, language, dark) {
+            val builder = Highlights.Builder().theme(SyntaxThemes.atom(dark))
+            // 语言名来自模型输出，可能是不存在的别名，getByName 返回 null 时退化为无高亮
+            language?.trim()?.takeIf { it.isNotEmpty() }
+                ?.let { SyntaxLanguage.getByName(it) }
+                ?.let { builder.language(it) }
+            builder.code(code).build()
+        }
 
-    val annotated = remember(result) {
-        // `getCode()` / `getHighlights()` 是库的普通函数（不是属性），不要写成 result.code。
-        val spans = result.getHighlights()
-        buildAnnotatedString {
-            append(result.getCode())
-            spans.filterIsInstance<ColorHighlight>().forEach {
-                addStyle(
-                    // 必须补 alpha：库给的是纯 RGB，直接 Color(it.rgb) 会是全透明（字都看不见）
-                    SpanStyle(color = Color(opaqueHighlightArgb(it.rgb))),
-                    start = it.location.start,
-                    end = it.location.end,
-                )
-            }
-            spans.filterIsInstance<BoldHighlight>().forEach {
-                addStyle(
-                    SpanStyle(fontWeight = FontWeight.Bold),
-                    start = it.location.start,
-                    end = it.location.end,
-                )
+    val annotated =
+        remember(result) {
+            // `getCode()` / `getHighlights()` 是库的普通函数（不是属性），不要写成 result.code。
+            val spans = result.getHighlights()
+            buildAnnotatedString {
+                append(result.getCode())
+                spans.filterIsInstance<ColorHighlight>().forEach {
+                    addStyle(
+                        // 必须补 alpha：库给的是纯 RGB，直接 Color(it.rgb) 会是全透明（字都看不见）
+                        SpanStyle(color = Color(opaqueHighlightArgb(it.rgb))),
+                        start = it.location.start,
+                        end = it.location.end,
+                    )
+                }
+                spans.filterIsInstance<BoldHighlight>().forEach {
+                    addStyle(
+                        SpanStyle(fontWeight = FontWeight.Bold),
+                        start = it.location.start,
+                        end = it.location.end,
+                    )
+                }
             }
         }
-    }
 
     Text(
         text = annotated,
@@ -294,24 +312,29 @@ private fun MarkdownImageNotice() {
     val shape = RoundedCornerShape(ZCodeDimens.RadiusLg)
 
     Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(vertical = ZCodeDimens.GapTight),
+        modifier =
+            Modifier
+                .fillMaxWidth()
+                .padding(vertical = ZCodeDimens.GapTight),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Text(
             text = "图片（未加载）",
             style = MaterialTheme.typography.labelMedium,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
-            modifier = Modifier
-                .clip(shape)
-                .border(1.dp, border, shape)
-                .padding(horizontal = 10.dp, vertical = 6.dp),
+            modifier =
+                Modifier
+                    .clip(shape)
+                    .border(1.dp, border, shape)
+                    .padding(horizontal = 10.dp, vertical = 6.dp),
         )
     }
 }
 
-private fun copyToClipboard(context: Context, text: String) {
+private fun copyToClipboard(
+    context: Context,
+    text: String,
+) {
     val manager = context.getSystemService(Context.CLIPBOARD_SERVICE) as? ClipboardManager ?: return
     manager.setPrimaryClip(ClipData.newPlainText("zcode-code", text))
 }

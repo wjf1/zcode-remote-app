@@ -12,8 +12,11 @@ import org.junit.Test
  * 故编解码全部收敛到这个纯对象里。
  */
 class DevicesCodecTest {
-
-    private fun device(sid: String, name: String? = "PC-1", mid: String? = "mid-1") = PairedDevice(
+    private fun device(
+        sid: String,
+        name: String? = "PC-1",
+        mid: String? = "mid-1",
+    ) = PairedDevice(
         deviceSid = sid,
         passHash = "hash+/=$sid",
         deviceMid = mid,

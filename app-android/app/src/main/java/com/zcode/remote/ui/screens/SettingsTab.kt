@@ -1,16 +1,9 @@
 package com.zcode.remote.ui.screens
 
-import android.content.ClipData
-import android.content.ClipboardManager
-import android.content.Context
 import android.content.Intent
 import android.net.Uri
 import android.widget.Toast
 import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.animation.expandVertically
-import androidx.compose.animation.fadeIn
-import androidx.compose.animation.fadeOut
-import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -25,19 +18,16 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.zcode.remote.AppViewModel
-import com.zcode.remote.repo.UpdateRepository
 import com.zcode.remote.BuildConfig
-import com.zcode.remote.relay.FailureReason
 import com.zcode.remote.relay.RelayState
 import com.zcode.remote.relay.RpcChannel
+import com.zcode.remote.repo.UpdateRepository
 import com.zcode.remote.storage.PairedDevice
 import com.zcode.remote.ui.theme.ZCodeTokens
 import com.zcode.remote.ui.theme.statusPendingTone
@@ -77,25 +67,26 @@ fun SettingsTab(
     var showDevGuide by remember { mutableStateOf(false) }
 
     Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .statusBarsPadding()
-            .padding(horizontal = 16.dp, vertical = 12.dp)
+        modifier =
+            Modifier
+                .fillMaxSize()
+                .statusBarsPadding()
+                .padding(horizontal = 16.dp, vertical = 12.dp),
     ) {
         // 顶栏
         Row(
             verticalAlignment = Alignment.CenterVertically,
-            modifier = Modifier.padding(bottom = 12.dp)
+            modifier = Modifier.padding(bottom = 12.dp),
         ) {
             Text(
                 text = "设置与设备",
                 style = MaterialTheme.typography.headlineSmall.copy(fontWeight = FontWeight.Bold),
-                modifier = Modifier.weight(1f)
+                modifier = Modifier.weight(1f),
             )
             FilledTonalButton(
                 onClick = onRescan,
                 contentPadding = PaddingValues(horizontal = 12.dp, vertical = 0.dp),
-                modifier = Modifier.height(34.dp)
+                modifier = Modifier.height(34.dp),
             ) {
                 Icon(Icons.Default.Add, null, modifier = Modifier.size(16.dp))
                 Spacer(Modifier.width(4.dp))
@@ -106,7 +97,7 @@ fun SettingsTab(
         LazyColumn(
             modifier = Modifier.fillMaxSize(),
             verticalArrangement = Arrangement.spacedBy(16.dp),
-            contentPadding = PaddingValues(bottom = 80.dp)
+            contentPadding = PaddingValues(bottom = 80.dp),
         ) {
             // 1. 当前连接设备状态卡片
             item {
@@ -115,27 +106,33 @@ fun SettingsTab(
                     shape = RoundedCornerShape(14.dp),
                     colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
                     border = CardDefaults.outlinedCardBorder(),
-                    modifier = Modifier.fillMaxWidth()
+                    modifier = Modifier.fillMaxWidth(),
                 ) {
                     Column(
                         modifier = Modifier.padding(16.dp),
-                        verticalArrangement = Arrangement.spacedBy(8.dp)
+                        verticalArrangement = Arrangement.spacedBy(8.dp),
                     ) {
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             Box(
-                                modifier = Modifier
-                                    .size(36.dp)
-                                    .clip(CircleShape)
-                                    .background(MaterialTheme.colorScheme.surfaceVariant),
-                                contentAlignment = Alignment.Center
+                                modifier =
+                                    Modifier
+                                        .size(36.dp)
+                                        .clip(CircleShape)
+                                        .background(MaterialTheme.colorScheme.surfaceVariant),
+                                contentAlignment = Alignment.Center,
                             ) {
-                                Icon(Icons.Default.AccountBox, null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(20.dp))
+                                Icon(
+                                    Icons.Default.AccountBox,
+                                    null,
+                                    tint = MaterialTheme.colorScheme.primary,
+                                    modifier = Modifier.size(20.dp),
+                                )
                             }
                             Spacer(Modifier.width(12.dp))
                             Column(modifier = Modifier.weight(1f)) {
                                 Text(
                                     text = deviceName.ifEmpty { "未命名设备" },
-                                    style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.SemiBold)
+                                    style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.SemiBold),
                                 )
                                 Spacer(Modifier.height(2.dp))
                                 Row(verticalAlignment = Alignment.CenterVertically) {
@@ -144,14 +141,14 @@ fun SettingsTab(
                                     Text(
                                         text = "${statusLabel(state)} · 会话桥 ${bridgeLabel(bridgeState)}",
                                         style = MaterialTheme.typography.bodySmall,
-                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
                                     )
                                 }
                             }
                             OutlinedButton(
                                 onClick = onDisconnect,
                                 contentPadding = PaddingValues(horizontal = 10.dp, vertical = 0.dp),
-                                modifier = Modifier.height(32.dp)
+                                modifier = Modifier.height(32.dp),
                             ) {
                                 Text("断开", style = MaterialTheme.typography.labelSmall)
                             }
@@ -161,13 +158,13 @@ fun SettingsTab(
                             Surface(
                                 color = MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.5f),
                                 shape = RoundedCornerShape(8.dp),
-                                modifier = Modifier.fillMaxWidth()
+                                modifier = Modifier.fillMaxWidth(),
                             ) {
                                 Text(
                                     text = state.message ?: "连接失败",
                                     color = MaterialTheme.colorScheme.error,
                                     style = MaterialTheme.typography.bodySmall,
-                                    modifier = Modifier.padding(8.dp)
+                                    modifier = Modifier.padding(8.dp),
                                 )
                             }
                         }
@@ -184,41 +181,47 @@ fun SettingsTab(
                         shape = RoundedCornerShape(14.dp),
                         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
                         border = CardDefaults.outlinedCardBorder(),
-                        modifier = Modifier.fillMaxWidth()
+                        modifier = Modifier.fillMaxWidth(),
                     ) {
                         Column(modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)) {
                             otherDevices.forEachIndexed { index, dev ->
                                 if (index > 0) HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
                                 Row(
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .padding(vertical = 10.dp),
-                                    verticalAlignment = Alignment.CenterVertically
+                                    modifier =
+                                        Modifier
+                                            .fillMaxWidth()
+                                            .padding(vertical = 10.dp),
+                                    verticalAlignment = Alignment.CenterVertically,
                                 ) {
                                     Column(modifier = Modifier.weight(1f)) {
                                         Text(
                                             text = dev.deviceName ?: dev.deviceSid,
                                             style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.Medium),
                                             maxLines = 1,
-                                            overflow = TextOverflow.Ellipsis
+                                            overflow = TextOverflow.Ellipsis,
                                         )
                                         Text(
                                             text = "SID: ${dev.deviceSid.take(12)}…",
                                             style = MaterialTheme.typography.labelSmall,
-                                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant,
                                         )
                                     }
                                     TextButton(
                                         onClick = { onSwitchDevice(dev.deviceSid) },
-                                        contentPadding = PaddingValues(horizontal = 8.dp, vertical = 0.dp)
+                                        contentPadding = PaddingValues(horizontal = 8.dp, vertical = 0.dp),
                                     ) {
                                         Text("切换连接", style = MaterialTheme.typography.labelSmall)
                                     }
                                     IconButton(
                                         onClick = { pendingRemove = dev.deviceSid },
-                                        modifier = Modifier.size(32.dp)
+                                        modifier = Modifier.size(32.dp),
                                     ) {
-                                        Icon(Icons.Default.Delete, null, tint = MaterialTheme.colorScheme.error.copy(alpha = 0.7f), modifier = Modifier.size(16.dp))
+                                        Icon(
+                                            Icons.Default.Delete,
+                                            null,
+                                            tint = MaterialTheme.colorScheme.error.copy(alpha = 0.7f),
+                                            modifier = Modifier.size(16.dp),
+                                        )
                                     }
                                 }
                             }
@@ -234,18 +237,18 @@ fun SettingsTab(
                     shape = RoundedCornerShape(14.dp),
                     colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
                     border = CardDefaults.outlinedCardBorder(),
-                    modifier = Modifier.fillMaxWidth()
+                    modifier = Modifier.fillMaxWidth(),
                 ) {
                     Column(
                         modifier = Modifier.padding(16.dp),
-                        verticalArrangement = Arrangement.spacedBy(14.dp)
+                        verticalArrangement = Arrangement.spacedBy(14.dp),
                     ) {
                         // 线路切换（FlowRow：窄屏下整颗 Chip 换行，文字不折断）
                         Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
                             Text("中继线路模式", style = MaterialTheme.typography.labelLarge)
                             FlowRow(
                                 horizontalArrangement = Arrangement.spacedBy(6.dp),
-                                verticalArrangement = Arrangement.spacedBy(6.dp)
+                                verticalArrangement = Arrangement.spacedBy(6.dp),
                             ) {
                                 listOf(
                                     "auto" to "自动判定",
@@ -256,17 +259,20 @@ fun SettingsTab(
                                     FilterChip(
                                         selected = endpointMode == mode,
                                         onClick = {
-                                            if (mode == "custom") editingCustom = customRelayUrl
-                                            else onEndpointChange(mode, null)
+                                            if (mode == "custom") {
+                                                editingCustom = customRelayUrl
+                                            } else {
+                                                onEndpointChange(mode, null)
+                                            }
                                         },
                                         label = {
                                             Text(
                                                 label,
                                                 style = MaterialTheme.typography.labelSmall,
-                                                maxLines = 1
+                                                maxLines = 1,
                                             )
                                         },
-                                        shape = RoundedCornerShape(8.dp)
+                                        shape = RoundedCornerShape(8.dp),
                                     )
                                 }
                             }
@@ -276,35 +282,40 @@ fun SettingsTab(
                                     color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
                                     shape = RoundedCornerShape(10.dp),
                                     border = ButtonDefaults.outlinedButtonBorder,
-                                    modifier = Modifier.fillMaxWidth()
+                                    modifier = Modifier.fillMaxWidth(),
                                 ) {
                                     Row(
                                         modifier = Modifier.padding(horizontal = 12.dp, vertical = 10.dp),
-                                        verticalAlignment = Alignment.CenterVertically
+                                        verticalAlignment = Alignment.CenterVertically,
                                     ) {
                                         Column(modifier = Modifier.weight(1f)) {
                                             Text(
                                                 text = "自定义中继地址",
                                                 style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Medium),
-                                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                                                color = MaterialTheme.colorScheme.onSurfaceVariant,
                                             )
                                             Spacer(Modifier.height(2.dp))
                                             Text(
                                                 text = customRelayUrl.ifBlank { "未设置 · 点击右侧「编辑」填写 wss:// 地址" },
-                                                style = MaterialTheme.typography.bodySmall.copy(
-                                                    fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace,
-                                                    fontSize = 12.sp
-                                                ),
-                                                color = if (customRelayUrl.isBlank()) MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f)
-                                                else MaterialTheme.colorScheme.primary,
+                                                style =
+                                                    MaterialTheme.typography.bodySmall.copy(
+                                                        fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace,
+                                                        fontSize = 12.sp,
+                                                    ),
+                                                color =
+                                                    if (customRelayUrl.isBlank()) {
+                                                        MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f)
+                                                    } else {
+                                                        MaterialTheme.colorScheme.primary
+                                                    },
                                                 maxLines = 1,
-                                                overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis
+                                                overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
                                             )
                                         }
                                         TextButton(
                                             onClick = { editingCustom = customRelayUrl },
                                             contentPadding = PaddingValues(horizontal = 10.dp, vertical = 0.dp),
-                                            modifier = Modifier.height(30.dp)
+                                            modifier = Modifier.height(30.dp),
                                         ) {
                                             Text("编辑", style = MaterialTheme.typography.labelSmall)
                                         }
@@ -320,12 +331,12 @@ fun SettingsTab(
                             Text("界面外观", style = MaterialTheme.typography.labelLarge)
                             FlowRow(
                                 horizontalArrangement = Arrangement.spacedBy(6.dp),
-                                verticalArrangement = Arrangement.spacedBy(6.dp)
+                                verticalArrangement = Arrangement.spacedBy(6.dp),
                             ) {
                                 listOf(
                                     "dark" to "深色模式",
                                     "system" to "跟随系统",
-                                    "light" to "浅色模式"
+                                    "light" to "浅色模式",
                                 ).forEach { (mode, label) ->
                                     FilterChip(
                                         selected = themeMode == mode,
@@ -334,10 +345,10 @@ fun SettingsTab(
                                             Text(
                                                 label,
                                                 style = MaterialTheme.typography.labelSmall,
-                                                maxLines = 1
+                                                maxLines = 1,
                                             )
                                         },
-                                        shape = RoundedCornerShape(8.dp)
+                                        shape = RoundedCornerShape(8.dp),
                                     )
                                 }
                             }
@@ -349,16 +360,20 @@ fun SettingsTab(
                         Row(
                             modifier = Modifier.fillMaxWidth(),
                             verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.SpaceBetween
+                            horizontalArrangement = Arrangement.SpaceBetween,
                         ) {
                             Column {
                                 Text("后台保活引导", style = MaterialTheme.typography.labelLarge)
-                                Text("确保小米 / HyperOS 锁屏能收到审批推送", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                Text(
+                                    "确保小米 / HyperOS 锁屏能收到审批推送",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                )
                             }
                             OutlinedButton(
                                 onClick = onShowGuide,
                                 contentPadding = PaddingValues(horizontal = 10.dp, vertical = 0.dp),
-                                modifier = Modifier.height(32.dp)
+                                modifier = Modifier.height(32.dp),
                             ) {
                                 Text("查看教程", style = MaterialTheme.typography.labelSmall)
                             }
@@ -374,39 +389,39 @@ fun SettingsTab(
                     shape = RoundedCornerShape(14.dp),
                     colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
                     border = CardDefaults.outlinedCardBorder(),
-                    modifier = Modifier.fillMaxWidth()
+                    modifier = Modifier.fillMaxWidth(),
                 ) {
                     Column(
                         modifier = Modifier.padding(16.dp),
-                        verticalArrangement = Arrangement.spacedBy(12.dp)
+                        verticalArrangement = Arrangement.spacedBy(12.dp),
                     ) {
                         Row(
                             modifier = Modifier.fillMaxWidth(),
                             verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.SpaceBetween
+                            horizontalArrangement = Arrangement.SpaceBetween,
                         ) {
                             Column {
                                 Text(
                                     text = "ZCode Remote",
-                                    style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.Bold)
+                                    style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.Bold),
                                 )
                                 Text(
                                     text = "版本 v${BuildConfig.VERSION_NAME} (Build ${BuildConfig.VERSION_CODE})",
                                     style = MaterialTheme.typography.bodySmall,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
                                 )
                             }
                             Button(
                                 onClick = onCheckUpdate,
                                 enabled = updateState !is UpdateRepository.UpdateState.Checking,
                                 contentPadding = PaddingValues(horizontal = 14.dp, vertical = 0.dp),
-                                modifier = Modifier.height(34.dp)
+                                modifier = Modifier.height(34.dp),
                             ) {
                                 if (updateState is UpdateRepository.UpdateState.Checking) {
                                     CircularProgressIndicator(
                                         modifier = Modifier.size(14.dp),
                                         strokeWidth = 2.dp,
-                                        color = MaterialTheme.colorScheme.onPrimary
+                                        color = MaterialTheme.colorScheme.onPrimary,
                                     )
                                     Spacer(Modifier.width(6.dp))
                                     Text("检查中…", style = MaterialTheme.typography.labelSmall)
@@ -424,13 +439,13 @@ fun SettingsTab(
                                     Surface(
                                         color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.6f),
                                         shape = RoundedCornerShape(10.dp),
-                                        modifier = Modifier.fillMaxWidth()
+                                        modifier = Modifier.fillMaxWidth(),
                                     ) {
                                         Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                                             Text(
                                                 text = "发现新版本：${info.tagName}",
                                                 style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.Bold),
-                                                color = MaterialTheme.colorScheme.onPrimaryContainer
+                                                color = MaterialTheme.colorScheme.onPrimaryContainer,
                                             )
                                             if (!info.body.isNullOrBlank()) {
                                                 Text(
@@ -438,7 +453,7 @@ fun SettingsTab(
                                                     style = MaterialTheme.typography.bodySmall,
                                                     color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.8f),
                                                     maxLines = 3,
-                                                    overflow = TextOverflow.Ellipsis
+                                                    overflow = TextOverflow.Ellipsis,
                                                 )
                                             }
                                             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -448,7 +463,7 @@ fun SettingsTab(
                                                             context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(info.downloadUrl)))
                                                         },
                                                         modifier = Modifier.weight(1f).height(32.dp),
-                                                        contentPadding = PaddingValues(0.dp)
+                                                        contentPadding = PaddingValues(0.dp),
                                                     ) {
                                                         Text("下载安装包", style = MaterialTheme.typography.labelSmall)
                                                     }
@@ -460,7 +475,7 @@ fun SettingsTab(
                                     Text(
                                         text = "已是最新版本 (${info.tagName})",
                                         style = MaterialTheme.typography.bodySmall,
-                                        color = ZCodeTokens.StatusOnline
+                                        color = ZCodeTokens.StatusOnline,
                                     )
                                 }
                             }
@@ -468,7 +483,7 @@ fun SettingsTab(
                                 Text(
                                     text = "检查失败: ${updateState.message}",
                                     style = MaterialTheme.typography.bodySmall,
-                                    color = MaterialTheme.colorScheme.error
+                                    color = MaterialTheme.colorScheme.error,
                                 )
                             }
                             else -> Unit
@@ -478,14 +493,23 @@ fun SettingsTab(
                         Row(
                             modifier = Modifier.fillMaxWidth(),
                             verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.SpaceBetween
+                            horizontalArrangement = Arrangement.SpaceBetween,
                         ) {
                             Text("GitHub 访问 Token", style = MaterialTheme.typography.labelMedium)
                             TextButton(
                                 onClick = { editingToken = !editingToken },
-                                contentPadding = PaddingValues(0.dp)
+                                contentPadding = PaddingValues(0.dp),
                             ) {
-                                Text(if (editingToken) "收起" else if (githubToken.isNotBlank()) "已配置" else "配置", style = MaterialTheme.typography.labelSmall)
+                                Text(
+                                    if (editingToken) {
+                                        "收起"
+                                    } else if (githubToken.isNotBlank()) {
+                                        "已配置"
+                                    } else {
+                                        "配置"
+                                    },
+                                    style = MaterialTheme.typography.labelSmall,
+                                )
                             }
                         }
                         if (editingToken) {
@@ -502,7 +526,7 @@ fun SettingsTab(
                                         editingToken = false
                                         Toast.makeText(context, "Token 已保存", Toast.LENGTH_SHORT).show()
                                     }) { Text("保存") }
-                                }
+                                },
                             )
                         }
 
@@ -510,7 +534,7 @@ fun SettingsTab(
                         Row(
                             modifier = Modifier.fillMaxWidth(),
                             verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.SpaceBetween
+                            horizontalArrangement = Arrangement.SpaceBetween,
                         ) {
                             Text("电脑一键覆盖安装指南", style = MaterialTheme.typography.labelMedium)
                             TextButton(onClick = { showDevGuide = !showDevGuide }, contentPadding = PaddingValues(0.dp)) {
@@ -521,13 +545,13 @@ fun SettingsTab(
                             Surface(
                                 color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
                                 shape = RoundedCornerShape(8.dp),
-                                modifier = Modifier.fillMaxWidth()
+                                modifier = Modifier.fillMaxWidth(),
                             ) {
                                 Text(
                                     text = "手机连电脑后，在仓库根目录运行：\n./build.sh install\n即可一键编译并覆盖推送到手机。",
                                     style = MaterialTheme.typography.bodySmall.copy(fontFamily = FontFamily.Monospace, fontSize = 11.sp),
                                     color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                    modifier = Modifier.padding(10.dp)
+                                    modifier = Modifier.padding(10.dp),
                                 )
                             }
                         }
@@ -552,7 +576,7 @@ fun SettingsTab(
             },
             dismissButton = {
                 TextButton(onClick = { pendingRemove = null }) { Text("取消") }
-            }
+            },
         )
     }
 
@@ -568,7 +592,7 @@ fun SettingsTab(
                     placeholder = { Text("wss://host/ws") },
                     singleLine = true,
                     shape = RoundedCornerShape(8.dp),
-                    modifier = Modifier.fillMaxWidth()
+                    modifier = Modifier.fillMaxWidth(),
                 )
             },
             confirmButton = {
@@ -579,7 +603,7 @@ fun SettingsTab(
             },
             dismissButton = {
                 TextButton(onClick = { editingCustom = null }) { Text("取消") }
-            }
+            },
         )
     }
 }
@@ -590,33 +614,36 @@ private fun SectionHeader(title: String) {
         text = title,
         style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.Bold),
         color = MaterialTheme.colorScheme.primary,
-        modifier = Modifier.padding(bottom = 6.dp)
+        modifier = Modifier.padding(bottom = 6.dp),
     )
 }
 
 @Composable
 private fun StatusDot(state: RelayState) {
-    val color = when (state) {
-        is RelayState.Paired -> ZCodeTokens.StatusOnline
-        is RelayState.WaitingPeer -> statusPendingTone()
-        is RelayState.Failed -> ZCodeTokens.StatusError
-        else -> ZCodeTokens.StatusOffline
-    }
+    val color =
+        when (state) {
+            is RelayState.Paired -> ZCodeTokens.StatusOnline
+            is RelayState.WaitingPeer -> statusPendingTone()
+            is RelayState.Failed -> ZCodeTokens.StatusError
+            else -> ZCodeTokens.StatusOffline
+        }
     Canvas(Modifier.size(8.dp)) { drawCircle(color) }
 }
 
-private fun statusLabel(state: RelayState) = when (state) {
-    RelayState.Idle -> "未连接"
-    RelayState.Connecting -> "正在连接中继…"
-    RelayState.Authenticating -> "鉴权握手中…"
-    RelayState.WaitingPeer -> "等待桌面端接入"
-    RelayState.Paired -> "已就绪连接"
-    is RelayState.Failed -> "连接异常"
-}
+private fun statusLabel(state: RelayState) =
+    when (state) {
+        RelayState.Idle -> "未连接"
+        RelayState.Connecting -> "正在连接中继…"
+        RelayState.Authenticating -> "鉴权握手中…"
+        RelayState.WaitingPeer -> "等待桌面端接入"
+        RelayState.Paired -> "已就绪连接"
+        is RelayState.Failed -> "连接异常"
+    }
 
-private fun bridgeLabel(b: RpcChannel.BridgeState) = when (b) {
-    is RpcChannel.BridgeState.Closed -> "未开启"
-    is RpcChannel.BridgeState.Opening -> "开启中…"
-    is RpcChannel.BridgeState.Ready -> "就绪"
-    is RpcChannel.BridgeState.Failed -> "失败"
-}
+private fun bridgeLabel(b: RpcChannel.BridgeState) =
+    when (b) {
+        is RpcChannel.BridgeState.Closed -> "未开启"
+        is RpcChannel.BridgeState.Opening -> "开启中…"
+        is RpcChannel.BridgeState.Ready -> "就绪"
+        is RpcChannel.BridgeState.Failed -> "失败"
+    }

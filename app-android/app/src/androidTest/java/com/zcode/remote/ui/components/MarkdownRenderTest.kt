@@ -43,14 +43,14 @@ import kotlin.math.abs
  * `adb exec-out run-as com.zcode.remote cat files/render-evidence/code_kotlin.png > code_kotlin.png`
  */
 class MarkdownRenderTest {
-
     @get:Rule
     val rule = createComposeRule()
 
     /** 与 App 会话页一致的页面底色（beta17 验收实测值），用于让对比度接近真实场景。 */
     private val pageBg = Color(0xFF202024)
 
-    private val tableFixture = """
+    private val tableFixture =
+        """
         ## 上下文容量
 
         正文含**加粗**、`inline code`、[链接](https://example.com/zcode) 与行内 HTML <b>标记</b>。
@@ -66,15 +66,16 @@ class MarkdownRenderTest {
 
         1. 有序一
         2. 有序二
-    """.trimIndent()
+        """.trimIndent()
 
-    private val codeBody = """
+    private val codeBody =
+        """
         // 注释 comment
         fun main() {
             val message = "hello zcode"
             println(message)
         }
-    """.trimIndent()
+        """.trimIndent()
 
     /**
      * 拼装围栏代码块样本。
@@ -161,7 +162,10 @@ class MarkdownRenderTest {
      *
      * 可见性不在这里判：交给下面的位图断言 —— 「真的画到屏幕上了」比「语义节点存在」更接近验收标准。
      */
-    private fun assertTextRendered(text: String, substring: Boolean = true) {
+    private fun assertTextRendered(
+        text: String,
+        substring: Boolean = true,
+    ) {
         rule.onAllNodesWithText(text, substring = substring, useUnmergedTree = true)
             .onFirst()
             .assertExists()
@@ -187,7 +191,10 @@ class MarkdownRenderTest {
     }
 
     /** 命中高亮主题 token 色的像素数（容差 [tolerance] 吸收抗锯齿/子像素渲染带来的微小偏移）。 */
-    private fun matchedTokenPixelCount(bitmap: Bitmap, tolerance: Int = 10): Int {
+    private fun matchedTokenPixelCount(
+        bitmap: Bitmap,
+        tolerance: Int = 10,
+    ): Int {
         val pixels = IntArray(bitmap.width * bitmap.height)
         bitmap.getPixels(pixels, 0, bitmap.width, 0, 0, bitmap.width, bitmap.height)
         var count = 0
@@ -212,7 +219,10 @@ class MarkdownRenderTest {
      * 把捕获到的位图写进**应用内部目录**留证（`files/render-evidence/`）。
      * 不用 externalCacheDir：那个目录在未启动过 App 的设备上并不存在，直接写会失败。
      */
-    private fun saveEvidence(bitmap: Bitmap, name: String) {
+    private fun saveEvidence(
+        bitmap: Bitmap,
+        name: String,
+    ) {
         runCatching {
             val ctx = InstrumentationRegistry.getInstrumentation().targetContext
             val dir = File(ctx.filesDir, "render-evidence").apply { mkdirs() }

@@ -24,30 +24,40 @@ object ElicitationBridge {
     @Volatile
     var handler: ((interactionId: String, answerJson: String) -> Boolean)? = null
 
-    fun dispatch(interactionId: String, answerJson: String): Boolean {
+    fun dispatch(
+        interactionId: String,
+        answerJson: String,
+    ): Boolean {
         val h = handler ?: return false
         return h(interactionId, answerJson)
     }
 }
 
 class ElicitationReceiver : BroadcastReceiver() {
-    override fun onReceive(context: Context, intent: Intent) {
+    override fun onReceive(
+        context: Context,
+        intent: Intent,
+    ) {
         val interactionId = intent.getStringExtra(EXTRA_INTERACTION) ?: return
         val nm = context.getSystemService(NotificationManager::class.java)
 
-        val answerJson: String? = when (intent.action) {
-            ACTION_REPLY_TEXT -> {
-                val results = android.app.RemoteInput.getResultsFromIntent(intent)
-                val text = results?.getCharSequence(KEY_TEXT_REPLY)?.toString()?.trim()
-                // 服务端 resolveInteraction.answer 的 action 为必填枚举 accept|decline|cancel：
-                // 此前只发 {"freeText":…}，通知栏内联回复必报 invalid_value @ answer.action
-                //（真机 2026-10-11 锁屏存活测试实测复现）。补 action=accept，与
-                // AppViewModel.answerElicitationFreeText 同源同修。
-                if (text.isNullOrBlank()) null
-                else """{"action":"accept","freeText":${ElicitationNotifier.quote(text)}}"""
+        val answerJson: String? =
+            when (intent.action) {
+                ACTION_REPLY_TEXT -> {
+                    val results = android.app.RemoteInput.getResultsFromIntent(intent)
+                    val text = results?.getCharSequence(KEY_TEXT_REPLY)?.toString()?.trim()
+                    // 服务端 resolveInteraction.answer 的 action 为必填枚举 accept|decline|cancel：
+                    // 此前只发 {"freeText":…}，通知栏内联回复必报 invalid_value @ answer.action
+                    // （真机 2026-10-11 锁屏存活测试实测复现）。补 action=accept，与
+                    // AppViewModel.answerElicitationFreeText 同源同修。
+                    if (text.isNullOrBlank()) {
+                        null
+                    } else {
+                        """{"action":"accept","freeText":${ElicitationNotifier.quote(text)}}"""
+                    }
+                }
+                else -> intent.getStringExtra(EXTRA_ANSWER)
             }
-            else -> intent.getStringExtra(EXTRA_ANSWER)
-        }
 
         if (answerJson == null) return
         val ok = ElicitationBridge.dispatch(interactionId, answerJson)
@@ -60,7 +70,7 @@ class ElicitationReceiver : BroadcastReceiver() {
                     .setContentTitle("ZCode Remote 未连接")
                     .setContentText("回复未发出去，打开 App 重新处理")
                     .setAutoCancel(true)
-                    .build()
+                    .build(),
             )
         }
     }
@@ -82,14 +92,19 @@ object ElicitationNotifier {
     private const val ID_SPAN = 100_000
     private const val MAX_ACTIONS = 3
 
-    fun notifId(interactionId: String): Int =
-        ID_BASE + ((interactionId.hashCode() and 0x7fffffff) % ID_SPAN)
+    fun notifId(interactionId: String): Int = ID_BASE + ((interactionId.hashCode() and 0x7fffffff) % ID_SPAN)
 
-    fun sync(context: Context, pending: List<PendingElicitation>) {
+    fun sync(
+        context: Context,
+        pending: List<PendingElicitation>,
+    ) {
         ensureChannel(context)
         val nm = context.getSystemService(NotificationManager::class.java)
-        val live = (pending.map { notifId(it.interactionId) } +
-                pending.map { notifId(it.interactionId) + 1 }).toSet()
+        val live =
+            (
+                pending.map { notifId(it.interactionId) } +
+                    pending.map { notifId(it.interactionId) + 1 }
+            ).toSet()
         nm.activeNotifications
             ?.asSequence()
             ?.filter { it.id in ID_BASE until (ID_BASE + ID_SPAN * 2) }
@@ -106,34 +121,42 @@ object ElicitationNotifier {
             ?.forEach { nm.cancel(it.id) }
     }
 
-    private fun build(context: Context, el: PendingElicitation): Notification {
-        val title = when {
-            el.isPlanApproval -> "计划待批准"
-            el.questions.isNotEmpty() -> "需要你的回答：${el.toolName ?: "表单"}"
-            else -> "需要你补充信息"
-        }
-        val body = listOfNotNull(
-            el.prompt?.take(120),
-            el.questions.firstOrNull()?.question?.take(140),
-            el.plan?.take(120),
-        ).joinToString("\n").ifBlank { "桌面端在等你的输入" }
+    private fun build(
+        context: Context,
+        el: PendingElicitation,
+    ): Notification {
+        val title =
+            when {
+                el.isPlanApproval -> "计划待批准"
+                el.questions.isNotEmpty() -> "需要你的回答：${el.toolName ?: "表单"}"
+                else -> "需要你补充信息"
+            }
+        val body =
+            listOfNotNull(
+                el.prompt?.take(120),
+                el.questions.firstOrNull()?.question?.take(140),
+                el.plan?.take(120),
+            ).joinToString("\n").ifBlank { "桌面端在等你的输入" }
 
-        val contentIntent = PendingIntent.getActivity(
-            context, notifId(el.interactionId),
-            Intent(context, MainActivity::class.java).putExtra("openSession", el.sessionId),
-            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
-        )
+        val contentIntent =
+            PendingIntent.getActivity(
+                context,
+                notifId(el.interactionId),
+                Intent(context, MainActivity::class.java).putExtra("openSession", el.sessionId),
+                PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
+            )
 
-        val b = Notification.Builder(context, CH_ELICITATIONS)
-            .setSmallIcon(R.drawable.ic_launcher)
-            .setContentTitle(title)
-            .setContentText(body)
-            .setStyle(Notification.BigTextStyle().bigText(body))
-            .setPriority(Notification.PRIORITY_HIGH)
-            .setCategory(Notification.CATEGORY_SOCIAL)
-            .setContentIntent(contentIntent)
-            .setAutoCancel(false)
-            .setOngoing(true)
+        val b =
+            Notification.Builder(context, CH_ELICITATIONS)
+                .setSmallIcon(R.drawable.ic_launcher)
+                .setContentTitle(title)
+                .setContentText(body)
+                .setStyle(Notification.BigTextStyle().bigText(body))
+                .setPriority(Notification.PRIORITY_HIGH)
+                .setCategory(Notification.CATEGORY_SOCIAL)
+                .setContentIntent(contentIntent)
+                .setAutoCancel(false)
+                .setOngoing(true)
 
         el.autoResolveAt?.let {
             b.setWhen(it)
@@ -143,21 +166,27 @@ object ElicitationNotifier {
         // 只对「答案能被一个动作完整表达」的形态给快捷按钮，其余引导进 App
         // 自由文本 / 开放式提问支持通知栏 RemoteInput 直接内联回复（Sprint 4）
         if (el.freeText || el.questions.isEmpty()) {
-            val remoteInput = android.app.RemoteInput.Builder(ElicitationReceiver.KEY_TEXT_REPLY)
-                .setLabel("输入回复内容…")
-                .build()
-            val replyIntent = Intent(ElicitationReceiver.ACTION_REPLY_TEXT)
-                .setClass(context, ElicitationReceiver::class.java)
-                .putExtra(ElicitationReceiver.EXTRA_INTERACTION, el.interactionId)
-            val replyPendingIntent = PendingIntent.getBroadcast(
-                context,
-                notifId(el.interactionId) + 99,
-                replyIntent,
-                PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_MUTABLE,
-            )
-            val replyAction = Notification.Action.Builder(
-                null, "直接回复", replyPendingIntent
-            ).addRemoteInput(remoteInput).build()
+            val remoteInput =
+                android.app.RemoteInput.Builder(ElicitationReceiver.KEY_TEXT_REPLY)
+                    .setLabel("输入回复内容…")
+                    .build()
+            val replyIntent =
+                Intent(ElicitationReceiver.ACTION_REPLY_TEXT)
+                    .setClass(context, ElicitationReceiver::class.java)
+                    .putExtra(ElicitationReceiver.EXTRA_INTERACTION, el.interactionId)
+            val replyPendingIntent =
+                PendingIntent.getBroadcast(
+                    context,
+                    notifId(el.interactionId) + 99,
+                    replyIntent,
+                    PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_MUTABLE,
+                )
+            val replyAction =
+                Notification.Action.Builder(
+                    null,
+                    "直接回复",
+                    replyPendingIntent,
+                ).addRemoteInput(remoteInput).build()
             b.addAction(replyAction)
         }
 
@@ -170,8 +199,10 @@ object ElicitationNotifier {
             quick.forEachIndexed { i, (label, answerJson) ->
                 b.addAction(
                     Notification.Action.Builder(
-                        null, label, actionIntent(context, el, answerJson, i)
-                    ).build()
+                        null,
+                        label,
+                        actionIntent(context, el, answerJson, i),
+                    ).build(),
                 )
             }
         }
@@ -188,24 +219,29 @@ object ElicitationNotifier {
         if (q != null && !q.multiSelect && q.options.size in 1..MAX_ACTIONS && !el.freeText) {
             return q.options.take(MAX_ACTIONS).map { opt ->
                 opt.label.ifBlank { opt.value }.take(12) to
-                        """{"action":"accept","content":{"answer":${quote(opt.value)}}}"""
+                    """{"action":"accept","content":{"answer":${quote(opt.value)}}}"""
             }
         }
         return emptyList()
     }
 
-    fun quote(v: String): String =
-        "\"" + v.replace("\\", "\\\\").replace("\"", "\\\"") + "\""
+    fun quote(v: String): String = "\"" + v.replace("\\", "\\\\").replace("\"", "\\\"") + "\""
 
     private fun actionIntent(
-        context: Context, el: PendingElicitation, answerJson: String, index: Int,
+        context: Context,
+        el: PendingElicitation,
+        answerJson: String,
+        index: Int,
     ): PendingIntent {
-        val intent = Intent(ElicitationReceiver.ACTION_RESOLVE)
-            .setClass(context, ElicitationReceiver::class.java)
-            .putExtra(ElicitationReceiver.EXTRA_INTERACTION, el.interactionId)
-            .putExtra(ElicitationReceiver.EXTRA_ANSWER, answerJson)
+        val intent =
+            Intent(ElicitationReceiver.ACTION_RESOLVE)
+                .setClass(context, ElicitationReceiver::class.java)
+                .putExtra(ElicitationReceiver.EXTRA_INTERACTION, el.interactionId)
+                .putExtra(ElicitationReceiver.EXTRA_ANSWER, answerJson)
         return PendingIntent.getBroadcast(
-            context, notifId(el.interactionId) + index, intent,
+            context,
+            notifId(el.interactionId) + index,
+            intent,
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
         )
     }
@@ -215,11 +251,13 @@ object ElicitationNotifier {
         if (nm.getNotificationChannel(CH_ELICITATIONS) == null) {
             nm.createNotificationChannel(
                 NotificationChannel(
-                    CH_ELICITATIONS, "表单交互", NotificationManager.IMPORTANCE_HIGH,
+                    CH_ELICITATIONS,
+                    "表单交互",
+                    NotificationManager.IMPORTANCE_HIGH,
                 ).apply {
                     description = "桌面端询问（AskUserQuestion / 计划批准）时的快捷回答入口"
                     enableVibration(true)
-                }
+                },
             )
         }
     }

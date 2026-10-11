@@ -13,7 +13,6 @@ import org.junit.Test
  * 空端边界、回溯正确性（交换型修改）、超限降级、unified 文本格式。
  */
 class ToolDiffTest {
-
     // ---------- parser：工具识别与输入形态 ----------
 
     @Test
@@ -32,12 +31,13 @@ class ToolDiffTest {
 
     @Test
     fun parsesMultiEditEditsArrayWithSeparator() {
-        val input = """
+        val input =
+            """
             {"file_path":"f.txt","edits":[
                 {"old_string":"one","new_string":"ONE"},
                 {"old_string":"two","new_string":"TWO"}
             ]}
-        """.trimIndent()
+            """.trimIndent()
         val diff = ToolDiffParser.parse("MultiEdit", input)!!
         // 两段编辑之间应有 "⋯" 分隔行
         assertTrue(diff.lines.any { it.type == DiffType.CONTEXT && it.text == "⋯" })
@@ -68,8 +68,10 @@ class ToolDiffTest {
 
     // ---------- diffLines：Myers 算法 ----------
 
-    private fun diff(old: String, new: String) =
-        ToolDiffParser.diffLines(old.lines(), new.lines())
+    private fun diff(
+        old: String,
+        new: String,
+    ) = ToolDiffParser.diffLines(old.lines(), new.lines())
 
     @Test
     fun identicalInputYieldsAllContext() {

@@ -18,17 +18,21 @@ import com.zcode.remote.storage.PairedDevice
  * 安全门（任务书 §11.3.2）：必须携带 DebugInjectionGuard 令牌，否则丢弃。
  */
 class DebugPairReceiver : BroadcastReceiver() {
-    override fun onReceive(context: Context, intent: Intent) {
+    override fun onReceive(
+        context: Context,
+        intent: Intent,
+    ) {
         if (!DebugInjectionGuard.allow(context, intent, setOf(ACTION))) return
         val sid = intent.getStringExtra(EXTRA_SID)?.takeIf { it.isNotBlank() } ?: return
         val hash = intent.getStringExtra(EXTRA_HASH)?.takeIf { it.isNotBlank() } ?: return
-        val dev = PairedDevice(
-            deviceSid = sid,
-            passHash = hash,
-            deviceMid = intent.getStringExtra(EXTRA_MID),
-            deviceName = intent.getStringExtra(EXTRA_NAME) ?: "Debug注入",
-            remoteUrl = intent.getStringExtra(EXTRA_URL) ?: "https://zcode.z.ai/remote/v4",
-        )
+        val dev =
+            PairedDevice(
+                deviceSid = sid,
+                passHash = hash,
+                deviceMid = intent.getStringExtra(EXTRA_MID),
+                deviceName = intent.getStringExtra(EXTRA_NAME) ?: "Debug注入",
+                remoteUrl = intent.getStringExtra(EXTRA_URL) ?: "https://zcode.z.ai/remote/v4",
+            )
         MultiDeviceStore(context).upsertActive(dev)
     }
 

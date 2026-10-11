@@ -1,0 +1,32 @@
+# §11.8 静态分析：Detekt 配置。默认规则集（buildUponDefaultConfig）之上做最小定制；
+# 存量告警登记于 detekt-baseline.xml（由 `gradle detektBaseline` 生成），新增违规即红。
+build:
+  maxIssues: 0
+
+complexity:
+  LongMethod:
+    # 项目沿用桌面端对齐的大 composable / 编排函数（§11.7 拆分后仍有合理长函数），
+    # 方法长度门禁由既有评审约束，不在静态分析硬卡。
+    threshold: 600
+  LongParameterList:
+    active: false
+  TooManyFunctions:
+    active: false
+
+style:
+  MaxLineLength:
+    maxLineLength: 160
+  MagicNumber:
+    active: false
+  ReturnCount:
+    active: false
+  UnusedPrivateMember:
+    # Compose 预览/预留 API 场景保留（unused 由 IDE 提示，不作为 CI 门禁）
+    ignoreAnnotated: ['Preview']
+
+naming:
+  FunctionNaming:
+    # Compose 函数为 PascalCase 命名（官方推荐），关闭驼峰小写函数名规则
+    ignoreAnnotated: ['Composable']
+  TopLevelPropertyNaming:
+    active: false

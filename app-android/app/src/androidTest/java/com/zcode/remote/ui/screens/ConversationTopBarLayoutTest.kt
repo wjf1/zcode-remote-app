@@ -26,7 +26,6 @@ import org.junit.Test
  * 钉在单行量级。修复前该行高约 1000px（≈333dp）必然失败，修复后约 2 行（< 96dp）通过。
  */
 class ConversationTopBarLayoutTest {
-
     @get:Rule
     val rule = createComposeRule()
 
@@ -35,20 +34,22 @@ class ConversationTopBarLayoutTest {
         rule.setContent {
             val base = LocalDensity.current
             CompositionLocalProvider(
-                LocalDensity provides Density(base.density, fontScale = 1.3f)
+                LocalDensity provides Density(base.density, fontScale = 1.3f),
             ) {
                 ZCodeTheme(forceDark = true) {
                     ConversationScreen(
                         title = "分析 ZCode STREAM_IDLE_TIMEOUT 报错原因并给出修复建议",
                         status = ConversationChannel.Status.Idle,
-                        meta = ConversationChannel.ConversationMeta(
-                            phase = "executing",
-                            totalCount = 254,
-                            model = "cn:deepseek-v4.1-flash-preview-extremely-long-name",
-                        ),
-                        rows = listOf(
-                            ConversationRow(rowId = 1, kind = "assistant", text = "hello"),
-                        ),
+                        meta =
+                            ConversationChannel.ConversationMeta(
+                                phase = "executing",
+                                totalCount = 254,
+                                model = "cn:deepseek-v4.1-flash-preview-extremely-long-name",
+                            ),
+                        rows =
+                            listOf(
+                                ConversationRow(rowId = 1, kind = "assistant", text = "hello"),
+                            ),
                         onBack = {},
                     )
                 }

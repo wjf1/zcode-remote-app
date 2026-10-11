@@ -3,7 +3,6 @@ package com.zcode.remote.ui.screens
 import android.Manifest
 import android.annotation.SuppressLint
 import android.content.pm.PackageManager
-import com.zcode.remote.util.ZLog
 import android.util.Size
 import android.view.MotionEvent
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -39,6 +38,7 @@ import com.google.zxing.common.GlobalHistogramBinarizer
 import com.google.zxing.common.HybridBinarizer
 import com.zcode.remote.storage.PairedDevice
 import com.zcode.remote.storage.QrParser
+import com.zcode.remote.util.ZLog
 import java.util.concurrent.Executors
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicBoolean
@@ -54,9 +54,10 @@ fun ScanScreen(onPaired: (PairedDevice) -> Unit) {
         mutableStateOf(ContextCompat.checkSelfPermission(context, Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED)
     }
     var manualText by remember { mutableStateOf("") }
-    val permissionLauncher = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) {
-        hasCamera = it
-    }
+    val permissionLauncher =
+        rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) {
+            hasCamera = it
+        }
 
     LaunchedEffect(Unit) { if (!hasCamera) permissionLauncher.launch(Manifest.permission.CAMERA) }
 
@@ -77,34 +78,38 @@ fun ScanScreen(onPaired: (PairedDevice) -> Unit) {
 
                         providerFuture.addListener({
                             val provider = providerFuture.get()
-                            val preview = Preview.Builder().build().also {
-                                it.setSurfaceProvider(previewView.surfaceProvider)
-                            }
+                            val preview =
+                                Preview.Builder().build().also {
+                                    it.setSurfaceProvider(previewView.surfaceProvider)
+                                }
 
-                            val reader = MultiFormatReader().apply {
-                                setHints(
-                                    mapOf(
-                                        DecodeHintType.POSSIBLE_FORMATS to listOf(BarcodeFormat.QR_CODE),
-                                        DecodeHintType.TRY_HARDER to true,
-                                        DecodeHintType.CHARACTER_SET to "UTF-8",
+                            val reader =
+                                MultiFormatReader().apply {
+                                    setHints(
+                                        mapOf(
+                                            DecodeHintType.POSSIBLE_FORMATS to listOf(BarcodeFormat.QR_CODE),
+                                            DecodeHintType.TRY_HARDER to true,
+                                            DecodeHintType.CHARACTER_SET to "UTF-8",
+                                        ),
                                     )
-                                )
-                            }
+                                }
 
                             // 优先选用 1280x720 分辨率，保证长字符高密度二维码的清晰度
-                            val resolutionSelector = ResolutionSelector.Builder()
-                                .setResolutionStrategy(
-                                    ResolutionStrategy(
-                                        Size(1280, 720),
-                                        ResolutionStrategy.FALLBACK_RULE_CLOSEST_HIGHER_THEN_LOWER
+                            val resolutionSelector =
+                                ResolutionSelector.Builder()
+                                    .setResolutionStrategy(
+                                        ResolutionStrategy(
+                                            Size(1280, 720),
+                                            ResolutionStrategy.FALLBACK_RULE_CLOSEST_HIGHER_THEN_LOWER,
+                                        ),
                                     )
-                                )
-                                .build()
+                                    .build()
 
-                            val analysis = ImageAnalysis.Builder()
-                                .setResolutionSelector(resolutionSelector)
-                                .setBackpressureStrategy(ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST)
-                                .build()
+                            val analysis =
+                                ImageAnalysis.Builder()
+                                    .setResolutionSelector(resolutionSelector)
+                                    .setBackpressureStrategy(ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST)
+                                    .build()
 
                             analysis.setAnalyzer(executor) { proxy ->
                                 if (pairedHandled.get()) {
@@ -132,20 +137,22 @@ fun ScanScreen(onPaired: (PairedDevice) -> Unit) {
 
                             runCatching {
                                 provider.unbindAll()
-                                val camera = provider.bindToLifecycle(
-                                    lifecycleOwner,
-                                    CameraSelector.DEFAULT_BACK_CAMERA,
-                                    preview,
-                                    analysis
-                                )
+                                val camera =
+                                    provider.bindToLifecycle(
+                                        lifecycleOwner,
+                                        CameraSelector.DEFAULT_BACK_CAMERA,
+                                        preview,
+                                        analysis,
+                                    )
                                 // 点击屏幕对焦
                                 previewView.setOnTouchListener { _, event ->
                                     if (event.action == MotionEvent.ACTION_UP) {
                                         val factory = previewView.meteringPointFactory
                                         val point = factory.createPoint(event.x, event.y)
-                                        val action = FocusMeteringAction.Builder(point, FocusMeteringAction.FLAG_AF)
-                                            .setAutoCancelDuration(3, TimeUnit.SECONDS)
-                                            .build()
+                                        val action =
+                                            FocusMeteringAction.Builder(point, FocusMeteringAction.FLAG_AF)
+                                                .setAutoCancelDuration(3, TimeUnit.SECONDS)
+                                                .build()
                                         camera.cameraControl.startFocusAndMetering(action)
                                     }
                                     true
@@ -153,15 +160,16 @@ fun ScanScreen(onPaired: (PairedDevice) -> Unit) {
                             }.onFailure { ZLog.e(TAG, "相机绑定失败", it) }
                         }, ContextCompat.getMainExecutor(ctx))
                         previewView
-                    }
+                    },
                 )
 
                 // 取景框辅助框线
                 Box(
-                    modifier = Modifier
-                        .fillMaxSize(0.72f)
-                        .align(Alignment.Center)
-                        .border(2.dp, Color(0xFF4CAF50), RoundedCornerShape(12.dp))
+                    modifier =
+                        Modifier
+                            .fillMaxSize(0.72f)
+                            .align(Alignment.Center)
+                            .border(2.dp, Color(0xFF4CAF50), RoundedCornerShape(12.dp)),
                 )
             }
         } else {
@@ -169,9 +177,11 @@ fun ScanScreen(onPaired: (PairedDevice) -> Unit) {
         }
 
         OutlinedTextField(
-            value = manualText, onValueChange = { manualText = it },
+            value = manualText,
+            onValueChange = { manualText = it },
             label = { Text("无法扫码？粘贴完整配对链接") },
-            modifier = Modifier.fillMaxWidth(), minLines = 2,
+            modifier = Modifier.fillMaxWidth(),
+            minLines = 2,
         )
         Button(
             onClick = { QrParser.parse(manualText)?.let(onPaired) },
@@ -188,7 +198,10 @@ fun ScanScreen(onPaired: (PairedDevice) -> Unit) {
  * 3. 优先使用 [HybridBinarizer]；若未检出则回退使用 [GlobalHistogramBinarizer] 抵抗屏幕摩尔纹；
  * 4. 无论成功与否，finally 块强制 [MultiFormatReader.reset]，保证解析器状态机正确。
  */
-private fun decodeQr(reader: MultiFormatReader, proxy: ImageProxy): String? {
+private fun decodeQr(
+    reader: MultiFormatReader,
+    proxy: ImageProxy,
+): String? {
     return try {
         val plane = proxy.planes[0]
         val w = proxy.width
@@ -211,9 +224,17 @@ private fun decodeQr(reader: MultiFormatReader, proxy: ImageProxy): String? {
         val finalW = dims.first
         val finalH = dims.second
 
-        val source = PlanarYUVLuminanceSource(
-            rotatedY, finalW, finalH, 0, 0, finalW, finalH, false
-        )
+        val source =
+            PlanarYUVLuminanceSource(
+                rotatedY,
+                finalW,
+                finalH,
+                0,
+                0,
+                finalW,
+                finalH,
+                false,
+            )
 
         // 尝试 HybridBinarizer，失败则回退 GlobalHistogramBinarizer（对屏幕反光与点阵纹理更鲁棒）
         try {
@@ -237,7 +258,12 @@ private fun decodeQr(reader: MultiFormatReader, proxy: ImageProxy): String? {
  * 传感器通常为横屏安装（rotation = 90 或 270）。
  * 顺时针旋转 Y 数组至当前手机屏幕物理正方向。
  */
-private fun rotateY(src: ByteArray, w: Int, h: Int, rotation: Int): Pair<ByteArray, Pair<Int, Int>> {
+private fun rotateY(
+    src: ByteArray,
+    w: Int,
+    h: Int,
+    rotation: Int,
+): Pair<ByteArray, Pair<Int, Int>> {
     return when (rotation) {
         90 -> {
             val dst = ByteArray(w * h)

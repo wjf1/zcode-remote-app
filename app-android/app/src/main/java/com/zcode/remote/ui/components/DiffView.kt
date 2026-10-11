@@ -1,19 +1,17 @@
 package com.zcode.remote.ui.components
 
 import androidx.compose.foundation.background
-import androidx.compose.foundation.horizontalScroll
-import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -65,13 +63,16 @@ class ToolDiff(val filePath: String?, val lines: List<DiffLine>) {
     /** 一键复制用的 unified 风格文本（截断 64k 防剪贴板爆炸）。 */
     fun toUnifiedText(): String {
         val header = filePath?.let { "--- a/$it\n+++ b/$it\n" } ?: ""
-        val body = lines.joinToString("\n") {
-            (when (it.type) {
-                DiffType.ADD -> "+"
-                DiffType.DEL -> "-"
-                DiffType.CONTEXT -> " "
-            }) + it.text
-        }
+        val body =
+            lines.joinToString("\n") {
+                (
+                    when (it.type) {
+                        DiffType.ADD -> "+"
+                        DiffType.DEL -> "-"
+                        DiffType.CONTEXT -> " "
+                    }
+                ) + it.text
+            }
         return (header + body).take(64_000)
     }
 }
@@ -84,7 +85,10 @@ object ToolDiffParser {
 
     fun parse(row: ConversationRow): ToolDiff? = parse(row.toolName, row.inputText)
 
-    fun parse(toolName: String?, inputText: String?): ToolDiff? {
+    fun parse(
+        toolName: String?,
+        inputText: String?,
+    ): ToolDiff? {
         val name = toolName?.lowercase()?.substringAfterLast('.') ?: return null
         if (WRITE_TOOLS.none { name.contains(it) }) return null
         val raw = inputText?.trim()?.takeIf { it.startsWith("{") } ?: return null
@@ -124,9 +128,19 @@ object ToolDiffParser {
             val seg = diffLines(oldStr.lines(), newStr.lines())
             seg.forEach { dl ->
                 when (dl.type) {
-                    DiffType.DEL -> { oldNo++; lines += dl.copy(oldNo = oldNo) }
-                    DiffType.ADD -> { newNo++; lines += dl.copy(newNo = newNo) }
-                    DiffType.CONTEXT -> { oldNo++; newNo++; lines += dl.copy(oldNo = oldNo, newNo = newNo) }
+                    DiffType.DEL -> {
+                        oldNo++
+                        lines += dl.copy(oldNo = oldNo)
+                    }
+                    DiffType.ADD -> {
+                        newNo++
+                        lines += dl.copy(newNo = newNo)
+                    }
+                    DiffType.CONTEXT -> {
+                        oldNo++
+                        newNo++
+                        lines += dl.copy(oldNo = oldNo, newNo = newNo)
+                    }
                 }
             }
         }
@@ -138,7 +152,10 @@ object ToolDiffParser {
      * 行级 Myers diff（O(ND)）。输入合计超 4000 行时降级为「整删整增」——
      * 保证 UI 永不被巨型 diff 的计算阻塞（Happy 预算思想的本地化）。
      */
-    fun diffLines(old: List<String>, new: List<String>): List<DiffLine> {
+    fun diffLines(
+        old: List<String>,
+        new: List<String>,
+    ): List<DiffLine> {
         // Kotlin 陷阱："".lines() == [""]（单空行）而非空列表——Write 的空文件、
         // Edit 的空 old_string（纯插入）都会踩到；统一规范化为空列表
         val a = if (old == listOf("")) emptyList() else old
@@ -159,20 +176,27 @@ object ToolDiffParser {
             trace += v.copyOf()
             var k = -d
             while (k <= d) {
-                var x = if (k == -d || (k != d && v[k - 1 + offset] < v[k + 1 + offset])) {
-                    v[k + 1 + offset]
-                } else {
-                    v[k - 1 + offset] + 1
-                }
+                var x =
+                    if (k == -d || (k != d && v[k - 1 + offset] < v[k + 1 + offset])) {
+                        v[k + 1 + offset]
+                    } else {
+                        v[k - 1 + offset] + 1
+                    }
                 var y = x - k
-                while (x < n && y < m && a[x] == b[y]) { x++; y++ }
+                while (x < n && y < m && a[x] == b[y]) {
+                    x++
+                    y++
+                }
                 v[k + offset] = x
-                if (x >= n && y >= m) { foundD = d; break }
+                if (x >= n && y >= m) {
+                    foundD = d
+                    break
+                }
                 k += 2
             }
             if (foundD >= 0) break
         }
-        if (foundD < 0) {  // 理论不可达，防御
+        if (foundD < 0) { // 理论不可达，防御
             return a.map { DiffLine(DiffType.DEL, it) } + b.map { DiffLine(DiffType.ADD, it) }
         }
         val out = ArrayList<DiffLine>(n + m)
@@ -185,11 +209,24 @@ object ToolDiffParser {
             val prevK = if (k == -d || (k != d && vv[k - 1 + offset] < vv[k + 1 + offset])) k + 1 else k - 1
             val prevX = vv[prevK + offset]
             val prevY = prevX - prevK
-            while (x > prevX && y > prevY) { out += DiffLine(DiffType.CONTEXT, a[x - 1]); x--; y-- }
-            if (x == prevX) { out += DiffLine(DiffType.ADD, b[prevY]); y = prevY }
-            else { out += DiffLine(DiffType.DEL, a[prevX]); x = prevX }
+            while (x > prevX && y > prevY) {
+                out += DiffLine(DiffType.CONTEXT, a[x - 1])
+                x--
+                y--
+            }
+            if (x == prevX) {
+                out += DiffLine(DiffType.ADD, b[prevY])
+                y = prevY
+            } else {
+                out += DiffLine(DiffType.DEL, a[prevX])
+                x = prevX
+            }
         }
-        while (x > 0 && y > 0 && a[x - 1] == b[y - 1]) { out += DiffLine(DiffType.CONTEXT, a[x - 1]); x--; y-- }
+        while (x > 0 && y > 0 && a[x - 1] == b[y - 1]) {
+            out += DiffLine(DiffType.CONTEXT, a[x - 1])
+            x--
+            y--
+        }
         out.reverse()
         return out
     }
@@ -197,7 +234,10 @@ object ToolDiffParser {
 
 /** 红绿 diff 渲染：行号 + 横向滚动 + 长 context 折叠 + 一键复制 unified 文本。 */
 @Composable
-fun DiffBlock(diff: ToolDiff, modifier: Modifier = Modifier) {
+fun DiffBlock(
+    diff: ToolDiff,
+    modifier: Modifier = Modifier,
+) {
     val clipboard = LocalClipboardManager.current
     val haptic = LocalHapticFeedback.current
     var forceExpanded by remember { mutableStateOf(false) }
@@ -205,49 +245,55 @@ fun DiffBlock(diff: ToolDiff, modifier: Modifier = Modifier) {
     // 折叠长段未变更行：连续 CONTEXT > 10 行时中间折叠，留头尾各 3 行
     data class Slice(val from: Int, val to: Int, val collapsedRun: Int? = null)
 
-    val slices = remember(diff.lines, forceExpanded) {
-        val result = mutableListOf<Slice>()
-        if (forceExpanded) {
-            result += Slice(0, diff.lines.size)
-        } else {
-            var i = 0
-            val n = diff.lines.size
-            while (i < n) {
-                if (diff.lines[i].type != DiffType.CONTEXT) { result += Slice(i, i + 1); i++; continue }
-                var j = i
-                while (j < n && diff.lines[j].type == DiffType.CONTEXT) j++
-                val run = j - i
-                if (run > 10) {
-                    result += Slice(i, i + 3)
-                    result += Slice(j - 3, j, collapsedRun = run - 6)
-                } else {
-                    result += Slice(i, j)
+    val slices =
+        remember(diff.lines, forceExpanded) {
+            val result = mutableListOf<Slice>()
+            if (forceExpanded) {
+                result += Slice(0, diff.lines.size)
+            } else {
+                var i = 0
+                val n = diff.lines.size
+                while (i < n) {
+                    if (diff.lines[i].type != DiffType.CONTEXT) {
+                        result += Slice(i, i + 1)
+                        i++
+                        continue
+                    }
+                    var j = i
+                    while (j < n && diff.lines[j].type == DiffType.CONTEXT) j++
+                    val run = j - i
+                    if (run > 10) {
+                        result += Slice(i, i + 3)
+                        result += Slice(j - 3, j, collapsedRun = run - 6)
+                    } else {
+                        result += Slice(i, j)
+                    }
+                    i = j
                 }
-                i = j
             }
+            result
         }
-        result
-    }
 
     Surface(
         color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f),
         shape = RoundedCornerShape(6.dp),
-        modifier = modifier.fillMaxWidth()
+        modifier = modifier.fillMaxWidth(),
     ) {
         Column(Modifier.padding(vertical = 4.dp)) {
             Row(
                 verticalAlignment = Alignment.CenterVertically,
-                modifier = Modifier.fillMaxWidth().padding(horizontal = 8.dp)
+                modifier = Modifier.fillMaxWidth().padding(horizontal = 8.dp),
             ) {
                 Text(
-                    text = buildString {
-                        diff.filePath?.let { append("📄 ${it.substringAfterLast('/')}  ") }
-                        append("+${diff.added} −${diff.removed}")
-                    },
+                    text =
+                        buildString {
+                            diff.filePath?.let { append("📄 ${it.substringAfterLast('/')}  ") }
+                            append("+${diff.added} −${diff.removed}")
+                        },
                     style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.SemiBold),
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     maxLines = 1,
-                    modifier = Modifier.weight(1f)
+                    modifier = Modifier.weight(1f),
                 )
                 TextButton(
                     onClick = {
@@ -255,7 +301,7 @@ fun DiffBlock(diff: ToolDiff, modifier: Modifier = Modifier) {
                         clipboard.setText(AnnotatedString(diff.toUnifiedText()))
                     },
                     contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 6.dp),
-                    modifier = Modifier.height(24.dp)
+                    modifier = Modifier.height(24.dp),
                 ) {
                     // material-icons-core 无 ContentCopy，用字形替代（避免引入 icons-extended 增包体）
                     Text("⧉ 复制", style = MaterialTheme.typography.labelSmall)
@@ -278,80 +324,94 @@ fun DiffBlock(diff: ToolDiff, modifier: Modifier = Modifier) {
                         text = "⋯ ${slice.collapsedRun} 行未变更，点击展开 ⋯",
                         style = MaterialTheme.typography.labelSmall,
                         color = MaterialTheme.colorScheme.primary,
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .clickable { forceExpanded = true }
-                            .padding(horizontal = 8.dp, vertical = 2.dp)
+                        modifier =
+                            Modifier
+                                .fillMaxWidth()
+                                .clickable { forceExpanded = true }
+                                .padding(horizontal = 8.dp, vertical = 2.dp),
                     )
                 } else {
                     val scroll = rememberScrollState()
                     Column(
-                        modifier = Modifier.fillMaxWidth().horizontalScroll(scroll)
+                        modifier = Modifier.fillMaxWidth().horizontalScroll(scroll),
                     ) {
                         Column {
                             diff.lines.subList(slice.from, slice.to).forEach { dl ->
-                                val bg = when (dl.type) {
-                                    DiffType.ADD -> addBg
-                                    DiffType.DEL -> delBg
-                                    DiffType.CONTEXT -> Color.Transparent
-                                }
-                                val fg = when (dl.type) {
-                                    DiffType.ADD -> addFg
-                                    DiffType.DEL -> delFg
-                                    DiffType.CONTEXT -> MaterialTheme.colorScheme.onSurface
-                                }
-                                val sign = when (dl.type) {
-                                    DiffType.ADD -> "+"
-                                    DiffType.DEL -> "−"
-                                    DiffType.CONTEXT -> " "
-                                }
+                                val bg =
+                                    when (dl.type) {
+                                        DiffType.ADD -> addBg
+                                        DiffType.DEL -> delBg
+                                        DiffType.CONTEXT -> Color.Transparent
+                                    }
+                                val fg =
+                                    when (dl.type) {
+                                        DiffType.ADD -> addFg
+                                        DiffType.DEL -> delFg
+                                        DiffType.CONTEXT -> MaterialTheme.colorScheme.onSurface
+                                    }
+                                val sign =
+                                    when (dl.type) {
+                                        DiffType.ADD -> "+"
+                                        DiffType.DEL -> "−"
+                                        DiffType.CONTEXT -> " "
+                                    }
                                 // 单列行号：新增取新号、删除取老号、上下文取新号 —— 与桌面端一致。
-                                val lineNo = when (dl.type) {
-                                    DiffType.DEL -> dl.oldNo
-                                    else -> dl.newNo ?: dl.oldNo
-                                }
-                                val accent = when (dl.type) {
-                                    DiffType.ADD -> addFg
-                                    DiffType.DEL -> delFg
-                                    DiffType.CONTEXT -> Color.Transparent
-                                }
+                                val lineNo =
+                                    when (dl.type) {
+                                        DiffType.DEL -> dl.oldNo
+                                        else -> dl.newNo ?: dl.oldNo
+                                    }
+                                val accent =
+                                    when (dl.type) {
+                                        DiffType.ADD -> addFg
+                                        DiffType.DEL -> delFg
+                                        DiffType.CONTEXT -> Color.Transparent
+                                    }
                                 Row(
-                                    modifier = Modifier
-                                        .background(bg)
-                                        .drawBehind {
-                                            if (accent != Color.Transparent) {
-                                                drawRect(
-                                                    color = accent,
-                                                    size = Size(
-                                                        ZCodeDimens.DiffAccentWidth.toPx(),
-                                                        size.height,
-                                                    ),
-                                                )
-                                            }
-                                        }
+                                    modifier =
+                                        Modifier
+                                            .background(bg)
+                                            .drawBehind {
+                                                if (accent != Color.Transparent) {
+                                                    drawRect(
+                                                        color = accent,
+                                                        size =
+                                                            Size(
+                                                                ZCodeDimens.DiffAccentWidth.toPx(),
+                                                                size.height,
+                                                            ),
+                                                    )
+                                                }
+                                            },
                                 ) {
                                     Box(
-                                        modifier = Modifier
-                                            .width(ZCodeDimens.DiffGutterWidth)
-                                            .background(accent.copy(alpha = 0.18f)),
+                                        modifier =
+                                            Modifier
+                                                .width(ZCodeDimens.DiffGutterWidth)
+                                                .background(accent.copy(alpha = 0.18f)),
                                         contentAlignment = Alignment.CenterEnd,
                                     ) {
                                         Text(
                                             text = lineNo?.toString().orEmpty(),
-                                            style = MaterialTheme.typography.labelSmall.copy(
-                                                fontFamily = FontFamily.Monospace, fontSize = 10.sp
-                                            ),
+                                            style =
+                                                MaterialTheme.typography.labelSmall.copy(
+                                                    fontFamily = FontFamily.Monospace,
+                                                    fontSize = 10.sp,
+                                                ),
                                             color = gutter,
                                             modifier = Modifier.padding(end = 6.dp, start = 4.dp),
                                         )
                                     }
                                     Text(
                                         text = "$sign${dl.text.take(2000)}",
-                                        style = MaterialTheme.typography.bodySmall.copy(
-                                            fontFamily = FontFamily.Monospace, fontSize = 11.sp, lineHeight = 15.sp
-                                        ),
+                                        style =
+                                            MaterialTheme.typography.bodySmall.copy(
+                                                fontFamily = FontFamily.Monospace,
+                                                fontSize = 11.sp,
+                                                lineHeight = 15.sp,
+                                            ),
                                         color = fg,
-                                        modifier = Modifier.padding(end = 8.dp)
+                                        modifier = Modifier.padding(end = 8.dp),
                                     )
                                 }
                             }

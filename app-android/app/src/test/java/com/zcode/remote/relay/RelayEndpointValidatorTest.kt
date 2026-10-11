@@ -11,14 +11,19 @@ import org.junit.Test
  * 私网、异常端口、大小写变体）。
  */
 class RelayEndpointValidatorTest {
-
-    private fun rejected(url: String?, allowInsecure: Boolean = false): Reason {
+    private fun rejected(
+        url: String?,
+        allowInsecure: Boolean = false,
+    ): Reason {
         val r = RelayEndpointValidator.validate(url, allowInsecure)
         assertTrue("期望拒绝但通过：$url -> $r", r is Result.Rejected)
         return (r as Result.Rejected).reason
     }
 
-    private fun ok(url: String, allowInsecure: Boolean = false) {
+    private fun ok(
+        url: String,
+        allowInsecure: Boolean = false,
+    ) {
         val r = RelayEndpointValidator.validate(url, allowInsecure)
         assertEquals("期望通过但被拒：$url -> $r", Result.Ok(url.trim()), r)
     }
@@ -55,8 +60,7 @@ class RelayEndpointValidatorTest {
     // ---------- 拒绝：明文 / scheme ----------
 
     @Test
-    fun rejectsInsecureWsInRelease() =
-        assertEquals(Reason.INSECURE_REJECTED, rejected("ws://10.0.0.2:8080/ws"))
+    fun rejectsInsecureWsInRelease() = assertEquals(Reason.INSECURE_REJECTED, rejected("ws://10.0.0.2:8080/ws"))
 
     @Test
     fun allowsInsecureWsOnlyWhenDebug() = ok("ws://10.0.0.2:8080/ws", allowInsecure = true)
@@ -71,8 +75,7 @@ class RelayEndpointValidatorTest {
     fun rejectsCustomScheme() = assertEquals(Reason.SCHEME_NOT_ALLOWED, rejected("zcode://pair"))
 
     @Test
-    fun rejectsSchemePrefixLookalike() =
-        assertEquals(Reason.SCHEME_NOT_ALLOWED, rejected("wssx://evil/ws"))
+    fun rejectsSchemePrefixLookalike() = assertEquals(Reason.SCHEME_NOT_ALLOWED, rejected("wssx://evil/ws"))
 
     // ---------- 拒绝：结构 ----------
 
@@ -89,12 +92,10 @@ class RelayEndpointValidatorTest {
     fun rejectsSchemeRelative() = assertEquals(Reason.NOT_ABSOLUTE, rejected("//zcode.z.ai/ws"))
 
     @Test
-    fun rejectsUserinfo() =
-        assertEquals(Reason.USERINFO_PRESENT, rejected("wss://user:pass@zcode.z.ai/ws"))
+    fun rejectsUserinfo() = assertEquals(Reason.USERINFO_PRESENT, rejected("wss://user:pass@zcode.z.ai/ws"))
 
     @Test
-    fun rejectsUserinfoAtOnly() =
-        assertEquals(Reason.USERINFO_PRESENT, rejected("wss://evil@zcode.z.ai/ws"))
+    fun rejectsUserinfoAtOnly() = assertEquals(Reason.USERINFO_PRESENT, rejected("wss://evil@zcode.z.ai/ws"))
 
     @Test
     fun rejectsMissingHost() = assertEquals(Reason.MISSING_HOST, rejected("wss:///ws"))

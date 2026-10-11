@@ -1,6 +1,5 @@
 package com.zcode.remote.ui.components
 
-import com.zcode.remote.ui.components.opaqueHighlightArgb
 import dev.snipme.highlights.Highlights
 import dev.snipme.highlights.model.ColorHighlight
 import dev.snipme.highlights.model.SyntaxLanguage
@@ -20,14 +19,14 @@ import org.junit.Test
  * 把这三层逐一钉住；模拟器那边只负责证明「颜色真的画到了屏幕上」。
  */
 class CodeHighlightTest {
-
-    private val code = """
+    private val code =
+        """
         // 注释 comment
         fun main() {
             val message = "hello zcode"
             println(message)
         }
-    """.trimIndent()
+        """.trimIndent()
 
     private fun highlight(language: String?) =
         Highlights.Builder()

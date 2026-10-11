@@ -1,16 +1,27 @@
 import java.util.Properties
 
 // 发布签名（keystore.properties 不入库；storeFile 相对 app-android/ 目录）
-val keystoreProps = Properties().apply {
-    val f = rootProject.file("keystore.properties")
-    if (f.exists()) f.inputStream().use { load(it) }
-}
+val keystoreProps =
+    Properties().apply {
+        val f = rootProject.file("keystore.properties")
+        if (f.exists()) f.inputStream().use { load(it) }
+    }
 
 plugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.android")
     id("org.jetbrains.kotlin.plugin.compose")
     id("org.jetbrains.kotlin.plugin.serialization")
+    id("io.gitlab.arturbosch.detekt")
+    id("org.jetbrains.kotlinx.kover")
+    id("org.cyclonedx.bom")
+}
+
+// §11.8：Detekt——默认规则集 + baseline（存量告警登记于 detekt-baseline.xml，新增违规即红）
+detekt {
+    buildUponDefaultConfig = true
+    config.setFrom(files("$rootDir/detekt-config.yml"))
+    baseline = file("$rootDir/detekt-baseline.xml")
 }
 
 android {
@@ -69,7 +80,7 @@ android {
     kotlinOptions { jvmTarget = "17" }
     buildFeatures {
         compose = true
-        buildConfig = true   // 用 BuildConfig.DEBUG 隔离调试观测面板（HANDOVER 技术债）
+        buildConfig = true // 用 BuildConfig.DEBUG 隔离调试观测面板（HANDOVER 技术债）
     }
 }
 

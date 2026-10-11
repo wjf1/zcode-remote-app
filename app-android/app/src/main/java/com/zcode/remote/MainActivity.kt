@@ -24,16 +24,14 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.zcode.remote.relay.ApprovalOption
-import com.zcode.remote.relay.approvalsForSession
-import com.zcode.remote.relay.elicitationsForSession
-import com.zcode.remote.relay.ConversationChannel
 import com.zcode.remote.relay.PendingApproval
 import com.zcode.remote.relay.SessionItem
+import com.zcode.remote.relay.approvalsForSession
+import com.zcode.remote.relay.elicitationsForSession
 import com.zcode.remote.storage.PairedDevice
 import com.zcode.remote.storage.QrParser
 import com.zcode.remote.ui.screens.*
 import com.zcode.remote.ui.theme.ZCodeTheme
-import com.zcode.remote.ui.theme.ZCodeTokens
 import com.zcode.remote.ui.theme.statusPendingTone
 
 class MainActivity : ComponentActivity() {
@@ -61,11 +59,14 @@ class MainActivity : ComponentActivity() {
                 handleShareIntent(intent)
                 handleDeepLink(intent)
             }
-            ZCodeTheme(forceDark = when (vm.themeMode) {
-                "dark" -> true
-                "light" -> false
-                else -> null
-            }) {
+            ZCodeTheme(
+                forceDark =
+                    when (vm.themeMode) {
+                        "dark" -> true
+                        "light" -> false
+                        else -> null
+                    },
+            ) {
                 Surface(Modifier.fillMaxSize()) {
                     var scanning by rememberSaveable { mutableStateOf(false) }
                     var opened by remember { mutableStateOf<SessionItem?>(null) }
@@ -89,7 +90,7 @@ class MainActivity : ComponentActivity() {
                             text = {
                                 Text(
                                     "链接中的设备：${dev.deviceName ?: dev.deviceSid}\n\n" +
-                                        "确认后将连接到该设备，当前设备的连接会被替换。"
+                                        "确认后将连接到该设备，当前设备的连接会被替换。",
                                 )
                             },
                             confirmButton = {
@@ -99,7 +100,7 @@ class MainActivity : ComponentActivity() {
                                     android.widget.Toast.makeText(
                                         this@MainActivity,
                                         "已通过链接配对：${dev.deviceName ?: dev.deviceSid}",
-                                        android.widget.Toast.LENGTH_SHORT
+                                        android.widget.Toast.LENGTH_SHORT,
                                     ).show()
                                 }) { Text("配对") }
                             },
@@ -115,87 +116,96 @@ class MainActivity : ComponentActivity() {
                         showGuide -> KeepAliveGuideScreen(onBack = { showGuide = false })
 
                         // 2. 扫码配对全屏页
-                        vm.device == null || scanning -> ScanScreen(
-                            onPaired = { vm.pair(it); scanning = false },
-                        )
+                        vm.device == null || scanning ->
+                            ScanScreen(
+                                onPaired = {
+                                    vm.pair(it)
+                                    scanning = false
+                                },
+                            )
 
                         // 3. 沉浸式会话详情页
                         // B-1：用会话 id 作 key —— listState / 滚动锚点 / 贴底标记不跨会话复用，
                         // 否则「A 停在顶部 → 进 B」会沿用 A 的偏移量（进 B 不停在最新行）。
-                        target != null -> androidx.compose.runtime.key(target.taskId) {
-                            ConversationScreen(
-                            ui = ConversationUiState(
-                                title = vm.conversationMeta.title ?: target.title,
-                                status = vm.conversationStatus,
-                                meta = vm.conversationMeta,
-                                rows = vm.rowsSnapshot,
-                                pendingUserMessages = vm.pendingUserMessages,
-                                // 跨会话隔离（2026-10-09 真机反馈）：待处理项合并了
-                                // 「任务事件流（全 workspace）」与「会话流（当前订阅）」两路，
-                                // 会话页只能渲染属于本会话的卡，否则 B 会话会弹出 A 会话的审批。
-                                approvals = approvalsForSession(vm.approvals, target.taskId),
-                                elicitations = elicitationsForSession(vm.elicitations, target.taskId),
-                                earlier = vm.earlier,
-                                sessionState = vm.sessionState,
-                                prompt = vm.promptDraft,
-                                sending = vm.sending,
-                                canStop = vm.conversationMeta.canStop == true,
-                                stopState = vm.conversationMeta.stopState,
-                                commandFeedback = vm.commandFeedback,
-                                feedbackIsFailure = vm.feedbackIsFailure,
-                                attachments = vm.attachments.toList(),
-                                attachUploadName = vm.attachUpload?.name,
-                                attachUploadPercent = vm.attachUpload?.percent ?: 0,
-                                attachFailed = vm.attachFailed,
-                                availableModels = vm.allAvailableModels,
-                                modelReasoningLevels = vm.modelReasoningLevels,
-                                currentSessionMode = vm.sessionModeOverride
-                                    ?: vm.sessionModeFromWorkspace,
-                                filePreview = vm.filePreview,
-                                snapshotAligned = vm.snapshotAligned,
-                                attachmentFeedback = vm.attachmentFeedback,
-                            ),
-                            actions = ConversationAction(
-                                onBack = { opened = null },
-                                onCancelUpload = { vm.cancelAttachmentUpload() },
-                                onRetryUpload = { vm.retryAttachmentUpload() },
-                                onDismissUploadFailure = { vm.dismissAttachFailure() },
-                                onResolve = { a: PendingApproval, opt: ApprovalOption -> vm.resolve(a, opt) },
-                                onElicitationAccept = { el, answers -> vm.answerElicitation(el, answers) },
-                                onElicitationDecline = { vm.declineElicitation(it) },
-                                onElicitationFreeText = { el, text -> vm.answerElicitationFreeText(el, text) },
-                                onLoadEarlier = { vm.loadEarlier() },
-                                onPromptChange = { vm.updatePromptDraft(it) },
-                                onSend = { vm.sendPrompt() },
-                                onStop = { vm.stopSession() },
-                                onAttachmentPicked = { uri, name, mime, size -> vm.addAttachment(uri, name, mime, size) },
-                                onRemoveAttachment = { vm.removeAttachment(it) },
-                                onSwitchModel = { m -> vm.switchCurrentSessionModel(m) },
-                                onLoadModels = { vm.loadWorkspaceModels() },
-                                // ⚠️ 执行模式勿取 ConversationChannel.Status.Live.mode——那是订阅模式
-                                // （snapshot/live），与执行模式（plan/build/yolo）撞名（真机验收 2026-10-05 实证）
-                                onSwitchMode = { m ->
-                                    vm.setSessionMode(m) { err ->
-                                        if (err != null) {
-                                            // C-2：exec mode 切换失败同样经错误映射，不直出裸英文
-                                            android.widget.Toast.makeText(
-                                                this@MainActivity,
-                                                "切换失败：${com.zcode.remote.relay.UserFacingError.map(err)}",
-                                                android.widget.Toast.LENGTH_SHORT
-                                            ).show()
-                                        }
-                                    }
-                                },
-                                onPreviewFile = { vm.previewSessionFile(it) },
-                                onDismissFilePreview = { vm.dismissFilePreview() },
-                                onRetrySubscribe = { vm.retrySubscribe() },
-                            ),
-                            )
-                        }
+                        target != null ->
+                            androidx.compose.runtime.key(target.taskId) {
+                                ConversationScreen(
+                                    ui =
+                                        ConversationUiState(
+                                            title = vm.conversationMeta.title ?: target.title,
+                                            status = vm.conversationStatus,
+                                            meta = vm.conversationMeta,
+                                            rows = vm.rowsSnapshot,
+                                            pendingUserMessages = vm.pendingUserMessages,
+                                            // 跨会话隔离（2026-10-09 真机反馈）：待处理项合并了
+                                            // 「任务事件流（全 workspace）」与「会话流（当前订阅）」两路，
+                                            // 会话页只能渲染属于本会话的卡，否则 B 会话会弹出 A 会话的审批。
+                                            approvals = approvalsForSession(vm.approvals, target.taskId),
+                                            elicitations = elicitationsForSession(vm.elicitations, target.taskId),
+                                            earlier = vm.earlier,
+                                            sessionState = vm.sessionState,
+                                            prompt = vm.promptDraft,
+                                            sending = vm.sending,
+                                            canStop = vm.conversationMeta.canStop == true,
+                                            stopState = vm.conversationMeta.stopState,
+                                            commandFeedback = vm.commandFeedback,
+                                            feedbackIsFailure = vm.feedbackIsFailure,
+                                            attachments = vm.attachments.toList(),
+                                            attachUploadName = vm.attachUpload?.name,
+                                            attachUploadPercent = vm.attachUpload?.percent ?: 0,
+                                            attachFailed = vm.attachFailed,
+                                            availableModels = vm.allAvailableModels,
+                                            modelReasoningLevels = vm.modelReasoningLevels,
+                                            currentSessionMode =
+                                                vm.sessionModeOverride
+                                                    ?: vm.sessionModeFromWorkspace,
+                                            filePreview = vm.filePreview,
+                                            snapshotAligned = vm.snapshotAligned,
+                                            attachmentFeedback = vm.attachmentFeedback,
+                                        ),
+                                    actions =
+                                        ConversationAction(
+                                            onBack = { opened = null },
+                                            onCancelUpload = { vm.cancelAttachmentUpload() },
+                                            onRetryUpload = { vm.retryAttachmentUpload() },
+                                            onDismissUploadFailure = { vm.dismissAttachFailure() },
+                                            onResolve = { a: PendingApproval, opt: ApprovalOption -> vm.resolve(a, opt) },
+                                            onElicitationAccept = { el, answers -> vm.answerElicitation(el, answers) },
+                                            onElicitationDecline = { vm.declineElicitation(it) },
+                                            onElicitationFreeText = { el, text -> vm.answerElicitationFreeText(el, text) },
+                                            onLoadEarlier = { vm.loadEarlier() },
+                                            onPromptChange = { vm.updatePromptDraft(it) },
+                                            onSend = { vm.sendPrompt() },
+                                            onStop = { vm.stopSession() },
+                                            onAttachmentPicked = { uri, name, mime, size -> vm.addAttachment(uri, name, mime, size) },
+                                            onRemoveAttachment = { vm.removeAttachment(it) },
+                                            onSwitchModel = { m -> vm.switchCurrentSessionModel(m) },
+                                            onLoadModels = { vm.loadWorkspaceModels() },
+                                            // ⚠️ 执行模式勿取 ConversationChannel.Status.Live.mode——那是订阅模式
+                                            // （snapshot/live），与执行模式（plan/build/yolo）撞名（真机验收 2026-10-05 实证）
+                                            onSwitchMode = { m ->
+                                                vm.setSessionMode(m) { err ->
+                                                    if (err != null) {
+                                                        // C-2：exec mode 切换失败同样经错误映射，不直出裸英文
+                                                        android.widget.Toast.makeText(
+                                                            this@MainActivity,
+                                                            "切换失败：${com.zcode.remote.relay.UserFacingError.map(err)}",
+                                                            android.widget.Toast.LENGTH_SHORT,
+                                                        ).show()
+                                                    }
+                                                }
+                                            },
+                                            onPreviewFile = { vm.previewSessionFile(it) },
+                                            onDismissFilePreview = { vm.dismissFilePreview() },
+                                            onRetrySubscribe = { vm.retrySubscribe() },
+                                        ),
+                                )
+                            }
 
                         // 4. 底部 3-Tab 主工作台框架
                         else -> {
-                            val totalPending = vm.approvals.size + vm.elicitations.size +
+                            val totalPending =
+                                vm.approvals.size + vm.elicitations.size +
                                     vm.sessionPending.values.sum()
 
                             Scaffold(
@@ -203,7 +213,7 @@ class MainActivity : ComponentActivity() {
                                     NavigationBar(
                                         modifier = Modifier.navigationBarsPadding(),
                                         containerColor = MaterialTheme.colorScheme.surface,
-                                        tonalElevation = 4.dp
+                                        tonalElevation = 4.dp,
                                     ) {
                                         // Tab 0: 会话列表
                                         NavigationBarItem(
@@ -213,9 +223,9 @@ class MainActivity : ComponentActivity() {
                                             label = {
                                                 Text(
                                                     "会话",
-                                                    fontWeight = if (selectedTab == 0) FontWeight.Bold else FontWeight.Normal
+                                                    fontWeight = if (selectedTab == 0) FontWeight.Bold else FontWeight.Normal,
                                                 )
-                                            }
+                                            },
                                         )
 
                                         // Tab 1: 待办与审批 (带Badge)
@@ -228,12 +238,12 @@ class MainActivity : ComponentActivity() {
                                                         if (totalPending > 0) {
                                                             Badge(
                                                                 containerColor = statusPendingTone(),
-                                                                contentColor = MaterialTheme.colorScheme.onPrimary
+                                                                contentColor = MaterialTheme.colorScheme.onPrimary,
                                                             ) {
                                                                 Text(if (totalPending > 99) "99+" else "$totalPending")
                                                             }
                                                         }
-                                                    }
+                                                    },
                                                 ) {
                                                     Icon(Icons.Default.Notifications, contentDescription = "待办与审批")
                                                 }
@@ -241,9 +251,9 @@ class MainActivity : ComponentActivity() {
                                             label = {
                                                 Text(
                                                     "待办",
-                                                    fontWeight = if (selectedTab == 1) FontWeight.Bold else FontWeight.Normal
+                                                    fontWeight = if (selectedTab == 1) FontWeight.Bold else FontWeight.Normal,
                                                 )
-                                            }
+                                            },
                                         )
 
                                         // Tab 2: 设置与设备
@@ -254,96 +264,115 @@ class MainActivity : ComponentActivity() {
                                             label = {
                                                 Text(
                                                     "设置",
-                                                    fontWeight = if (selectedTab == 2) FontWeight.Bold else FontWeight.Normal
+                                                    fontWeight = if (selectedTab == 2) FontWeight.Bold else FontWeight.Normal,
                                                 )
-                                            }
+                                            },
                                         )
                                     }
-                                }
+                                },
                             ) { innerPadding ->
                                 AnimatedContent(
                                     targetState = selectedTab,
                                     transitionSpec = { fadeIn() togetherWith fadeOut() },
                                     label = "tab_switch",
-                                    modifier = Modifier.padding(innerPadding)
+                                    modifier = Modifier.padding(innerPadding),
                                 ) { tab ->
                                     when (tab) {
-                                        0 -> HomeScreen(
-                                            deviceName = vm.device?.deviceName ?: "",
-                                            state = vm.relayState,
-                                            sessions = vm.sessions.toList(),
-                                            events = vm.events.toList(),
-                                            bridgeState = vm.bridgeState,
-                                            rpcEvents = vm.rpcEvents.toList(),
-                                            devices = vm.devices,
-                                            activeSid = vm.device?.deviceSid,
-                                            sessionPending = vm.sessionPending,
-                                            query = vm.sessionQuery,
-                                            onQueryChange = { vm.updateSessionQuery(it) },
-                                            subscribedSessionId = vm.subscribedSessionId,
-                                            desktopActiveTaskId = vm.desktopActiveTaskId,
-                                            onSessionClick = { s -> vm.openSession(s); opened = s },
-                                            onDisconnect = { vm.disconnect() },
-                                            onRescan = { opened = null; scanning = true },
-                                            onNavigateToSettings = { selectedTab = 2 },
-                                            modelState = vm.workspaceModelState,
-                                            modelsLoading = vm.modelStateLoading,
-                                            onLoadModels = { vm.loadWorkspaceModels() },
-                                            currentModel = vm.conversationMeta.model,
-                                            currentProvider = vm.conversationMeta.provider,
-                                            availableModels = vm.allAvailableModels,
-                                            modelReasoningLevels = vm.modelReasoningLevels,
-                                            onSessionDelete = { vm.deleteSession(it) },
-                                            onCreateSession = { prompt, modelOption, execMode ->
-                                                vm.createNewSession(
-                                                    firstPrompt = prompt,
-                                                    attachments = emptyList(),
-                                                    modelOption = modelOption,
-                                                    execMode = execMode,
-                                                    onSuccess = { item -> opened = item },
-                                                    onError = { err ->
-                                                        android.widget.Toast.makeText(this@MainActivity, err, android.widget.Toast.LENGTH_SHORT).show()
-                                                    }
-                                                )
-                                            }
-                                        )
+                                        0 ->
+                                            HomeScreen(
+                                                deviceName = vm.device?.deviceName ?: "",
+                                                state = vm.relayState,
+                                                sessions = vm.sessions.toList(),
+                                                events = vm.events.toList(),
+                                                bridgeState = vm.bridgeState,
+                                                rpcEvents = vm.rpcEvents.toList(),
+                                                devices = vm.devices,
+                                                activeSid = vm.device?.deviceSid,
+                                                sessionPending = vm.sessionPending,
+                                                query = vm.sessionQuery,
+                                                onQueryChange = { vm.updateSessionQuery(it) },
+                                                subscribedSessionId = vm.subscribedSessionId,
+                                                desktopActiveTaskId = vm.desktopActiveTaskId,
+                                                onSessionClick = { s ->
+                                                    vm.openSession(s)
+                                                    opened = s
+                                                },
+                                                onDisconnect = { vm.disconnect() },
+                                                onRescan = {
+                                                    opened = null
+                                                    scanning = true
+                                                },
+                                                onNavigateToSettings = { selectedTab = 2 },
+                                                modelState = vm.workspaceModelState,
+                                                modelsLoading = vm.modelStateLoading,
+                                                onLoadModels = { vm.loadWorkspaceModels() },
+                                                currentModel = vm.conversationMeta.model,
+                                                currentProvider = vm.conversationMeta.provider,
+                                                availableModels = vm.allAvailableModels,
+                                                modelReasoningLevels = vm.modelReasoningLevels,
+                                                onSessionDelete = { vm.deleteSession(it) },
+                                                onCreateSession = { prompt, modelOption, execMode ->
+                                                    vm.createNewSession(
+                                                        firstPrompt = prompt,
+                                                        attachments = emptyList(),
+                                                        modelOption = modelOption,
+                                                        execMode = execMode,
+                                                        onSuccess = { item -> opened = item },
+                                                        onError = { err ->
+                                                            android.widget.Toast.makeText(
+                                                                this@MainActivity,
+                                                                err,
+                                                                android.widget.Toast.LENGTH_SHORT,
+                                                            ).show()
+                                                        },
+                                                    )
+                                                },
+                                            )
 
-                                        1 -> ApprovalsTab(
-                                            approvals = vm.approvals,
-                                            elicitations = vm.elicitations,
-                                            sessions = vm.sessions.toList(),
-                                            sessionPending = vm.sessionPending,
-                                            subscribedSessionId = vm.subscribedSessionId,
-                                            feedback = vm.commandFeedback,
-                                            feedbackIsFailure = vm.feedbackIsFailure,
-                                            onResolveApproval = { a, opt -> vm.resolve(a, opt) },
-                                            onAcceptElicitation = { el, answers -> vm.answerElicitation(el, answers) },
-                                            onDeclineElicitation = { vm.declineElicitation(it) },
-                                            onFreeTextElicitation = { el, text -> vm.answerElicitationFreeText(el, text) },
-                                            onOpenSession = { s -> vm.openSession(s); opened = s }
-                                        )
+                                        1 ->
+                                            ApprovalsTab(
+                                                approvals = vm.approvals,
+                                                elicitations = vm.elicitations,
+                                                sessions = vm.sessions.toList(),
+                                                sessionPending = vm.sessionPending,
+                                                subscribedSessionId = vm.subscribedSessionId,
+                                                feedback = vm.commandFeedback,
+                                                feedbackIsFailure = vm.feedbackIsFailure,
+                                                onResolveApproval = { a, opt -> vm.resolve(a, opt) },
+                                                onAcceptElicitation = { el, answers -> vm.answerElicitation(el, answers) },
+                                                onDeclineElicitation = { vm.declineElicitation(it) },
+                                                onFreeTextElicitation = { el, text -> vm.answerElicitationFreeText(el, text) },
+                                                onOpenSession = { s ->
+                                                    vm.openSession(s)
+                                                    opened = s
+                                                },
+                                            )
 
-                                        2 -> SettingsTab(
-                                            deviceName = vm.device?.deviceName ?: "",
-                                            state = vm.relayState,
-                                            bridgeState = vm.bridgeState,
-                                            devices = vm.devices,
-                                            activeSid = vm.device?.deviceSid,
-                                            endpointMode = vm.endpointMode,
-                                            customRelayUrl = vm.customRelayUrl,
-                                            themeMode = vm.themeMode,
-                                            updateState = vm.updateState,
-                                            githubToken = vm.githubToken,
-                                            onSwitchDevice = { vm.switchDevice(it) },
-                                            onRemoveDevice = { vm.removeDevice(it) },
-                                            onDisconnect = { vm.disconnect() },
-                                            onRescan = { opened = null; scanning = true },
-                                            onEndpointChange = { m, u -> vm.setEndpoint(m, u) },
-                                            onThemeChange = { m -> vm.setTheme(m) },
-                                            onShowGuide = { showGuide = true },
-                                            onSetGithubToken = { vm.updateGithubToken(it) },
-                                            onCheckUpdate = { vm.checkForUpdate() }
-                                        )
+                                        2 ->
+                                            SettingsTab(
+                                                deviceName = vm.device?.deviceName ?: "",
+                                                state = vm.relayState,
+                                                bridgeState = vm.bridgeState,
+                                                devices = vm.devices,
+                                                activeSid = vm.device?.deviceSid,
+                                                endpointMode = vm.endpointMode,
+                                                customRelayUrl = vm.customRelayUrl,
+                                                themeMode = vm.themeMode,
+                                                updateState = vm.updateState,
+                                                githubToken = vm.githubToken,
+                                                onSwitchDevice = { vm.switchDevice(it) },
+                                                onRemoveDevice = { vm.removeDevice(it) },
+                                                onDisconnect = { vm.disconnect() },
+                                                onRescan = {
+                                                    opened = null
+                                                    scanning = true
+                                                },
+                                                onEndpointChange = { m, u -> vm.setEndpoint(m, u) },
+                                                onThemeChange = { m -> vm.setTheme(m) },
+                                                onShowGuide = { showGuide = true },
+                                                onSetGithubToken = { vm.updateGithubToken(it) },
+                                                onCheckUpdate = { vm.checkForUpdate() },
+                                            )
                                     }
                                 }
                             }
@@ -365,12 +394,13 @@ class MainActivity : ComponentActivity() {
                 android.widget.Toast.makeText(this, "已填充分享文本到输入草稿", android.widget.Toast.LENGTH_SHORT).show()
             }
         } else {
-            val uri = if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.TIRAMISU) {
-                intent.getParcelableExtra(Intent.EXTRA_STREAM, android.net.Uri::class.java)
-            } else {
-                @Suppress("DEPRECATION")
-                intent.getParcelableExtra<android.net.Uri>(Intent.EXTRA_STREAM)
-            }
+            val uri =
+                if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.TIRAMISU) {
+                    intent.getParcelableExtra(Intent.EXTRA_STREAM, android.net.Uri::class.java)
+                } else {
+                    @Suppress("DEPRECATION")
+                    intent.getParcelableExtra<android.net.Uri>(Intent.EXTRA_STREAM)
+                }
             if (uri != null) {
                 inspectAttachment(this, uri)?.let { (name, mime, size) ->
                     vm.addAttachment(uri, name, mime, size)

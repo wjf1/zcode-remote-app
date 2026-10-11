@@ -12,12 +12,48 @@ import com.zcode.remote.BuildConfig
  * assumenosideeffects 做编译期剥离，与本门控形成双保险。
  */
 object ZLog {
-    @JvmStatic fun d(tag: String, msg: String) { if (BuildConfig.DEBUG) Log.d(tag, msg) }
-    @JvmStatic fun i(tag: String, msg: String) { if (BuildConfig.DEBUG) Log.i(tag, msg) }
-    @JvmStatic fun w(tag: String, msg: String) { if (BuildConfig.DEBUG) Log.w(tag, msg) }
-    @JvmStatic fun w(tag: String, msg: String, tr: Throwable) { if (BuildConfig.DEBUG) Log.w(tag, msg, tr) }
+    @JvmStatic fun d(
+        tag: String,
+        msg: String,
+    ) {
+        if (BuildConfig.DEBUG) Log.d(tag, msg)
+    }
+
+    @JvmStatic fun i(
+        tag: String,
+        msg: String,
+    ) {
+        if (BuildConfig.DEBUG) Log.i(tag, msg)
+    }
+
+    @JvmStatic fun w(
+        tag: String,
+        msg: String,
+    ) {
+        if (BuildConfig.DEBUG) Log.w(tag, msg)
+    }
+
+    @JvmStatic fun w(
+        tag: String,
+        msg: String,
+        tr: Throwable,
+    ) {
+        if (BuildConfig.DEBUG) Log.w(tag, msg, tr)
+    }
 
     /** 错误在 release 也输出 —— 调用点必须保证 msg 只含元信息（状态码/计数），不含正文与凭据。 */
-    @JvmStatic fun e(tag: String, msg: String) { Log.e(tag, msg) }
-    @JvmStatic fun e(tag: String, msg: String, tr: Throwable) { Log.e(tag, msg, tr) }
+    @JvmStatic fun e(
+        tag: String,
+        msg: String,
+    ) {
+        Log.e(tag, msg)
+    }
+
+    @JvmStatic fun e(
+        tag: String,
+        msg: String,
+        tr: Throwable,
+    ) {
+        Log.e(tag, msg, tr)
+    }
 }

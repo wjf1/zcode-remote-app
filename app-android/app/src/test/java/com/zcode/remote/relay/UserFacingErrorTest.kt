@@ -15,11 +15,11 @@ import org.junit.Test
  * 任务书 §7 明确禁止的（对应 grep 断言）。映射判错 = 用户看到天书。
  */
 class UserFacingErrorTest {
-
-    private fun faultJson(code: String): JsonObject = buildJsonObject {
-        put("code", code)
-        put("message", "raw server message")
-    }
+    private fun faultJson(code: String): JsonObject =
+        buildJsonObject {
+            put("code", code)
+            put("message", "raw server message")
+        }
 
     @Test
     fun mapsLocalChannelEnglishToChinese() {
@@ -43,9 +43,10 @@ class UserFacingErrorTest {
 
     @Test
     fun mapsFaultNestedUnderFaultKey() {
-        val nested = buildJsonObject {
-            put("fault", buildJsonObject { put("reasonCode", "fault.connection.handshakeRequired") })
-        }
+        val nested =
+            buildJsonObject {
+                put("fault", buildJsonObject { put("reasonCode", "fault.connection.handshakeRequired") })
+            }
         assertEquals("连接尚未完成握手，请重试", UserFacingError.map(null, nested))
     }
 
@@ -78,10 +79,16 @@ class UserFacingErrorTest {
     @Test
     fun noRawEnglishLeaksForKnownInputs() {
         // §7 异常的 grep 断言对应：已知输入经映射后不得再出现自造英文关键串
-        val inputs = listOf(
-            "bridge not ready", "timeout after 15000ms", "bridge re-established",
-            "channel reset", "Unable to resolve host", "failed to connect", "connect timed out",
-        )
+        val inputs =
+            listOf(
+                "bridge not ready",
+                "timeout after 15000ms",
+                "bridge re-established",
+                "channel reset",
+                "Unable to resolve host",
+                "failed to connect",
+                "connect timed out",
+            )
         val forbidden = listOf("bridge not ready", "timeout after", "channel reset", "Unable to")
         inputs.forEach { input ->
             val out = UserFacingError.map(input)

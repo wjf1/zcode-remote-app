@@ -17,7 +17,6 @@ package com.zcode.remote.ui.screens
  * 用户拖回底部或点「回到底部」即复位。置位期间一切自动定位让位。
  */
 object ConversationScrollPolicy {
-
     /** 触发自动定位的来源。 */
     enum class Trigger {
         /** 进会话首帧——覆盖「有缓存」「无缓存」两种时序。 */

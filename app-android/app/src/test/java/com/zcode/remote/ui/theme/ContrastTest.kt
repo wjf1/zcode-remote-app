@@ -14,7 +14,6 @@ import kotlin.math.pow
  * 颜色值一旦被改回低对比（例如把浅色轨迹色硬编码成深色主题取色）CI 立刻变红。
  */
 class ContrastTest {
-
     /** WCAG 2.x 相对亮度。 */
     private fun luminance(c: Color): Double {
         fun channel(v: Float): Double {
@@ -24,14 +23,22 @@ class ContrastTest {
         return 0.2126 * channel(c.red) + 0.7152 * channel(c.green) + 0.0722 * channel(c.blue)
     }
 
-    private fun contrast(a: Color, b: Color): Double {
+    private fun contrast(
+        a: Color,
+        b: Color,
+    ): Double {
         val la = luminance(a)
         val lb = luminance(b)
         val (hi, lo) = if (la >= lb) la to lb else lb to la
         return (hi + 0.05) / (lo + 0.05)
     }
 
-    private fun assertReadable(name: String, fg: Color, bg: Color, min: Double = 4.5) {
+    private fun assertReadable(
+        name: String,
+        fg: Color,
+        bg: Color,
+        min: Double = 4.5,
+    ) {
         val cr = contrast(fg, bg)
         assertTrue(
             "$name 对比度 ${String.format(Locale.US, "%.2f", cr)}:1 低于 $min:1",

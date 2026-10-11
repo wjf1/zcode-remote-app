@@ -20,16 +20,23 @@ object TerminalNotifier {
     private const val CHANNEL_ID = "terminal_state"
     private const val NOTIFY_ID = 2001
 
-    fun show(context: Context, title: String, message: String?) {
+    fun show(
+        context: Context,
+        title: String,
+        message: String?,
+    ) {
         runCatching {
             val nm = context.getSystemService(NotificationManager::class.java)
             nm.createNotificationChannel(
-                NotificationChannel(CHANNEL_ID, "连接终态提醒", NotificationManager.IMPORTANCE_HIGH)
+                NotificationChannel(CHANNEL_ID, "连接终态提醒", NotificationManager.IMPORTANCE_HIGH),
             )
-            val pi = PendingIntent.getActivity(
-                context, 0, Intent(context, MainActivity::class.java),
-                PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
-            )
+            val pi =
+                PendingIntent.getActivity(
+                    context,
+                    0,
+                    Intent(context, MainActivity::class.java),
+                    PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
+                )
             nm.notify(
                 NOTIFY_ID,
                 Notification.Builder(context, CHANNEL_ID)
@@ -40,7 +47,7 @@ object TerminalNotifier {
                     .setContentIntent(pi)
                     .setOngoing(true)
                     .setAutoCancel(false)
-                    .build()
+                    .build(),
             )
         }
     }

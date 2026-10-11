@@ -23,7 +23,6 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -74,57 +73,64 @@ fun HomeScreen(
     modelReasoningLevels: Map<String, List<String>> = emptyMap(),
     /** 长按会话卡片触发删除（closeSession + deleteTask）。 */
     onSessionDelete: (SessionItem) -> Unit = {},
-    onCreateSession: (prompt: String, modelConfig: com.zcode.remote.relay.WorkspaceConfigChannel.ModelOption?, execMode: String) -> Unit = { _, _, _ -> },
+    onCreateSession: (
+        prompt: String,
+        modelConfig: com.zcode.remote.relay.WorkspaceConfigChannel.ModelOption?,
+        execMode: String,
+    ) -> Unit = { _, _, _ -> },
 ) {
     var filterOnlyRunning by remember { mutableStateOf(false) }
     var filterOnlyPending by remember { mutableStateOf(false) }
     var showCreateDialog by remember { mutableStateOf(false) }
 
-    val filteredSessions = remember(sessions, query, filterOnlyRunning, filterOnlyPending, sessionPending) {
-        var list = sessions
-        val q = query.trim()
-        if (q.isNotEmpty()) {
-            list = list.filter {
-                it.title.contains(q, ignoreCase = true) ||
-                        (it.workspacePath ?: "").contains(q, ignoreCase = true)
+    val filteredSessions =
+        remember(sessions, query, filterOnlyRunning, filterOnlyPending, sessionPending) {
+            var list = sessions
+            val q = query.trim()
+            if (q.isNotEmpty()) {
+                list =
+                    list.filter {
+                        it.title.contains(q, ignoreCase = true) ||
+                            (it.workspacePath ?: "").contains(q, ignoreCase = true)
+                    }
             }
+            if (filterOnlyRunning) {
+                list = list.filter { it.isRunning }
+            }
+            if (filterOnlyPending) {
+                list = list.filter { (sessionPending[it.taskId] ?: 0) > 0 }
+            }
+            list
         }
-        if (filterOnlyRunning) {
-            list = list.filter { it.isRunning }
-        }
-        if (filterOnlyPending) {
-            list = list.filter { (sessionPending[it.taskId] ?: 0) > 0 }
-        }
-        list
-    }
 
     Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .statusBarsPadding()
-            .padding(horizontal = 16.dp, vertical = 12.dp)
+        modifier =
+            Modifier
+                .fillMaxSize()
+                .statusBarsPadding()
+                .padding(horizontal = 16.dp, vertical = 12.dp),
     ) {
         // 1. 顶栏：标题 + 状态小胶囊 + 新建会话按钮
         Row(
             verticalAlignment = Alignment.CenterVertically,
-            modifier = Modifier.padding(bottom = 10.dp)
+            modifier = Modifier.padding(bottom = 10.dp),
         ) {
             Column(modifier = Modifier.weight(1f)) {
                 Text(
                     text = "ZCode 会话",
-                    style = MaterialTheme.typography.headlineSmall.copy(fontWeight = FontWeight.Bold)
+                    style = MaterialTheme.typography.headlineSmall.copy(fontWeight = FontWeight.Bold),
                 )
                 Spacer(Modifier.height(2.dp))
                 Row(
                     verticalAlignment = Alignment.CenterVertically,
-                    modifier = Modifier.clickable { onNavigateToSettings() }
+                    modifier = Modifier.clickable { onNavigateToSettings() },
                 ) {
                     StatusDot(state)
                     Spacer(Modifier.width(6.dp))
                     Text(
                         text = "${deviceName.ifEmpty { "远程设备" }} · ${statusLabel(state)}",
                         style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                 }
             }
@@ -132,7 +138,7 @@ fun HomeScreen(
                 onClick = { showCreateDialog = true },
                 shape = RoundedCornerShape(10.dp),
                 contentPadding = PaddingValues(horizontal = 12.dp, vertical = 0.dp),
-                modifier = Modifier.height(36.dp)
+                modifier = Modifier.height(36.dp),
             ) {
                 Icon(Icons.Default.Add, contentDescription = null, modifier = Modifier.size(16.dp))
                 Spacer(Modifier.width(4.dp))
@@ -145,31 +151,32 @@ fun HomeScreen(
             Surface(
                 color = MaterialTheme.colorScheme.errorContainer,
                 shape = RoundedCornerShape(12.dp),
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(bottom = 10.dp)
+                modifier =
+                    Modifier
+                        .fillMaxWidth()
+                        .padding(bottom = 10.dp),
             ) {
                 Row(
                     modifier = Modifier.padding(12.dp),
-                    verticalAlignment = Alignment.Top
+                    verticalAlignment = Alignment.Top,
                 ) {
                     Icon(
                         Icons.Default.Warning,
                         contentDescription = null,
                         tint = MaterialTheme.colorScheme.error,
-                        modifier = Modifier.size(20.dp)
+                        modifier = Modifier.size(20.dp),
                     )
                     Spacer(Modifier.width(8.dp))
                     Column {
                         Text(
                             text = "控制权已被其它终端接管",
                             style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.Bold),
-                            color = MaterialTheme.colorScheme.onErrorContainer
+                            color = MaterialTheme.colorScheme.onErrorContainer,
                         )
                         Text(
                             text = "同一账号单时刻只允许一个终端在线。若要继续，请前往设置重新连接。",
                             style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onErrorContainer.copy(alpha = 0.9f)
+                            color = MaterialTheme.colorScheme.onErrorContainer.copy(alpha = 0.9f),
                         )
                     }
                 }
@@ -180,9 +187,10 @@ fun HomeScreen(
         OutlinedTextField(
             value = query,
             onValueChange = onQueryChange,
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(bottom = 8.dp),
+            modifier =
+                Modifier
+                    .fillMaxWidth()
+                    .padding(bottom = 8.dp),
             placeholder = { Text("搜索会话标题或工作区路径…", style = MaterialTheme.typography.bodySmall) },
             singleLine = true,
             leadingIcon = {
@@ -190,7 +198,7 @@ fun HomeScreen(
                     Icons.Default.Search,
                     contentDescription = null,
                     tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.size(18.dp)
+                    modifier = Modifier.size(18.dp),
                 )
             },
             trailingIcon = {
@@ -201,17 +209,19 @@ fun HomeScreen(
                 }
             },
             shape = RoundedCornerShape(12.dp),
-            colors = OutlinedTextFieldDefaults.colors(
-                unfocusedBorderColor = MaterialTheme.colorScheme.outlineVariant
-            )
+            colors =
+                OutlinedTextFieldDefaults.colors(
+                    unfocusedBorderColor = MaterialTheme.colorScheme.outlineVariant,
+                ),
         )
 
         // 快捷筛选 Chip
         Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(bottom = 10.dp),
-            horizontalArrangement = Arrangement.spacedBy(8.dp)
+            modifier =
+                Modifier
+                    .fillMaxWidth()
+                    .padding(bottom = 10.dp),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
         ) {
             val runningCount = sessions.count { it.isRunning }
             val pendingCount = sessions.count { (sessionPending[it.taskId] ?: 0) > 0 }
@@ -223,7 +233,7 @@ fun HomeScreen(
                     filterOnlyPending = false
                 },
                 label = { Text("全部 (${sessions.size})", style = MaterialTheme.typography.labelSmall) },
-                shape = RoundedCornerShape(8.dp)
+                shape = RoundedCornerShape(8.dp),
             )
 
             if (runningCount > 0) {
@@ -234,7 +244,7 @@ fun HomeScreen(
                         if (filterOnlyRunning) filterOnlyPending = false
                     },
                     label = { Text("运行中 ($runningCount)", style = MaterialTheme.typography.labelSmall) },
-                    shape = RoundedCornerShape(8.dp)
+                    shape = RoundedCornerShape(8.dp),
                 )
             }
 
@@ -246,7 +256,7 @@ fun HomeScreen(
                         if (filterOnlyPending) filterOnlyRunning = false
                     },
                     label = { Text("待处理 ($pendingCount)", style = MaterialTheme.typography.labelSmall) },
-                    shape = RoundedCornerShape(8.dp)
+                    shape = RoundedCornerShape(8.dp),
                 )
             }
         }
@@ -254,27 +264,29 @@ fun HomeScreen(
         // 4. 会话列表
         if (sessions.isEmpty()) {
             Box(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .padding(bottom = 60.dp),
-                contentAlignment = Alignment.Center
+                modifier =
+                    Modifier
+                        .fillMaxSize()
+                        .padding(bottom = 60.dp),
+                contentAlignment = Alignment.Center,
             ) {
                 Text(
-                    text = when (state) {
-                        is RelayState.WaitingPeer -> "已连接中继，等待 PC 桌面端接入…\n请在 PC 打开「移动端远程控制」"
-                        is RelayState.Paired -> "已与 PC 配对，正在拉取会话列表…"
-                        else -> "正在建立安全连接…"
-                    },
+                    text =
+                        when (state) {
+                            is RelayState.WaitingPeer -> "已连接中继，等待 PC 桌面端接入…\n请在 PC 打开「移动端远程控制」"
+                            is RelayState.Paired -> "已与 PC 配对，正在拉取会话列表…"
+                            else -> "正在建立安全连接…"
+                        },
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    textAlign = androidx.compose.ui.text.style.TextAlign.Center
+                    textAlign = androidx.compose.ui.text.style.TextAlign.Center,
                 )
             }
         } else {
             LazyColumn(
                 modifier = Modifier.fillMaxSize(),
                 verticalArrangement = Arrangement.spacedBy(8.dp),
-                contentPadding = PaddingValues(bottom = 80.dp)
+                contentPadding = PaddingValues(bottom = 80.dp),
             ) {
                 if (filteredSessions.isEmpty()) {
                     item {
@@ -282,7 +294,7 @@ fun HomeScreen(
                             text = "没有找到匹配的会话",
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            modifier = Modifier.padding(vertical = 16.dp)
+                            modifier = Modifier.padding(vertical = 16.dp),
                         )
                     }
                 }
@@ -294,7 +306,7 @@ fun HomeScreen(
                         isActive = s.taskId == subscribedSessionId,
                         desktopActive = s.taskId == desktopActiveTaskId,
                         onClick = { onSessionClick(s) },
-                        onDelete = { onSessionDelete(s) }
+                        onDelete = { onSessionDelete(s) },
                     )
                 }
             }
@@ -314,7 +326,7 @@ fun HomeScreen(
                 onConfirm = { prompt, modelConfig, execMode ->
                     showCreateDialog = false
                     onCreateSession(prompt, modelConfig, execMode)
-                }
+                },
             )
         }
     }
@@ -337,49 +349,54 @@ private fun SessionItemCard(
 
     Card(
         shape = RoundedCornerShape(12.dp),
-        colors = CardDefaults.cardColors(
-            containerColor = when {
-                pending > 0 -> MaterialTheme.colorScheme.surface
-                isActive -> MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.25f)
-                s.isRunning -> MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.45f)
-                else -> MaterialTheme.colorScheme.surface
-            }
-        ),
-        border = if (pending > 0) {
-            CardDefaults.outlinedCardBorder().copy(
-                brush = androidx.compose.ui.graphics.SolidColor(statusPendingTone().copy(alpha = 0.6f))
-            )
-        } else if (isActive) {
-            CardDefaults.outlinedCardBorder().copy(
-                brush = androidx.compose.ui.graphics.SolidColor(MaterialTheme.colorScheme.primary.copy(alpha = 0.5f))
-            )
-        } else {
-            CardDefaults.outlinedCardBorder()
-        },
-        modifier = Modifier
-            .fillMaxWidth()
-            .combinedClickable(
-                onClick = onClick,
-                onLongClick = { showDeleteConfirm = true }
-            )
+        colors =
+            CardDefaults.cardColors(
+                containerColor =
+                    when {
+                        pending > 0 -> MaterialTheme.colorScheme.surface
+                        isActive -> MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.25f)
+                        s.isRunning -> MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.45f)
+                        else -> MaterialTheme.colorScheme.surface
+                    },
+            ),
+        border =
+            if (pending > 0) {
+                CardDefaults.outlinedCardBorder().copy(
+                    brush = androidx.compose.ui.graphics.SolidColor(statusPendingTone().copy(alpha = 0.6f)),
+                )
+            } else if (isActive) {
+                CardDefaults.outlinedCardBorder().copy(
+                    brush = androidx.compose.ui.graphics.SolidColor(MaterialTheme.colorScheme.primary.copy(alpha = 0.5f)),
+                )
+            } else {
+                CardDefaults.outlinedCardBorder()
+            },
+        modifier =
+            Modifier
+                .fillMaxWidth()
+                .combinedClickable(
+                    onClick = onClick,
+                    onLongClick = { showDeleteConfirm = true },
+                ),
     ) {
         Row(
             modifier = Modifier.padding(14.dp),
-            verticalAlignment = Alignment.Top
+            verticalAlignment = Alignment.Top,
         ) {
             // 状态指示圆点
             Box(
-                modifier = Modifier
-                    .padding(top = 4.dp)
-                    .size(8.dp)
-                    .clip(CircleShape)
-                    .background(
-                        when {
-                            pending > 0 -> statusPendingTone()
-                            s.isRunning -> ZCodeTokens.StatusOnline
-                            else -> ZCodeTokens.StatusOffline
-                        }
-                    )
+                modifier =
+                    Modifier
+                        .padding(top = 4.dp)
+                        .size(8.dp)
+                        .clip(CircleShape)
+                        .background(
+                            when {
+                                pending > 0 -> statusPendingTone()
+                                s.isRunning -> ZCodeTokens.StatusOnline
+                                else -> ZCodeTokens.StatusOffline
+                            },
+                        ),
             )
 
             Spacer(Modifier.width(10.dp))
@@ -392,22 +409,23 @@ private fun SessionItemCard(
                         style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.SemiBold),
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis,
-                        modifier = Modifier.weight(1f)
+                        modifier = Modifier.weight(1f),
                     )
 
                     if (isActive) {
                         Spacer(Modifier.width(6.dp))
                         Surface(
                             color = MaterialTheme.colorScheme.primary,
-                            shape = RoundedCornerShape(4.dp)
+                            shape = RoundedCornerShape(4.dp),
                         ) {
                             Text(
                                 text = "正在查看",
-                                style = MaterialTheme.typography.labelSmall.copy(
-                                    color = MaterialTheme.colorScheme.onPrimary,
-                                    fontSize = 10.sp
-                                ),
-                                modifier = Modifier.padding(horizontal = 5.dp, vertical = 1.dp)
+                                style =
+                                    MaterialTheme.typography.labelSmall.copy(
+                                        color = MaterialTheme.colorScheme.onPrimary,
+                                        fontSize = 10.sp,
+                                    ),
+                                modifier = Modifier.padding(horizontal = 5.dp, vertical = 1.dp),
                             )
                         }
                     }
@@ -416,13 +434,13 @@ private fun SessionItemCard(
                         Spacer(Modifier.width(6.dp))
                         Surface(
                             color = MaterialTheme.colorScheme.surfaceVariant,
-                            shape = RoundedCornerShape(4.dp)
+                            shape = RoundedCornerShape(4.dp),
                         ) {
                             Text(
                                 text = "PC焦点",
                                 style = MaterialTheme.typography.labelSmall.copy(fontSize = 10.sp),
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                modifier = Modifier.padding(horizontal = 5.dp, vertical = 1.dp)
+                                modifier = Modifier.padding(horizontal = 5.dp, vertical = 1.dp),
                             )
                         }
                     }
@@ -432,15 +450,16 @@ private fun SessionItemCard(
 
                 // 工作区路径与模型元数据
                 Text(
-                    text = listOfNotNull(
-                        s.workspaceLabel ?: s.workspacePath?.substringAfterLast('/'),
-                        s.provider,
-                        statusText(s.displayStatus)
-                    ).joinToString(" · "),
+                    text =
+                        listOfNotNull(
+                            s.workspaceLabel ?: s.workspacePath?.substringAfterLast('/'),
+                            s.provider,
+                            statusText(s.displayStatus),
+                        ).joinToString(" · "),
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     maxLines = 1,
-                    overflow = TextOverflow.Ellipsis
+                    overflow = TextOverflow.Ellipsis,
                 )
 
                 // 异常原因（host 的 task meta.lastError / 会话快照 control.lastError 回填）。
@@ -453,7 +472,7 @@ private fun SessionItemCard(
                         style = MaterialTheme.typography.labelSmall,
                         color = MaterialTheme.colorScheme.error,
                         maxLines = 1,
-                        overflow = TextOverflow.Ellipsis
+                        overflow = TextOverflow.Ellipsis,
                     )
                 }
 
@@ -463,7 +482,7 @@ private fun SessionItemCard(
                     Text(
                         text = "⏳ $pending 项待决议 (请前往「待办」处理)",
                         style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.SemiBold),
-                        color = statusPendingTone()
+                        color = statusPendingTone(),
                     )
                 }
             }
@@ -486,52 +505,55 @@ private fun SessionItemCard(
             },
             dismissButton = {
                 TextButton(onClick = { showDeleteConfirm = false }) { Text("取消") }
-            }
+            },
         )
     }
 }
 
-private fun statusText(s: String) = when (s) {
-    "running" -> "运行中"
-    "streaming" -> "生成中"
-    "completed" -> "已完成"
-    "error" -> "异常"
-    else -> s
-}
+private fun statusText(s: String) =
+    when (s) {
+        "running" -> "运行中"
+        "streaming" -> "生成中"
+        "completed" -> "已完成"
+        "error" -> "异常"
+        else -> s
+    }
 
 @Composable
 private fun StatusDot(state: RelayState) {
-    val color = when (state) {
-        is RelayState.Paired -> ZCodeTokens.StatusOnline
-        is RelayState.WaitingPeer -> statusPendingTone()
-        is RelayState.Failed -> ZCodeTokens.StatusError
-        else -> ZCodeTokens.StatusOffline
-    }
+    val color =
+        when (state) {
+            is RelayState.Paired -> ZCodeTokens.StatusOnline
+            is RelayState.WaitingPeer -> statusPendingTone()
+            is RelayState.Failed -> ZCodeTokens.StatusError
+            else -> ZCodeTokens.StatusOffline
+        }
     Canvas(Modifier.size(8.dp)) { drawCircle(color) }
 }
 
-private fun statusLabel(state: RelayState) = when (state) {
-    RelayState.Idle -> "未连接"
-    RelayState.Connecting -> "连接中"
-    RelayState.Authenticating -> "握手中"
-    RelayState.WaitingPeer -> "等待接入"
-    RelayState.Paired -> "就绪"
-    is RelayState.Failed -> "异常"
-}
+private fun statusLabel(state: RelayState) =
+    when (state) {
+        RelayState.Idle -> "未连接"
+        RelayState.Connecting -> "连接中"
+        RelayState.Authenticating -> "握手中"
+        RelayState.WaitingPeer -> "等待接入"
+        RelayState.Paired -> "就绪"
+        is RelayState.Failed -> "异常"
+    }
 
 /** 自动挑选的思考档位：优先首个非 disabled（保持推理开启），全为 disabled 时取第一个。 */
-private fun autoThought(levels: List<String>): String? =
-    levels.firstOrNull { !it.equals("disabled", ignoreCase = true) } ?: levels.firstOrNull()
+private fun autoThought(levels: List<String>): String? = levels.firstOrNull { !it.equals("disabled", ignoreCase = true) } ?: levels.firstOrNull()
 
 /** 思考档位的中文展示名（未知档位原样回显）。会话页二级菜单复用。 */
-internal fun thoughtLabel(level: String): String = when (level.lowercase()) {
-    "disabled", "off", "none" -> "关闭"
-    "low", "minimal" -> "低"
-    "medium", "enabled" -> "中"
-    "high" -> "高"
-    "max", "xhigh" -> "最高"
-    else -> level
-}
+internal fun thoughtLabel(level: String): String =
+    when (level.lowercase()) {
+        "disabled", "off", "none" -> "关闭"
+        "low", "minimal" -> "低"
+        "medium", "enabled" -> "中"
+        "high" -> "高"
+        "max", "xhigh" -> "最高"
+        else -> level
+    }
 
 /**
  * 新建会话弹窗
@@ -541,12 +563,13 @@ internal fun thoughtLabel(level: String): String = when (level.lowercase()) {
 /** P0-B：执行模式全集（协议合法值见 tools/setmode.py 的 VALID）。 */
 private val EXEC_MODES = listOf("plan", "build", "yolo")
 
-internal fun execModeLabel(m: String): String = when (m) {
-    "plan" -> "规划 plan"
-    "build" -> "构建 build"
-    "yolo" -> "全自动 yolo"
-    else -> m
-}
+internal fun execModeLabel(m: String): String =
+    when (m) {
+        "plan" -> "规划 plan"
+        "build" -> "构建 build"
+        "yolo" -> "全自动 yolo"
+        else -> m
+    }
 
 @Composable
 private fun CreateSessionDialog(
@@ -599,7 +622,7 @@ private fun CreateSessionDialog(
         title = {
             Text(
                 text = "发起新会话",
-                style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold)
+                style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
             )
         },
         text = {
@@ -607,14 +630,14 @@ private fun CreateSessionDialog(
                 Text(
                     text = "在当前活动工作区创建一个全新的 AI Agent 编程会话。",
                     style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
 
                 if (voiceListening || !voiceLive.isNullOrBlank()) {
                     Text(
                         text = "🎤 ${voiceLive ?: "正在聆听…"}",
                         style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.primary
+                        color = MaterialTheme.colorScheme.primary,
                     )
                 }
 
@@ -624,13 +647,14 @@ private fun CreateSessionDialog(
                     placeholder = {
                         Text(
                             "输入给 Agent 的第一条任务指令（例如：检查并修复登录组件的单测）…",
-                            style = MaterialTheme.typography.bodySmall
+                            style = MaterialTheme.typography.bodySmall,
                         )
                     },
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .heightIn(min = 100.dp, max = 180.dp),
-                    shape = RoundedCornerShape(10.dp)
+                    modifier =
+                        Modifier
+                            .fillMaxWidth()
+                            .heightIn(min = 100.dp, max = 180.dp),
+                    shape = RoundedCornerShape(10.dp),
                 )
 
                 // ---- 模型选择器 ----
@@ -638,37 +662,38 @@ private fun CreateSessionDialog(
                     Text(
                         text = "模型",
                         style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.SemiBold),
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                     Box {
                         OutlinedButton(
                             onClick = { modelMenuExpanded = true },
                             shape = RoundedCornerShape(8.dp),
                             contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp),
-                            modifier = Modifier.fillMaxWidth().height(40.dp)
+                            modifier = Modifier.fillMaxWidth().height(40.dp),
                         ) {
                             Icon(
                                 Icons.Filled.Build,
                                 contentDescription = null,
                                 tint = toolCallTrajectoryTone(),
-                                modifier = Modifier.size(16.dp)
+                                modifier = Modifier.size(16.dp),
                             )
                             Spacer(Modifier.width(8.dp))
                             Text(
-                                text = effectiveSelection?.name
-                                    ?: currentModel?.let { "默认（${it}）" }
-                                    ?: "默认（跟随 PC 端）",
+                                text =
+                                    effectiveSelection?.name
+                                        ?: currentModel?.let { "默认（$it）" }
+                                        ?: "默认（跟随 PC 端）",
                                 style = MaterialTheme.typography.bodySmall,
                                 maxLines = 1,
                                 overflow = TextOverflow.Ellipsis,
-                                modifier = Modifier.weight(1f)
+                                modifier = Modifier.weight(1f),
                             )
                             Text("▾", color = MaterialTheme.colorScheme.onSurfaceVariant)
                         }
 
                         DropdownMenu(
                             expanded = modelMenuExpanded,
-                            onDismissRequest = { modelMenuExpanded = false }
+                            onDismissRequest = { modelMenuExpanded = false },
                         ) {
                             when {
                                 modelsLoading -> {
@@ -684,12 +709,12 @@ private fun CreateSessionDialog(
                                             Column {
                                                 Text(
                                                     "远程模型目录暂不可用",
-                                                    style = MaterialTheme.typography.bodySmall
+                                                    style = MaterialTheme.typography.bodySmall,
                                                 )
                                                 Text(
                                                     "可直接选择「跟随 PC 端默认」创建会话",
                                                     style = MaterialTheme.typography.labelSmall,
-                                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
                                                 )
                                             }
                                         },
@@ -703,13 +728,18 @@ private fun CreateSessionDialog(
                                         text = { Text("跟随 PC 端默认", style = MaterialTheme.typography.bodySmall) },
                                         leadingIcon = {
                                             if (selectedModel == null) {
-                                                Icon(Icons.Filled.Check, null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(16.dp))
+                                                Icon(
+                                                    Icons.Filled.Check,
+                                                    null,
+                                                    tint = MaterialTheme.colorScheme.primary,
+                                                    modifier = Modifier.size(16.dp),
+                                                )
                                             }
                                         },
                                         onClick = {
                                             selectedModel = null
                                             modelMenuExpanded = false
-                                        }
+                                        },
                                     )
                                     // 2. PC 端当前模型（从会话快照 config 快捷置顶）
                                     currentModel?.let { cur ->
@@ -717,18 +747,24 @@ private fun CreateSessionDialog(
                                             text = { Text("PC 当前 · $cur", style = MaterialTheme.typography.bodySmall) },
                                             leadingIcon = {
                                                 if (selectedModel?.name == cur) {
-                                                    Icon(Icons.Filled.Check, null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(16.dp))
+                                                    Icon(
+                                                        Icons.Filled.Check,
+                                                        null,
+                                                        tint = MaterialTheme.colorScheme.primary,
+                                                        modifier = Modifier.size(16.dp),
+                                                    )
                                                 }
                                             },
                                             onClick = {
-                                                selectedModel = com.zcode.remote.relay.WorkspaceConfigChannel.ModelOption(
-                                                    value = "${currentProvider ?: "glm"}/$cur",
-                                                    name = cur,
-                                                    providerId = currentProvider,
-                                                    providerName = null,
-                                                )
+                                                selectedModel =
+                                                    com.zcode.remote.relay.WorkspaceConfigChannel.ModelOption(
+                                                        value = "${currentProvider ?: "glm"}/$cur",
+                                                        name = cur,
+                                                        providerId = currentProvider,
+                                                        providerName = null,
+                                                    )
                                                 modelMenuExpanded = false
-                                            }
+                                            },
                                         )
                                     }
                                     HorizontalDivider(modifier = Modifier.padding(vertical = 2.dp))
@@ -743,20 +779,25 @@ private fun CreateSessionDialog(
                                                         Text(
                                                             it,
                                                             style = MaterialTheme.typography.labelSmall,
-                                                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                                                            color = MaterialTheme.colorScheme.onSurfaceVariant,
                                                         )
                                                     }
                                                 }
                                             },
                                             leadingIcon = {
                                                 if (isSelected) {
-                                                    Icon(Icons.Filled.Check, null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(16.dp))
+                                                    Icon(
+                                                        Icons.Filled.Check,
+                                                        null,
+                                                        tint = MaterialTheme.colorScheme.primary,
+                                                        modifier = Modifier.size(16.dp),
+                                                    )
                                                 }
                                             },
                                             onClick = {
                                                 selectedModel = m
                                                 modelMenuExpanded = false
-                                            }
+                                            },
                                         )
                                     }
                                 }
@@ -771,11 +812,11 @@ private fun CreateSessionDialog(
                         Text(
                             text = "思考档位",
                             style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.SemiBold),
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
                         Row(
                             modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.spacedBy(6.dp)
+                            horizontalArrangement = Arrangement.spacedBy(6.dp),
                         ) {
                             availableThoughtLevels.forEach { lv ->
                                 val picked = (selectedThought ?: autoThought(availableThoughtLevels)) == lv
@@ -785,17 +826,17 @@ private fun CreateSessionDialog(
                                     label = {
                                         Text(
                                             text = thoughtLabel(lv),
-                                            style = MaterialTheme.typography.labelSmall
+                                            style = MaterialTheme.typography.labelSmall,
                                         )
                                     },
-                                    shape = RoundedCornerShape(8.dp)
+                                    shape = RoundedCornerShape(8.dp),
                                 )
                             }
                         }
                         Text(
                             text = "档位越高推理越深入，但耗时与消耗也更大。",
                             style = MaterialTheme.typography.labelSmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
                     }
                 }
@@ -805,11 +846,11 @@ private fun CreateSessionDialog(
                     Text(
                         text = "执行模式",
                         style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.SemiBold),
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                     Row(
                         modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(6.dp)
+                        horizontalArrangement = Arrangement.spacedBy(6.dp),
                     ) {
                         EXEC_MODES.forEach { m ->
                             FilterChip(
@@ -818,31 +859,33 @@ private fun CreateSessionDialog(
                                 label = {
                                     Text(
                                         text = execModeLabel(m),
-                                        style = MaterialTheme.typography.labelSmall
+                                        style = MaterialTheme.typography.labelSmall,
                                     )
                                 },
-                                shape = RoundedCornerShape(8.dp)
+                                shape = RoundedCornerShape(8.dp),
                             )
                         }
                     }
                     when (selectedExecMode) {
-                        "yolo" -> Text(
-                            text = "⚠ 免审批：所有工具调用自动放行，PC 端将无确认执行任意命令；锁屏审批对本会话不触发。",
-                            style = MaterialTheme.typography.labelSmall,
-                            color = MaterialTheme.colorScheme.error
-                        )
-                        else -> Text(
-                            text = "build=工具调用需在手机审批；plan=只读规划。切换仅对新建的会话生效。",
-                            style = MaterialTheme.typography.labelSmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
+                        "yolo" ->
+                            Text(
+                                text = "⚠ 免审批：所有工具调用自动放行，PC 端将无确认执行任意命令；锁屏审批对本会话不触发。",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.error,
+                            )
+                        else ->
+                            Text(
+                                text = "build=工具调用需在手机审批；plan=只读规划。切换仅对新建的会话生效。",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
                     }
                 }
 
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.End,
-                    verticalAlignment = Alignment.CenterVertically
+                    verticalAlignment = Alignment.CenterVertically,
                 ) {
                     VoiceInputButton(
                         onFinalText = { text ->
@@ -851,7 +894,7 @@ private fun CreateSessionDialog(
                         onStateChange = { listening, live ->
                             voiceListening = listening
                             voiceLive = live
-                        }
+                        },
                     )
                 }
             }
@@ -860,7 +903,7 @@ private fun CreateSessionDialog(
             Button(
                 onClick = { onConfirm(prompt.trim(), finalSelection, selectedExecMode) },
                 enabled = prompt.isNotBlank(),
-                shape = RoundedCornerShape(8.dp)
+                shape = RoundedCornerShape(8.dp),
             ) {
                 Text("立即创建")
             }
@@ -869,6 +912,6 @@ private fun CreateSessionDialog(
             TextButton(onClick = onDismiss) {
                 Text("取消")
             }
-        }
+        },
     )
 }

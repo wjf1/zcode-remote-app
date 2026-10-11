@@ -28,7 +28,6 @@ import kotlinx.coroutines.launch
  * 阶段①刻意只做存储搬运 + 提供进程级 [scope] 供②③落位。
  */
 object RemoteConnectionManager {
-
     /** 进程级协程作用域：②③迁移 collector 的落点；[shutdown] 时回收并重建，保证可再次 connect。 */
     @Volatile
     var scope: CoroutineScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
@@ -54,8 +53,7 @@ object RemoteConnectionManager {
      * connect() 重建连接栈前经 [cancelCollectors] 统一取消 —— 否则每次重连都会
      * 叠加一条旧流，旧流继续写旧实例（重复订阅/重复通知）。
      */
-    fun launchCollector(block: suspend CoroutineScope.() -> Unit): Job =
-        scope.launch(block = block).also { collectorJobs += it }
+    fun launchCollector(block: suspend CoroutineScope.() -> Unit): Job = scope.launch(block = block).also { collectorJobs += it }
 
     /** 取消当前全部 collector（connect() 重建连接栈前调用）。 */
     fun cancelCollectors() {

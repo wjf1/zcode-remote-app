@@ -16,8 +16,10 @@ import org.junit.Test
  * 「会话流快照没带 sessionId」的正常条目一并藏掉（比原缺陷更难排查）。
  */
 class PendingScopeTest {
-
-    private fun approval(id: String, sessionId: String?) = PendingApproval(
+    private fun approval(
+        id: String,
+        sessionId: String?,
+    ) = PendingApproval(
         interactionId = id,
         toolCallId = null,
         toolName = null,
@@ -29,7 +31,10 @@ class PendingScopeTest {
         sessionId = sessionId,
     )
 
-    private fun elicitation(id: String, sessionId: String?) = PendingElicitation(
+    private fun elicitation(
+        id: String,
+        sessionId: String?,
+    ) = PendingElicitation(
         interactionId = id,
         toolName = null,
         prompt = null,
@@ -42,11 +47,12 @@ class PendingScopeTest {
 
     @Test
     fun approvalsKeepOwnSessionAndDropOthers() {
-        val list = listOf(
-            approval("a-own", "sessA"),
-            approval("a-other", "sessB"),
-            approval("a-anon", null),
-        )
+        val list =
+            listOf(
+                approval("a-own", "sessA"),
+                approval("a-other", "sessB"),
+                approval("a-anon", null),
+            )
         val visible = approvalsForSession(list, "sessA")
         assertEquals("只应看到本会话与归属未知的条目", listOf("a-own", "a-anon"), visible.map { it.interactionId })
     }
@@ -67,11 +73,12 @@ class PendingScopeTest {
 
     @Test
     fun elicitationsKeepOwnSessionAndDropOthers() {
-        val list = listOf(
-            elicitation("e-own", "sessA"),
-            elicitation("e-other", "sessB"),
-            elicitation("e-anon", null),
-        )
+        val list =
+            listOf(
+                elicitation("e-own", "sessA"),
+                elicitation("e-other", "sessB"),
+                elicitation("e-anon", null),
+            )
         val visible = elicitationsForSession(list, "sessA")
         assertEquals(listOf("e-own", "e-anon"), visible.map { it.interactionId })
     }

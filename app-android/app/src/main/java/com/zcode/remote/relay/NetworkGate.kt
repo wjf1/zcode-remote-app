@@ -28,7 +28,6 @@ import kotlin.random.Random
  *   仍被烧完，实测恢复耗时 ~47s，与本节设计意图不符）。
  */
 class NetworkGate(private val cm: ConnectivityManager) {
-
     /** 网络丢失回调（由 RelayClient 注入：清理 socket 并调度重连）。 */
     @Volatile
     var onLost: (() -> Unit)? = null
@@ -54,25 +53,26 @@ class NetworkGate(private val cm: ConnectivityManager) {
      */
     private val mainHandler = Handler(Looper.getMainLooper())
 
-    private val watcher = object : ConnectivityManager.NetworkCallback() {
-        override fun onAvailable(network: Network) {
-            ZLog.i(TAG, "gate: 网络恢复 onAvailable")
-            available = true
-            resumeWaiter()
-            mainHandler.post { onAvailable?.invoke() }
-        }
+    private val watcher =
+        object : ConnectivityManager.NetworkCallback() {
+            override fun onAvailable(network: Network) {
+                ZLog.i(TAG, "gate: 网络恢复 onAvailable")
+                available = true
+                resumeWaiter()
+                mainHandler.post { onAvailable?.invoke() }
+            }
 
-        override fun onLost(network: Network) {
-            // 双网并存时 onLost 只表示其中一条网没了；此时 activeNetwork 仍可用则不误报
-            if (!probeNow()) {
-                ZLog.i(TAG, "gate: 网络丢失 onLost")
-                available = false
-                mainHandler.post { onLost?.invoke() }
-            } else {
-                ZLog.i(TAG, "gate: 某条网络 lost，但仍有可用网络，忽略")
+            override fun onLost(network: Network) {
+                // 双网并存时 onLost 只表示其中一条网没了；此时 activeNetwork 仍可用则不误报
+                if (!probeNow()) {
+                    ZLog.i(TAG, "gate: 网络丢失 onLost")
+                    available = false
+                    mainHandler.post { onLost?.invoke() }
+                } else {
+                    ZLog.i(TAG, "gate: 某条网络 lost，但仍有可用网络，忽略")
+                }
             }
         }
-    }
 
     /** 常驻监控（幂等）：App 连接期间持续感知网络变化。 */
     fun startWatch() {
@@ -129,5 +129,7 @@ class NetworkGate(private val cm: ConnectivityManager) {
         return caps.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET)
     }
 
-    companion object { private const val TAG = "NetworkGate" }
+    companion object {
+        private const val TAG = "NetworkGate"
+    }
 }

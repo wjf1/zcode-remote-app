@@ -1,8 +1,8 @@
 package com.zcode.remote.storage
 
-import com.zcode.remote.util.ZLog
 import android.content.Context
 import android.util.Base64
+import com.zcode.remote.util.ZLog
 import javax.crypto.Cipher
 import javax.crypto.spec.GCMParameterSpec
 
@@ -14,7 +14,6 @@ import javax.crypto.spec.GCMParameterSpec
  * 旧版单条格式（iv/data）首次读取时自动迁移。
  */
 class MultiDeviceStore(context: Context) {
-
     private val prefs = context.getSharedPreferences("zcode_credentials", Context.MODE_PRIVATE)
     private val keyAlias = "zcode_remote_master_key"
     private val crypto = CredentialCrypto()
@@ -78,7 +77,7 @@ class MultiDeviceStore(context: Context) {
         }
         val (devices, active) = legacy
         ZLog.i("MultiDeviceStore", "readV2 legacy 迁移 parsed=${devices.size} active=$active")
-        runCatching { save(Snapshot(devices, active)) }   // 迁移写入失败不阻断读取（下次再试）
+        runCatching { save(Snapshot(devices, active)) } // 迁移写入失败不阻断读取（下次再试）
         return Snapshot(devices, active)
     }
 
@@ -86,11 +85,15 @@ class MultiDeviceStore(context: Context) {
     private fun migrateV1() {
         val iv = prefs.getString("iv", null) ?: return
         val data = prefs.getString("data", null) ?: return
-        val legacy = crypto.decrypt(iv, data)?.let { plain ->
-            val p = plain.split("\u0001")
-            if (p.size < 5) null
-            else PairedDevice(p[0], p[1], p[2].ifEmpty { null }, p[3].ifEmpty { null }, p[4])
-        } ?: return
+        val legacy =
+            crypto.decrypt(iv, data)?.let { plain ->
+                val p = plain.split("\u0001")
+                if (p.size < 5) {
+                    null
+                } else {
+                    PairedDevice(p[0], p[1], p[2].ifEmpty { null }, p[3].ifEmpty { null }, p[4])
+                }
+            } ?: return
         save(Snapshot(listOf(legacy), legacy.deviceSid))
         prefs.edit().remove("iv").remove("data").apply()
     }
@@ -101,7 +104,10 @@ class MultiDeviceStore(context: Context) {
         return crypto.decrypt(iv, data)
     }
 
-    private fun writeEncrypted(key: String, plain: String) {
+    private fun writeEncrypted(
+        key: String,
+        plain: String,
+    ) {
         val (iv, data) = crypto.encrypt(plain)
         prefs.edit()
             .putString("${key}_iv", iv)
@@ -112,17 +118,20 @@ class MultiDeviceStore(context: Context) {
 
 /** AES-256-GCM 加解密（密钥入 Android Keystore；与 v1 共用同一把主密钥）。 */
 class CredentialCrypto(private val keyAlias: String = "zcode_remote_master_key") {
-
     private fun getOrCreateKey(): SecretKeyAlias {
         val ks = java.security.KeyStore.getInstance("AndroidKeyStore").apply { load(null) }
         (ks.getKey(keyAlias, null) as? javax.crypto.SecretKey)?.let { return it }
         val kg = javax.crypto.KeyGenerator.getInstance("AES", "AndroidKeyStore")
-        kg.init(android.security.keystore.KeyGenParameterSpec.Builder(keyAlias,
-            android.security.keystore.KeyProperties.PURPOSE_ENCRYPT or android.security.keystore.KeyProperties.PURPOSE_DECRYPT)
-            .setBlockModes(android.security.keystore.KeyProperties.BLOCK_MODE_GCM)
-            .setEncryptionPaddings(android.security.keystore.KeyProperties.ENCRYPTION_PADDING_NONE)
-            .setKeySize(256)
-            .build())
+        kg.init(
+            android.security.keystore.KeyGenParameterSpec.Builder(
+                keyAlias,
+                android.security.keystore.KeyProperties.PURPOSE_ENCRYPT or android.security.keystore.KeyProperties.PURPOSE_DECRYPT,
+            )
+                .setBlockModes(android.security.keystore.KeyProperties.BLOCK_MODE_GCM)
+                .setEncryptionPaddings(android.security.keystore.KeyProperties.ENCRYPTION_PADDING_NONE)
+                .setKeySize(256)
+                .build(),
+        )
         return kg.generateKey()
     }
 
@@ -131,15 +140,22 @@ class CredentialCrypto(private val keyAlias: String = "zcode_remote_master_key")
         cipher.init(Cipher.ENCRYPT_MODE, getOrCreateKey())
         val enc = cipher.doFinal(plain.toByteArray(Charsets.UTF_8))
         return Base64.encodeToString(cipher.iv, Base64.NO_WRAP) to
-                Base64.encodeToString(enc, Base64.NO_WRAP)
+            Base64.encodeToString(enc, Base64.NO_WRAP)
     }
 
-    fun decrypt(ivB64: String, dataB64: String): String? = runCatching {
-        val cipher = Cipher.getInstance("AES/GCM/NoPadding")
-        cipher.init(Cipher.DECRYPT_MODE, getOrCreateKey(),
-            GCMParameterSpec(128, Base64.decode(ivB64, Base64.NO_WRAP)))
-        String(cipher.doFinal(Base64.decode(dataB64, Base64.NO_WRAP)), Charsets.UTF_8)
-    }.getOrNull()
+    fun decrypt(
+        ivB64: String,
+        dataB64: String,
+    ): String? =
+        runCatching {
+            val cipher = Cipher.getInstance("AES/GCM/NoPadding")
+            cipher.init(
+                Cipher.DECRYPT_MODE,
+                getOrCreateKey(),
+                GCMParameterSpec(128, Base64.decode(ivB64, Base64.NO_WRAP)),
+            )
+            String(cipher.doFinal(Base64.decode(dataB64, Base64.NO_WRAP)), Charsets.UTF_8)
+        }.getOrNull()
 }
 
 private typealias SecretKeyAlias = javax.crypto.SecretKey

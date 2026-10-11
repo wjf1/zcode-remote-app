@@ -76,10 +76,11 @@ fun CollapsibleRow(
 ) {
     Column(modifier = modifier.fillMaxWidth()) {
         Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .clickable(onClick = onToggle)
-                .padding(vertical = ZCodeDimens.Grid),
+            modifier =
+                Modifier
+                    .fillMaxWidth()
+                    .clickable(onClick = onToggle)
+                    .padding(vertical = ZCodeDimens.Grid),
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(ZCodeDimens.GapInline),
         ) {
@@ -95,9 +96,10 @@ fun CollapsibleRow(
                 imageVector = Icons.Default.KeyboardArrowRight,
                 contentDescription = if (expanded) "收起" else "展开",
                 tint = chevronColor,
-                modifier = Modifier
-                    .size(ZCodeDimens.IconChevron)
-                    .rotate(rotation),
+                modifier =
+                    Modifier
+                        .size(ZCodeDimens.IconChevron)
+                        .rotate(rotation),
             )
         }
 
@@ -107,14 +109,15 @@ fun CollapsibleRow(
             exit = shrinkVertically() + fadeOut(),
         ) {
             Column(
-                modifier = if (bodyMaxHeight != null) {
-                    Modifier
-                        .fillMaxWidth()
-                        .heightIn(max = bodyMaxHeight)
-                        .verticalScroll(rememberScrollState())
-                } else {
-                    Modifier.fillMaxWidth()
-                },
+                modifier =
+                    if (bodyMaxHeight != null) {
+                        Modifier
+                            .fillMaxWidth()
+                            .heightIn(max = bodyMaxHeight)
+                            .verticalScroll(rememberScrollState())
+                    } else {
+                        Modifier.fillMaxWidth()
+                    },
                 content = { body() },
             )
         }
@@ -144,19 +147,20 @@ fun ToolBody(
     val startPad = ZCodeDimens.QuotePaddingStart
 
     Column(
-        modifier = modifier
-            .fillMaxWidth()
-            .drawBehind {
-                drawRect(color = lineColor, size = Size(lineWidthPx, size.height))
-            }
-            .padding(start = startPad + 1.dp, top = ZCodeDimens.GapInline)
-            .let {
-                if (maxHeight != null) {
-                    it.heightIn(max = maxHeight).verticalScroll(rememberScrollState())
-                } else {
-                    it
+        modifier =
+            modifier
+                .fillMaxWidth()
+                .drawBehind {
+                    drawRect(color = lineColor, size = Size(lineWidthPx, size.height))
                 }
-            },
+                .padding(start = startPad + 1.dp, top = ZCodeDimens.GapInline)
+                .let {
+                    if (maxHeight != null) {
+                        it.heightIn(max = maxHeight).verticalScroll(rememberScrollState())
+                    } else {
+                        it
+                    }
+                },
         content = content,
     )
 }
@@ -181,10 +185,11 @@ fun ToolBodySection(
     Column(modifier = modifier.fillMaxWidth()) {
         Text(
             text = title,
-            style = MaterialTheme.typography.labelSmall.copy(
-                fontSize = ZCodeType.Sm,
-                fontWeight = ZCodeType.SemiBold,
-            ),
+            style =
+                MaterialTheme.typography.labelSmall.copy(
+                    fontSize = ZCodeType.Sm,
+                    fontWeight = ZCodeType.SemiBold,
+                ),
             color = titleColor,
         )
         Spacer(Modifier.height(ZCodeDimens.GapTight))
@@ -195,15 +200,16 @@ fun ToolBodySection(
         ) {
             Text(
                 text = content,
-                style = if (mono) {
-                    MaterialTheme.typography.bodySmall.copy(
-                        fontFamily = FontFamily.Monospace,
-                        fontSize = 11.5.sp,
-                        lineHeight = 16.sp,
-                    )
-                } else {
-                    MaterialTheme.typography.bodySmall.copy(fontSize = ZCodeType.Caption)
-                },
+                style =
+                    if (mono) {
+                        MaterialTheme.typography.bodySmall.copy(
+                            fontFamily = FontFamily.Monospace,
+                            fontSize = 11.5.sp,
+                            lineHeight = 16.sp,
+                        )
+                    } else {
+                        MaterialTheme.typography.bodySmall.copy(fontSize = ZCodeType.Caption)
+                    },
                 modifier = Modifier.padding(ZCodeDimens.GapInline),
             )
         }
@@ -221,17 +227,19 @@ fun ToolSummaryBadge(
     modifier: Modifier = Modifier,
 ) {
     Box(
-        modifier = modifier
-            .clip(RoundedCornerShape(ZCodeDimens.RadiusSm))
-            .background(tone.copy(alpha = 0.15f))
-            .padding(horizontal = 5.dp, vertical = 1.dp),
+        modifier =
+            modifier
+                .clip(RoundedCornerShape(ZCodeDimens.RadiusSm))
+                .background(tone.copy(alpha = 0.15f))
+                .padding(horizontal = 5.dp, vertical = 1.dp),
     ) {
         Text(
             text = text,
-            style = MaterialTheme.typography.labelSmall.copy(
-                fontSize = ZCodeType.Sm,
-                fontWeight = ZCodeType.Medium,
-            ),
+            style =
+                MaterialTheme.typography.labelSmall.copy(
+                    fontSize = ZCodeType.Sm,
+                    fontWeight = ZCodeType.Medium,
+                ),
             color = tone,
         )
     }

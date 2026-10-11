@@ -27,17 +27,20 @@ import java.util.zip.CRC32
  * M1 简化：仅单分片（消息 < 1MiB envelope 预算），分片/重传待后续。
  */
 class RpcChannel(private val relay: RelayClient) {
-
     sealed interface BridgeState {
         data object Closed : BridgeState
+
         data object Opening : BridgeState
+
         data class Ready(val bridgeSessionId: String) : BridgeState
+
         data class Failed(val reason: String) : BridgeState
     }
 
     /** Promise 调用的结果：202/203 不再伪装成 null，便于调用方区分「失败」与「成功但无数据」。 */
     sealed interface RpcReply {
         data class Ok(val data: JsonElement?) : RpcReply
+
         data class Err(val message: String, val raw: JsonElement?) : RpcReply
     }
 
@@ -63,8 +66,11 @@ class RpcChannel(private val relay: RelayClient) {
 
     // A-4：SUSPEND + 单泵 —— 慢消费时由发射端（onRpcFrame，跑在入站单泵协程里）背压挂起，
     // 而非 DROP_OLDEST 丢帧：丢帧 = seq 缺口 = 会话静默停在旧状态。容量 512 对齐 RelayClient._inbound。
-    private val _events = MutableSharedFlow<RpcEvent>(
-        extraBufferCapacity = 512, onBufferOverflow = BufferOverflow.SUSPEND)
+    private val _events =
+        MutableSharedFlow<RpcEvent>(
+            extraBufferCapacity = 512,
+            onBufferOverflow = BufferOverflow.SUSPEND,
+        )
 
     /**
      * A-4：事件流 seq 缺口回调（缺口帧已 ack、服务端不重发，会话将静默停在旧状态）。
@@ -130,21 +136,26 @@ class RpcChannel(private val relay: RelayClient) {
 
     // ---------- 开桥 ----------
 
-    fun openBridge(workspaceKey: String, taskId: String? = null, attempt: Int = 1) {
+    fun openBridge(
+        workspaceKey: String,
+        taskId: String? = null,
+        attempt: Int = 1,
+    ) {
         // 令牌：连续多次 openBridge（如 workspace-list 帧连发）时，只有最后一次的看门狗有效，
         // 避免多个看门狗互相触发重开形成放大风暴。openBridge 与看门狗同在 main 线程。
         bridgeOpenToken += 1
         val token = bridgeOpenToken
         val sid = "bridge-${UUID.randomUUID()}"
         _bridge.value = BridgeState.Opening
-        val payload = buildJsonObject {
-            put("zcode_type", "workspace-bridge-open")
-            put("requestId", "workspace-bridge-${UUID.randomUUID()}")
-            put("bridgeSessionId", sid)
-            put("bridgeGeneration", 1)
-            put("workspaceKey", workspaceKey)
-            taskId?.let { put("taskId", it) }
-        }
+        val payload =
+            buildJsonObject {
+                put("zcode_type", "workspace-bridge-open")
+                put("requestId", "workspace-bridge-${UUID.randomUUID()}")
+                put("bridgeSessionId", sid)
+                put("bridgeGeneration", 1)
+                put("workspaceKey", workspaceKey)
+                taskId?.let { put("taskId", it) }
+            }
         ZLog.i(TAG, "bridge-open ws=$workspaceKey sid=$sid attempt=$attempt")
         relay.sendPayload(payload)
         scheduleBridgeWatchdog(workspaceKey, taskId, attempt, token)
@@ -161,17 +172,25 @@ class RpcChannel(private val relay: RelayClient) {
      * 这里做有限次重开（间隔 [BRIDGE_OPEN_TIMEOUT_MS]，上限 [MAX_BRIDGE_OPEN_ATTEMPTS] 次），
      * 用尽则显式置 [BridgeState.Failed]，把「静默卡死」变成「可见失败」。
      */
-    private fun scheduleBridgeWatchdog(wsKey: String, taskId: String?, attempt: Int, token: Int) {
+    private fun scheduleBridgeWatchdog(
+        wsKey: String,
+        taskId: String?,
+        attempt: Int,
+        token: Int,
+    ) {
         mainHandler.postDelayed({
             // 决策抽成纯函数（watchdogDecision）以便 JVM 单测钉死「重开用尽 → 可见失败」——
             // 该路径在真机上**无法构造**（需人为丢弃 workspace-bridge-ready，App 外部制造不了，
             // 见 HANDOVER beta15 记录），此前仅有代码推理覆盖。
-            when (val d = watchdogDecision(
-                token = token,
-                currentToken = bridgeOpenToken,
-                bridgeReady = _bridge.value is BridgeState.Ready,
-                attempt = attempt,
-            )) {
+            when (
+                val d =
+                    watchdogDecision(
+                        token = token,
+                        currentToken = bridgeOpenToken,
+                        bridgeReady = _bridge.value is BridgeState.Ready,
+                        attempt = attempt,
+                    )
+            ) {
                 is WatchdogDecision.Noop -> Unit
                 is WatchdogDecision.Fail -> {
                     ZLog.w(TAG, "bridge 握手重开已用尽（$attempt 次），置失败态（state=${_bridge.value}）")
@@ -192,10 +211,17 @@ class RpcChannel(private val relay: RelayClient) {
                 val sid = payload["bridgeSessionId"]?.let { runCatching { it.jsonPrimitive.content }.getOrNull() }
                 readyPayload = payload
                 // 身份三元组以此为准（PC 端 enforces 全等匹配）
-                bridgeGeneration = payload["bridgeGeneration"]?.let {
-                    runCatching { it.jsonPrimitive.content.toIntOrNull() }.getOrNull() }
+                bridgeGeneration =
+                    payload["bridgeGeneration"]?.let {
+                        runCatching { it.jsonPrimitive.content.toIntOrNull() }.getOrNull()
+                    }
                 recoveryId = payload["recoveryId"]?.let { runCatching { it.jsonPrimitive.content }.getOrNull() }
-                ZLog.i(TAG, "bridge-ready sid=${LogRedactor.maskId(sid)} gen=$bridgeGeneration payload=${LogRedactor.payloadLabel(payload.toString())}")
+                ZLog.i(
+                    TAG,
+                    "bridge-ready sid=${LogRedactor.maskId(
+                        sid,
+                    )} gen=$bridgeGeneration payload=${LogRedactor.payloadLabel(payload.toString())}",
+                )
                 if (sid != null) {
                     // 新桥 ack 序列空间全新：旧桥挂起请求立即失败收场，防止调用方状态卡死
                     failPending("bridge re-established")
@@ -225,7 +251,7 @@ class RpcChannel(private val relay: RelayClient) {
     ): Int? {
         val bridge = _bridge.value
         if (bridge !is BridgeState.Ready) {
-            ZLog.w(TAG, "call($method) skipped: bridge not ready (${bridge})")
+            ZLog.w(TAG, "call($method) skipped: bridge not ready ($bridge)")
             onResponse?.invoke(RpcReply.Err("bridge not ready", null))
             return null
         }
@@ -235,11 +261,12 @@ class RpcChannel(private val relay: RelayClient) {
             if (timeoutMs != null && timeoutMs > 0) {
                 // 超时兜底：服务端不回/桥半死时，调用方不能永久挂起。
                 // remove 原子性保证与 WS 线程的应答分发不会双触发。
-                val task = Runnable {
-                    val cb = pendingResponses.remove(id) ?: return@Runnable
-                    ZLog.w(TAG, "rpc timeout id=$id method=$method after=${timeoutMs}ms")
-                    cb(RpcReply.Err("timeout after ${timeoutMs}ms", null))
-                }
+                val task =
+                    Runnable {
+                        val cb = pendingResponses.remove(id) ?: return@Runnable
+                        ZLog.w(TAG, "rpc timeout id=$id method=$method after=${timeoutMs}ms")
+                        cb(RpcReply.Err("timeout after ${timeoutMs}ms", null))
+                    }
                 timeoutTasks[id] = task
                 mainHandler.postDelayed(task, timeoutMs)
             }
@@ -265,7 +292,7 @@ class RpcChannel(private val relay: RelayClient) {
     ): Int? {
         val bridge = _bridge.value
         if (bridge !is BridgeState.Ready) {
-            ZLog.w(TAG, "listen($event) skipped: bridge not ready (${bridge})")
+            ZLog.w(TAG, "listen($event) skipped: bridge not ready ($bridge)")
             onResponse?.invoke(RpcReply.Err("bridge not ready", null))
             return null
         }
@@ -293,28 +320,33 @@ class RpcChannel(private val relay: RelayClient) {
         return true
     }
 
-    private fun sendMessage(message: ByteArray, bridgeSessionId: String) {
+    private fun sendMessage(
+        message: ByteArray,
+        bridgeSessionId: String,
+    ) {
         val bytes = message
         val crc = CRC32().apply { update(bytes) }.value
-        val checksum = buildJsonObject {
-            put("algorithm", "crc32")
-            put("value", String.format("%08x", crc))
-        }
+        val checksum =
+            buildJsonObject {
+                put("algorithm", "crc32")
+                put("value", String.format("%08x", crc))
+            }
         val seq = nextPhysicalSeq++
         val messageSeq = nextMessageSeq++
-        val frame = buildJsonObject {
-            put("zcode_type", "rpc-frame")
-            put("bridgeSessionId", bridgeSessionId)
-            bridgeGeneration?.let { put("bridgeGeneration", it) }
-            recoveryId?.let { put("recoveryId", it) }
-            put("seq", seq)
-            put("messageSeq", messageSeq)
-            put("fragmentIndex", 0)
-            put("fragmentCount", 1)
-            put("messageBytes", bytes.size)
-            put("checksum", checksum)
-            put("dataBase64", Base64.encodeToString(bytes, Base64.NO_WRAP))
-        }
+        val frame =
+            buildJsonObject {
+                put("zcode_type", "rpc-frame")
+                put("bridgeSessionId", bridgeSessionId)
+                bridgeGeneration?.let { put("bridgeGeneration", it) }
+                recoveryId?.let { put("recoveryId", it) }
+                put("seq", seq)
+                put("messageSeq", messageSeq)
+                put("fragmentIndex", 0)
+                put("fragmentCount", 1)
+                put("messageBytes", bytes.size)
+                put("checksum", checksum)
+                put("dataBase64", Base64.encodeToString(bytes, Base64.NO_WRAP))
+            }
         relay.sendPayload(frame)
     }
 
@@ -327,43 +359,54 @@ class RpcChannel(private val relay: RelayClient) {
     suspend fun onRpcFrame(payload: JsonObject) {
         val b64 = payload["dataBase64"]?.let { runCatching { it.jsonPrimitive.content }.getOrNull() } ?: return
         val bytes = runCatching { Base64.decode(b64, Base64.NO_WRAP) }.getOrNull() ?: return
-        val messageSeq = payload["messageSeq"]?.let {
-            runCatching { it.jsonPrimitive.content.toIntOrNull() }.getOrNull()
-        }
-        val fragIndex = payload["fragmentIndex"]?.let {
-            runCatching { it.jsonPrimitive.content.toIntOrNull() }.getOrNull() } ?: 0
-        val fragCount = payload["fragmentCount"]?.let {
-            runCatching { it.jsonPrimitive.content.toIntOrNull() }.getOrNull() } ?: 1
+        val messageSeq =
+            payload["messageSeq"]?.let {
+                runCatching { it.jsonPrimitive.content.toIntOrNull() }.getOrNull()
+            }
+        val fragIndex =
+            payload["fragmentIndex"]?.let {
+                runCatching { it.jsonPrimitive.content.toIntOrNull() }.getOrNull()
+            } ?: 0
+        val fragCount =
+            payload["fragmentCount"]?.let {
+                runCatching { it.jsonPrimitive.content.toIntOrNull() }.getOrNull()
+            } ?: 1
         val bridgeSessionId = (bridge.value as? BridgeState.Ready)?.bridgeSessionId
 
-        val complete: ByteArray = if (fragCount <= 1) bytes else {
-            val buf = fragmentBuffers.getOrPut(messageSeq ?: -1) { HashMap() }
-            buf[fragIndex] = bytes
-            if (buf.size < fragCount) {
-                ZLog.d(TAG, "fragment buffered seq=$messageSeq ${buf.size}/$fragCount")
-                trimFragmentBuffers()
-                return
+        val complete: ByteArray =
+            if (fragCount <= 1) {
+                bytes
+            } else {
+                val buf = fragmentBuffers.getOrPut(messageSeq ?: -1) { HashMap() }
+                buf[fragIndex] = bytes
+                if (buf.size < fragCount) {
+                    ZLog.d(TAG, "fragment buffered seq=$messageSeq ${buf.size}/$fragCount")
+                    trimFragmentBuffers()
+                    return
+                }
+                val joined = ByteArray(buf.entries.sortedBy { it.key }.sumOf { it.value.size })
+                var off = 0
+                for ((_, part) in buf.entries.sortedBy { it.key }) {
+                    part.copyInto(joined, off)
+                    off += part.size
+                }
+                fragmentBuffers.remove(messageSeq ?: -1)
+                val expectCrc = payload["checksum"]?.let { runCatching { it.jsonObject["value"]?.jsonPrimitive?.content }.getOrNull() }
+                val actualCrc = String.format("%08x", CRC32().apply { update(joined) }.value)
+                if (expectCrc != null && !expectCrc.equals(actualCrc, ignoreCase = true)) {
+                    ZLog.w(TAG, "fragment checksum mismatch seq=$messageSeq expect=$expectCrc actual=$actualCrc")
+                    return
+                }
+                val messageBytes =
+                    payload["messageBytes"]?.let {
+                        runCatching { it.jsonPrimitive.content.toIntOrNull() }.getOrNull()
+                    }
+                if (messageBytes != null && messageBytes != joined.size) {
+                    ZLog.w(TAG, "fragment size mismatch seq=$messageSeq expect=$messageBytes actual=${joined.size}")
+                    return
+                }
+                joined
             }
-            val joined = ByteArray(buf.entries.sortedBy { it.key }.sumOf { it.value.size })
-            var off = 0
-            for ((_, part) in buf.entries.sortedBy { it.key }) {
-                part.copyInto(joined, off); off += part.size
-            }
-            fragmentBuffers.remove(messageSeq ?: -1)
-            val expectCrc = payload["checksum"]?.let { runCatching { it.jsonObject["value"]?.jsonPrimitive?.content }.getOrNull() }
-            val actualCrc = String.format("%08x", CRC32().apply { update(joined) }.value)
-            if (expectCrc != null && !expectCrc.equals(actualCrc, ignoreCase = true)) {
-                ZLog.w(TAG, "fragment checksum mismatch seq=$messageSeq expect=$expectCrc actual=$actualCrc")
-                return
-            }
-            val messageBytes = payload["messageBytes"]?.let {
-                runCatching { it.jsonPrimitive.content.toIntOrNull() }.getOrNull() }
-            if (messageBytes != null && messageBytes != joined.size) {
-                ZLog.w(TAG, "fragment size mismatch seq=$messageSeq expect=$messageBytes actual=${joined.size}")
-                return
-            }
-            joined
-        }
         messageSeq?.let { seq ->
             // A-4：事件流缺口 = 中间有帧被丢（ack 已发、服务端不重发）→ 会话会静默停在旧状态。
             // 唯一自愈路径是**重订阅**（服务端重放权威快照）；连接层不自知会话语义，经回调交上层。
@@ -414,8 +457,9 @@ class RpcChannel(private val relay: RelayClient) {
             }
             TYPE_ERROR, TYPE_ERROR_OBJ -> {
                 val el = toJsonElement(data)
-                val msg = el.let { runCatching { it.jsonObject["message"]?.jsonPrimitive?.content }.getOrNull() }
-                    ?: el.toString().take(300)
+                val msg =
+                    el.let { runCatching { it.jsonObject["message"]?.jsonPrimitive?.content }.getOrNull() }
+                        ?: el.toString().take(300)
                 ZLog.w(TAG, "rpc error id=$id msg=${LogRedactor.payloadLabel(msg)}")
                 val cb = id?.let { pendingResponses.remove(it) }
                 id?.let { cancelTimeout(it) }
@@ -426,30 +470,36 @@ class RpcChannel(private val relay: RelayClient) {
         }
     }
 
-    private fun toJsonElement(v: Any?): JsonElement = when (v) {
-        null -> kotlinx.serialization.json.JsonNull
-        is JsonElement -> v
-        is String -> kotlinx.serialization.json.JsonPrimitive(v)
-        is Int -> kotlinx.serialization.json.JsonPrimitive(v)
-        is List<*> -> kotlinx.serialization.json.JsonArray(v.map { toJsonElement(it) })
-        else -> kotlinx.serialization.json.JsonPrimitive(v.toString())
-    }
+    private fun toJsonElement(v: Any?): JsonElement =
+        when (v) {
+            null -> kotlinx.serialization.json.JsonNull
+            is JsonElement -> v
+            is String -> kotlinx.serialization.json.JsonPrimitive(v)
+            is Int -> kotlinx.serialization.json.JsonPrimitive(v)
+            is List<*> -> kotlinx.serialization.json.JsonArray(v.map { toJsonElement(it) })
+            else -> kotlinx.serialization.json.JsonPrimitive(v.toString())
+        }
 
     /**
      * 回 ack。**必须带齐身份三元组**：PC 端做全等比较（含 undefined），
      * 只要帧里出现任一身份键就要求三个全等，否则整帧被静默丢弃、服务端会持续重放。
      * 曾因漏 bridgeGeneration 导致 ack 全部失效（见 CONVERSATION-PROTOCOL.md §8）。
      */
-    private fun ack(messageSeq: Int, bridgeSessionId: String?) {
+    private fun ack(
+        messageSeq: Int,
+        bridgeSessionId: String?,
+    ) {
         if (messageSeq <= lastAckedMessageSeq || bridgeSessionId == null) return
         lastAckedMessageSeq = messageSeq
-        relay.sendPayload(buildJsonObject {
-            put("zcode_type", "rpc-frame-ack")
-            put("bridgeSessionId", bridgeSessionId)
-            bridgeGeneration?.let { put("bridgeGeneration", it) }
-            recoveryId?.let { put("recoveryId", it) }
-            put("ackMessageSeq", messageSeq)
-        })
+        relay.sendPayload(
+            buildJsonObject {
+                put("zcode_type", "rpc-frame-ack")
+                put("bridgeSessionId", bridgeSessionId)
+                bridgeGeneration?.let { put("bridgeGeneration", it) }
+                recoveryId?.let { put("recoveryId", it) }
+                put("ackMessageSeq", messageSeq)
+            },
+        )
     }
 
     fun reset() {
@@ -492,8 +542,7 @@ class RpcChannel(private val relay: RelayClient) {
          * `tools/probe.py dispose` 实测：dispose 前 12s 收 8 帧事件、发帧后 12s 归零
          * （期间会话持续产生事件），服务端静默接受无错误应答。
          */
-        internal fun encodeEventDispose(requestId: Int): ByteArray =
-            Vql.serialize(listOf(TYPE_EVENT_DISPOSE, requestId), null)
+        internal fun encodeEventDispose(requestId: Int): ByteArray = Vql.serialize(listOf(TYPE_EVENT_DISPOSE, requestId), null)
 
         /**
          * A-4 前置：事件流缺口判定（纯函数，单测见 `PureFunctionsTest`）。
@@ -505,8 +554,10 @@ class RpcChannel(private val relay: RelayClient) {
          * 四类输入：连续（incoming == last+1）→ false；跳号（> last+1）→ **true**；
          * 重复（==）→ false；回退（<，迟到旧帧）→ false。
          */
-        internal fun hasSeqGap(incomingSeq: Int, lastAckedSeq: Int): Boolean =
-            incomingSeq > lastAckedSeq + 1
+        internal fun hasSeqGap(
+            incomingSeq: Int,
+            lastAckedSeq: Int,
+        ): Boolean = incomingSeq > lastAckedSeq + 1
 
         /**
          * 桥看门狗到点时的决策（纯函数，单测见 `PureFunctionsTest.watchdog*`）。
@@ -521,21 +572,22 @@ class RpcChannel(private val relay: RelayClient) {
             bridgeReady: Boolean,
             attempt: Int,
             maxAttempts: Int = MAX_BRIDGE_OPEN_ATTEMPTS,
-        ): WatchdogDecision = when {
-            token != currentToken -> WatchdogDecision.Noop
-            bridgeReady -> WatchdogDecision.Noop
-            attempt >= maxAttempts -> WatchdogDecision.Fail
-            else -> WatchdogDecision.Retry(attempt + 1)
-        }
+        ): WatchdogDecision =
+            when {
+                token != currentToken -> WatchdogDecision.Noop
+                bridgeReady -> WatchdogDecision.Noop
+                attempt >= maxAttempts -> WatchdogDecision.Fail
+                else -> WatchdogDecision.Retry(attempt + 1)
+            }
 
         /** 通道名（asar/out/host/chunk-RWMCBKS2.js 枚举）。 */
-        const val CHANNEL_AGENT = "zcode-agent"      // ← 会话/对话方法都在这个通道上
-        const val CHANNEL_SESSION = "zcode-session"  // 仅 createSession 等会话管理方法
+        const val CHANNEL_AGENT = "zcode-agent" // ← 会话/对话方法都在这个通道上
+        const val CHANNEL_SESSION = "zcode-session" // 仅 createSession 等会话管理方法
         const val CHANNEL_TASK = "zcode-task"
         const val CHANNEL_WORKSPACE = "workspace"
-        const val CHANNEL_MODEL_PROVIDER = "model-provider"  // 模型供应商目录（getAllCached/getAll）
-        const val CHANNEL_FILE = "file"                      // 文件系统服务（resolvePath/readTextFile）
-        const val CHANNEL_SYSTEM = "system"                  // 系统服务（info 返回 homedir/platform）
+        const val CHANNEL_MODEL_PROVIDER = "model-provider" // 模型供应商目录（getAllCached/getAll）
+        const val CHANNEL_FILE = "file" // 文件系统服务（resolvePath/readTextFile）
+        const val CHANNEL_SYSTEM = "system" // 系统服务（info 返回 homedir/platform）
         const val CHANNEL_MODEL_SELECTION = "model-selection" // 模型注册表视图（getView 含各模型合法思考档位）
     }
 }

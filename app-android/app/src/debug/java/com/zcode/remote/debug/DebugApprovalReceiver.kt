@@ -23,7 +23,10 @@ import com.zcode.remote.relay.PendingElicitation
  * 安全门（任务书 §11.3.2）：必须携带 DebugInjectionGuard 令牌，否则丢弃。
  */
 class DebugApprovalReceiver : BroadcastReceiver() {
-    override fun onReceive(context: Context, intent: Intent) {
+    override fun onReceive(
+        context: Context,
+        intent: Intent,
+    ) {
         if (!DebugInjectionGuard.allow(context, intent, ALLOWED_ACTIONS)) return
         when (intent.action) {
             ACTION_CLEAR -> {
@@ -35,51 +38,55 @@ class DebugApprovalReceiver : BroadcastReceiver() {
         }
     }
 
-    private fun fakeElicitation(): List<PendingElicitation> = listOf(
-        PendingElicitation(
-            interactionId = "el_debug_001",
-            toolName = "AskUserQuestion",
-            prompt = "测试提问：请补充当前任务的验收标准或参数",
-            questions = emptyList(),
-            freeText = true,
-            plan = null,
-            autoResolveAt = null,
-            sessionId = "sess_debug",
+    private fun fakeElicitation(): List<PendingElicitation> =
+        listOf(
+            PendingElicitation(
+                interactionId = "el_debug_001",
+                toolName = "AskUserQuestion",
+                prompt = "测试提问：请补充当前任务的验收标准或参数",
+                questions = emptyList(),
+                freeText = true,
+                plan = null,
+                autoResolveAt = null,
+                sessionId = "sess_debug",
+            ),
         )
-    )
 
-    private fun fake(): List<PendingApproval> = listOf(
-        PendingApproval(
-            interactionId = "intc_debug_0001",
-            toolCallId = "call_debug_1",
-            toolName = "Bash",
-            summary = "调试用：模拟一次需要审批的命令执行",
-            detail = "rm -rf F:/tmp/build-cache",
-            options = listOf(
-                ApprovalOption("opt_debug_allow", "Allow once", "allowOnce", "allow"),
-                ApprovalOption("opt_debug_always", "Always allow", "allowAlways", "allow"),
-                ApprovalOption("opt_debug_deny", "Deny", "deny", "deny"),
+    private fun fake(): List<PendingApproval> =
+        listOf(
+            PendingApproval(
+                interactionId = "intc_debug_0001",
+                toolCallId = "call_debug_1",
+                toolName = "Bash",
+                summary = "调试用：模拟一次需要审批的命令执行",
+                detail = "rm -rf F:/tmp/build-cache",
+                options =
+                    listOf(
+                        ApprovalOption("opt_debug_allow", "Allow once", "allowOnce", "allow"),
+                        ApprovalOption("opt_debug_always", "Always allow", "allowAlways", "allow"),
+                        ApprovalOption("opt_debug_deny", "Deny", "deny", "deny"),
+                    ),
+                anchorRowId = null,
+                autoResolveAt = System.currentTimeMillis() + 5 * 60_000,
+                sessionId = "sess_debug",
             ),
-            anchorRowId = null,
-            autoResolveAt = System.currentTimeMillis() + 5 * 60_000,
-            sessionId = "sess_debug",
-        ),
-        // 第二条验并行审批：通知栏应出现两条，各自带自己的按钮
-        PendingApproval(
-            interactionId = "intc_debug_0002",
-            toolCallId = "call_debug_2",
-            toolName = "WebFetch",
-            summary = "调试用：第二条并行审批",
-            detail = "https://example.com/api",
-            options = listOf(
-                ApprovalOption("opt_debug_allow2", "Allow", "allowOnce", "allow"),
-                ApprovalOption("opt_debug_deny2", "Reject once", "deny", "deny"),
+            // 第二条验并行审批：通知栏应出现两条，各自带自己的按钮
+            PendingApproval(
+                interactionId = "intc_debug_0002",
+                toolCallId = "call_debug_2",
+                toolName = "WebFetch",
+                summary = "调试用：第二条并行审批",
+                detail = "https://example.com/api",
+                options =
+                    listOf(
+                        ApprovalOption("opt_debug_allow2", "Allow", "allowOnce", "allow"),
+                        ApprovalOption("opt_debug_deny2", "Reject once", "deny", "deny"),
+                    ),
+                anchorRowId = null,
+                autoResolveAt = null,
+                sessionId = "sess_debug",
             ),
-            anchorRowId = null,
-            autoResolveAt = null,
-            sessionId = "sess_debug",
-        ),
-    )
+        )
 
     companion object {
         const val ACTION_INJECT = "com.zcode.remote.action.DEBUG_APPROVAL"

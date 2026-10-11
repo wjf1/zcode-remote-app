@@ -26,7 +26,10 @@ object ApprovalBridge {
     var handler: ((interactionId: String, optionId: String) -> Unit)? = null
 
     /** 返回 false 表示当前无连接可应答。 */
-    fun dispatch(interactionId: String, optionId: String): Boolean {
+    fun dispatch(
+        interactionId: String,
+        optionId: String,
+    ): Boolean {
         val h = handler ?: return false
         h(interactionId, optionId)
         return true
@@ -34,7 +37,10 @@ object ApprovalBridge {
 }
 
 class ApprovalReceiver : BroadcastReceiver() {
-    override fun onReceive(context: Context, intent: Intent) {
+    override fun onReceive(
+        context: Context,
+        intent: Intent,
+    ) {
         val interactionId = intent.getStringExtra(EXTRA_INTERACTION) ?: return
         val optionId = intent.getStringExtra(EXTRA_OPTION) ?: return
         val ok = ApprovalBridge.dispatch(interactionId, optionId)
@@ -49,7 +55,7 @@ class ApprovalReceiver : BroadcastReceiver() {
                     .setContentTitle("ZCode Remote 未连接")
                     .setContentText("这条审批没发出去，打开 App 重新处理")
                     .setAutoCancel(true)
-                    .build()
+                    .build(),
             )
         }
     }
@@ -69,15 +75,20 @@ object ApprovalNotifier {
     private const val ID_BASE = 2000
     private const val ID_SPAN = 100_000
 
-    fun notifId(interactionId: String): Int =
-        ID_BASE + ((interactionId.hashCode() and 0x7fffffff) % ID_SPAN)
+    fun notifId(interactionId: String): Int = ID_BASE + ((interactionId.hashCode() and 0x7fffffff) % ID_SPAN)
 
     /** 用当前 pending 集合对齐通知栏：新增/更新的发出去，已消解的撤掉。 */
-    fun sync(context: Context, pending: List<PendingApproval>) {
+    fun sync(
+        context: Context,
+        pending: List<PendingApproval>,
+    ) {
         ensureChannel(context)
         val nm = context.getSystemService(NotificationManager::class.java)
-        val live = (pending.map { notifId(it.interactionId) } +
-                pending.map { notifId(it.interactionId) + 1 }).toSet()
+        val live =
+            (
+                pending.map { notifId(it.interactionId) } +
+                    pending.map { notifId(it.interactionId) + 1 }
+            ).toSet()
 
         nm.activeNotifications
             ?.asSequence()
@@ -96,29 +107,36 @@ object ApprovalNotifier {
             ?.forEach { nm.cancel(it.id) }
     }
 
-    private fun build(context: Context, a: PendingApproval): Notification {
+    private fun build(
+        context: Context,
+        a: PendingApproval,
+    ): Notification {
         val title = "需要审批：${a.toolName ?: "工具调用"}"
-        val body = listOfNotNull(a.summary?.take(120), a.detail?.take(160))
-            .joinToString("\n")
-            .ifBlank { "桌面端在等你决定" }
+        val body =
+            listOfNotNull(a.summary?.take(120), a.detail?.take(160))
+                .joinToString("\n")
+                .ifBlank { "桌面端在等你决定" }
 
-        val contentIntent = PendingIntent.getActivity(
-            context, notifId(a.interactionId),
-            Intent(context, MainActivity::class.java)
-                .putExtra("openSession", a.sessionId),
-            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
-        )
+        val contentIntent =
+            PendingIntent.getActivity(
+                context,
+                notifId(a.interactionId),
+                Intent(context, MainActivity::class.java)
+                    .putExtra("openSession", a.sessionId),
+                PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
+            )
 
-        val b = Notification.Builder(context, CH_APPROVALS)
-            .setSmallIcon(R.drawable.ic_launcher)
-            .setContentTitle(title)
-            .setContentText(body)
-            .setStyle(Notification.BigTextStyle().bigText(body))
-            .setPriority(Notification.PRIORITY_HIGH)
-            .setCategory(Notification.CATEGORY_SOCIAL)
-            .setContentIntent(contentIntent)
-            .setAutoCancel(false)
-            .setOngoing(true)
+        val b =
+            Notification.Builder(context, CH_APPROVALS)
+                .setSmallIcon(R.drawable.ic_launcher)
+                .setContentTitle(title)
+                .setContentText(body)
+                .setStyle(Notification.BigTextStyle().bigText(body))
+                .setPriority(Notification.PRIORITY_HIGH)
+                .setCategory(Notification.CATEGORY_SOCIAL)
+                .setContentIntent(contentIntent)
+                .setAutoCancel(false)
+                .setOngoing(true)
 
         a.autoResolveAt?.let {
             b.setWhen(it)
@@ -132,31 +150,40 @@ object ApprovalNotifier {
             opts.forEachIndexed { i, opt ->
                 b.addAction(
                     Notification.Action.Builder(
-                        null, labelOf(opt), actionIntent(context, a, opt, i)
-                    ).build()
+                        null,
+                        labelOf(opt),
+                        actionIntent(context, a, opt, i),
+                    ).build(),
                 )
             }
         }
         return b.build()
     }
 
-    private fun labelOf(opt: ApprovalOption): String = when {
-        opt.kind == "allowOnce" -> "允许一次"
-        opt.kind == "allowAlways" -> "总是允许"
-        opt.isDeny -> "拒绝"
-        opt.label.isNotBlank() -> opt.label.take(10)
-        else -> "选项"
-    }
+    private fun labelOf(opt: ApprovalOption): String =
+        when {
+            opt.kind == "allowOnce" -> "允许一次"
+            opt.kind == "allowAlways" -> "总是允许"
+            opt.isDeny -> "拒绝"
+            opt.label.isNotBlank() -> opt.label.take(10)
+            else -> "选项"
+        }
 
     private fun actionIntent(
-        context: Context, a: PendingApproval, opt: ApprovalOption, index: Int,
+        context: Context,
+        a: PendingApproval,
+        opt: ApprovalOption,
+        index: Int,
     ): PendingIntent {
-        val intent = Intent(ApprovalReceiver.ACTION_RESOLVE)
-            .setClass(context, ApprovalReceiver::class.java)
-            .putExtra(ApprovalReceiver.EXTRA_INTERACTION, a.interactionId)
-            .putExtra(ApprovalReceiver.EXTRA_OPTION, opt.optionId)
+        val intent =
+            Intent(ApprovalReceiver.ACTION_RESOLVE)
+                .setClass(context, ApprovalReceiver::class.java)
+                .putExtra(ApprovalReceiver.EXTRA_INTERACTION, a.interactionId)
+                .putExtra(ApprovalReceiver.EXTRA_OPTION, opt.optionId)
         return PendingIntent.getBroadcast(
-            context, notifId(a.interactionId) + index, intent,
+            context,
+            notifId(a.interactionId) + index,
+            intent,
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
         )
     }
@@ -166,11 +193,13 @@ object ApprovalNotifier {
         if (nm.getNotificationChannel(CH_APPROVALS) == null) {
             nm.createNotificationChannel(
                 NotificationChannel(
-                    CH_APPROVALS, "权限审批", NotificationManager.IMPORTANCE_HIGH,
+                    CH_APPROVALS,
+                    "权限审批",
+                    NotificationManager.IMPORTANCE_HIGH,
                 ).apply {
                     description = "桌面端 Agent 请求权限时的批准/拒绝入口"
                     enableVibration(true)
-                }
+                },
             )
         }
     }

@@ -17,7 +17,6 @@ import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.buildJsonArray
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.jsonObject
-import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.put
 
 /**
@@ -40,6 +39,7 @@ class ApprovalRepository(
     /** 当前会话的待审批项（会话流 pendingInteractions + 任务事件流两条来源合并）。 */
     var approvals by mutableStateOf<List<PendingApproval>>(emptyList())
         private set
+
     /** 任务事件流（桌面端实证的审批推送路径）来的待审批，按 interactionId 索引。主线程专用。 */
     internal val taskApprovals = LinkedHashMap<String, PendingApproval>()
 
@@ -48,7 +48,10 @@ class ApprovalRepository(
         private set
     internal val taskElicitations = LinkedHashMap<String, PendingElicitation>()
 
-    private val TAG = "ApprovalRepo"
+    private companion object {
+        private const val TAG = "ApprovalRepo"
+    }
+
 
     /** 任务事件流 permission_request 建卡（collector 落地入口）。 */
     fun ingestTaskApproval(a: PendingApproval) {
@@ -91,8 +94,11 @@ class ApprovalRepository(
         val next = merged.values.toList()
         if (next == approvals) return
         approvals = next
-        ZLog.i(TAG, "approvals → ${next.size} 条 " +
-                next.joinToString(",") { "${it.toolName ?: "?"}#${it.interactionId.take(18)}" })
+        ZLog.i(
+            TAG,
+            "approvals → ${next.size} 条 " +
+                next.joinToString(",") { "${it.toolName ?: "?"}#${it.interactionId.take(18)}" },
+        )
         runCatching { ApprovalNotifier.sync(context, next) }
             .onFailure { ZLog.w(TAG, "通知栏刷新失败", it) }
         onPendingChanged()
@@ -106,15 +112,21 @@ class ApprovalRepository(
         val next = merged.values.toList()
         if (next == elicitations) return
         elicitations = next
-        ZLog.i(TAG, "elicitations → ${next.size} 条 " +
-                next.joinToString(",") { "${it.toolName ?: "?"}#${it.interactionId.take(18)}" })
+        ZLog.i(
+            TAG,
+            "elicitations → ${next.size} 条 " +
+                next.joinToString(",") { "${it.toolName ?: "?"}#${it.interactionId.take(18)}" },
+        )
         runCatching { ElicitationNotifier.sync(context, next) }
             .onFailure { ZLog.w(TAG, "表单通知栏刷新失败", it) }
         onPendingChanged()
     }
 
     /** 通知栏按钮走这条路径：按 id 找回对象再应答。 */
-    fun resolveById(interactionId: String, optionId: String) {
+    fun resolveById(
+        interactionId: String,
+        optionId: String,
+    ) {
         val a = approvals.firstOrNull { it.interactionId == interactionId }
         val opt = a?.options?.firstOrNull { it.optionId == optionId }
         if (a == null || opt == null) {
@@ -125,11 +137,15 @@ class ApprovalRepository(
     }
 
     /** 应答一次审批（乐观消除 + 会话隔离修复）。 */
-    fun resolve(approval: PendingApproval, option: com.zcode.remote.relay.ApprovalOption) {
-        val conv = conversation() ?: run {
-            flash("连接已断开，未发出", true)
-            return
-        }
+    fun resolve(
+        approval: PendingApproval,
+        option: com.zcode.remote.relay.ApprovalOption,
+    ) {
+        val conv =
+            conversation() ?: run {
+                flash("连接已断开，未发出", true)
+                return
+            }
         val ws = activeWorkspaceKey() ?: firstSessionWorkspace()
         val interId = approval.interactionId
 
@@ -141,19 +157,21 @@ class ApprovalRepository(
 
         conv.resolve(approval, option, fallbackWorkspacePath = ws) { r ->
             scope.launch {
-                val (feedback, failure) = when (r) {
-                    is ConversationChannel.ResolveResult.Accepted -> when (r.status) {
-                        "accepted" -> (if (option.isAllow) "已批准" else "已拒绝") to false
-                        "duplicate" -> "已收到（重复提交，服务端只认第一次）" to false
-                        else -> "服务端已消解（可能桌面端先处理了）" to false
+                val (feedback, failure) =
+                    when (r) {
+                        is ConversationChannel.ResolveResult.Accepted ->
+                            when (r.status) {
+                                "accepted" -> (if (option.isAllow) "已批准" else "已拒绝") to false
+                                "duplicate" -> "已收到（重复提交，服务端只认第一次）" to false
+                                else -> "服务端已消解（可能桌面端先处理了）" to false
+                            }
+                        is ConversationChannel.ResolveResult.Failed -> {
+                            // 失败回滚：放回审批列表中
+                            taskApprovals[interId] = approval
+                            refreshApprovals()
+                            "发送失败：${UserFacingError.map(r.message)}" to true
+                        }
                     }
-                    is ConversationChannel.ResolveResult.Failed -> {
-                        // 失败回滚：放回审批列表中
-                        taskApprovals[interId] = approval
-                        refreshApprovals()
-                        "发送失败：${UserFacingError.map(r.message)}" to true
-                    }
-                }
                 flash(feedback, failure)
                 ZLog.i(TAG, "resolve result=$r interaction=$interId feedback=$feedback")
             }
@@ -165,8 +183,15 @@ class ApprovalRepository(
      * 官方 web rut 构造：单题 content.answer、多题 content.answer_N，
      * 同时附 answers:{问题文本: "合并答案"} 便于桌面端日志可读。
      */
-    fun answerElicitation(el: PendingElicitation, answers: Map<Int, List<String>>) {
-        val conv = conversation() ?: run { flash("连接已断开，未发送", true); return }
+    fun answerElicitation(
+        el: PendingElicitation,
+        answers: Map<Int, List<String>>,
+    ) {
+        val conv =
+            conversation() ?: run {
+                flash("连接已断开，未发送", true)
+                return
+            }
         val ws = activeWorkspaceKey() ?: firstSessionWorkspace()
         val interId = el.interactionId
 
@@ -175,27 +200,29 @@ class ApprovalRepository(
         elicitations = elicitations.filter { it.interactionId != interId }
         onPendingChanged()
 
-        val content = buildJsonObject {
-            val readable = LinkedHashMap<String, String>()
-            answers.forEach { (idx, values) ->
-                if (values.isEmpty()) return@forEach
-                val q = el.questions.getOrNull(idx)
-                val jsonValues = buildJsonArray { values.forEach { add(JsonPrimitive(it)) } }
-                if (el.questions.size == 1) {
-                    put("answer", if (q?.multiSelect == true) jsonValues else JsonPrimitive(values.first()))
-                } else {
-                    put("answer_$idx", if (q?.multiSelect == true) jsonValues else JsonPrimitive(values.first()))
+        val content =
+            buildJsonObject {
+                val readable = LinkedHashMap<String, String>()
+                answers.forEach { (idx, values) ->
+                    if (values.isEmpty()) return@forEach
+                    val q = el.questions.getOrNull(idx)
+                    val jsonValues = buildJsonArray { values.forEach { add(JsonPrimitive(it)) } }
+                    if (el.questions.size == 1) {
+                        put("answer", if (q?.multiSelect == true) jsonValues else JsonPrimitive(values.first()))
+                    } else {
+                        put("answer_$idx", if (q?.multiSelect == true) jsonValues else JsonPrimitive(values.first()))
+                    }
+                    q?.let { readable[it.question] = values.joinToString(", ") }
                 }
-                q?.let { readable[it.question] = values.joinToString(", ") }
+                if (readable.isNotEmpty()) {
+                    put("answers", buildJsonObject { readable.forEach { (k, v) -> put(k, JsonPrimitive(v)) } })
+                }
             }
-            if (readable.isNotEmpty()) {
-                put("answers", buildJsonObject { readable.forEach { (k, v) -> put(k, JsonPrimitive(v)) } })
+        val answer =
+            buildJsonObject {
+                put("action", "accept")
+                put("content", content)
             }
-        }
-        val answer = buildJsonObject {
-            put("action", "accept")
-            put("content", content)
-        }
         conv.resolveElicitation(el, answer, fallbackWorkspacePath = ws) { r ->
             handleElicitationResult(r, "已提交回答", el)
         }
@@ -203,7 +230,11 @@ class ApprovalRepository(
 
     /** 拒绝表单/计划。 */
     fun declineElicitation(el: PendingElicitation) {
-        val conv = conversation() ?: run { flash("连接已断开，未发送", true); return }
+        val conv =
+            conversation() ?: run {
+                flash("连接已断开，未发送", true)
+                return
+            }
         val ws = activeWorkspaceKey() ?: firstSessionWorkspace()
         val interId = el.interactionId
 
@@ -218,7 +249,11 @@ class ApprovalRepository(
 
     /** 计划批准（plan_approval）。 */
     fun approveElicitationPlan(el: PendingElicitation) {
-        val conv = conversation() ?: run { flash("连接已断开，未发送", true); return }
+        val conv =
+            conversation() ?: run {
+                flash("连接已断开，未发送", true)
+                return
+            }
         val ws = activeWorkspaceKey() ?: firstSessionWorkspace()
         val interId = el.interactionId
 
@@ -232,8 +267,15 @@ class ApprovalRepository(
     }
 
     /** 自由文本应答（无 questions 的 userInput 条目，freeText=true）。 */
-    fun answerElicitationFreeText(el: PendingElicitation, text: String) {
-        val conv = conversation() ?: run { flash("连接已断开，未发送", true); return }
+    fun answerElicitationFreeText(
+        el: PendingElicitation,
+        text: String,
+    ) {
+        val conv =
+            conversation() ?: run {
+                flash("连接已断开，未发送", true)
+                return
+            }
         val ws = activeWorkspaceKey() ?: firstSessionWorkspace()
         val interId = el.interactionId
 
@@ -245,14 +287,21 @@ class ApprovalRepository(
         // 此前只发 {freeText} 缺 action，真机报 `invalid_value @ answer.action`（表单应答失败）。
         conv.resolveElicitation(
             el,
-            buildJsonObject { put("action", "accept"); put("freeText", text) },
+            buildJsonObject {
+                put("action", "accept")
+                put("freeText", text)
+            },
             fallbackWorkspacePath = ws,
         ) { r ->
             handleElicitationResult(r, "已提交", el)
         }
     }
 
-    private fun handleElicitationResult(r: ConversationChannel.ResolveResult, okText: String, el: PendingElicitation) {
+    private fun handleElicitationResult(
+        r: ConversationChannel.ResolveResult,
+        okText: String,
+        el: PendingElicitation,
+    ) {
         scope.launch {
             when (r) {
                 is ConversationChannel.ResolveResult.Accepted -> flash(okText, false)
@@ -269,17 +318,24 @@ class ApprovalRepository(
      * 通知栏快捷应答（D-3）：携带预构造好的 answer JSON 直接提交。
      * 返回 false = 当前无连接（由 receiver 显示"没发出去"）。
      */
-    fun resolveElicitationById(interactionId: String, answerJson: String): Boolean {
+    fun resolveElicitationById(
+        interactionId: String,
+        answerJson: String,
+    ): Boolean {
         val conv = conversation() ?: return false
         val el = elicitations.firstOrNull { it.interactionId == interactionId } ?: return false
-        val answer = runCatching {
-            kotlinx.serialization.json.Json.parseToJsonElement(answerJson).jsonObject
-        }.getOrNull() ?: return false
+        val answer =
+            runCatching {
+                kotlinx.serialization.json.Json.parseToJsonElement(answerJson).jsonObject
+            }.getOrNull() ?: return false
         conv.resolveElicitation(el, answer) { r -> flashResolve(r, "已提交") }
         return true
     }
 
-    private fun flashResolve(r: ConversationChannel.ResolveResult, okText: String) {
+    private fun flashResolve(
+        r: ConversationChannel.ResolveResult,
+        okText: String,
+    ) {
         scope.launch {
             when (r) {
                 is ConversationChannel.ResolveResult.Accepted -> flash(okText, false)

@@ -29,8 +29,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import com.zcode.remote.repo.AttachmentUploader
 import com.zcode.remote.relay.ConversationChannel
+import com.zcode.remote.repo.AttachmentUploader
 import com.zcode.remote.ui.theme.ZCodeType
 
 /**
@@ -38,7 +38,10 @@ import com.zcode.remote.ui.theme.ZCodeType
  * 已选附件列表 / 上传进度（可取消）/ 失败重试行，数据由 AppViewModel 下发。
  */
 
-internal fun inspectAttachment(context: Context, uri: Uri): Triple<String, String, Long>? {
+internal fun inspectAttachment(
+    context: Context,
+    uri: Uri,
+): Triple<String, String, Long>? {
     var name = "attachment"
     var size = -1L
     runCatching {
@@ -88,14 +91,14 @@ internal fun AttachmentBar(
         uploadName?.let { name ->
             Row(
                 verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
             ) {
                 Text(
                     text = "上传中: $name ($uploadPercent%)",
                     style = MaterialTheme.typography.labelSmall,
                     modifier = Modifier.weight(1f),
                     maxLines = 1,
-                    overflow = TextOverflow.Ellipsis
+                    overflow = TextOverflow.Ellipsis,
                 )
                 LinearProgressIndicator(
                     progress = { uploadPercent / 100f },
@@ -116,12 +119,12 @@ internal fun AttachmentBar(
             Surface(
                 color = MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.7f),
                 shape = RoundedCornerShape(8.dp),
-                modifier = Modifier.fillMaxWidth()
+                modifier = Modifier.fillMaxWidth(),
             ) {
                 Row(
                     verticalAlignment = Alignment.CenterVertically,
                     modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp),
-                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
                 ) {
                     Column(modifier = Modifier.weight(1f)) {
                         Text(
@@ -129,14 +132,14 @@ internal fun AttachmentBar(
                             style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Medium),
                             color = MaterialTheme.colorScheme.onErrorContainer,
                             maxLines = 1,
-                            overflow = TextOverflow.Ellipsis
+                            overflow = TextOverflow.Ellipsis,
                         )
                         Text(
                             text = f.message,
                             style = MaterialTheme.typography.labelSmall.copy(fontSize = ZCodeType.Xs),
                             color = MaterialTheme.colorScheme.onErrorContainer.copy(alpha = 0.8f),
                             maxLines = 1,
-                            overflow = TextOverflow.Ellipsis
+                            overflow = TextOverflow.Ellipsis,
                         )
                     }
                     TextButton(
@@ -160,12 +163,12 @@ internal fun AttachmentBar(
             Surface(
                 color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
                 shape = RoundedCornerShape(8.dp),
-                modifier = Modifier.fillMaxWidth()
+                modifier = Modifier.fillMaxWidth(),
             ) {
                 Row(
                     verticalAlignment = Alignment.CenterVertically,
                     modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
                 ) {
                     Icon(Icons.Default.AttachFile, null, modifier = Modifier.size(14.dp), tint = MaterialTheme.colorScheme.primary)
                     Text(
@@ -173,16 +176,16 @@ internal fun AttachmentBar(
                         style = MaterialTheme.typography.bodySmall.copy(fontWeight = FontWeight.Medium),
                         modifier = Modifier.weight(1f),
                         maxLines = 1,
-                        overflow = TextOverflow.Ellipsis
+                        overflow = TextOverflow.Ellipsis,
                     )
                     Text(
                         text = humanBytes(a.bytes),
                         style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                     IconButton(
                         onClick = { onRemove(a) },
-                        modifier = Modifier.size(24.dp)
+                        modifier = Modifier.size(24.dp),
                     ) {
                         Icon(Icons.Default.Close, null, modifier = Modifier.size(14.dp))
                     }
@@ -192,8 +195,9 @@ internal fun AttachmentBar(
     }
 }
 
-internal fun humanBytes(n: Long): String = when {
-    n < 1024 -> "${n}B"
-    n < 1024 * 1024 -> "%.1fKB".format(n / 1024.0)
-    else -> "%.1fMB".format(n / 1024.0 / 1024.0)
-}
+internal fun humanBytes(n: Long): String =
+    when {
+        n < 1024 -> "${n}B"
+        n < 1024 * 1024 -> "%.1fKB".format(n / 1024.0)
+        else -> "%.1fMB".format(n / 1024.0 / 1024.0)
+    }

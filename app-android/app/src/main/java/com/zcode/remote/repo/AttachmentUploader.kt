@@ -1,13 +1,13 @@
 package com.zcode.remote.repo
 
 import android.content.Context
+import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
 import com.zcode.remote.relay.ConversationChannel
 import com.zcode.remote.relay.UserFacingError
 import com.zcode.remote.util.ZLog
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.setValue
 import kotlinx.coroutines.launch
 
 /**
@@ -72,7 +72,9 @@ class AttachmentUploader(
     }
 
     /** C-1：放弃失败的上传（清掉失败态）。 */
-    fun dismissAttachFailure() { attachFailed = null }
+    fun dismissAttachFailure() {
+        attachFailed = null
+    }
 
     /**
      * 附件上传成/败信号（B-3）：tick 每次自增，UI 侧以 `LaunchedEffect(tick)` 消费一次触觉。
@@ -100,57 +102,84 @@ class AttachmentUploader(
      *
      * C-1：失败进 [attachFailed] 失败态（UI 提供重试/取消）；重选同一文件复用 uploadId。
      */
-    fun addAttachment(uri: android.net.Uri, fileName: String, mime: String, size: Long) {
+    fun addAttachment(
+        uri: android.net.Uri,
+        fileName: String,
+        mime: String,
+        size: Long,
+    ) {
         val prev = attachFailed
-        val id = uploadIdForAttempt(
-            prev?.fileName, prev?.size ?: -1L, prev?.uploadId, fileName, size, newUploadId())
+        val id =
+            uploadIdForAttempt(
+                prev?.fileName,
+                prev?.size ?: -1L,
+                prev?.uploadId,
+                fileName,
+                size,
+                newUploadId(),
+            )
         attachFailed = null
         startUpload(uri, fileName, mime, size, id)
     }
 
-    private fun startUpload(uri: android.net.Uri, fileName: String, mime: String, size: Long, uploadId: String) {
-        val conv = conversation() ?: run { flash("连接已断开，无法上传", true); return }
-        if (attachUpload != null) { flash("还有附件在上传中", false); return }
+    private fun startUpload(
+        uri: android.net.Uri,
+        fileName: String,
+        mime: String,
+        size: Long,
+        uploadId: String,
+    ) {
+        val conv =
+            conversation() ?: run {
+                flash("连接已断开，无法上传", true)
+                return
+            }
+        if (attachUpload != null) {
+            flash("还有附件在上传中", false)
+            return
+        }
         if (size > ConversationChannel.MAX_ATTACHMENT_BYTES) {
             flash("附件超过 20MiB 上限", false)
             return
         }
         val originSession = subscribedSessionId()
         attachUpload = AttachUpload(fileName, 0, size)
-        attachUploadHandle = conv.uploadAttachment(uploadId, fileName, mime, size,
-            openStream = {
-                context.contentResolver.openInputStream(uri)
-                    ?: throw IllegalStateException("无法打开所选文件（可能已被移动或删除）")
-            },
-            onProgress = { up, total ->
-                // 切走会话后旧上传的进度不得再点亮新会话的进度条
-                if (uploadBelongsTo(originSession, subscribedSessionId())) {
-                    attachUpload = AttachUpload(fileName, up, total)
+        attachUploadHandle =
+            conv.uploadAttachment(
+                uploadId, fileName, mime, size,
+                openStream = {
+                    context.contentResolver.openInputStream(uri)
+                        ?: throw IllegalStateException("无法打开所选文件（可能已被移动或删除）")
+                },
+                onProgress = { up, total ->
+                    // 切走会话后旧上传的进度不得再点亮新会话的进度条
+                    if (uploadBelongsTo(originSession, subscribedSessionId())) {
+                        attachUpload = AttachUpload(fileName, up, total)
+                    }
+                },
+            ) { r ->
+                scope.launch {
+                    if (!uploadBelongsTo(originSession, subscribedSessionId())) {
+                        ZLog.i(TAG, "丢弃跨会话上传回调 origin=$originSession current=${subscribedSessionId()}")
+                        return@launch
+                    }
+                    attachUpload = null
+                    r.fold(
+                        onSuccess = {
+                            attachments.add(it)
+                            attachFailed = null
+                            signalAttachmentFeedback(ok = true)
+                            flash("已添加附件 ${it.fileName}", false)
+                        },
+                        onFailure = {
+                            signalAttachmentFeedback(ok = false)
+                            // C-1：记录失败态供「重试/取消」；重试复用同一 uploadId
+                            attachFailed = FailedUpload(uri, fileName, mime, size, uploadId, it.message ?: "上传失败")
+                            flash("附件上传失败：${UserFacingError.map(it.message)}", true)
+                        },
+                    )
                 }
-            },
-        ) { r ->
-            scope.launch {
-                if (!uploadBelongsTo(originSession, subscribedSessionId())) {
-                    ZLog.i(TAG, "丢弃跨会话上传回调 origin=$originSession current=${subscribedSessionId()}")
-                    return@launch
-                }
-                attachUpload = null
-                r.fold(
-                    onSuccess = {
-                        attachments.add(it)
-                        attachFailed = null
-                        signalAttachmentFeedback(ok = true)
-                        flash("已添加附件 ${it.fileName}", false)
-                    },
-                    onFailure = {
-                        signalAttachmentFeedback(ok = false)
-                        // C-1：记录失败态供「重试/取消」；重试复用同一 uploadId
-                        attachFailed = FailedUpload(uri, fileName, mime, size, uploadId, it.message ?: "上传失败")
-                        flash("附件上传失败：${UserFacingError.map(it.message)}", true)
-                    },
-                )
             }
-        }
     }
 
     fun removeAttachment(ref: ConversationChannel.AttachmentRef) {
@@ -163,7 +192,7 @@ class AttachmentUploader(
         attachUploadHandle = null
         attachments.clear()
         attachUpload = null
-        attachFailed = null   // C-1：失败态同样与会话绑定
+        attachFailed = null // C-1：失败态同样与会话绑定
     }
 
     companion object {
@@ -173,8 +202,10 @@ class AttachmentUploader(
          * 上传回调的会话归属判定（A-1）。仅当发起上传时的会话仍是当前打开的会话时才允许
          * 回写状态；任一侧为空（未订阅 / 已断开）一律判「不属于」并丢弃回调。
          */
-        internal fun uploadBelongsTo(originSession: String?, currentSession: String?): Boolean =
-            originSession != null && originSession == currentSession
+        internal fun uploadBelongsTo(
+            originSession: String?,
+            currentSession: String?,
+        ): Boolean = originSession != null && originSession == currentSession
 
         /**
          * C-1：上传 id 的复用判定（纯函数，参数化以避免测试依赖 android.net.Uri）。
@@ -192,6 +223,10 @@ class AttachmentUploader(
         ): String =
             if (previousFileName != null && previousUploadId != null &&
                 previousFileName == fileName && previousSize == size
-            ) previousUploadId else freshId
+            ) {
+                previousUploadId
+            } else {
+                freshId
+            }
     }
 }

@@ -1,0 +1,13 @@
+# 任务书 §11.8：依赖与 Actions 版本自动跟进（升级 PR 由人工 review 后合入）
+version: 2
+updates:
+  - package-ecosystem: gradle
+    directory: /app-android
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5

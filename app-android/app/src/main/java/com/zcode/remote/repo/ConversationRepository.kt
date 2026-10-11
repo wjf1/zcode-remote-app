@@ -9,10 +9,8 @@ import androidx.compose.runtime.setValue
 import com.zcode.remote.relay.ConversationChannel
 import com.zcode.remote.relay.ConversationFrames
 import com.zcode.remote.relay.ConversationRow
-import com.zcode.remote.relay.RelayState
 import com.zcode.remote.relay.RowStore
 import com.zcode.remote.relay.SessionItem
-import com.zcode.remote.relay.UserFacingError
 import com.zcode.remote.storage.SessionCacheStore
 import com.zcode.remote.util.LogRedactor
 import com.zcode.remote.util.ZLog
@@ -39,7 +37,6 @@ class ConversationRepository(
     private val onNewSubscription: () -> Unit,
     private val clearAttachments: () -> Unit,
 ) {
-    private val TAG = "ConvRepo"
 
     /** 当前会话的行（已按 rowId 排序，UI 直接渲染）。 */
     val rows = mutableStateListOf<ConversationRow>()
@@ -58,6 +55,7 @@ class ConversationRepository(
 
     internal var conversationStatus by mutableStateOf<ConversationChannel.Status>(ConversationChannel.Status.Idle)
     internal var conversationMeta by mutableStateOf(ConversationChannel.ConversationMeta())
+
     /** 向上翻页状态（加载中/hasMore/pulled）。 */
     internal var earlier by mutableStateOf(ConversationChannel.EarlierState())
 
@@ -75,6 +73,7 @@ class ConversationRepository(
     internal var sessionState by mutableStateOf(ConversationFrames.SessionState())
 
     internal var subscribedSessionId by mutableStateOf<String?>(null)
+
     /** 最近一次订阅的会话条目（A-2 自动重订需要原始 workspacePath/sessionId）。 */
     internal var subscribedSession: SessionItem? = null
 
@@ -91,7 +90,10 @@ class ConversationRepository(
     private var pendingSeq = 0L
 
     /** 发送域入口：插入一条 pending 回显气泡（返回供失败撤回）。 */
-    fun addPendingMessage(text: String, attachmentNames: List<String>): PendingUserMessage {
+    fun addPendingMessage(
+        text: String,
+        attachmentNames: List<String>,
+    ): PendingUserMessage {
         pendingSeq += 1
         val pending = PendingUserMessage(pendingSeq, text, attachmentNames)
         pendingUserMessages = pendingUserMessages + pending
@@ -126,8 +128,8 @@ class ConversationRepository(
         subscribedSessionId = s.taskId
         // A-2：新会话订阅重置自动重订预算
         onNewSubscription()
-        clearAttachments()   // 附件与会话绑定，切会话即清空
-        pendingUserMessages = emptyList()   // C-6：本地回显气泡同样与会话绑定
+        clearAttachments() // 附件与会话绑定，切会话即清空
+        pendingUserMessages = emptyList() // C-6：本地回显气泡同样与会话绑定
 
         // Sprint 5 离线缓存秒开：点击会话卡片首帧立即呈现历史消息行。
         // C-5⑤（2026-10-10，真机故障后立项）：读取**移出主线程**——原实现同步 readText + JSON 解码
@@ -158,14 +160,16 @@ class ConversationRepository(
     internal fun retrySubscribe() {
         val s = subscribedSession ?: return
         onNewSubscription()
-        val conv = conversation() ?: run {
-            flash("连接已断开，无法重试", true)
-            return
-        }
-        val ws = s.workspacePath ?: activeWorkspaceKey() ?: run {
-            flash("未定位到工作区，无法重试", true)
-            return
-        }
+        val conv =
+            conversation() ?: run {
+                flash("连接已断开，无法重试", true)
+                return
+            }
+        val ws =
+            s.workspacePath ?: activeWorkspaceKey() ?: run {
+                flash("未定位到工作区，无法重试", true)
+                return
+            }
         ZLog.i(TAG, "用户重试订阅 session=${s.taskId}")
         conv.subscribe(ws, null, s.taskId, rowStore)
     }
@@ -179,6 +183,7 @@ class ConversationRepository(
     }
 
     companion object {
+        private const val TAG = "ConvRepo"
         /**
          * 服务端回显到达时的 pending 匹配移除（C-6 纯函数）：按文本 trim 相等匹配，
          * 只移除最先插入的一条；不匹配 / 空文本时原样返回

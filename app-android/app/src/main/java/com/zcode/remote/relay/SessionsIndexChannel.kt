@@ -6,7 +6,6 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.intOrNull
 import kotlinx.serialization.json.jsonPrimitive
-import java.util.UUID
 
 /**
  * workspace 级 sessions-index 订阅（E-1 会话权威角标）：
@@ -18,7 +17,6 @@ import java.util.UUID
  * 不怕事件流漏帧。协议实证见 PROTOCOL.md §6.7（tools/_e1_verify.py）。
  */
 class SessionsIndexChannel(private val rpc: RpcChannel) {
-
     /** 单个会话的待处理计数（服务端权威）。 */
     data class PendingSummary(val permissionCount: Int, val userInputCount: Int) {
         val total: Int get() = permissionCount + userInputCount
@@ -31,14 +29,21 @@ class SessionsIndexChannel(private val rpc: RpcChannel) {
     private var subscriptionId: String? = null
 
     /** 开桥后按当前工作区订阅一次（会话切换无需重订，与 ConversationChannel 生命周期不同）。 */
-    fun subscribe(workspacePath: String, workspaceIdentity: String?) {
-        val target = buildMap<String, Any> {
-            put("workspacePath", workspacePath)
-            workspaceIdentity?.let { put("workspaceIdentity", it) }
-        }
+    fun subscribe(
+        workspacePath: String,
+        workspaceIdentity: String?,
+    ) {
+        val target =
+            buildMap<String, Any> {
+                put("workspacePath", workspacePath)
+                workspaceIdentity?.let { put("workspaceIdentity", it) }
+            }
         listenId = rpc.listen(RpcChannel.CHANNEL_AGENT, "onDynamicSessionsIndexFrame", target)
-        rpc.call(RpcChannel.CHANNEL_AGENT, "subscribeSessionsIndexV4",
-            listOf(target + mapOf("runtimePolicy" to "existing-only"))) { reply ->
+        rpc.call(
+            RpcChannel.CHANNEL_AGENT,
+            "subscribeSessionsIndexV4",
+            listOf(target + mapOf("runtimePolicy" to "existing-only")),
+        ) { reply ->
             when (reply) {
                 is RpcChannel.RpcReply.Ok -> {
                     val root = reply.data as? JsonObject
@@ -62,9 +67,10 @@ class SessionsIndexChannel(private val rpc: RpcChannel) {
         val frame = lf.frame ?: return
         when (frame.payloadKind) {
             "snapshot" -> {
-                val sessions = frame.payload["sessions"]?.let {
-                    runCatching { it as? kotlinx.serialization.json.JsonArray }.getOrNull()
-                } ?: return
+                val sessions =
+                    frame.payload["sessions"]?.let {
+                        runCatching { it as? kotlinx.serialization.json.JsonArray }.getOrNull()
+                    } ?: return
                 val next = HashMap<String, PendingSummary>()
                 for (item in sessions) {
                     val o = item as? JsonObject ?: continue
@@ -72,13 +78,17 @@ class SessionsIndexChannel(private val rpc: RpcChannel) {
                     parseSummary(o)?.let { next[sid] = it }
                 }
                 _summaries.value = next
-                ZLog.i(TAG, "sessions-index snapshot: ${next.size} 会话，待处理 " +
-                        next.values.count { it.total > 0 })
+                ZLog.i(
+                    TAG,
+                    "sessions-index snapshot: ${next.size} 会话，待处理 " +
+                        next.values.count { it.total > 0 },
+                )
             }
             "deltas" -> {
-                val deltas = frame.payload["deltas"]?.let {
-                    runCatching { it as? kotlinx.serialization.json.JsonArray }.getOrNull()
-                } ?: return
+                val deltas =
+                    frame.payload["deltas"]?.let {
+                        runCatching { it as? kotlinx.serialization.json.JsonArray }.getOrNull()
+                    } ?: return
                 var changed = false
                 val cur = _summaries.value.toMutableMap()
                 for (d in deltas) {
@@ -87,7 +97,10 @@ class SessionsIndexChannel(private val rpc: RpcChannel) {
                         "session.upserted" -> {
                             val sess = o["session"] as? JsonObject ?: continue
                             val sid = sess.str("sessionId") ?: continue
-                            parseSummary(sess)?.let { cur[sid] = it; changed = true }
+                            parseSummary(sess)?.let {
+                                cur[sid] = it
+                                changed = true
+                            }
                         }
                         "session.removed" -> {
                             o.str("sessionId")?.let { if (cur.remove(it) != null) changed = true }
@@ -117,10 +130,8 @@ class SessionsIndexChannel(private val rpc: RpcChannel) {
     companion object {
         private const val TAG = "SessionsIndex"
 
-        private fun JsonObject.str(k: String): String? =
-            this[k]?.let { runCatching { it.jsonPrimitive.content }.getOrNull() }
+        private fun JsonObject.str(k: String): String? = this[k]?.let { runCatching { it.jsonPrimitive.content }.getOrNull() }
 
-        private fun JsonObject.int(k: String): Int? =
-            this[k]?.let { runCatching { it.jsonPrimitive.intOrNull }.getOrNull() }
+        private fun JsonObject.int(k: String): Int? = this[k]?.let { runCatching { it.jsonPrimitive.intOrNull }.getOrNull() }
     }
 }

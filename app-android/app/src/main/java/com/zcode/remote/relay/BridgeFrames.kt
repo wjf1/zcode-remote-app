@@ -17,10 +17,11 @@ import kotlinx.serialization.json.put
  * rpc-frame 内层 conversation frame 解码在 M1 联调后补全。
  */
 object BridgeFrames {
-    fun bootstrapRequest(requestId: String): JsonObject = buildJsonObject {
-        put("zcode_type", "bootstrap-request")
-        put("requestId", requestId)
-    }
+    fun bootstrapRequest(requestId: String): JsonObject =
+        buildJsonObject {
+            put("zcode_type", "bootstrap-request")
+            put("requestId", requestId)
+        }
 
     /**
      * 手机端视图状态上报（P1-2 控制权提示，PROTOCOL.md §5）。
@@ -28,21 +29,25 @@ object BridgeFrames {
      * viewState:{activeWorkspaceKey?, activeTaskId?, updatedAt}, deviceInfo?}`
      * ——PC 据此知道手机当前在看哪个工作区/会话（`Jo(h, viewState, deviceInfo)`）。
      */
-    fun mobileViewStateUpdate(activeWorkspaceKey: String?, activeTaskId: String?): JsonObject =
+    fun mobileViewStateUpdate(
+        activeWorkspaceKey: String?,
+        activeTaskId: String?,
+    ): JsonObject =
         buildJsonObject {
             put("zcode_type", "mobile-view-state-update")
-            put("viewState", buildJsonObject {
-                activeWorkspaceKey?.takeIf { it.isNotBlank() }?.let { put("activeWorkspaceKey", it) }
-                activeTaskId?.takeIf { it.isNotBlank() }?.let { put("activeTaskId", it) }
-                put("updatedAt", System.currentTimeMillis())
-            })
+            put(
+                "viewState",
+                buildJsonObject {
+                    activeWorkspaceKey?.takeIf { it.isNotBlank() }?.let { put("activeWorkspaceKey", it) }
+                    activeTaskId?.takeIf { it.isNotBlank() }?.let { put("activeTaskId", it) }
+                    put("updatedAt", System.currentTimeMillis())
+                },
+            )
         }
 
-    fun zcodeTypeOf(payload: JsonObject): String? =
-        payload["zcode_type"]?.let { runCatching { it.jsonPrimitive.content }.getOrNull() }
+    fun zcodeTypeOf(payload: JsonObject): String? = payload["zcode_type"]?.let { runCatching { it.jsonPrimitive.content }.getOrNull() }
 
-    fun requestIdOf(payload: JsonObject): String? =
-        payload["requestId"]?.let { runCatching { it.jsonPrimitive.content }.getOrNull() }
+    fun requestIdOf(payload: JsonObject): String? = payload["requestId"]?.let { runCatching { it.jsonPrimitive.content }.getOrNull() }
 }
 
 /** 会话（任务）条目：来自 bootstrap-response.result.tasks（PROTOCOL.md 5/6.2 节，实测确认）。 */
@@ -131,15 +136,17 @@ fun parseBootstrapSessions(payload: JsonObject): List<SessionItem> {
  * 任务事件虽是 host 推的实时流（PROTOCOL.md §6.2），此前只用来建/撤审批卡，从不回写列表——
  * 于是「进会话跑一轮 → 退回主界面」看到的仍是旧状态（多为「已完成」），「运行中」不增加。
  */
-fun displayStatusForTaskEvent(type: String): String? = when (type) {
-    // 轮次进行中：发过 prompt、正在流式输出、已恢复、或有待应答的审批/表单
-    "prompt_sent", "streaming", "resumed",
-    "permission_request", "elicitation_request" -> "running"
-    "completed" -> "completed"
-    "error" -> "error"
-    // created / updated / *_resolved：止于「不足以判定」，宁可不动状态也不误判
-    else -> null
-}
+fun displayStatusForTaskEvent(type: String): String? =
+    when (type) {
+        // 轮次进行中：发过 prompt、正在流式输出、已恢复、或有待应答的审批/表单
+        "prompt_sent", "streaming", "resumed",
+        "permission_request", "elicitation_request",
+        -> "running"
+        "completed" -> "completed"
+        "error" -> "error"
+        // created / updated / *_resolved：止于「不足以判定」，宁可不动状态也不误判
+        else -> null
+    }
 
 /**
  * 会话快照 `phase` → 首页列表 `displayStatus`。
@@ -148,8 +155,7 @@ fun displayStatusForTaskEvent(type: String): String? = when (type) {
  * 实时相位本就可能打架（beta16 实测过 `task_status=error` 而实时相位已恢复的反例），
  * 这里单方向补「正在跑」，不做双向推断。
  */
-fun displayStatusForPhase(phase: String?): String? =
-    if (phase == "running" || phase == "streaming") "running" else null
+fun displayStatusForPhase(phase: String?): String? = if (phase == "running" || phase == "streaming") "running" else null
 
 /** 任务事件（PROTOCOL.md 6.2：11 种事件类型 + workspacePath/taskId/updatedAt）。 */
 data class TaskEvent(
@@ -160,12 +166,13 @@ data class TaskEvent(
     val raw: JsonObject,
 ) {
     companion object {
-        val TYPES = setOf(
-            "created", "prompt_sent", "resumed", "streaming",
-            "permission_request", "permission_resolved",
-            "elicitation_request", "elicitation_resolved",
-            "updated", "completed", "error",
-        )
+        val TYPES =
+            setOf(
+                "created", "prompt_sent", "resumed", "streaming",
+                "permission_request", "permission_resolved",
+                "elicitation_request", "elicitation_resolved",
+                "updated", "completed", "error",
+            )
 
         fun from(payload: JsonObject): TaskEvent? {
             val type = payload["type"]?.let { runCatching { it.jsonPrimitive.content }.getOrNull() } ?: return null
@@ -205,8 +212,12 @@ object ApprovalClassifier {
     }
 
     /** 供审批条渲染排序：批准/永久批准/拒绝/永久拒绝/其他。 */
-    fun sortKey(k: Kind): Int = when (k) {
-        Kind.ALLOW_ONCE -> 0; Kind.ALLOW_ALWAYS -> 1
-        Kind.REJECT_ONCE -> 2; Kind.REJECT_ALWAYS -> 3; Kind.CUSTOM -> 4
-    }
+    fun sortKey(k: Kind): Int =
+        when (k) {
+            Kind.ALLOW_ONCE -> 0
+            Kind.ALLOW_ALWAYS -> 1
+            Kind.REJECT_ONCE -> 2
+            Kind.REJECT_ALWAYS -> 3
+            Kind.CUSTOM -> 4
+        }
 }

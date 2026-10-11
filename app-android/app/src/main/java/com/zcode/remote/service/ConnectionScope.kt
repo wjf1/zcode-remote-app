@@ -16,24 +16,36 @@ import com.zcode.remote.relay.WorkspaceConfigChannel
 object ConnectionScope {
     var client: RelayClient?
         get() = RemoteConnectionManager.client
-        set(value) { RemoteConnectionManager.client = value }
+        set(value) {
+            RemoteConnectionManager.client = value
+        }
     var channel: RpcChannel?
         get() = RemoteConnectionManager.channel
-        set(value) { RemoteConnectionManager.channel = value }
+        set(value) {
+            RemoteConnectionManager.channel = value
+        }
     var conversation: ConversationChannel?
         get() = RemoteConnectionManager.conversation
-        set(value) { RemoteConnectionManager.conversation = value }
+        set(value) {
+            RemoteConnectionManager.conversation = value
+        }
     var sessionsIndex: SessionsIndexChannel?
         get() = RemoteConnectionManager.sessionsIndex
-        set(value) { RemoteConnectionManager.sessionsIndex = value }
+        set(value) {
+            RemoteConnectionManager.sessionsIndex = value
+        }
     var workspaceConfig: WorkspaceConfigChannel?
         get() = RemoteConnectionManager.workspaceConfig
-        set(value) { RemoteConnectionManager.workspaceConfig = value }
+        set(value) {
+            RemoteConnectionManager.workspaceConfig = value
+        }
 
     /** 用户主动断开（首页「断开」/移除设备/忘记配对）：此后服务重启不得自动重连。 */
     var manuallyDisconnected: Boolean
         get() = RemoteConnectionManager.manuallyDisconnected
-        set(value) { RemoteConnectionManager.manuallyDisconnected = value }
+        set(value) {
+            RemoteConnectionManager.manuallyDisconnected = value
+        }
 
     val isAlive: Boolean get() = RemoteConnectionManager.isAlive
 }

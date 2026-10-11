@@ -52,15 +52,21 @@ internal fun SessionFilesPanel(
     Column(Modifier.fillMaxWidth().padding(horizontal = 8.dp).heightIn(max = 540.dp)) {
         Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
             if (selected != null) {
-                TextButton(onClick = { onDismissPreview(); selected = null }) { Text("← 文件列表") }
+                TextButton(onClick = {
+                    onDismissPreview()
+                    selected = null
+                }) { Text("← 文件列表") }
             } else {
                 Text(
                     "本会话涉及的文件",
                     style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.Bold),
-                    modifier = Modifier.weight(1f)
+                    modifier = Modifier.weight(1f),
                 )
             }
-            TextButton(onClick = { onDismissPreview(); onClose() }) { Text("关闭") }
+            TextButton(onClick = {
+                onDismissPreview()
+                onClose()
+            }) { Text("关闭") }
         }
 
         when {
@@ -70,7 +76,7 @@ internal fun SessionFilesPanel(
                         "本会话暂无文件操作记录（Edit / Write / Read 等工具调用后会出现在这里）",
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier.padding(vertical = 24.dp)
+                        modifier = Modifier.padding(vertical = 24.dp),
                     )
                 } else {
                     LazyColumn {
@@ -78,30 +84,38 @@ internal fun SessionFilesPanel(
                             val f = files[idx]
                             Row(
                                 verticalAlignment = Alignment.CenterVertically,
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .clickable { selected = f.path; onPreview(f.path) }
-                                    .padding(vertical = 8.dp, horizontal = 4.dp)
+                                modifier =
+                                    Modifier
+                                        .fillMaxWidth()
+                                        .clickable {
+                                            selected = f.path
+                                            onPreview(f.path)
+                                        }
+                                        .padding(vertical = 8.dp, horizontal = 4.dp),
                             ) {
                                 Column(Modifier.weight(1f)) {
                                     Text(
                                         f.path.substringAfterLast('/').substringAfterLast('\\'),
                                         style = MaterialTheme.typography.bodySmall.copy(fontWeight = FontWeight.SemiBold),
-                                        maxLines = 1, overflow = TextOverflow.Ellipsis
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis,
                                     )
                                     Text(
                                         f.path,
-                                        style = MaterialTheme.typography.labelSmall.copy(
-                                            fontFamily = FontFamily.Monospace, fontSize = 11.sp
-                                        ),
+                                        style =
+                                            MaterialTheme.typography.labelSmall.copy(
+                                                fontFamily = FontFamily.Monospace,
+                                                fontSize = 11.sp,
+                                            ),
                                         color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                        maxLines = 1, overflow = TextOverflow.Ellipsis
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis,
                                     )
                                 }
                                 Text(
                                     f.toolName,
                                     style = MaterialTheme.typography.labelSmall,
-                                    color = MaterialTheme.colorScheme.tertiary
+                                    color = MaterialTheme.colorScheme.tertiary,
                                 )
                             }
                             HorizontalDivider()
@@ -110,47 +124,57 @@ internal fun SessionFilesPanel(
                 }
             }
 
-            else -> when (val p = preview) {
-                is AppViewModel.FilePreview.Loading -> Row(
-                    modifier = Modifier.fillMaxWidth().padding(24.dp),
-                    horizontalArrangement = Arrangement.Center
-                ) { CircularProgressIndicator(Modifier.size(28.dp)) }
+            else ->
+                when (val p = preview) {
+                    is AppViewModel.FilePreview.Loading ->
+                        Row(
+                            modifier = Modifier.fillMaxWidth().padding(24.dp),
+                            horizontalArrangement = Arrangement.Center,
+                        ) { CircularProgressIndicator(Modifier.size(28.dp)) }
 
-                is AppViewModel.FilePreview.Loaded -> Column {
-                    Text(
-                        p.path,
-                        style = MaterialTheme.typography.labelSmall.copy(
-                            fontFamily = FontFamily.Monospace, fontSize = 11.sp
-                        ),
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        maxLines = 2, overflow = TextOverflow.Ellipsis,
-                        modifier = Modifier.padding(bottom = 6.dp)
-                    )
-                    Surface(
-                        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f),
-                        shape = RoundedCornerShape(6.dp),
-                        modifier = Modifier.fillMaxWidth()
-                    ) {
-                        val scroll = rememberScrollState()
+                    is AppViewModel.FilePreview.Loaded ->
+                        Column {
+                            Text(
+                                p.path,
+                                style =
+                                    MaterialTheme.typography.labelSmall.copy(
+                                        fontFamily = FontFamily.Monospace,
+                                        fontSize = 11.sp,
+                                    ),
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                maxLines = 2,
+                                overflow = TextOverflow.Ellipsis,
+                                modifier = Modifier.padding(bottom = 6.dp),
+                            )
+                            Surface(
+                                color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f),
+                                shape = RoundedCornerShape(6.dp),
+                                modifier = Modifier.fillMaxWidth(),
+                            ) {
+                                val scroll = rememberScrollState()
+                                Text(
+                                    p.content.take(20_000),
+                                    style =
+                                        MaterialTheme.typography.bodySmall.copy(
+                                            fontFamily = FontFamily.Monospace,
+                                            fontSize = 11.sp,
+                                            lineHeight = 15.sp,
+                                        ),
+                                    modifier = Modifier.padding(8.dp).horizontalScroll(scroll).heightIn(max = 380.dp),
+                                )
+                            }
+                        }
+
+                    is AppViewModel.FilePreview.Failed ->
                         Text(
-                            p.content.take(20_000),
-                            style = MaterialTheme.typography.bodySmall.copy(
-                                fontFamily = FontFamily.Monospace, fontSize = 11.sp, lineHeight = 15.sp
-                            ),
-                            modifier = Modifier.padding(8.dp).horizontalScroll(scroll).heightIn(max = 380.dp)
+                            "读取失败：${p.message}\n\n$p.path",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.error,
+                            modifier = Modifier.padding(vertical = 16.dp),
                         )
-                    }
+
+                    null -> Unit
                 }
-
-                is AppViewModel.FilePreview.Failed -> Text(
-                    "读取失败：${p.message}\n\n$p.path",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.error,
-                    modifier = Modifier.padding(vertical = 16.dp)
-                )
-
-                null -> Unit
-            }
         }
     }
 }

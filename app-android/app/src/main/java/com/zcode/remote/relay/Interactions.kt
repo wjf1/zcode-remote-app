@@ -33,14 +33,15 @@ data class ApprovalOption(
 
     /** 渲染顺序：单次批准 → 永久批准 → 拒绝 → 永久拒绝 → 其他。 */
     val sortKey: Int
-        get() = when {
-            kind == "allowOnce" -> 0
-            kind == "allowAlways" -> 1
-            kind == "rejectAlways" -> 3
-            kind == "deny" || kind == "rejectOnce" -> 2
-            isDeny -> 4
-            else -> 5
-        }
+        get() =
+            when {
+                kind == "allowOnce" -> 0
+                kind == "allowAlways" -> 1
+                kind == "rejectAlways" -> 3
+                kind == "deny" || kind == "rejectOnce" -> 2
+                isDeny -> 4
+                else -> 5
+            }
 
     val displayLabel: String get() = label.ifBlank { kind ?: optionId }
 }
@@ -60,9 +61,11 @@ data class PendingApproval(
 ) {
     companion object {
         /** 从一条 pendingInteraction 对象构造；不是 permission 类型或缺 interactionId 则返回 null。 */
-        fun from(o: JsonObject, sessionId: String? = null): PendingApproval? {
-            fun JsonElement?.asStr(): String? =
-                this?.let { runCatching { it.jsonPrimitive.content }.getOrNull() }
+        fun from(
+            o: JsonObject,
+            sessionId: String? = null,
+        ): PendingApproval? {
+            fun JsonElement?.asStr(): String? = this?.let { runCatching { it.jsonPrimitive.content }.getOrNull() }
 
             val interactionId = o["interactionId"].asStr() ?: return null
             val kind = o["kind"].asStr()
@@ -70,28 +73,30 @@ data class PendingApproval(
             if (kind != null && kind != "permission") return null
 
             val payload = runCatching { o["payload"]?.jsonObject }.getOrNull()
-            val options = runCatching { payload?.get("options")?.jsonArray }.getOrNull()
-                ?.mapNotNull { el ->
-                    val ob = runCatching { el.jsonObject }.getOrNull() ?: return@mapNotNull null
-                    val oid = ob["optionId"].asStr() ?: return@mapNotNull null
-                    val response = runCatching { ob["response"]?.jsonObject }.getOrNull()
-                    ApprovalOption(
-                        optionId = oid,
-                        label = ob["label"].asStr() ?: "",
-                        kind = ob["kind"].asStr(),
-                        decision = response?.get("decision").asStr(),
-                    )
-                }
-                ?.sortedBy { it.sortKey }
-                ?: emptyList()
+            val options =
+                runCatching { payload?.get("options")?.jsonArray }.getOrNull()
+                    ?.mapNotNull { el ->
+                        val ob = runCatching { el.jsonObject }.getOrNull() ?: return@mapNotNull null
+                        val oid = ob["optionId"].asStr() ?: return@mapNotNull null
+                        val response = runCatching { ob["response"]?.jsonObject }.getOrNull()
+                        ApprovalOption(
+                            optionId = oid,
+                            label = ob["label"].asStr() ?: "",
+                            kind = ob["kind"].asStr(),
+                            decision = response?.get("decision").asStr(),
+                        )
+                    }
+                    ?.sortedBy { it.sortKey }
+                    ?: emptyList()
 
-            val detail = payload?.get("detail").let { d ->
-                runCatching { d?.jsonObject }.getOrNull()?.let { dt ->
-                    // 官方 UI 的取值优先级：描述/原因类字段优先，其次工具入参主字段
-                    listOf("description", "reason", "command", "url", "file_path", "path", "pattern")
-                        .firstNotNullOfOrNull { k -> dt[k].asStr()?.takeIf { it.isNotBlank() } }
-                } ?: d.asStr()
-            }
+            val detail =
+                payload?.get("detail").let { d ->
+                    runCatching { d?.jsonObject }.getOrNull()?.let { dt ->
+                        // 官方 UI 的取值优先级：描述/原因类字段优先，其次工具入参主字段
+                        listOf("description", "reason", "command", "url", "file_path", "path", "pattern")
+                            .firstNotNullOfOrNull { k -> dt[k].asStr()?.takeIf { it.isNotBlank() } }
+                    } ?: d.asStr()
+                }
 
             return PendingApproval(
                 interactionId = interactionId,
@@ -101,9 +106,10 @@ data class PendingApproval(
                 detail = detail,
                 options = options,
                 anchorRowId = runCatching { o["anchorRowId"]?.jsonPrimitive?.content?.toIntOrNull() }.getOrNull(),
-                autoResolveAt = runCatching {
-                    o["autoResolution"]?.jsonObject?.get("deadlineAt")?.jsonPrimitive?.content?.toLongOrNull()
-                }.getOrNull(),
+                autoResolveAt =
+                    runCatching {
+                        o["autoResolution"]?.jsonObject?.get("deadlineAt")?.jsonPrimitive?.content?.toLongOrNull()
+                    }.getOrNull(),
                 sessionId = sessionId,
             )
         }
@@ -116,23 +122,26 @@ data class PendingApproval(
          * interactionId，见 host respondPermission）；选项元素没有 label（显示名由 kind 生成，
          * custom 类用 name）。收不到这条事件 = 收不到审批（实测：会话帧里没有 pendingInteractions）。
          */
-        fun fromTaskEvent(o: JsonObject, sessionId: String? = null): PendingApproval? {
-            fun JsonElement?.asStr(): String? =
-                this?.let { runCatching { it.jsonPrimitive.content }.getOrNull() }
+        fun fromTaskEvent(
+            o: JsonObject,
+            sessionId: String? = null,
+        ): PendingApproval? {
+            fun JsonElement?.asStr(): String? = this?.let { runCatching { it.jsonPrimitive.content }.getOrNull() }
 
             val requestId = o["requestId"].asStr() ?: return null
-            val options = runCatching { o["options"]?.jsonArray }.getOrNull()
-                ?.mapNotNull { el ->
-                    val ob = runCatching { el.jsonObject }.getOrNull() ?: return@mapNotNull null
-                    val oid = ob["optionId"].asStr() ?: return@mapNotNull null
-                    val response = runCatching { ob["response"]?.jsonObject }.getOrNull()
-                    ApprovalOption(
-                        optionId = oid,
-                        label = ob["label"].asStr() ?: ob["name"].asStr() ?: "",
-                        kind = ob["kind"].asStr(),
-                        decision = response?.get("decision").asStr(),
-                    )
-                }?.sortedBy { it.sortKey } ?: emptyList()
+            val options =
+                runCatching { o["options"]?.jsonArray }.getOrNull()
+                    ?.mapNotNull { el ->
+                        val ob = runCatching { el.jsonObject }.getOrNull() ?: return@mapNotNull null
+                        val oid = ob["optionId"].asStr() ?: return@mapNotNull null
+                        val response = runCatching { ob["response"]?.jsonObject }.getOrNull()
+                        ApprovalOption(
+                            optionId = oid,
+                            label = ob["label"].asStr() ?: ob["name"].asStr() ?: "",
+                            kind = ob["kind"].asStr(),
+                            decision = response?.get("decision").asStr(),
+                        )
+                    }?.sortedBy { it.sortKey } ?: emptyList()
 
             return PendingApproval(
                 interactionId = requestId,
@@ -142,22 +151,28 @@ data class PendingApproval(
                 detail = null,
                 options = options,
                 anchorRowId = null,
-                autoResolveAt = runCatching {
-                    o["raw"]?.jsonObject?.get("autoResolution")?.jsonObject?.get("deadlineAt")
-                        ?.jsonPrimitive?.content?.toLongOrNull()
-                }.getOrNull(),
+                autoResolveAt =
+                    runCatching {
+                        o["raw"]?.jsonObject?.get("autoResolution")?.jsonObject?.get("deadlineAt")
+                            ?.jsonPrimitive?.content?.toLongOrNull()
+                    }.getOrNull(),
                 sessionId = sessionId,
             )
         }
 
         /** 解析整组 pendingInteractions；缺失/非数组一律视作"没有待审批"。 */
-        fun parseArray(arr: JsonArray?, sessionId: String? = null): List<PendingApproval> =
+        fun parseArray(
+            arr: JsonArray?,
+            sessionId: String? = null,
+        ): List<PendingApproval> =
             arr?.mapNotNull { el ->
                 runCatching { from(el.jsonObject, sessionId) }.getOrNull()
             } ?: emptyList()
 
-        fun parseFrom(obj: JsonObject?, sessionId: String? = null): List<PendingApproval> =
-            parseArray(runCatching { obj?.get("pendingInteractions")?.jsonArray }.getOrNull(), sessionId)
+        fun parseFrom(
+            obj: JsonObject?,
+            sessionId: String? = null,
+        ): List<PendingApproval> = parseArray(runCatching { obj?.get("pendingInteractions")?.jsonArray }.getOrNull(), sessionId)
     }
 }
 
@@ -202,35 +217,39 @@ data class PendingElicitation(
 
     companion object {
         /** 从一条 pendingInteraction（kind=="userInput"）构造；其他 kind 返回 null。 */
-        fun from(o: JsonObject, sessionId: String? = null): PendingElicitation? {
-            fun JsonElement?.asStr(): String? =
-                this?.let { runCatching { it.jsonPrimitive.content }.getOrNull() }
+        fun from(
+            o: JsonObject,
+            sessionId: String? = null,
+        ): PendingElicitation? {
+            fun JsonElement?.asStr(): String? = this?.let { runCatching { it.jsonPrimitive.content }.getOrNull() }
 
             val interactionId = o["interactionId"].asStr() ?: return null
             val kind = o["kind"].asStr()
             if (kind != "userInput") return null
             val payload = runCatching { o["payload"]?.jsonObject }.getOrNull() ?: return null
 
-            val questions = runCatching { payload["questions"]?.jsonArray }.getOrNull()
-                ?.mapNotNull { el ->
-                    val q = runCatching { el.jsonObject }.getOrNull() ?: return@mapNotNull null
-                    val opts = runCatching { q["options"]?.jsonArray }.getOrNull()
-                        ?.mapNotNull { oe ->
-                            val ob = runCatching { oe.jsonObject }.getOrNull() ?: return@mapNotNull null
-                            ElicitationOption(
-                                value = ob["value"].asStr() ?: ob["label"].asStr() ?: return@mapNotNull null,
-                                label = ob["label"].asStr() ?: ob["value"].asStr() ?: "",
-                                description = ob["description"].asStr(),
-                            )
-                        } ?: emptyList()
-                    if (opts.isEmpty()) return@mapNotNull null
-                    ElicitationQuestion(
-                        question = q["question"].asStr() ?: "",
-                        header = q["header"].asStr(),
-                        options = opts,
-                        multiSelect = q["multiSelect"].asStr() == "true",
-                    )
-                } ?: emptyList()
+            val questions =
+                runCatching { payload["questions"]?.jsonArray }.getOrNull()
+                    ?.mapNotNull { el ->
+                        val q = runCatching { el.jsonObject }.getOrNull() ?: return@mapNotNull null
+                        val opts =
+                            runCatching { q["options"]?.jsonArray }.getOrNull()
+                                ?.mapNotNull { oe ->
+                                    val ob = runCatching { oe.jsonObject }.getOrNull() ?: return@mapNotNull null
+                                    ElicitationOption(
+                                        value = ob["value"].asStr() ?: ob["label"].asStr() ?: return@mapNotNull null,
+                                        label = ob["label"].asStr() ?: ob["value"].asStr() ?: "",
+                                        description = ob["description"].asStr(),
+                                    )
+                                } ?: emptyList()
+                        if (opts.isEmpty()) return@mapNotNull null
+                        ElicitationQuestion(
+                            question = q["question"].asStr() ?: "",
+                            header = q["header"].asStr(),
+                            options = opts,
+                            multiSelect = q["multiSelect"].asStr() == "true",
+                        )
+                    } ?: emptyList()
 
             val schema = runCatching { payload["schema"]?.jsonObject }.getOrNull()
             val plan = schema?.get("plan").asStr()?.takeIf { it.isNotBlank() }
@@ -244,9 +263,10 @@ data class PendingElicitation(
                 questions = questions,
                 freeText = payload["freeText"].asStr() == "true",
                 plan = plan,
-                autoResolveAt = runCatching {
-                    o["autoResolution"]?.jsonObject?.get("deadlineAt")?.jsonPrimitive?.content?.toLongOrNull()
-                }.getOrNull(),
+                autoResolveAt =
+                    runCatching {
+                        o["autoResolution"]?.jsonObject?.get("deadlineAt")?.jsonPrimitive?.content?.toLongOrNull()
+                    }.getOrNull(),
                 sessionId = sessionId,
             )
         }
@@ -256,50 +276,58 @@ data class PendingElicitation(
          * `{type:"elicitation_request", taskId, requestId, message, header,
          *   options:[{value,label,description}], multiSelect?, questions?, schema?}`。
          */
-        fun fromTaskEvent(o: JsonObject, sessionId: String? = null): PendingElicitation? {
-            fun JsonElement?.asStr(): String? =
-                this?.let { runCatching { it.jsonPrimitive.content }.getOrNull() }
+        fun fromTaskEvent(
+            o: JsonObject,
+            sessionId: String? = null,
+        ): PendingElicitation? {
+            fun JsonElement?.asStr(): String? = this?.let { runCatching { it.jsonPrimitive.content }.getOrNull() }
 
             val requestId = o["requestId"].asStr() ?: return null
-            val questions = runCatching { o["questions"]?.jsonArray }.getOrNull()
-                ?.mapNotNull { el ->
-                    val q = runCatching { el.jsonObject }.getOrNull() ?: return@mapNotNull null
-                    val opts = runCatching { q["options"]?.jsonArray }.getOrNull()
-                        ?.mapNotNull { oe ->
-                            val ob = runCatching { oe.jsonObject }.getOrNull() ?: return@mapNotNull null
-                            ElicitationOption(
-                                value = ob["value"].asStr() ?: ob["label"].asStr() ?: return@mapNotNull null,
-                                label = ob["label"].asStr() ?: ob["value"].asStr() ?: "",
-                                description = ob["description"].asStr(),
-                            )
-                        } ?: emptyList()
-                    if (opts.isEmpty()) return@mapNotNull null
-                    ElicitationQuestion(
-                        question = q["question"].asStr() ?: "",
-                        header = q["header"].asStr(),
-                        options = opts,
-                        multiSelect = q["multiSelect"].asStr() == "true",
-                    )
-                } ?: emptyList()
+            val questions =
+                runCatching { o["questions"]?.jsonArray }.getOrNull()
+                    ?.mapNotNull { el ->
+                        val q = runCatching { el.jsonObject }.getOrNull() ?: return@mapNotNull null
+                        val opts =
+                            runCatching { q["options"]?.jsonArray }.getOrNull()
+                                ?.mapNotNull { oe ->
+                                    val ob = runCatching { oe.jsonObject }.getOrNull() ?: return@mapNotNull null
+                                    ElicitationOption(
+                                        value = ob["value"].asStr() ?: ob["label"].asStr() ?: return@mapNotNull null,
+                                        label = ob["label"].asStr() ?: ob["value"].asStr() ?: "",
+                                        description = ob["description"].asStr(),
+                                    )
+                                } ?: emptyList()
+                        if (opts.isEmpty()) return@mapNotNull null
+                        ElicitationQuestion(
+                            question = q["question"].asStr() ?: "",
+                            header = q["header"].asStr(),
+                            options = opts,
+                            multiSelect = q["multiSelect"].asStr() == "true",
+                        )
+                    } ?: emptyList()
 
             val schema = runCatching { o["schema"]?.jsonObject }.getOrNull()
             val plan = schema?.get("plan").asStr()?.takeIf { it.isNotBlank() }
-            val options = runCatching { o["options"]?.jsonArray }.getOrNull()
-                ?.mapNotNull { oe ->
-                    val ob = runCatching { oe.jsonObject }.getOrNull() ?: return@mapNotNull null
-                    val v = ob["value"].asStr() ?: return@mapNotNull null
-                    ElicitationOption(value = v, label = ob["label"].asStr() ?: v, description = ob["description"].asStr())
-                } ?: emptyList()
-            val mergedQuestions = if (questions.isNotEmpty()) questions
-            else {
-                val single = ElicitationQuestion(
-                    question = o["message"].asStr() ?: "",
-                    header = o["header"].asStr(),
-                    options = options,
-                    multiSelect = o["multiSelect"].asStr() == "true",
-                )
-                listOfNotNull(single.takeIf { it.options.isNotEmpty() || plan != null })
-            }
+            val options =
+                runCatching { o["options"]?.jsonArray }.getOrNull()
+                    ?.mapNotNull { oe ->
+                        val ob = runCatching { oe.jsonObject }.getOrNull() ?: return@mapNotNull null
+                        val v = ob["value"].asStr() ?: return@mapNotNull null
+                        ElicitationOption(value = v, label = ob["label"].asStr() ?: v, description = ob["description"].asStr())
+                    } ?: emptyList()
+            val mergedQuestions =
+                if (questions.isNotEmpty()) {
+                    questions
+                } else {
+                    val single =
+                        ElicitationQuestion(
+                            question = o["message"].asStr() ?: "",
+                            header = o["header"].asStr(),
+                            options = options,
+                            multiSelect = o["multiSelect"].asStr() == "true",
+                        )
+                    listOfNotNull(single.takeIf { it.options.isNotEmpty() || plan != null })
+                }
 
             if (mergedQuestions.isEmpty() && plan == null) return null
             return PendingElicitation(
@@ -315,7 +343,10 @@ data class PendingElicitation(
         }
 
         /** 解析整组 pendingInteractions 里的 userInput 条目。 */
-        fun parseArray(arr: JsonArray?, sessionId: String? = null): List<PendingElicitation> =
+        fun parseArray(
+            arr: JsonArray?,
+            sessionId: String? = null,
+        ): List<PendingElicitation> =
             arr?.mapNotNull { el ->
                 runCatching { from(el.jsonObject, sessionId) }.getOrNull()
             } ?: emptyList()

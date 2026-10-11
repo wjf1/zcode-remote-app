@@ -19,7 +19,6 @@ private class SafeUriHandler(
     private val delegate: UriHandler,
     private val onBlocked: (String) -> Unit,
 ) : UriHandler {
-
     override fun openUri(uri: String) {
         val scheme = uri.substringBefore(':', missingDelimiterValue = "").lowercase()
         if (scheme == "http" || scheme == "https") {

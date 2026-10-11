@@ -39,10 +39,11 @@ fun ShimmerText(
     val progress by transition.animateFloat(
         initialValue = 0f,
         targetValue = 1f,
-        animationSpec = infiniteRepeatable(
-            animation = tween(durationMillis = 1600, easing = LinearEasing),
-            repeatMode = RepeatMode.Restart,
-        ),
+        animationSpec =
+            infiniteRepeatable(
+                animation = tween(durationMillis = 1600, easing = LinearEasing),
+                repeatMode = RepeatMode.Restart,
+            ),
         label = "shimmerProgress",
     )
 
@@ -55,12 +56,14 @@ fun ShimmerText(
     Text(
         text = text,
         modifier = modifier.onSizeChanged { widthPx = it.width.toFloat() },
-        style = style.copy(
-            brush = Brush.linearGradient(
-                colors = listOf(baseColor, highlightColor, baseColor),
-                start = Offset(head, 0f),
-                end = Offset(head + band, 0f),
+        style =
+            style.copy(
+                brush =
+                    Brush.linearGradient(
+                        colors = listOf(baseColor, highlightColor, baseColor),
+                        start = Offset(head, 0f),
+                        end = Offset(head + band, 0f),
+                    ),
             ),
-        ),
     )
 }

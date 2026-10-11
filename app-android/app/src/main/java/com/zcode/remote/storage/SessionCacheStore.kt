@@ -37,10 +37,11 @@ object SessionCacheStore {
     /** 读侧行数上限（与写侧 takeLast(200) 对齐——写侧有兜底，读侧防旧文件超限）。 */
     const val MAX_ROWS_PER_FILE = 200
 
-    private val json = Json {
-        ignoreUnknownKeys = true
-        encodeDefaults = true
-    }
+    private val json =
+        Json {
+            ignoreUnknownKeys = true
+            encodeDefaults = true
+        }
 
     /** 读取缓存的会话列表。 */
     fun load(context: Context): List<SessionItem> {
@@ -60,7 +61,10 @@ object SessionCacheStore {
     }
 
     /** 异步持久化保存会话列表（原子写）。 */
-    suspend fun save(context: Context, sessions: List<SessionItem>) = withContext(Dispatchers.IO) {
+    suspend fun save(
+        context: Context,
+        sessions: List<SessionItem>,
+    ) = withContext(Dispatchers.IO) {
         if (sessions.isEmpty()) return@withContext
         writeMutex.withLock {
             runCatching {
@@ -78,7 +82,10 @@ object SessionCacheStore {
     }
 
     /** 读取单个会话的历史行缓存（用于点进会话首帧秒开渲染）。 */
-    fun loadRows(context: Context, sessionId: String): List<ConversationRow> {
+    fun loadRows(
+        context: Context,
+        sessionId: String,
+    ): List<ConversationRow> {
         val safeId = sessionId.replace(Regex("[^a-zA-Z0-9_-]"), "_")
         val file = File(context.filesDir, "rows_$safeId.json")
         if (!file.exists()) return emptyList()
@@ -98,28 +105,33 @@ object SessionCacheStore {
     }
 
     /** 异步保存单个会话的消息行（保留最近 200 行，防止体积膨胀）。 */
-    suspend fun saveRows(context: Context, sessionId: String, rows: List<ConversationRow>) = withContext(Dispatchers.IO) {
+    suspend fun saveRows(
+        context: Context,
+        sessionId: String,
+        rows: List<ConversationRow>,
+    ) = withContext(Dispatchers.IO) {
         if (rows.isEmpty()) return@withContext
         val safeId = sessionId.replace(Regex("[^a-zA-Z0-9_-]"), "_")
         writeMutex.withLock {
-        runCatching {
-            // §11.6：写侧行数上限 + 字节上限（200 行长正文仍可能到数 MB）
-            val slice = trimRowsToBytes(
-                if (rows.size > MAX_ROWS_PER_FILE) rows.takeLast(MAX_ROWS_PER_FILE) else rows,
-                MAX_ROW_FILE_BYTES,
-            )
-            val raw = json.encodeToString(slice)
-            val target = File(context.filesDir, "rows_$safeId.json")
-            val tmp = File(context.filesDir, "rows_$safeId.json.tmp")
-            tmp.writeText(raw)
-            if (tmp.renameTo(target) || (target.delete() && tmp.renameTo(target))) {
-                ZLog.d(TAG, "成功持久化会话 $sessionId 的 ${slice.size} 行缓存")
-                // C-7：写入后顺手裁剪目录（LRU），保证文件数收敛到上限
-                pruneRowsCache(context)
+            runCatching {
+                // §11.6：写侧行数上限 + 字节上限（200 行长正文仍可能到数 MB）
+                val slice =
+                    trimRowsToBytes(
+                        if (rows.size > MAX_ROWS_PER_FILE) rows.takeLast(MAX_ROWS_PER_FILE) else rows,
+                        MAX_ROW_FILE_BYTES,
+                    )
+                val raw = json.encodeToString(slice)
+                val target = File(context.filesDir, "rows_$safeId.json")
+                val tmp = File(context.filesDir, "rows_$safeId.json.tmp")
+                tmp.writeText(raw)
+                if (tmp.renameTo(target) || (target.delete() && tmp.renameTo(target))) {
+                    ZLog.d(TAG, "成功持久化会话 $sessionId 的 ${slice.size} 行缓存")
+                    // C-7：写入后顺手裁剪目录（LRU），保证文件数收敛到上限
+                    pruneRowsCache(context)
+                }
+            }.onFailure {
+                ZLog.w(TAG, "保存会话行缓存失败 ($sessionId): ${it.message}")
             }
-        }.onFailure {
-            ZLog.w(TAG, "保存会话行缓存失败 ($sessionId): ${it.message}")
-        }
         }
     }
 
@@ -127,7 +139,10 @@ object SessionCacheStore {
      * C-7：删除单个会话的行缓存文件。会话被删除时调用——原实现只从列表移除会话项，
      * `rows_<sid>.json` 永久残留（缓存文件数量无任何上限）。
      */
-    fun deleteRows(context: Context, sessionId: String) {
+    fun deleteRows(
+        context: Context,
+        sessionId: String,
+    ) {
         val safeId = sessionId.replace(Regex("[^a-zA-Z0-9_-]"), "_")
         runCatching {
             if (File(context.filesDir, "rows_$safeId.json").delete()) {
@@ -140,11 +155,15 @@ object SessionCacheStore {
      * C-7：LRU 裁剪行缓存目录——只保留最近写入的 [keep] 个 `rows_*.json`。
      * 每个文件最多 200 行，但文件数随「打开过的会话数」无上限增长，长期使用会持续占用存储。
      */
-    fun pruneRowsCache(context: Context, keep: Int = MAX_ROW_CACHE_FILES) {
+    fun pruneRowsCache(
+        context: Context,
+        keep: Int = MAX_ROW_CACHE_FILES,
+    ) {
         runCatching {
-            val files = context.filesDir
-                .listFiles { f -> f.name.startsWith("rows_") && f.name.endsWith(".json") }
-                ?: return
+            val files =
+                context.filesDir
+                    .listFiles { f -> f.name.startsWith("rows_") && f.name.endsWith(".json") }
+                    ?: return
             val stale = staleCacheFilesToDelete(files.map { it.name to it.lastModified() }, keep)
             stale.forEach { name ->
                 if (File(context.filesDir, name).delete()) ZLog.d(TAG, "LRU 清理过期行缓存 $name")
@@ -157,11 +176,15 @@ object SessionCacheStore {
      * 返回应删除的文件名（按名称排序，保证结果确定）。
      * 保留最近修改的最多 [keep] 个；时间相同时按文件名升序，避免同毫秒写入抖动误删。
      */
-    internal fun staleCacheFilesToDelete(entries: List<Pair<String, Long>>, keep: Int): List<String> {
+    internal fun staleCacheFilesToDelete(
+        entries: List<Pair<String, Long>>,
+        keep: Int,
+    ): List<String> {
         if (keep <= 0) return entries.map { it.first }.sorted()
-        val sorted = entries.sortedWith(
-            compareByDescending<Pair<String, Long>> { it.second }.thenBy { it.first }
-        )
+        val sorted =
+            entries.sortedWith(
+                compareByDescending<Pair<String, Long>> { it.second }.thenBy { it.first },
+            )
         return sorted.drop(keep).map { it.first }.sorted()
     }
 
@@ -169,14 +192,20 @@ object SessionCacheStore {
     const val MAX_ROW_CACHE_FILES = 30
 
     /** §11.6：TTL 判定（纯函数，单测覆盖）——lastModified 距今超过 [ttlMs] 即过期。 */
-    internal fun isCacheStale(lastModified: Long, now: Long, ttlMs: Long = CACHE_TTL_MS): Boolean =
-        lastModified > 0 && (now - lastModified) > ttlMs
+    internal fun isCacheStale(
+        lastModified: Long,
+        now: Long,
+        ttlMs: Long = CACHE_TTL_MS,
+    ): Boolean = lastModified > 0 && (now - lastModified) > ttlMs
 
     /**
      * §11.6：字节上限裁剪（纯函数，单测覆盖）。从最旧一端丢行直到序列化体积 ≤ [maxBytes]
      * （折半丢，避免逐行序列化过慢）；只剩 1 行仍超限则原样返回（单行即超限属病态，交由调用方兜底）。
      */
-    internal fun trimRowsToBytes(rows: List<ConversationRow>, maxBytes: Int): List<ConversationRow> {
+    internal fun trimRowsToBytes(
+        rows: List<ConversationRow>,
+        maxBytes: Int,
+    ): List<ConversationRow> {
         var slice = rows
         while (slice.size > 1 &&
             json.encodeToString(slice).toByteArray(Charsets.UTF_8).size > maxBytes

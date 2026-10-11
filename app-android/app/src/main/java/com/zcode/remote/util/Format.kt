@@ -12,7 +12,6 @@ import kotlin.math.roundToInt
  * 时长按「小时/分/秒」三级、数字按 1.2k / 1.2M 缩略、百分比取整。
  */
 object Format {
-
     /**
      * 大数缩略：`999` → `999`，`1200` → `1.2k`，`10000` → `10k`，`1_234_000` → `1.2M`。
      *
@@ -21,16 +20,20 @@ object Format {
     fun compactNumber(n: Long): String {
         val neg = n < 0
         val v = abs(n)
-        val s = when {
-            v < 1_000 -> v.toString()
-            v < 1_000_000 -> trimZero(v / 1000.0, "k")
-            v < 1_000_000_000L -> trimZero(v / 1_000_000.0, "M")
-            else -> trimZero(v / 1_000_000_000.0, "B")
-        }
+        val s =
+            when {
+                v < 1_000 -> v.toString()
+                v < 1_000_000 -> trimZero(v / 1000.0, "k")
+                v < 1_000_000_000L -> trimZero(v / 1_000_000.0, "M")
+                else -> trimZero(v / 1_000_000_000.0, "B")
+            }
         return if (neg) "-$s" else s
     }
 
-    private fun trimZero(v: Double, unit: String): String {
+    private fun trimZero(
+        v: Double,
+        unit: String,
+    ): String {
         // 四舍五入到一位小数后，若小数位为 0 则只留整数部分
         val scaled = (v * 10).roundToInt()
         return if (scaled % 10 == 0) "${scaled / 10}$unit" else "${scaled / 10}.${scaled % 10}$unit"
@@ -77,7 +80,10 @@ object Format {
      * 多行文本压成单行摘要（折叠态行内用）：所有空白折叠为一个空格。
      * 空白串与 null 都返回 null，让调用方可以直接 `?.let` 决定要不要渲染这一格。
      */
-    fun singleLine(text: String?, limit: Int = 200): String? {
+    fun singleLine(
+        text: String?,
+        limit: Int = 200,
+    ): String? {
         val compressed = text?.replace(WHITESPACE, " ")?.trim().orEmpty()
         if (compressed.isEmpty()) return null
         return if (compressed.length <= limit) compressed else compressed.take(limit) + "…"

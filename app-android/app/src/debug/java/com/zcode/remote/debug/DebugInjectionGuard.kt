@@ -21,7 +21,6 @@ import java.util.UUID
  *        -a com.zcode.remote.action.DEBUG_PAIR --es dbg_token <token> --es sid ... --es hash ...
  */
 internal object DebugInjectionGuard {
-
     const val EXTRA_TOKEN = "dbg_token"
     private const val PREFS = "debug_injection"
     private const val KEY_TOKEN = "token"
@@ -37,14 +36,21 @@ internal object DebugInjectionGuard {
     }
 
     /** 严格 action 白名单 + 令牌校验；任一不满足即拒绝。 */
-    fun allow(context: Context, intent: Intent, allowedActions: Set<String>): Boolean {
+    fun allow(
+        context: Context,
+        intent: Intent,
+        allowedActions: Set<String>,
+    ): Boolean {
         if (intent.action !in allowedActions) return false
         val supplied = intent.getStringExtra(EXTRA_TOKEN) ?: return false
         // 常量时间比较，避免时序侧信道（令牌为低敏感调试值，仍按规范处理）
         return constantTimeEquals(supplied, token(context))
     }
 
-    private fun constantTimeEquals(a: String, b: String): Boolean {
+    private fun constantTimeEquals(
+        a: String,
+        b: String,
+    ): Boolean {
         val ab = a.toByteArray(Charsets.UTF_8)
         val bb = b.toByteArray(Charsets.UTF_8)
         if (ab.size != bb.size) return false

@@ -19,7 +19,6 @@ import kotlinx.serialization.json.jsonPrimitive
  * 全部展示出口经同一映射才能被 JVM 单测钉死（本项目无 androidTest，纯函数是唯一可守形式）。
  */
 object UserFacingError {
-
     /** 兜底文案（message 为空时的最终可见文本）。 */
     const val FALLBACK = "操作失败，请重试"
 
@@ -27,31 +26,33 @@ object UserFacingError {
      * 本地通道自造英文 → 中文。改动 RpcChannel 措辞时须同步这里；
      * 单测 `UserFacingErrorTest` 覆盖全部已知串。
      */
-    private val LOCAL_ERRORS: List<Pair<String, String>> = listOf(
-        "timeout after" to "响应超时，请检查网络后重试",
-        "bridge not ready" to "连接通道尚未就绪，请稍后重试",
-        "bridge re-established" to "连接已重建，请重试",
-        "channel reset" to "连接已重置，请重试",
-        // OkHttp / JVM 网络栈的自造英文（检查更新、文件预览等 HTTP 路径）
-        "unable to resolve host" to "无法解析服务器地址，请检查网络",
-        "failed to connect" to "无法连接到服务器，请稍后重试",
-        "timed out" to "连接超时，请检查网络后重试",
-    )
+    private val LOCAL_ERRORS: List<Pair<String, String>> =
+        listOf(
+            "timeout after" to "响应超时，请检查网络后重试",
+            "bridge not ready" to "连接通道尚未就绪，请稍后重试",
+            "bridge re-established" to "连接已重建，请重试",
+            "channel reset" to "连接已重置，请重试",
+            // OkHttp / JVM 网络栈的自造英文（检查更新、文件预览等 HTTP 路径）
+            "unable to resolve host" to "无法解析服务器地址，请检查网络",
+            "failed to connect" to "无法连接到服务器，请稍后重试",
+            "timed out" to "连接超时，请检查网络后重试",
+        )
 
     /**
      * 服务端 fault code 关键词 → 中文（code 形如 `fault.connection.handshakeRequired`，
      * 取子串匹配以免把命名空间写死）。顺序即优先级，"timeout" 类放后避免误伤。
      */
-    private val FAULT_ERRORS: List<Pair<String, String>> = listOf(
-        "handshakeRequired" to "连接尚未完成握手，请重试",
-        "clientMismatch" to "会话身份不匹配，请重新进入会话",
-        "unauthorized" to "登录态失效，请重新配对",
-        "forbidden" to "没有权限执行该操作",
-        "notFound" to "目标不存在或已被删除",
-        "rateLimit" to "操作过于频繁，请稍后重试",
-        "unavailable" to "服务暂时不可用，请稍后重试",
-        "timeout" to "服务端响应超时，请检查网络后重试",
-    )
+    private val FAULT_ERRORS: List<Pair<String, String>> =
+        listOf(
+            "handshakeRequired" to "连接尚未完成握手，请重试",
+            "clientMismatch" to "会话身份不匹配，请重新进入会话",
+            "unauthorized" to "登录态失效，请重新配对",
+            "forbidden" to "没有权限执行该操作",
+            "notFound" to "目标不存在或已被删除",
+            "rateLimit" to "操作过于频繁，请稍后重试",
+            "unavailable" to "服务暂时不可用，请稍后重试",
+            "timeout" to "服务端响应超时，请检查网络后重试",
+        )
 
     /**
      * 映射为面向用户的文案。
@@ -59,7 +60,10 @@ object UserFacingError {
      * @param message 底层错误串（可能是英文自造串、服务端 message 或已中文）
      * @param raw     `RpcChannel.RpcReply.Err` 的原始 JSON（fault code 在 `code`/`reasonCode` 等字段，可空）
      */
-    fun map(message: String?, raw: JsonElement? = null): String {
+    fun map(
+        message: String?,
+        raw: JsonElement? = null,
+    ): String {
         val code = faultCodeOf(raw)
         if (code != null) {
             translate(code)?.let { return it }
@@ -82,9 +86,11 @@ object UserFacingError {
     /** 从 fault 原始 JSON 里取 code，兼容直挂与包在 `fault` 里两种形态。 */
     private fun faultCodeOf(raw: JsonElement?): String? {
         val obj = raw as? JsonObject ?: return null
-        fun firstCode(o: JsonObject): String? = CODE_FIELDS.firstNotNullOfOrNull { k ->
-            o[k]?.let { runCatching { it.jsonPrimitive.content }.getOrNull() }?.takeIf { it.isNotBlank() }
-        }
+
+        fun firstCode(o: JsonObject): String? =
+            CODE_FIELDS.firstNotNullOfOrNull { k ->
+                o[k]?.let { runCatching { it.jsonPrimitive.content }.getOrNull() }?.takeIf { it.isNotBlank() }
+            }
         firstCode(obj)?.let { return it }
         val fault = obj["fault"] as? JsonObject ?: return null
         return firstCode(fault)

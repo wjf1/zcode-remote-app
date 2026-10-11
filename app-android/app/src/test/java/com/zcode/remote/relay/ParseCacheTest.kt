@@ -11,9 +11,11 @@ import org.junit.Test
  * 只看结果值无法区分「又全量解析了一遍但结果相同」，计数才钉得住「增量」。
  */
 class ParseCacheTest {
-
-    private fun tool(rowId: Int, name: String, input: String) =
-        ConversationRow(rowId = rowId, kind = "toolCall", toolName = name, inputText = input)
+    private fun tool(
+        rowId: Int,
+        name: String,
+        input: String,
+    ) = ConversationRow(rowId = rowId, kind = "toolCall", toolName = name, inputText = input)
 
     // ---------- SessionFiles.PathCache ----------
 
@@ -46,11 +48,12 @@ class ParseCacheTest {
 
     @Test
     fun pathCache_equivalentToUncached() {
-        val rows = listOf(
-            tool(1, "Edit", """{"file_path":"a.kt"}"""),
-            tool(2, "Bash", """{"command":"ls"}"""),
-            tool(3, "Read", """{"file_path":"b.kt"}"""),
-        )
+        val rows =
+            listOf(
+                tool(1, "Edit", """{"file_path":"a.kt"}"""),
+                tool(2, "Bash", """{"command":"ls"}"""),
+                tool(3, "Read", """{"file_path":"b.kt"}"""),
+            )
         val cache = SessionFiles.PathCache()
         assertEquals(SessionFiles.extract(rows), SessionFiles.extract(rows, cache))
         // 非路径工具行（Bash）在缓存之前就被过滤，不产生解析
@@ -84,16 +87,19 @@ class ParseCacheTest {
 
     @Test
     fun diffCache_equivalentToUncached() {
-        val rows = listOf(
-            tool(1, "Edit", """{"file_path":"a.kt","old_string":"a","new_string":"b"}"""),
-            tool(2, "Bash", """{"command":"ls"}"""),
-            tool(3, "Write", """{"file_path":"b.kt","content":"hello"}"""),
-        )
+        val rows =
+            listOf(
+                tool(1, "Edit", """{"file_path":"a.kt","old_string":"a","new_string":"b"}"""),
+                tool(2, "Bash", """{"command":"ls"}"""),
+                tool(3, "Write", """{"file_path":"b.kt","content":"hello"}"""),
+            )
+
         // ToolDiff 是普通 class（引用相等），不能整体比较对象——按值指纹比较
-        fun fingerprint(summaries: Map<Int, TurnDiffSummary>) = summaries.mapValues { (_, s) ->
-            listOf(s.turnKey, s.lastRowId, s.fileCount, s.totalAdded, s.totalRemoved) to
-                s.diffs.map { listOf(it.filePath, it.added, it.removed) }
-        }
+        fun fingerprint(summaries: Map<Int, TurnDiffSummary>) =
+            summaries.mapValues { (_, s) ->
+                listOf(s.turnKey, s.lastRowId, s.fileCount, s.totalAdded, s.totalRemoved) to
+                    s.diffs.map { listOf(it.filePath, it.added, it.removed) }
+            }
         val cache = TurnChanges.DiffCache()
         assertEquals(fingerprint(TurnChanges.aggregate(rows)), fingerprint(TurnChanges.aggregate(rows, cache)))
         // 三个工具行各经历一次缓存未命中（Bash 行的 parse 立即返回 null，

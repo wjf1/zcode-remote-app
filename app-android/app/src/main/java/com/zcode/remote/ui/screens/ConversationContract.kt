@@ -2,14 +2,14 @@ package com.zcode.remote.ui.screens
 
 import android.net.Uri
 import com.zcode.remote.AppViewModel
-import com.zcode.remote.repo.AttachmentUploader
-import com.zcode.remote.repo.ConversationRepository
 import com.zcode.remote.relay.ApprovalOption
 import com.zcode.remote.relay.ConversationChannel
 import com.zcode.remote.relay.ConversationRow
 import com.zcode.remote.relay.PendingApproval
 import com.zcode.remote.relay.PendingElicitation
 import com.zcode.remote.relay.WorkspaceConfigChannel
+import com.zcode.remote.repo.AttachmentUploader
+import com.zcode.remote.repo.ConversationRepository
 
 /**
  * 会话页状态/动作契约（§11.7 结构性拆分）：以 [ConversationUiState] + [ConversationAction]

@@ -24,24 +24,24 @@ import org.junit.Test
  * 由真机验收覆盖（HANDOVER §5.7），此处不纳入。
  */
 class PureFunctionsTest {
-
     // ---------- ConversationRow.from ----------
 
     @Test
     fun conversationRowParsesAllFields() {
-        val o = buildJsonObject {
-            put("rowId", 42)
-            put("kind", "toolCall")
-            put("turnId", "turn-1")
-            put("text", JsonNull)
-            put("state", "success")
-            put("toolName", "Edit")
-            put("toolCallId", "call_1")
-            put("status", "success")
-            put("inputText", "{\"old_string\":\"a\"}")
-            put("createdAt", 1_700_000_000_000)
-            put("output", buildJsonObject { put("text", "done") })
-        }
+        val o =
+            buildJsonObject {
+                put("rowId", 42)
+                put("kind", "toolCall")
+                put("turnId", "turn-1")
+                put("text", JsonNull)
+                put("state", "success")
+                put("toolName", "Edit")
+                put("toolCallId", "call_1")
+                put("status", "success")
+                put("inputText", "{\"old_string\":\"a\"}")
+                put("createdAt", 1_700_000_000_000)
+                put("output", buildJsonObject { put("text", "done") })
+            }
         val row = ConversationRow.from(o)!!
         assertEquals(42, row.rowId)
         assertEquals("toolCall", row.kind)
@@ -66,10 +66,15 @@ class PureFunctionsTest {
 
     @Test
     fun approvalSortKeyOrdering() {
-        val ranked = listOf(
-            opt("deny"), opt("rejectAlways"), opt("allowAlways"),
-            opt("allowOnce"), opt(null), opt("escalate"),
-        ).sortedBy { it.sortKey }
+        val ranked =
+            listOf(
+                opt("deny"),
+                opt("rejectAlways"),
+                opt("allowAlways"),
+                opt("allowOnce"),
+                opt(null),
+                opt("escalate"),
+            ).sortedBy { it.sortKey }
         // 单次批准(0) → 永久批准(1) → 拒绝/单次拒绝(2) → 永久拒绝(3) → 其他(4/5)
         // 「其他」内部按稳定排序保持原序（null 在前、escalate 在后）
         assertEquals(
@@ -84,7 +89,7 @@ class PureFunctionsTest {
         val allow = ApprovalOption("id", "", null, "allow")
         assertTrue(allow.isAllow)
         val deny = ApprovalOption("id", "", null, "deny")
-        assertEquals(4, deny.sortKey)  // isDeny 兜底分支
+        assertEquals(4, deny.sortKey) // isDeny 兜底分支
         // label 为空时 displayLabel 回退 optionId
         assertEquals("id", ApprovalOption("id", "", null, null).displayLabel)
     }
@@ -123,8 +128,15 @@ class PureFunctionsTest {
 
     // ---------- SessionFiles（剧本 B「最近文件」）----------
 
-    private fun toolRow(rowId: Int, tool: String, input: String? = null) = ConversationRow(
-        rowId = rowId, kind = "toolCall", toolName = tool, inputText = input,
+    private fun toolRow(
+        rowId: Int,
+        tool: String,
+        input: String? = null,
+    ) = ConversationRow(
+        rowId = rowId,
+        kind = "toolCall",
+        toolName = tool,
+        inputText = input,
     )
 
     @Test
@@ -134,22 +146,23 @@ class PureFunctionsTest {
             SessionFiles.extractPath("""{"file_path":"F:/x/a.kt","old_string":"a","new_string":"b"}"""),
         )
         assertEquals("~/.zcode/v2/c.json", SessionFiles.extractPath("""{"path":"~/.zcode/v2/c.json"}"""))
-        assertNull(SessionFiles.extractPath("""{"command":"ls"}"""))          // Bash 无路径字段
-        assertNull(SessionFiles.extractPath("not json"))                       // 非 JSON
+        assertNull(SessionFiles.extractPath("""{"command":"ls"}""")) // Bash 无路径字段
+        assertNull(SessionFiles.extractPath("not json")) // 非 JSON
         assertNull(SessionFiles.extractPath(null))
     }
 
     @Test
     fun extractDedupesByPathWithLatestFirst() {
-        val rows = listOf(
-            toolRow(1, "Read", """{"file_path":"F:/x/one.kt"}"""),
-            toolRow(2, "Bash", """{"command":"echo hi"}"""),                   // 应跳过
-            toolRow(3, "Write", """{"file_path":"F:/x/two.kt"}"""),
-            toolRow(4, "Edit", """{"file_path":"F:/x/one.kt"}"""),             // one.kt 再次出现 → 置顶
-        )
+        val rows =
+            listOf(
+                toolRow(1, "Read", """{"file_path":"F:/x/one.kt"}"""),
+                toolRow(2, "Bash", """{"command":"echo hi"}"""), // 应跳过
+                toolRow(3, "Write", """{"file_path":"F:/x/two.kt"}"""),
+                toolRow(4, "Edit", """{"file_path":"F:/x/one.kt"}"""), // one.kt 再次出现 → 置顶
+            )
         val files = SessionFiles.extract(rows)
         assertEquals(listOf("F:/x/one.kt", "F:/x/two.kt"), files.map { it.path })
-        assertEquals(4, files[0].rowId)                                        // 保留最近操作行
+        assertEquals(4, files[0].rowId) // 保留最近操作行
         assertEquals(2, files.size)
     }
 
@@ -167,14 +180,15 @@ class PureFunctionsTest {
 
     @Test
     fun turnChangesAggregatesWriteToolsInSameTurn() {
-        val rows = listOf(
-            toolRow(1, "userInput", null).copy(kind = "userInput", turnId = "turn_1"),
-            toolRow(2, "Edit", """{"file_path":"F:/x/a.kt","old_string":"foo","new_string":"bar"}""").copy(turnId = "turn_1"),
-            toolRow(3, "Bash", """{"command":"ls"}""").copy(turnId = "turn_1"),
-            toolRow(4, "Write", """{"file_path":"F:/x/b.txt","content":"hello\nworld"}""").copy(turnId = "turn_1"),
-            toolRow(5, "userInput", null).copy(kind = "userInput", turnId = "turn_2"),
-            toolRow(6, "Bash", """{"command":"git status"}""").copy(turnId = "turn_2"),
-        )
+        val rows =
+            listOf(
+                toolRow(1, "userInput", null).copy(kind = "userInput", turnId = "turn_1"),
+                toolRow(2, "Edit", """{"file_path":"F:/x/a.kt","old_string":"foo","new_string":"bar"}""").copy(turnId = "turn_1"),
+                toolRow(3, "Bash", """{"command":"ls"}""").copy(turnId = "turn_1"),
+                toolRow(4, "Write", """{"file_path":"F:/x/b.txt","content":"hello\nworld"}""").copy(turnId = "turn_1"),
+                toolRow(5, "userInput", null).copy(kind = "userInput", turnId = "turn_2"),
+                toolRow(6, "Bash", """{"command":"git status"}""").copy(turnId = "turn_2"),
+            )
         val summaries = TurnChanges.aggregate(rows)
         // 只有 turn_1 包含写工具，且挂载在最后一个写操作 rowId=4 上
         assertEquals(1, summaries.size)
@@ -191,28 +205,29 @@ class PureFunctionsTest {
 
     @Test
     fun sessionItemSerializationRoundtrip() {
-        val original = listOf(
-            SessionItem(
-                taskId = "sess_001",
-                title = "测试会话1",
-                displayStatus = "running",
-                workspacePath = "F:/project",
-                workspaceLabel = "project",
-                provider = "glm",
-                updatedAt = 1_700_000_000_000L,
-                archived = false
-            ),
-            SessionItem(
-                taskId = "sess_002",
-                title = "测试会话2",
-                displayStatus = "idle",
-                workspacePath = null,
-                workspaceLabel = null,
-                provider = null,
-                updatedAt = null,
-                archived = true
+        val original =
+            listOf(
+                SessionItem(
+                    taskId = "sess_001",
+                    title = "测试会话1",
+                    displayStatus = "running",
+                    workspacePath = "F:/project",
+                    workspaceLabel = "project",
+                    provider = "glm",
+                    updatedAt = 1_700_000_000_000L,
+                    archived = false,
+                ),
+                SessionItem(
+                    taskId = "sess_002",
+                    title = "测试会话2",
+                    displayStatus = "idle",
+                    workspacePath = null,
+                    workspaceLabel = null,
+                    provider = null,
+                    updatedAt = null,
+                    archived = true,
+                ),
             )
-        )
         val jsonStr = kotlinx.serialization.json.Json.encodeToString(original)
         val decoded = kotlinx.serialization.json.Json.decodeFromString<List<SessionItem>>(jsonStr)
         assertEquals(original, decoded)
@@ -227,22 +242,23 @@ class PureFunctionsTest {
 
     @Test
     fun conversationRowSerializationAndRowStoreSnapshot() {
-        val rows = listOf(
-            ConversationRow(
-                rowId = 1,
-                kind = "userInput",
-                turnId = "t1",
-                text = "hello agent",
-                createdAt = 1_700_000_000_100L
-            ),
-            ConversationRow(
-                rowId = 2,
-                kind = "toolCall",
-                toolName = "Edit",
-                inputText = """{"file_path":"F:/a.txt","old_string":"foo","new_string":"bar"}""",
-                status = "success"
+        val rows =
+            listOf(
+                ConversationRow(
+                    rowId = 1,
+                    kind = "userInput",
+                    turnId = "t1",
+                    text = "hello agent",
+                    createdAt = 1_700_000_000_100L,
+                ),
+                ConversationRow(
+                    rowId = 2,
+                    kind = "toolCall",
+                    toolName = "Edit",
+                    inputText = """{"file_path":"F:/a.txt","old_string":"foo","new_string":"bar"}""",
+                    status = "success",
+                ),
             )
-        )
         val jsonStr = kotlinx.serialization.json.Json.encodeToString(rows)
         val decoded = kotlinx.serialization.json.Json.decodeFromString<List<ConversationRow>>(jsonStr)
         assertEquals(rows, decoded)
@@ -263,20 +279,21 @@ class PureFunctionsTest {
     @Test
     fun conversationRowParsesAttachments() {
         // 形状取自真机缓存里的真实样本（见 CHANGELOG：master-plan-v1.1.md / 39733 bytes）
-        val o = buildJsonObject {
-            put("rowId", 282)
-            put("kind", "userInput")
-            put("origin", "realUser")
-            put("text", "针对 https://github.com/wjf1/zcode-dotfiles 的优化提升方案")
-            putJsonArray("attachments") {
-                addJsonObject {
-                    put("ref", "zcode-artifact://sess_x/tool-result-y")
-                    put("fileName", "master-plan-v1.1.md")
-                    put("mime", "text/plain")
-                    put("bytes", 39_733)
+        val o =
+            buildJsonObject {
+                put("rowId", 282)
+                put("kind", "userInput")
+                put("origin", "realUser")
+                put("text", "针对 https://github.com/wjf1/zcode-dotfiles 的优化提升方案")
+                putJsonArray("attachments") {
+                    addJsonObject {
+                        put("ref", "zcode-artifact://sess_x/tool-result-y")
+                        put("fileName", "master-plan-v1.1.md")
+                        put("mime", "text/plain")
+                        put("bytes", 39_733)
+                    }
                 }
             }
-        }
         val row = ConversationRow.from(o)!!
         assertEquals(1, row.attachments.size)
         assertEquals("master-plan-v1.1.md", row.attachments[0].fileName)
@@ -288,23 +305,36 @@ class PureFunctionsTest {
     @Test
     fun conversationRowAttachmentParsingIsFaultTolerant() {
         // 无附件字段 → 空列表（绝大多数行）
-        val plain = ConversationRow.from(buildJsonObject { put("rowId", 1); put("kind", "userInput") })!!
+        val plain =
+            ConversationRow.from(
+                buildJsonObject {
+                    put("rowId", 1)
+                    put("kind", "userInput")
+                },
+            )!!
         assertTrue(plain.attachments.isEmpty())
         // attachments 不是数组 → 容错为空，不抛异常
-        val notArray = ConversationRow.from(
-            buildJsonObject { put("rowId", 2); put("kind", "userInput"); put("attachments", "oops") },
-        )!!
+        val notArray =
+            ConversationRow.from(
+                buildJsonObject {
+                    put("rowId", 2)
+                    put("kind", "userInput")
+                    put("attachments", "oops")
+                },
+            )!!
         assertTrue(notArray.attachments.isEmpty())
         // 数组里混入垃圾元素 → 跳过垃圾、保留合法项
-        val mixed = ConversationRow.from(
-            buildJsonObject {
-                put("rowId", 3); put("kind", "userInput")
-                putJsonArray("attachments") {
-                    addJsonObject { put("fileName", "ok.txt") }
-                    addJsonObject { /* 全空，应丢弃 */ }
-                }
-            },
-        )!!
+        val mixed =
+            ConversationRow.from(
+                buildJsonObject {
+                    put("rowId", 3)
+                    put("kind", "userInput")
+                    putJsonArray("attachments") {
+                        addJsonObject { put("fileName", "ok.txt") }
+                        addJsonObject { /* 全空，应丢弃 */ }
+                    }
+                },
+            )!!
         assertEquals(1, mixed.attachments.size)
         assertEquals("ok.txt", mixed.attachments[0].fileName)
     }
@@ -314,17 +344,19 @@ class PureFunctionsTest {
     @Test
     fun errorTextPrefersMessageThenDetail() {
         // 形状取自桌面端 tasks-index 的 task meta.lastError 实锤样本
-        val obj = buildJsonObject {
-            put("code", "3009")
-            put("detail", "Turn execution failed\nprovider=… reason=rate_limited status=429 retryable=false")
-            put("message", "模型并发超限，稍后重试")
-        }
+        val obj =
+            buildJsonObject {
+                put("code", "3009")
+                put("detail", "Turn execution failed\nprovider=… reason=rate_limited status=429 retryable=false")
+                put("message", "模型并发超限，稍后重试")
+            }
         assertEquals("模型并发超限，稍后重试", SessionItem.errorText(obj))
         // 没有 message 时退 detail（保留换行的原文）
-        val detailOnly = buildJsonObject {
-            put("code", "3009")
-            put("detail", "Turn execution failed\nreason=rate_limited")
-        }
+        val detailOnly =
+            buildJsonObject {
+                put("code", "3009")
+                put("detail", "Turn execution failed\nreason=rate_limited")
+            }
         assertEquals("Turn execution failed\nreason=rate_limited", SessionItem.errorText(detailOnly))
         // 已是字符串 / null / 空对象
         assertEquals("直接字符串", SessionItem.errorText(kotlinx.serialization.json.JsonPrimitive("直接字符串")))
@@ -350,36 +382,56 @@ class PureFunctionsTest {
 
     @Test
     fun sessionItemParsesLastErrorAndUnwrapsTitle() {
-        val o = buildJsonObject {
-            put("taskId", "sess_x")
-            put("title", """{"title":"真标题"}""")
-            put("displayStatus", "error")
-            put("lastError", buildJsonObject { put("code", "3009"); put("detail", "reason=rate_limited") })
-        }
+        val o =
+            buildJsonObject {
+                put("taskId", "sess_x")
+                put("title", """{"title":"真标题"}""")
+                put("displayStatus", "error")
+                put(
+                    "lastError",
+                    buildJsonObject {
+                        put("code", "3009")
+                        put("detail", "reason=rate_limited")
+                    },
+                )
+            }
         val s = SessionItem.from(o)!!
         assertEquals("真标题", s.title)
         assertEquals("error", s.displayStatus)
         assertEquals("reason=rate_limited", s.lastError)
         // 无 lastError 字段（PROTOCOL.md 记录的 bootstrap 形状）→ null，列表退回只显示「异常」
-        val plain = SessionItem.from(buildJsonObject {
-            put("taskId", "sess_y"); put("title", "t"); put("displayStatus", "error")
-        })!!
+        val plain =
+            SessionItem.from(
+                buildJsonObject {
+                    put("taskId", "sess_y")
+                    put("title", "t")
+                    put("displayStatus", "error")
+                },
+            )!!
         assertNull(plain.lastError)
     }
 
     @Test
     fun parseControlReadsLastError() {
         // 形状见 research/CONVERSATION-PROTOCOL.md:159（健康会话 lastError:null）
-        assertNull(ConversationFrames.parseControl(buildJsonObject {
-            put("phase", "completedSuccess"); put("canStop", false); put("stopState", "idle")
-            put("lastError", JsonNull)
-        })?.lastError)
+        assertNull(
+            ConversationFrames.parseControl(
+                buildJsonObject {
+                    put("phase", "completedSuccess")
+                    put("canStop", false)
+                    put("stopState", "idle")
+                    put("lastError", JsonNull)
+                },
+            )?.lastError,
+        )
         assertEquals(
             "reason=rate_limited",
-            ConversationFrames.parseControl(buildJsonObject {
-                put("phase", "completedError")
-                put("lastError", buildJsonObject { put("detail", "reason=rate_limited") })
-            })?.lastError,
+            ConversationFrames.parseControl(
+                buildJsonObject {
+                    put("phase", "completedError")
+                    put("lastError", buildJsonObject { put("detail", "reason=rate_limited") })
+                },
+            )?.lastError,
         )
         // control 缺失 → 整体为 null
         assertNull(ConversationFrames.parseControl(null))
@@ -477,7 +529,11 @@ class PureFunctionsTest {
         alreadyPinned: Boolean = false,
         userScrolledAway: Boolean = false,
     ) = ConversationScrollPolicy.shouldPinToLatest(
-        trigger, rowCount, paginationInFlight, alreadyPinned, userScrolledAway,
+        trigger,
+        rowCount,
+        paginationInFlight,
+        alreadyPinned,
+        userScrolledAway,
     )
 
     @Test
@@ -551,8 +607,15 @@ class PureFunctionsTest {
         assertEquals("running", displayStatusForPhase("running"))
         assertEquals("running", displayStatusForPhase("streaming"))
         // 非运行相位一律不写回（含 idle 与各种终态），避免覆盖任务事件给的终态
-        for (p in listOf("idle", "waitingUserInput", "completedSuccess", "completedInterrupted",
-                         "completedError", "aborted", "error")) {
+        for (p in listOf(
+            "idle",
+            "waitingUserInput",
+            "completedSuccess",
+            "completedInterrupted",
+            "completedError",
+            "aborted",
+            "error",
+        )) {
             assertNull("相位 $p 不应改状态", displayStatusForPhase(p))
         }
         assertNull(displayStatusForPhase(null))

@@ -18,7 +18,6 @@ import kotlinx.serialization.json.Json
  * 纯函数、零 Android 依赖（不含 Keystore/SharedPreferences），可直接进 JVM 单测。
  */
 internal object DevicesCodec {
-
     @Serializable
     internal data class File(
         val active: String? = null,
@@ -35,20 +34,25 @@ internal object DevicesCodec {
         val pairedAtMs: Long = 0L,
     )
 
-    private val json = Json {
-        ignoreUnknownKeys = true   // 未来加字段时旧版仍能读
-        encodeDefaults = true
-    }
+    private val json =
+        Json {
+            ignoreUnknownKeys = true // 未来加字段时旧版仍能读
+            encodeDefaults = true
+        }
 
     /** 编码为新格式（转义由 kotlinx 保证：引号 / 反斜杠 / 换行 / 控制字符全部正确转义）。 */
-    fun encode(devices: List<PairedDevice>, activeSid: String?): String =
+    fun encode(
+        devices: List<PairedDevice>,
+        activeSid: String?,
+    ): String =
         json.encodeToString(
             File.serializer(),
             File(
                 active = activeSid ?: devices.firstOrNull()?.deviceSid,
-                list = devices.map { d ->
-                    Entry(d.deviceSid, d.passHash, d.deviceMid, d.deviceName, d.remoteUrl, d.pairedAtMs)
-                },
+                list =
+                    devices.map { d ->
+                        Entry(d.deviceSid, d.passHash, d.deviceMid, d.deviceName, d.remoteUrl, d.pairedAtMs)
+                    },
             ),
         )
 
@@ -64,23 +68,26 @@ internal object DevicesCodec {
         runCatching {
             val active = Regex("\"active\":\"([^\"]*)\"").find(raw)?.groupValues?.get(1)
             val listPart = raw.substringAfter("\"list\":[", "").substringBeforeLast("]")
-            val devices = listPart.split("\",\"").mapNotNull { chunk ->
-                val line = chunk.trim().removePrefix("\"").removeSuffix("\"")
-                    .replace("\\\"", "\"").replace("\\\\", "\\")
-                if (line.isBlank()) return@mapNotNull null
-                val p = line.split("\u0001")
-                if (p.size < 5) return@mapNotNull null
-                PairedDevice(p[0], p[1], p[2].ifEmpty { null }, p[3].ifEmpty { null }, p[4])
-            }
+            val devices =
+                listPart.split("\",\"").mapNotNull { chunk ->
+                    val line =
+                        chunk.trim().removePrefix("\"").removeSuffix("\"")
+                            .replace("\\\"", "\"").replace("\\\\", "\\")
+                    if (line.isBlank()) return@mapNotNull null
+                    val p = line.split("\u0001")
+                    if (p.size < 5) return@mapNotNull null
+                    PairedDevice(p[0], p[1], p[2].ifEmpty { null }, p[3].ifEmpty { null }, p[4])
+                }
             devices to active?.ifEmpty { null }
         }.getOrNull()
 
-    private fun Entry.toDevice() = PairedDevice(
-        deviceSid = sid,
-        passHash = hash,
-        deviceMid = mid?.takeIf { it.isNotEmpty() },
-        deviceName = name?.takeIf { it.isNotEmpty() },
-        remoteUrl = url,
-        pairedAtMs = pairedAtMs,
-    )
+    private fun Entry.toDevice() =
+        PairedDevice(
+            deviceSid = sid,
+            passHash = hash,
+            deviceMid = mid?.takeIf { it.isNotEmpty() },
+            deviceName = name?.takeIf { it.isNotEmpty() },
+            remoteUrl = url,
+            pairedAtMs = pairedAtMs,
+        )
 }

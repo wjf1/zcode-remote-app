@@ -17,19 +17,18 @@ import java.net.URI
  * [RelayClient.connect]。校验失败必须拒绝连接，不能降级重试。
  */
 object RelayEndpointValidator {
-
     /** 允许的 scheme（小写）。wss=加密，ws=明文（仅 debug）。 */
     private val ALLOWED_SCHEMES = setOf("wss", "ws")
 
     enum class Reason {
-        BLANK,            // 空串
-        MALFORMED,        // 无法解析
-        NOT_ABSOLUTE,     // 无 scheme（相对路径）
+        BLANK, // 空串
+        MALFORMED, // 无法解析
+        NOT_ABSOLUTE, // 无 scheme（相对路径）
         SCHEME_NOT_ALLOWED, // 非 ws/wss（http/https/自定义……）
-        INSECURE_REJECTED,  // 明文 ws:// 出现在不允许明文的构建
-        MISSING_HOST,     // host 为空
+        INSECURE_REJECTED, // 明文 ws:// 出现在不允许明文的构建
+        MISSING_HOST, // host 为空
         USERINFO_PRESENT, // 携带 userinfo（wss://user:pass@host/ws）
-        PORT_INVALID,     // 端口越界
+        PORT_INVALID, // 端口越界
     }
 
     sealed interface Result {
@@ -44,15 +43,20 @@ object RelayEndpointValidator {
      * @param rawUrl        原始端点（可能来自设置里的「自建中继」或配对推断）
      * @param allowInsecure 是否允许明文 `ws://`（仅 debug 构建传 true）
      */
-    fun validate(rawUrl: String?, allowInsecure: Boolean): Result {
+    fun validate(
+        rawUrl: String?,
+        allowInsecure: Boolean,
+    ): Result {
         val raw = rawUrl?.trim().orEmpty()
         if (raw.isEmpty()) return Result.Rejected(Reason.BLANK, "中继端点为空")
 
-        val uri = runCatching { URI(raw) }.getOrNull()
-            ?: return Result.Rejected(Reason.MALFORMED, "中继端点无法解析")
+        val uri =
+            runCatching { URI(raw) }.getOrNull()
+                ?: return Result.Rejected(Reason.MALFORMED, "中继端点无法解析")
 
-        val scheme = uri.scheme?.lowercase()
-            ?: return Result.Rejected(Reason.NOT_ABSOLUTE, "中继端点缺少 scheme（必须是绝对 wss:// 地址）")
+        val scheme =
+            uri.scheme?.lowercase()
+                ?: return Result.Rejected(Reason.NOT_ABSOLUTE, "中继端点缺少 scheme（必须是绝对 wss:// 地址）")
         if (scheme !in ALLOWED_SCHEMES) {
             return Result.Rejected(Reason.SCHEME_NOT_ALLOWED, "中继端点 scheme 不受支持")
         }
@@ -78,6 +82,8 @@ object RelayEndpointValidator {
     }
 
     /** 便捷判断：端点是否可安全用于当前构建。 */
-    fun isAcceptable(rawUrl: String?, allowInsecure: Boolean): Boolean =
-        validate(rawUrl, allowInsecure) is Result.Ok
+    fun isAcceptable(
+        rawUrl: String?,
+        allowInsecure: Boolean,
+    ): Boolean = validate(rawUrl, allowInsecure) is Result.Ok
 }

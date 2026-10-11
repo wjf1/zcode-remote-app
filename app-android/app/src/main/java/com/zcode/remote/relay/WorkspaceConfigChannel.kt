@@ -5,7 +5,6 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.jsonPrimitive
-import java.util.UUID
 
 /**
  * workspace 级配置订阅（模型目录数据源）：
@@ -21,7 +20,6 @@ import java.util.UUID
  * createSession 的 config 需要拆成 {provider, model} 两段。
  */
 class WorkspaceConfigChannel(private val rpc: RpcChannel) {
-
     /** 模型目录条目（与 ConversationChannel.ModelConfig 同构，避免跨层依赖）。 */
     data class ModelOption(
         val value: String,
@@ -54,15 +52,22 @@ class WorkspaceConfigChannel(private val rpc: RpcChannel) {
     private var subscriptionId: String? = null
 
     /** 开桥后按当前工作区订阅一次（会话切换无需重订，幂等：已订阅直接跳过）。 */
-    fun subscribe(workspacePath: String, workspaceIdentity: String?) {
-        if (listenId != null) return   // conv.status 会多次发射 Live，避免重复 listen 泄漏
-        val target = buildMap<String, Any> {
-            put("workspacePath", workspacePath)
-            workspaceIdentity?.let { put("workspaceIdentity", it) }
-        }
+    fun subscribe(
+        workspacePath: String,
+        workspaceIdentity: String?,
+    ) {
+        if (listenId != null) return // conv.status 会多次发射 Live，避免重复 listen 泄漏
+        val target =
+            buildMap<String, Any> {
+                put("workspacePath", workspacePath)
+                workspaceIdentity?.let { put("workspaceIdentity", it) }
+            }
         listenId = rpc.listen(RpcChannel.CHANNEL_AGENT, "onDynamicWorkspaceConfigFrame", target)
-        rpc.call(RpcChannel.CHANNEL_AGENT, "subscribeWorkspaceConfigV4",
-            listOf(target + mapOf("runtimePolicy" to "existing-only"))) { reply ->
+        rpc.call(
+            RpcChannel.CHANNEL_AGENT,
+            "subscribeWorkspaceConfigV4",
+            listOf(target + mapOf("runtimePolicy" to "existing-only")),
+        ) { reply ->
             when (reply) {
                 is RpcChannel.RpcReply.Ok -> {
                     val root = reply.data as? JsonObject
@@ -77,10 +82,14 @@ class WorkspaceConfigChannel(private val rpc: RpcChannel) {
     }
 
     /** 已订阅但 snapshot 未到时的兜底：让服务端重推一次 workspace-config 全量帧。 */
-    fun resync(workspacePath: String, onDone: () -> Unit = {}) {
-        val target = buildMap<String, Any> {
-            put("workspacePath", workspacePath)
-        }
+    fun resync(
+        workspacePath: String,
+        onDone: () -> Unit = {},
+    ) {
+        val target =
+            buildMap<String, Any> {
+                put("workspacePath", workspacePath)
+            }
         rpc.call(RpcChannel.CHANNEL_AGENT, "resyncWorkspaceConfigV4", listOf(target)) { reply ->
             when (reply) {
                 is RpcChannel.RpcReply.Err ->
@@ -111,22 +120,27 @@ class WorkspaceConfigChannel(private val rpc: RpcChannel) {
                 applyOptions(cfg?.get("configOptions"), "snapshot")
             }
             "deltas" -> {
-                val deltas = frame.payload["deltas"]?.let {
-                    runCatching { it as? kotlinx.serialization.json.JsonArray }.getOrNull()
-                } ?: return
+                val deltas =
+                    frame.payload["deltas"]?.let {
+                        runCatching { it as? kotlinx.serialization.json.JsonArray }.getOrNull()
+                    } ?: return
                 for (d in deltas) {
                     val o = d as? JsonObject ?: continue
                     val patch = o["patch"] as? JsonObject ?: continue
-                    val opts = patch["configOptions"]
-                        ?: (patch["config"] as? JsonObject)?.get("configOptions")
-                        ?: ((patch["snapshot"] as? JsonObject)?.get("config") as? JsonObject)?.get("configOptions")
+                    val opts =
+                        patch["configOptions"]
+                            ?: (patch["config"] as? JsonObject)?.get("configOptions")
+                            ?: ((patch["snapshot"] as? JsonObject)?.get("config") as? JsonObject)?.get("configOptions")
                     if (opts != null) applyOptions(opts, "deltas")
                 }
             }
         }
     }
 
-    private fun applyOptions(raw: kotlinx.serialization.json.JsonElement?, source: String) {
+    private fun applyOptions(
+        raw: kotlinx.serialization.json.JsonElement?,
+        source: String,
+    ) {
         val arr = raw as? kotlinx.serialization.json.JsonArray ?: return
         for (item in arr) {
             val o = item as? JsonObject ?: continue
@@ -143,7 +157,7 @@ class WorkspaceConfigChannel(private val rpc: RpcChannel) {
                         name = opt.str("name") ?: value,
                         providerId = opt.str("modelProviderId"),
                         providerName = opt.str("modelProviderName"),
-                    )
+                    ),
                 )
             }
             _state.value = WorkspaceState(currentValue = currentValue, models = models)
@@ -160,17 +174,16 @@ class WorkspaceConfigChannel(private val rpc: RpcChannel) {
 
     companion object {
         private const val TAG = "WorkspaceConfig"
-        private const val FALLBACK_PROVIDER = "glm"   // 官方 pf() 无斜杠时的兜底 providerId
+        private const val FALLBACK_PROVIDER = "glm" // 官方 pf() 无斜杠时的兜底 providerId
 
-        private fun JsonObject.str(k: String): String? =
-            this[k]?.let { runCatching { it.jsonPrimitive.content }.getOrNull() }
+        private fun JsonObject.str(k: String): String? = this[k]?.let { runCatching { it.jsonPrimitive.content }.getOrNull() }
 
         /** 供 createSession config 使用：把 value 拆成 (providerId, modelId)。 */
         fun splitModelValue(value: String): Pair<String, String> {
             if (!value.contains('/')) return FALLBACK_PROVIDER to value
             val pid = value.substringBefore('/')
             val mid = value.substringAfter('/')
-            return pid to (mid.substringBefore('$'))   // 剥离 $variant
+            return pid to (mid.substringBefore('$')) // 剥离 $variant
         }
     }
 }

@@ -10,7 +10,6 @@ import android.content.Context
  * 明文令牌不再落任何 SharedPreferences；旧明文由 SettingsStore 首次读取时迁移并删除。
  */
 class TokenStore(context: Context) {
-
     private val prefs = context.getSharedPreferences("zcode_credentials", Context.MODE_PRIVATE)
     private val crypto = CredentialCrypto()
 

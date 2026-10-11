@@ -22,9 +22,10 @@ import org.junit.Test
  * 不该移除时移除 → 用户刚发的消息从界面上消失（比「按了没反应」更糟）。
  */
 class AppViewModelTest {
-
-    private fun pending(id: Long, text: String) =
-        ConversationRepository.PendingUserMessage(id, text, emptyList())
+    private fun pending(
+        id: Long,
+        text: String,
+    ) = ConversationRepository.PendingUserMessage(id, text, emptyList())
 
     @Test
     fun matchingEcho_removesOldestPending() {

@@ -82,10 +82,11 @@ fun SessionStatusPanel(
         ) {
             Text(
                 text = "会话状态",
-                style = MaterialTheme.typography.titleSmall.copy(
-                    fontSize = ZCodeType.Lg,
-                    fontWeight = ZCodeType.SemiBold,
-                ),
+                style =
+                    MaterialTheme.typography.titleSmall.copy(
+                        fontSize = ZCodeType.Lg,
+                        fontWeight = ZCodeType.SemiBold,
+                    ),
                 modifier = Modifier.weight(1f),
             )
             IconButton(onClick = onClose, modifier = Modifier.size(36.dp)) {
@@ -99,12 +100,13 @@ fun SessionStatusPanel(
         // 让所有分区共用这一个滚动宿主。否则每个分区自带一层 verticalScroll，
         // 同一方向嵌套滚动会触发 Compose 运行时告警，手指也分不清滚的是哪一层。
         Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .heightIn(max = 520.dp)
-                .verticalScroll(rememberScrollState())
-                .padding(horizontal = ZCodeDimens.PadInline)
-                .padding(bottom = ZCodeDimens.PadWide),
+            modifier =
+                Modifier
+                    .fillMaxWidth()
+                    .heightIn(max = 520.dp)
+                    .verticalScroll(rememberScrollState())
+                    .padding(horizontal = ZCodeDimens.PadInline)
+                    .padding(bottom = ZCodeDimens.PadWide),
             verticalArrangement = Arrangement.spacedBy(ZCodeDimens.GapTight),
         ) {
             val usage = state.usage
@@ -205,10 +207,11 @@ private fun SessionStatusSection(
             if (summary != null) {
                 Text(
                     text = summary,
-                    style = MaterialTheme.typography.labelSmall.copy(
-                        fontSize = ZCodeType.Sm,
-                        fontWeight = ZCodeType.Medium,
-                    ),
+                    style =
+                        MaterialTheme.typography.labelSmall.copy(
+                            fontSize = ZCodeType.Sm,
+                            fontWeight = ZCodeType.Medium,
+                        ),
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     maxLines = 1,
                 )
@@ -267,10 +270,11 @@ private fun ContextSection(usage: ConversationFrames.ContextUsage) {
             Spacer(Modifier.height(ZCodeDimens.GapTight))
             Text(
                 text = "上下文来源",
-                style = MaterialTheme.typography.labelSmall.copy(
-                    fontSize = ZCodeType.Sm,
-                    fontWeight = ZCodeType.SemiBold,
-                ),
+                style =
+                    MaterialTheme.typography.labelSmall.copy(
+                        fontSize = ZCodeType.Sm,
+                        fontWeight = ZCodeType.SemiBold,
+                    ),
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
             slices.forEach { slice ->
@@ -383,11 +387,12 @@ private fun PlanTodoLine(todo: ConversationFrames.PlanTodo) {
         Text(
             text = todo.content,
             style = MaterialTheme.typography.bodySmall.copy(fontSize = ZCodeType.Caption),
-            color = if (todo.isCompleted) {
-                MaterialTheme.colorScheme.onSurfaceVariant
-            } else {
-                MaterialTheme.colorScheme.onSurface
-            },
+            color =
+                if (todo.isCompleted) {
+                    MaterialTheme.colorScheme.onSurfaceVariant
+                } else {
+                    MaterialTheme.colorScheme.onSurface
+                },
             modifier = Modifier.weight(1f),
         )
     }
@@ -395,7 +400,10 @@ private fun PlanTodoLine(todo: ConversationFrames.PlanTodo) {
 
 /** 折叠提示行（`已完成 4 项` / `后面 2 项` / `收起`），点击展开或收起。 */
 @Composable
-private fun FoldHint(text: String, onClick: () -> Unit) {
+private fun FoldHint(
+    text: String,
+    onClick: () -> Unit,
+) {
     Surface(
         onClick = onClick,
         color = androidx.compose.ui.graphics.Color.Transparent,
@@ -519,7 +527,10 @@ private fun rememberTickingNow(enabled: Boolean): Long {
  * ——那属于队列控制命令，超出本轮「纯只读面板」的边界。
  */
 @Composable
-fun QueuePendingStrip(itemCount: Int, modifier: Modifier = Modifier) {
+fun QueuePendingStrip(
+    itemCount: Int,
+    modifier: Modifier = Modifier,
+) {
     val label = StatusPanelLabels.queueLabel(itemCount) ?: return
     Surface(
         shape = RoundedCornerShape(ZCodeDimens.RadiusMd),
@@ -532,16 +543,18 @@ fun QueuePendingStrip(itemCount: Int, modifier: Modifier = Modifier) {
             modifier = Modifier.padding(horizontal = ZCodeDimens.PadBlock, vertical = 6.dp),
         ) {
             Box(
-                modifier = Modifier
-                    .size(6.dp)
-                    .background(statusPendingTone(), shape = RoundedCornerShape(3.dp)),
+                modifier =
+                    Modifier
+                        .size(6.dp)
+                        .background(statusPendingTone(), shape = RoundedCornerShape(3.dp)),
             )
             Text(
                 text = label,
-                style = MaterialTheme.typography.labelSmall.copy(
-                    fontSize = ZCodeType.Sm,
-                    fontWeight = FontWeight.Medium,
-                ),
+                style =
+                    MaterialTheme.typography.labelSmall.copy(
+                        fontSize = ZCodeType.Sm,
+                        fontWeight = FontWeight.Medium,
+                    ),
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
         }

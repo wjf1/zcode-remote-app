@@ -14,18 +14,18 @@ import java.net.URI
  * 调用点一律用这些 helper 生成日志文案，禁止再拼接原始值。
  */
 object LogRedactor {
-
     private const val ELLIPSIS = "…"
 
     /**
      * 标识符（SID / hash / subscriptionId / interactionId …）只保留长度，不保留任何字符。
      * 例：`maskId("sid_abcdef") == "…(10)"`。
      */
-    fun maskId(raw: String?): String = when {
-        raw == null -> "null"
-        raw.isEmpty() -> "empty"
-        else -> "$ELLIPSIS(${raw.length})"
-    }
+    fun maskId(raw: String?): String =
+        when {
+            raw == null -> "null"
+            raw.isEmpty() -> "empty"
+            else -> "$ELLIPSIS(${raw.length})"
+        }
 
     /**
      * 文件 / 工作区路径：只保留长度，绝不输出任何路径分量（目录名/文件名本身就是敏感信息）。

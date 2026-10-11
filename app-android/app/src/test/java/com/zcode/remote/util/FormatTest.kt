@@ -12,7 +12,6 @@ import org.junit.Test
  * 表现是界面上出现「0 秒」「101%」「已工作 」这类脏文案，而项目没有 UI 自动化测试能兜住。
  */
 class FormatTest {
-
     // ---------- compactNumber ----------
 
     @Test

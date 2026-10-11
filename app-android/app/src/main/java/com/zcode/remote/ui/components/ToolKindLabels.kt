@@ -44,49 +44,51 @@ enum class ToolStatus { Pending, Running, Completed, Failed, Denied, Stopped, Un
  * 全部为纯函数，无 Compose 依赖，便于单测。
  */
 object ToolKindLabels {
-
     /**
      * 桌面端 `wE` 精确匹配表（键为规范名小写）。
      *
      * 桌面用「规范名表 + 小写索引」做大小写不敏感精确匹配，命中即返回、不走正则兜底。
      */
-    private val EXACT: Map<String, ToolFamily> = mapOf(
-        "read" to ToolFamily.FileRead,
-        "write" to ToolFamily.FileWrite,
-        "edit" to ToolFamily.FileWrite,
-        "applypatch" to ToolFamily.FileWrite,
-        "bash" to ToolFamily.Shell,
-        "glob" to ToolFamily.Search,
-        "grep" to ToolFamily.Search,
-        "webfetch" to ToolFamily.Search,
-        "websearch" to ToolFamily.Search,
-        "web_search" to ToolFamily.Search,
-        "todoread" to ToolFamily.Todo,
-        "todowrite" to ToolFamily.Todo,
-        "goalread" to ToolFamily.Goal,
-        "readsessioncontext" to ToolFamily.SessionContext,
-        "askuserquestion" to ToolFamily.AskUserQuestion,
-        "sendmessage" to ToolFamily.Message,
-        "respondtocoordinator" to ToolFamily.Message,
-        "taskoutput" to ToolFamily.TaskControl,
-        "taskstop" to ToolFamily.TaskControl,
-        "js" to ToolFamily.NodeRepl,
-        "js_reset" to ToolFamily.NodeRepl,
-        "js_add_node_module_dir" to ToolFamily.NodeRepl,
-        "agent" to ToolFamily.Agent,
-        "task" to ToolFamily.Agent,
-        "subagent" to ToolFamily.Agent,
-        "skill" to ToolFamily.Skill,
-    )
+    private val EXACT: Map<String, ToolFamily> =
+        mapOf(
+            "read" to ToolFamily.FileRead,
+            "write" to ToolFamily.FileWrite,
+            "edit" to ToolFamily.FileWrite,
+            "applypatch" to ToolFamily.FileWrite,
+            "bash" to ToolFamily.Shell,
+            "glob" to ToolFamily.Search,
+            "grep" to ToolFamily.Search,
+            "webfetch" to ToolFamily.Search,
+            "websearch" to ToolFamily.Search,
+            "web_search" to ToolFamily.Search,
+            "todoread" to ToolFamily.Todo,
+            "todowrite" to ToolFamily.Todo,
+            "goalread" to ToolFamily.Goal,
+            "readsessioncontext" to ToolFamily.SessionContext,
+            "askuserquestion" to ToolFamily.AskUserQuestion,
+            "sendmessage" to ToolFamily.Message,
+            "respondtocoordinator" to ToolFamily.Message,
+            "taskoutput" to ToolFamily.TaskControl,
+            "taskstop" to ToolFamily.TaskControl,
+            "js" to ToolFamily.NodeRepl,
+            "js_reset" to ToolFamily.NodeRepl,
+            "js_add_node_module_dir" to ToolFamily.NodeRepl,
+            "agent" to ToolFamily.Agent,
+            "task" to ToolFamily.Agent,
+            "subagent" to ToolFamily.Agent,
+            "skill" to ToolFamily.Skill,
+        )
 
     /** 桌面端 `hg` 兜底正则，顺序与桌面一致（先命中先返回）。 */
-    private val FALLBACK: List<Pair<Regex, ToolFamily>> = listOf(
-        Regex("^(?:read|view|open|cat|head|tail|read_file)(?:_|$)") to ToolFamily.FileRead,
-        Regex("(?:^|_)(?:edit|patch|replace|multi_edit|multiedit|write|create|save|apply_patch)(?:_|$)") to ToolFamily.FileWrite,
-        Regex("^(?:execute|run|exec|bash|shell|command|terminal)(?:_|$)") to ToolFamily.Shell,
-        Regex("^(?:search|grep|find|fetch|web_search|web_fetch|webfetch|query|lookup|glob|list|ls|dir|tree)(?:_|$)") to ToolFamily.Search,
-        Regex("^(?:explore|inspect)(?:_|$)") to ToolFamily.Explore,
-    )
+    private val FALLBACK: List<Pair<Regex, ToolFamily>> =
+        listOf(
+            Regex("^(?:read|view|open|cat|head|tail|read_file)(?:_|$)") to ToolFamily.FileRead,
+            Regex("(?:^|_)(?:edit|patch|replace|multi_edit|multiedit|write|create|save|apply_patch)(?:_|$)") to ToolFamily.FileWrite,
+            Regex("^(?:execute|run|exec|bash|shell|command|terminal)(?:_|$)") to ToolFamily.Shell,
+            Regex("^(?:search|grep|find|fetch|web_search|web_fetch|webfetch|query|lookup|glob|list|ls|dir|tree)(?:_|$)")
+                to ToolFamily.Search,
+            Regex("^(?:explore|inspect)(?:_|$)") to ToolFamily.Explore,
+        )
 
     /** 归一化用：连续空白折叠为单个下划线。 */
     private val WHITESPACE = Regex("\\s+")
@@ -94,7 +96,10 @@ object ToolKindLabels {
     /**
      * 解析工具家族。`toolName` 为空时退回 `kind`（桌面同样把 kind 当作 toolName 用）。
      */
-    fun familyFor(toolName: String?, kind: String? = null): ToolFamily {
+    fun familyFor(
+        toolName: String?,
+        kind: String? = null,
+    ): ToolFamily {
         val raw = toolName?.trim().orEmpty().ifEmpty { kind?.trim().orEmpty() }
         if (raw.isEmpty()) return ToolFamily.Unknown
 
@@ -122,43 +127,52 @@ object ToolKindLabels {
     /**
      * 类型标签（非运行态）。对应桌面端 `chat.toolCall.kind.*`。
      */
-    fun label(family: ToolFamily, toolName: String? = null): String = when (family) {
-        ToolFamily.FileRead -> "读取"
-        ToolFamily.FileWrite -> fileWriteLabel(toolName)
-        ToolFamily.Shell -> "终端"
-        ToolFamily.Search -> "搜索"
-        ToolFamily.Todo -> "待办"
-        ToolFamily.Goal -> "目标"
-        ToolFamily.Explore -> "查阅"
-        ToolFamily.SessionContext -> "上下文"
-        ToolFamily.AskUserQuestion -> "询问"
-        ToolFamily.Message -> "消息"
-        ToolFamily.TaskControl -> "任务"
-        ToolFamily.NodeRepl -> "Node.js"
-        ToolFamily.Agent -> "子智能体"
-        ToolFamily.Skill -> "技能"
-        ToolFamily.Unknown -> "工具"
-    }
+    fun label(
+        family: ToolFamily,
+        toolName: String? = null,
+    ): String =
+        when (family) {
+            ToolFamily.FileRead -> "读取"
+            ToolFamily.FileWrite -> fileWriteLabel(toolName)
+            ToolFamily.Shell -> "终端"
+            ToolFamily.Search -> "搜索"
+            ToolFamily.Todo -> "待办"
+            ToolFamily.Goal -> "目标"
+            ToolFamily.Explore -> "查阅"
+            ToolFamily.SessionContext -> "上下文"
+            ToolFamily.AskUserQuestion -> "询问"
+            ToolFamily.Message -> "消息"
+            ToolFamily.TaskControl -> "任务"
+            ToolFamily.NodeRepl -> "Node.js"
+            ToolFamily.Agent -> "子智能体"
+            ToolFamily.Skill -> "技能"
+            ToolFamily.Unknown -> "工具"
+        }
 
     /**
      * 运行态类型标签。桌面在 running 时把标签整体换成「正在…」措辞。
      * 未定义运行态措辞的家族（如子智能体）沿用非运行态文案。
      */
-    fun runningLabel(family: ToolFamily, toolName: String? = null): String = when (family) {
-        ToolFamily.FileRead -> "正在读取"
-        ToolFamily.FileWrite -> when (fileWriteVerb(toolName)) {
-            FileWriteVerb.Write -> "正在写入"
-            FileWriteVerb.Edit -> "正在编辑"
-            FileWriteVerb.Delete -> "正在删除"
+    fun runningLabel(
+        family: ToolFamily,
+        toolName: String? = null,
+    ): String =
+        when (family) {
+            ToolFamily.FileRead -> "正在读取"
+            ToolFamily.FileWrite ->
+                when (fileWriteVerb(toolName)) {
+                    FileWriteVerb.Write -> "正在写入"
+                    FileWriteVerb.Edit -> "正在编辑"
+                    FileWriteVerb.Delete -> "正在删除"
+                }
+            ToolFamily.Shell -> "正在执行"
+            ToolFamily.Search -> "正在搜索"
+            ToolFamily.Todo -> "正在更新待办"
+            ToolFamily.SessionContext -> "正在读取上下文"
+            ToolFamily.AskUserQuestion -> "正在询问"
+            ToolFamily.Skill -> "正在运行技能"
+            else -> label(family, toolName)
         }
-        ToolFamily.Shell -> "正在执行"
-        ToolFamily.Search -> "正在搜索"
-        ToolFamily.Todo -> "正在更新待办"
-        ToolFamily.SessionContext -> "正在读取上下文"
-        ToolFamily.AskUserQuestion -> "正在询问"
-        ToolFamily.Skill -> "正在运行技能"
-        else -> label(family, toolName)
-    }
 
     private enum class FileWriteVerb { Write, Edit, Delete }
 
@@ -173,11 +187,12 @@ object ToolKindLabels {
         }
     }
 
-    private fun fileWriteLabel(toolName: String?): String = when (fileWriteVerb(toolName)) {
-        FileWriteVerb.Write -> "写入"
-        FileWriteVerb.Edit -> "编辑"
-        FileWriteVerb.Delete -> "删除"
-    }
+    private fun fileWriteLabel(toolName: String?): String =
+        when (fileWriteVerb(toolName)) {
+            FileWriteVerb.Write -> "写入"
+            FileWriteVerb.Edit -> "编辑"
+            FileWriteVerb.Delete -> "删除"
+        }
 
     /**
      * 状态归一化，同时接受桌面行内 status 与 wire status 两套命名。
@@ -198,15 +213,16 @@ object ToolKindLabels {
     }
 
     /** 状态中文文案。`Unknown` 返回 null，表示不渲染状态字。 */
-    fun statusLabel(status: ToolStatus): String? = when (status) {
-        ToolStatus.Pending -> "等待中"
-        ToolStatus.Running -> "执行中"
-        ToolStatus.Completed -> "已执行"
-        ToolStatus.Failed -> "执行失败"
-        ToolStatus.Denied -> "已拒绝"
-        ToolStatus.Stopped -> "已停止"
-        ToolStatus.Unknown -> null
-    }
+    fun statusLabel(status: ToolStatus): String? =
+        when (status) {
+            ToolStatus.Pending -> "等待中"
+            ToolStatus.Running -> "执行中"
+            ToolStatus.Completed -> "已执行"
+            ToolStatus.Failed -> "执行失败"
+            ToolStatus.Denied -> "已拒绝"
+            ToolStatus.Stopped -> "已停止"
+            ToolStatus.Unknown -> null
+        }
 
     /** 便捷组合：从原始字符串直达中文状态文案。 */
     fun statusLabel(raw: String?): String? = statusLabel(normalizeStatus(raw))
@@ -228,8 +244,9 @@ object ToolKindLabels {
 
         return when (family) {
             ToolFamily.FileRead -> {
-                val path = firstString(input, "file_path", "filePath", "path")
-                    ?: cleanTitle
+                val path =
+                    firstString(input, "file_path", "filePath", "path")
+                        ?: cleanTitle
                 path?.let { basename(it) }
             }
 
@@ -245,28 +262,31 @@ object ToolKindLabels {
 
             ToolFamily.Shell -> shellCommand(input) ?: cleanTitle
 
-            else -> cleanTitle
-                ?: toolName?.trim()?.takeIf { it.isNotEmpty() }
-                ?: kind?.trim()?.takeIf { it.isNotEmpty() }
+            else ->
+                cleanTitle
+                    ?: toolName?.trim()?.takeIf { it.isNotEmpty() }
+                    ?: kind?.trim()?.takeIf { it.isNotEmpty() }
         }
     }
 
     /** 桌面端 `QW`：shell 命令提取（数组取 `-lc` 之后一项，否则空格拼接）。 */
     private fun shellCommand(input: JsonObject?): String? {
-        val node = input?.get("command")
-            ?: input?.get("cmd")
-            ?: input?.get("script")
-            ?: input?.get("parsed_cmd")
-            ?: return null
-        val text = when (node) {
-            is JsonPrimitive -> node.contentOrNullSafe()
-            is JsonArray -> {
-                val parts = node.mapNotNull { (it as? JsonPrimitive)?.contentOrNullSafe() }
-                val lc = parts.indexOf("-lc")
-                if (lc >= 0 && lc + 1 < parts.size) parts[lc + 1] else parts.joinToString(" ")
+        val node =
+            input?.get("command")
+                ?: input?.get("cmd")
+                ?: input?.get("script")
+                ?: input?.get("parsed_cmd")
+                ?: return null
+        val text =
+            when (node) {
+                is JsonPrimitive -> node.contentOrNullSafe()
+                is JsonArray -> {
+                    val parts = node.mapNotNull { (it as? JsonPrimitive)?.contentOrNullSafe() }
+                    val lc = parts.indexOf("-lc")
+                    if (lc >= 0 && lc + 1 < parts.size) parts[lc + 1] else parts.joinToString(" ")
+                }
+                else -> null
             }
-            else -> null
-        }
         // 命令行常带换行与多层缩进，压成单行才是桌面上的观感
         return text?.replace(Regex("\\s+"), " ")?.trim()?.takeIf { it.isNotEmpty() }
     }
@@ -287,7 +307,11 @@ object ToolKindLabels {
         firstString(parseObject(inputJson), "file_path", "filePath", "path", "notebook_path")
             ?.let { basename(it) }
 
-    private val json = Json { ignoreUnknownKeys = true; isLenient = true }
+    private val json =
+        Json {
+            ignoreUnknownKeys = true
+            isLenient = true
+        }
 
     private fun parseObject(text: String?): JsonObject? {
         val body = text?.trim()
@@ -295,7 +319,10 @@ object ToolKindLabels {
         return runCatching { json.parseToJsonElement(body) as? JsonObject }.getOrNull()
     }
 
-    private fun firstString(obj: JsonObject?, vararg keys: String): String? {
+    private fun firstString(
+        obj: JsonObject?,
+        vararg keys: String,
+    ): String? {
         if (obj == null) return null
         keys.forEach { key ->
             val value = (obj[key] as? JsonPrimitive)?.contentOrNullSafe()
@@ -305,6 +332,5 @@ object ToolKindLabels {
     }
 
     /** `JsonPrimitive.content` 对 JsonNull 会抛错，这里做一次兜底。 */
-    private fun JsonPrimitive.contentOrNullSafe(): String? =
-        runCatching { content }.getOrNull()?.takeIf { it.isNotEmpty() }
+    private fun JsonPrimitive.contentOrNullSafe(): String? = runCatching { content }.getOrNull()?.takeIf { it.isNotEmpty() }
 }

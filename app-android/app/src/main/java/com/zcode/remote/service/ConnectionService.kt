@@ -24,18 +24,21 @@ import android.os.IBinder
  * 系统重启本服务（START_STICKY）后，由用户下次打开 App 时经 VM 重连。
  */
 class ConnectionService : Service() {
-
     override fun onCreate() {
         super.onCreate()
         val nm = getSystemService(NotificationManager::class.java)
         nm.createNotificationChannel(
             NotificationChannel(CHANNEL_ID, "ZCode 连接", NotificationManager.IMPORTANCE_LOW)
-                .apply { setShowBadge(false) }
+                .apply { setShowBadge(false) },
         )
         startForegroundCompat()
     }
 
-    override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int = START_STICKY
+    override fun onStartCommand(
+        intent: Intent?,
+        flags: Int,
+        startId: Int,
+    ): Int = START_STICKY
 
     override fun onBind(intent: Intent?): IBinder? = null
 
@@ -50,7 +53,10 @@ class ConnectionService : Service() {
     }
 
     /** Android 15 前台服务超时兜底（specialUse 正常不触发；触发则主动让位，避免被系统强杀崩溃）。 */
-    override fun onTimeout(startId: Int, fgsType: Int) {
+    override fun onTimeout(
+        startId: Int,
+        fgsType: Int,
+    ) {
         stopSelf()
     }
 
@@ -74,8 +80,9 @@ class ConnectionService : Service() {
     companion object {
         private const val CHANNEL_ID = "connection"
         private const val NOTIFY_ID = 1
-        fun start(context: Context) =
-            context.startForegroundService(Intent(context, ConnectionService::class.java))
+
+        fun start(context: Context) = context.startForegroundService(Intent(context, ConnectionService::class.java))
+
         fun stop(context: Context) = context.stopService(Intent(context, ConnectionService::class.java))
     }
 }

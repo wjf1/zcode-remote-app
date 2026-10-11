@@ -11,33 +11,32 @@ import androidx.compose.animation.fadeOut
 import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
-import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.AttachFile
-import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.Build
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Email
 import androidx.compose.material.icons.filled.Face
 import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.Info
+import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.List
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.Person
@@ -59,10 +58,10 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalHapticFeedback
-import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -117,8 +116,7 @@ internal fun RowItem(
 }
 
 /** 折叠状态在屏幕层的键：工具行用 `toolCallId`（跨重放稳定），其余行退化为 `kind:rowId`。 */
-internal fun rowExpandKey(row: ConversationRow): String =
-    row.toolCallId?.takeIf { it.isNotBlank() } ?: "${row.kind}:${row.rowId}"
+internal fun rowExpandKey(row: ConversationRow): String = row.toolCallId?.takeIf { it.isNotBlank() } ?: "${row.kind}:${row.rowId}"
 
 /**
  * 用户消息：附件 chip（若有）在气泡上方，整体右对齐。
@@ -179,22 +177,24 @@ private fun UserBubble(row: ConversationRow) {
         }
         Surface(
             modifier = Modifier.widthIn(max = maxWidth),
-            shape = RoundedCornerShape(
-                topStart = ZCodeDimens.RadiusXl,
-                topEnd = ZCodeDimens.RadiusTail,
-                bottomStart = ZCodeDimens.RadiusXl,
-                bottomEnd = ZCodeDimens.RadiusXl,
-            ),
+            shape =
+                RoundedCornerShape(
+                    topStart = ZCodeDimens.RadiusXl,
+                    topEnd = ZCodeDimens.RadiusTail,
+                    bottomStart = ZCodeDimens.RadiusXl,
+                    bottomEnd = ZCodeDimens.RadiusXl,
+                ),
             color = bubbleBg,
             border = BorderStroke(1.dp, bubbleBorder),
         ) {
             Text(
                 text = row.text.orEmpty(),
-                style = MaterialTheme.typography.bodyMedium.copy(
-                    fontSize = ZCodeType.Base,
-                    lineHeight = ZCodeType.BodyLineHeight,
-                    color = MaterialTheme.colorScheme.onSurface,
-                ),
+                style =
+                    MaterialTheme.typography.bodyMedium.copy(
+                        fontSize = ZCodeType.Base,
+                        lineHeight = ZCodeType.BodyLineHeight,
+                        color = MaterialTheme.colorScheme.onSurface,
+                    ),
                 modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
             )
         }
@@ -235,23 +235,25 @@ internal fun PendingUserBubble(p: ConversationRepository.PendingUserMessage) {
         }
         Surface(
             modifier = Modifier.widthIn(max = maxWidth),
-            shape = RoundedCornerShape(
-                topStart = ZCodeDimens.RadiusXl,
-                topEnd = ZCodeDimens.RadiusTail,
-                bottomStart = ZCodeDimens.RadiusXl,
-                bottomEnd = ZCodeDimens.RadiusXl,
-            ),
+            shape =
+                RoundedCornerShape(
+                    topStart = ZCodeDimens.RadiusXl,
+                    topEnd = ZCodeDimens.RadiusTail,
+                    bottomStart = ZCodeDimens.RadiusXl,
+                    bottomEnd = ZCodeDimens.RadiusXl,
+                ),
             color = bubbleBg.copy(alpha = 0.6f),
             border = BorderStroke(1.dp, bubbleBorder),
         ) {
             Column(modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp)) {
                 Text(
                     text = p.text,
-                    style = MaterialTheme.typography.bodyMedium.copy(
-                        fontSize = ZCodeType.Base,
-                        lineHeight = ZCodeType.BodyLineHeight,
-                        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.75f),
-                    ),
+                    style =
+                        MaterialTheme.typography.bodyMedium.copy(
+                            fontSize = ZCodeType.Base,
+                            lineHeight = ZCodeType.BodyLineHeight,
+                            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.75f),
+                        ),
                 )
                 Spacer(Modifier.height(2.dp))
                 Text(
@@ -271,11 +273,12 @@ internal fun PendingUserBubble(p: ConversationRepository.PendingUserMessage) {
 @Composable
 private fun AssistantText(row: ConversationRow) {
     Column(
-        modifier = Modifier
-            .fillMaxWidth()
-            // 与上一行的呼吸感：桌面端是 gap-5（20px），这里补在行内，
-            // LazyColumn 的 spacedBy(8dp) 只负责行间基础间距。
-            .padding(top = ZCodeDimens.GapTurn),
+        modifier =
+            Modifier
+                .fillMaxWidth()
+                // 与上一行的呼吸感：桌面端是 gap-5（20px），这里补在行内，
+                // LazyColumn 的 spacedBy(8dp) 只负责行间基础间距。
+                .padding(top = ZCodeDimens.GapTurn),
     ) {
         MarkdownView(
             markdown = row.text.orEmpty(),
@@ -286,10 +289,11 @@ private fun AssistantText(row: ConversationRow) {
             Spacer(Modifier.height(ZCodeDimens.GapInline))
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Box(
-                    modifier = Modifier
-                        .size(6.dp)
-                        .clip(CircleShape)
-                        .background(MaterialTheme.colorScheme.primary)
+                    modifier =
+                        Modifier
+                            .size(6.dp)
+                            .clip(CircleShape)
+                            .background(MaterialTheme.colorScheme.primary),
                 )
                 Spacer(Modifier.width(6.dp))
                 ShimmerText(
@@ -326,19 +330,21 @@ private fun ReasoningBlock(
         onToggle = onToggleExpand,
         leading = {
             Box(
-                modifier = Modifier
-                    .size(6.dp)
-                    .clip(CircleShape)
-                    .background(tone)
+                modifier =
+                    Modifier
+                        .size(6.dp)
+                        .clip(CircleShape)
+                        .background(tone),
             )
         },
         label = {
             Text(
                 text = if (worked.isEmpty()) "思考" else "思考 · 持续了 $worked",
-                style = MaterialTheme.typography.labelSmall.copy(
-                    fontSize = ZCodeType.Sm,
-                    fontWeight = ZCodeType.Medium,
-                ),
+                style =
+                    MaterialTheme.typography.labelSmall.copy(
+                        fontSize = ZCodeType.Sm,
+                        fontWeight = ZCodeType.Medium,
+                    ),
                 color = tone,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
@@ -424,23 +430,26 @@ private fun ToolCallRow(
 
     val family = ToolKindLabels.familyFor(row.toolName, row.kind)
     val status = ToolKindLabels.normalizeStatus(row.status)
-    val label = if (status == ToolStatus.Running) {
-        ToolKindLabels.runningLabel(family, row.toolName)
-    } else {
-        ToolKindLabels.label(family, row.toolName)
-    }
+    val label =
+        if (status == ToolStatus.Running) {
+            ToolKindLabels.runningLabel(family, row.toolName)
+        } else {
+            ToolKindLabels.label(family, row.toolName)
+        }
     val statusText = ToolKindLabels.statusLabel(status)
     val tone = toolStatusTone(status)
-    val primary = if (family == ToolFamily.FileWrite) {
-        ToolKindLabels.filePathBasename(input)
-            ?: ToolKindLabels.primaryText(row.toolName, row.kind, null, input)
-    } else {
-        ToolKindLabels.primaryText(row.toolName, row.kind, null, input)
-    }
+    val primary =
+        if (family == ToolFamily.FileWrite) {
+            ToolKindLabels.filePathBasename(input)
+                ?: ToolKindLabels.primaryText(row.toolName, row.kind, null, input)
+        } else {
+            ToolKindLabels.primaryText(row.toolName, row.kind, null, input)
+        }
     // Sprint 3：写类工具（Edit/Write/MultiEdit）从 inputText 解析红绿 diff —— 纯客户端，零 RPC
-    val toolDiff = remember(row.rowId, input) {
-        runCatching { com.zcode.remote.ui.components.ToolDiffParser.parse(row.toolName, input) }.getOrNull()
-    }
+    val toolDiff =
+        remember(row.rowId, input) {
+            runCatching { com.zcode.remote.ui.components.ToolDiffParser.parse(row.toolName, input) }.getOrNull()
+        }
 
     CollapsibleRow(
         expanded = expanded,
@@ -449,10 +458,11 @@ private fun ToolCallRow(
         label = {
             Text(
                 text = label,
-                style = MaterialTheme.typography.labelSmall.copy(
-                    fontSize = ZCodeType.Sm,
-                    fontWeight = ZCodeType.SemiBold,
-                ),
+                style =
+                    MaterialTheme.typography.labelSmall.copy(
+                        fontSize = ZCodeType.Sm,
+                        fontWeight = ZCodeType.SemiBold,
+                    ),
                 color = tone,
                 maxLines = 1,
             )
@@ -462,10 +472,11 @@ private fun ToolCallRow(
             if (!expanded && !text.isNullOrBlank()) {
                 Text(
                     text = text,
-                    style = MaterialTheme.typography.bodySmall.copy(
-                        fontFamily = FontFamily.Monospace,
-                        fontSize = 11.5.sp,
-                    ),
+                    style =
+                        MaterialTheme.typography.bodySmall.copy(
+                            fontFamily = FontFamily.Monospace,
+                            fontSize = 11.5.sp,
+                        ),
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
@@ -514,24 +525,28 @@ private fun ToolCallRow(
  * 故按语义就近映射；家族主色一致，形状差异不会造成误读。
  */
 @Composable
-private fun ToolFamilyIcon(family: ToolFamily, tint: Color) {
-    val icon = when (family) {
-        ToolFamily.FileRead -> Icons.Default.Info
-        ToolFamily.FileWrite -> Icons.Default.Edit
-        ToolFamily.Shell -> Icons.Default.PlayArrow
-        ToolFamily.Search -> Icons.Default.Search
-        ToolFamily.Todo -> Icons.Default.List
-        ToolFamily.Goal -> Icons.Default.Star
-        ToolFamily.Explore -> Icons.Default.Place
-        ToolFamily.SessionContext -> Icons.Default.Refresh
-        ToolFamily.AskUserQuestion -> Icons.Default.Face
-        ToolFamily.Message -> Icons.Default.Email
-        ToolFamily.TaskControl -> Icons.Default.Settings
-        ToolFamily.NodeRepl -> Icons.Default.Build
-        ToolFamily.Agent -> Icons.Default.Person
-        ToolFamily.Skill -> Icons.Default.Favorite
-        ToolFamily.Unknown -> Icons.Default.MoreVert
-    }
+private fun ToolFamilyIcon(
+    family: ToolFamily,
+    tint: Color,
+) {
+    val icon =
+        when (family) {
+            ToolFamily.FileRead -> Icons.Default.Info
+            ToolFamily.FileWrite -> Icons.Default.Edit
+            ToolFamily.Shell -> Icons.Default.PlayArrow
+            ToolFamily.Search -> Icons.Default.Search
+            ToolFamily.Todo -> Icons.Default.List
+            ToolFamily.Goal -> Icons.Default.Star
+            ToolFamily.Explore -> Icons.Default.Place
+            ToolFamily.SessionContext -> Icons.Default.Refresh
+            ToolFamily.AskUserQuestion -> Icons.Default.Face
+            ToolFamily.Message -> Icons.Default.Email
+            ToolFamily.TaskControl -> Icons.Default.Settings
+            ToolFamily.NodeRepl -> Icons.Default.Build
+            ToolFamily.Agent -> Icons.Default.Person
+            ToolFamily.Skill -> Icons.Default.Favorite
+            ToolFamily.Unknown -> Icons.Default.MoreVert
+        }
     Icon(
         imageVector = icon,
         contentDescription = null,
@@ -540,7 +555,11 @@ private fun ToolFamilyIcon(family: ToolFamily, tint: Color) {
     )
 }
 
-private val prettyJsonPrinter = Json { prettyPrint = true; prettyPrintIndent = "  " }
+private val prettyJsonPrinter =
+    Json {
+        prettyPrint = true
+        prettyPrintIndent = "  "
+    }
 
 /**
  * 工具入参缩进美化。服务端下发的 input 是紧凑 JSON，展开后不缩进基本没法读。
@@ -564,17 +583,20 @@ private fun prettyJson(raw: String): String {
 private fun TurnHeaderRow(row: ConversationRow) {
     val dark = LocalZCodeDark.current
     // 优先用服务端累计的活跃时长；缺失时用起止时间兜底（含等待用户输入的空档）
-    val durationMs = row.activeMs
-        ?: if (row.startedAt != null && row.endedAt != null) row.endedAt - row.startedAt else null
-    val meta = listOfNotNull(
-        "轮次",
-        row.origin?.trim()?.takeIf { it.isNotEmpty() },
-        row.state?.let { phaseLabel(it) },
-    ).joinToString(" · ")
+    val durationMs =
+        row.activeMs
+            ?: if (row.startedAt != null && row.endedAt != null) row.endedAt - row.startedAt else null
+    val meta =
+        listOfNotNull(
+            "轮次",
+            row.origin?.trim()?.takeIf { it.isNotEmpty() },
+            row.state?.let { phaseLabel(it) },
+        ).joinToString(" · ")
 
     Column(
-        modifier = Modifier.fillMaxWidth()
-            .padding(top = ZCodeDimens.GapTurn, bottom = ZCodeDimens.GapInline),
+        modifier =
+            Modifier.fillMaxWidth()
+                .padding(top = ZCodeDimens.GapTurn, bottom = ZCodeDimens.GapInline),
     ) {
         HorizontalDivider(
             color = if (dark) ZCodeTokens.BorderSubtleDark else ZCodeTokens.BorderSubtleLight,
@@ -625,10 +647,11 @@ private fun SubagentRow(row: ConversationRow) {
         Spacer(Modifier.width(6.dp))
         Text(
             text = type,
-            style = MaterialTheme.typography.labelSmall.copy(
-                fontSize = ZCodeType.Sm,
-                fontWeight = ZCodeType.SemiBold,
-            ),
+            style =
+                MaterialTheme.typography.labelSmall.copy(
+                    fontSize = ZCodeType.Sm,
+                    fontWeight = ZCodeType.SemiBold,
+                ),
             color = tone,
             maxLines = 1,
         )
@@ -658,9 +681,10 @@ private fun SubagentRow(row: ConversationRow) {
 private fun TimelineMarkerRow(row: ConversationRow) {
     val dark = LocalZCodeDark.current
     val line = if (dark) ZCodeTokens.BorderSubtleDark else ZCodeTokens.BorderSubtleLight
-    val label = Format.singleLine(row.summaryText ?: row.text, limit = 60)
-        ?.takeIf { it.isNotEmpty() }
-        ?: return
+    val label =
+        Format.singleLine(row.summaryText ?: row.text, limit = 60)
+            ?.takeIf { it.isNotEmpty() }
+            ?: return
     Row(
         verticalAlignment = Alignment.CenterVertically,
         modifier = Modifier.fillMaxWidth().padding(vertical = ZCodeDimens.PadBlock),
@@ -687,8 +711,9 @@ private fun HookInvocationRow(
 ) {
     val hook = row.toolName?.trim().takeIf { !it.isNullOrEmpty() } ?: "钩子"
     val detail = row.outputText?.trim().orEmpty().ifEmpty { row.inputText?.trim().orEmpty() }
-    val failed = row.status?.lowercase()?.contains("error") == true ||
-        row.status?.lowercase()?.contains("fail") == true
+    val failed =
+        row.status?.lowercase()?.contains("error") == true ||
+            row.status?.lowercase()?.contains("fail") == true
     val tone = if (failed) ZCodeTokens.StatusError else ZCodeTokens.StatusOffline
 
     CollapsibleRow(
@@ -773,11 +798,12 @@ internal fun ConversationTimelineArea(
         ) {
             item(key = "earlier-head") {
                 Text(
-                    text = when {
-                        earlier.loading -> "加载更早历史…"
-                        earlier.pulled && !earlier.hasMore -> "已到会话开头"
-                        else -> "上滑加载更早历史"
-                    },
+                    text =
+                        when {
+                            earlier.loading -> "加载更早历史…"
+                            earlier.pulled && !earlier.hasMore -> "已到会话开头"
+                            else -> "上滑加载更早历史"
+                        },
                     style = MaterialTheme.typography.labelSmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
                     modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
@@ -794,7 +820,7 @@ internal fun ConversationTimelineArea(
                 turnSummaries[row.rowId]?.let { summary ->
                     com.zcode.remote.ui.components.TurnChangesCard(
                         summary = summary,
-                        modifier = Modifier.padding(vertical = 4.dp)
+                        modifier = Modifier.padding(vertical = 4.dp),
                     )
                 }
             }
@@ -809,7 +835,7 @@ internal fun ConversationTimelineArea(
             visible = !isNearBottom && rows.isNotEmpty(),
             enter = fadeIn() + expandVertically(),
             exit = fadeOut() + shrinkVertically(),
-            modifier = Modifier.align(Alignment.BottomEnd).padding(bottom = 10.dp, end = 6.dp)
+            modifier = Modifier.align(Alignment.BottomEnd).padding(bottom = 10.dp, end = 6.dp),
         ) {
             Surface(
                 onClick = {
@@ -819,23 +845,23 @@ internal fun ConversationTimelineArea(
                 shape = RoundedCornerShape(16.dp),
                 color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.95f),
                 border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
-                shadowElevation = 4.dp
+                shadowElevation = 4.dp,
             ) {
                 Row(
                     verticalAlignment = Alignment.CenterVertically,
-                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp)
+                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
                 ) {
                     Icon(
                         imageVector = Icons.Default.KeyboardArrowDown,
                         contentDescription = "回到底部",
                         tint = MaterialTheme.colorScheme.onPrimaryContainer,
-                        modifier = Modifier.size(16.dp)
+                        modifier = Modifier.size(16.dp),
                     )
                     Spacer(Modifier.width(4.dp))
                     Text(
                         text = "回到底部",
                         style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.SemiBold),
-                        color = MaterialTheme.colorScheme.onPrimaryContainer
+                        color = MaterialTheme.colorScheme.onPrimaryContainer,
                     )
                 }
             }

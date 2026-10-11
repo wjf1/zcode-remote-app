@@ -25,28 +25,41 @@ fun KeepAliveGuideScreen(onBack: () -> Unit) {
         Text("保活引导（小米 / HyperOS）", style = MaterialTheme.typography.titleLarge)
         Text(
             "审批通知的可靠性依赖以下系统授权。桌面端请求权限时，只有通知能及时送达，" +
-                    "你才能在锁屏上直接批准/拒绝。",
+                "你才能在锁屏上直接批准/拒绝。",
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
 
-        val steps = listOf(
-            Step("1. 允许通知", "系统设置 → 通知与控制中心 → 应用通知 → ZCode Remote → 打开全部通知。" +
-                    "审批类通知是高优先级，锁屏也会弹出。"),
-            Step("2. 打开自启动", "系统设置 → 应用管理 → ZCode Remote → 自启动 → 打开。" +
-                    "没有自启动权限，后台连接会被系统随时杀掉。"),
-            Step("3. 省电策略设为无限制", "系统设置 → 应用管理 → ZCode Remote → 省电策略 → 无限制。" +
-                    "「智能限制后台」会掐断长连接，导致审批收不到。"),
-            Step("4. 锁定后台任务卡", "最近任务里下拉 ZCode Remote 卡片点锁头图标，防止一键清理误杀。"),
-            Step("5. 常驻通知不要关", "App 的「连接保持中」前台通知是连接的命脉，关闭它等于断开远程控制。"),
-            Step("6. （可选）锁屏显示", "通知管理 → 锁屏通知 → 显示，锁屏状态下不用解锁就能看到审批内容。"),
-        )
+        val steps =
+            listOf(
+                Step(
+                    "1. 允许通知",
+                    "系统设置 → 通知与控制中心 → 应用通知 → ZCode Remote → 打开全部通知。" +
+                        "审批类通知是高优先级，锁屏也会弹出。",
+                ),
+                Step(
+                    "2. 打开自启动",
+                    "系统设置 → 应用管理 → ZCode Remote → 自启动 → 打开。" +
+                        "没有自启动权限，后台连接会被系统随时杀掉。",
+                ),
+                Step(
+                    "3. 省电策略设为无限制",
+                    "系统设置 → 应用管理 → ZCode Remote → 省电策略 → 无限制。" +
+                        "「智能限制后台」会掐断长连接，导致审批收不到。",
+                ),
+                Step("4. 锁定后台任务卡", "最近任务里下拉 ZCode Remote 卡片点锁头图标，防止一键清理误杀。"),
+                Step("5. 常驻通知不要关", "App 的「连接保持中」前台通知是连接的命脉，关闭它等于断开远程控制。"),
+                Step("6. （可选）锁屏显示", "通知管理 → 锁屏通知 → 显示，锁屏状态下不用解锁就能看到审批内容。"),
+            )
         steps.forEach { s ->
             Card {
                 Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
                     Text(s.title, style = MaterialTheme.typography.titleSmall)
-                    Text(s.body, style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Text(
+                        s.body,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
                 }
             }
         }

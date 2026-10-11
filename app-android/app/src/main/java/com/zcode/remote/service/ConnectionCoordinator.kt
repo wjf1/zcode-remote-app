@@ -4,11 +4,13 @@ import android.app.Application
 import android.content.Context
 import android.net.ConnectivityManager
 import com.zcode.remote.BuildConfig
+import com.zcode.remote.notify.ApprovalBridge
+import com.zcode.remote.notify.ElicitationBridge
+import com.zcode.remote.notify.TerminalNotifier
 import com.zcode.remote.relay.BridgeFrames
 import com.zcode.remote.relay.ConversationChannel
 import com.zcode.remote.relay.FailureReason
 import com.zcode.remote.relay.NetworkGate
-import com.zcode.remote.storage.PairedDevice
 import com.zcode.remote.relay.RelayClient
 import com.zcode.remote.relay.RelayState
 import com.zcode.remote.relay.RpcChannel
@@ -23,15 +25,12 @@ import com.zcode.remote.repo.ApprovalRepository
 import com.zcode.remote.repo.ConversationRepository
 import com.zcode.remote.repo.ModelConfigRepository
 import com.zcode.remote.repo.NotificationCoordinator
-import com.zcode.remote.notify.ApprovalBridge
-import com.zcode.remote.notify.ElicitationBridge
-import com.zcode.remote.notify.TerminalNotifier
+import com.zcode.remote.storage.PairedDevice
 import com.zcode.remote.storage.SessionCacheStore
 import com.zcode.remote.util.LogRedactor
 import com.zcode.remote.util.ZLog
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.launch
-import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
@@ -53,14 +52,15 @@ class ConnectionCoordinator(
     private val modelRepo: ModelConfigRepository,
     private val notifyCoordinator: NotificationCoordinator,
 ) {
-    private val TAG = "ConnCoord"
 
     /** 宿主状态/能力视图（AppViewModel 实现）：connect 编排里仅有的对 VM 的触碰点。 */
     interface ConnectionHost {
         val hostContext: Context
         val hostScope: CoroutineScope
         val hostDevice: PairedDevice?
+
         fun hostRelayOverride(): String?
+
         var hostRelayState: RelayState
         val hostEvents: MutableList<TaskEvent>
         val hostSessions: MutableList<SessionItem>
@@ -68,6 +68,7 @@ class ConnectionCoordinator(
         var hostActiveWorkspaceKey: String?
         val hostRpcEvents: MutableList<String>
         var hostSessionModeOverride: String?
+
         fun hostRetrySubscribe()
     }
 
@@ -77,6 +78,7 @@ class ConnectionCoordinator(
      */
     private var handshakeRetryCount = 0
     private var handshakeRetryJob: kotlinx.coroutines.Job? = null
+
     /**
      * 桥自动重开计数与任务（2026-10-10 真机故障修复）：桥失败后此前无自愈路径，
      * 详见 [scheduleBridgeReopen]。桥就绪即归零。
@@ -86,7 +88,8 @@ class ConnectionCoordinator(
 
     /** A-2/删会话/断开共用：作废在途的握手自动重订并把预算归零。 */
     fun resetHandshakeRetry() {
-        handshakeRetryJob?.cancel(); handshakeRetryJob = null
+        handshakeRetryJob?.cancel()
+        handshakeRetryJob = null
         handshakeRetryCount = 0
     }
 
@@ -101,12 +104,13 @@ class ConnectionCoordinator(
         ConnectionScope.client?.close()
         ConnectionScope.channel?.reset()
         ConnectionScope.conversation?.reset()
-        val c = RelayClient(
-            dev,
-            // B 组：自报真实版本号（原默认 0.1.0，上游按 app_version 做能力协商时是哑雷）
-            appVersion = BuildConfig.VERSION_NAME,
-            relayWsUrlOverride = host.hostRelayOverride(),
-        )
+        val c =
+            RelayClient(
+                dev,
+                // B 组：自报真实版本号（原默认 0.1.0，上游按 app_version 做能力协商时是哑雷）
+                appVersion = BuildConfig.VERSION_NAME,
+                relayWsUrlOverride = host.hostRelayOverride(),
+            )
         // B 组：网络感知重连 —— 常驻监控：断网立即断 socket 调度重连（attempt 归零），
         // 恢复即刻放行（不等 OkHttp 迟到的失败回调，真机实证其延迟到恢复才冒出）
         val cm = (host.hostContext as Application).getSystemService(ConnectivityManager::class.java)
@@ -162,11 +166,12 @@ class ConnectionCoordinator(
                 host.hostRelayState = st
                 // Sprint 2 / A 组第 3 项：终态失败发常驻系统通知 —— 手机在兜里时不能
                 // 静默失去全部审批能力（KICKED/配对失效/协议升级用户都必须立刻知道）。
-                val terminal = (st as? RelayState.Failed)?.takeIf {
-                    it.reason == FailureReason.KICKED || it.reason == FailureReason.AUTH_FAILED ||
-                        it.reason == FailureReason.PROTOCOL_MISMATCH ||
-                        it.reason == FailureReason.INVALID_ENDPOINT
-                }
+                val terminal =
+                    (st as? RelayState.Failed)?.takeIf {
+                        it.reason == FailureReason.KICKED || it.reason == FailureReason.AUTH_FAILED ||
+                            it.reason == FailureReason.PROTOCOL_MISMATCH ||
+                            it.reason == FailureReason.INVALID_ENDPOINT
+                    }
                 if (terminal != null) {
                     TerminalNotifier.show(host.hostContext, NotificationCoordinator.terminalTitle(terminal.reason), terminal.message)
                 } else {
@@ -189,7 +194,8 @@ class ConnectionCoordinator(
                     "bootstrap-response" -> {
                         val list = parseBootstrapSessions(payload)
                         if (list.isNotEmpty()) {
-                            host.hostSessions.clear(); host.hostSessions.addAll(list)
+                            host.hostSessions.clear()
+                            host.hostSessions.addAll(list)
                             host.hostScope.launch { SessionCacheStore.save(host.hostContext, list) }
                         }
                         // 取活动工作区 → 开桥（会话流前置条件）
@@ -201,44 +207,52 @@ class ConnectionCoordinator(
                     }
                     "workspace-bridge-ready",
                     "workspace-bridge-error",
-                    "bridge-degraded" -> ch.onBridgeFrame(payload)
+                    "bridge-degraded",
+                    -> ch.onBridgeFrame(payload)
 
                     "rpc-frame" -> ch.onRpcFrame(payload)
                     "rpc-frame-ack" -> Unit
 
                     "workspace-list-response", "workspace-list-updated" -> Unit
-                    null -> TaskEvent.from(payload)?.let { ev ->
-                        host.hostEvents.add(0, ev)
-                        if (host.hostEvents.size > 200) host.hostEvents.removeAt(host.hostEvents.lastIndex)
-                        // 审批推送走任务事件流（实测会话帧里没有 pendingInteractions）：
-                        // permission_request 建卡，permission_resolved 按 requestId 撤卡。
-                        when (ev.type) {
-                            "permission_request" ->
-                                com.zcode.remote.relay.PendingApproval.fromTaskEvent(ev.raw, ev.taskId)?.let { approvalRepo.ingestTaskApproval(it) }
-                            "permission_resolved" ->
-                                ev.raw["requestId"]?.let {
-                                    runCatching { it.jsonPrimitive.content }.getOrNull()
-                                }?.let { approvalRepo.resolveTaskApproval(it) }
-                            "elicitation_request" ->
-                                com.zcode.remote.relay.PendingElicitation.fromTaskEvent(ev.raw, ev.taskId)?.let { approvalRepo.ingestTaskElicitation(it) }
-                            "elicitation_resolved" ->
-                                ev.raw["requestId"]?.let {
-                                    runCatching { it.jsonPrimitive.content }.getOrNull()
-                                }?.let { approvalRepo.resolveTaskElicitation(it) }
-                        }
-                        // 列表状态实时化：任务事件是 host 推的实时流（PROTOCOL.md §6.2），而列表的
-                        // displayStatus 只在 bootstrap 取过一次快照——不回写就会出现「会话页在跑、
-                        // 退回主界面仍显示已完成」。映射规则见 displayStatusForTaskEvent。
-                        ev.taskId?.let { tid ->
-                            val mapped = displayStatusForTaskEvent(ev.type)
-                            if (mapped != null) {
-                                val idx = host.hostSessions.indexOfFirst { it.taskId == tid }
-                                if (idx >= 0 && host.hostSessions[idx].displayStatus != mapped) {
-                                    host.hostSessions[idx] = host.hostSessions[idx].copy(displayStatus = mapped)
+                    null ->
+                        TaskEvent.from(payload)?.let { ev ->
+                            host.hostEvents.add(0, ev)
+                            if (host.hostEvents.size > 200) host.hostEvents.removeAt(host.hostEvents.lastIndex)
+                            // 审批推送走任务事件流（实测会话帧里没有 pendingInteractions）：
+                            // permission_request 建卡，permission_resolved 按 requestId 撤卡。
+                            when (ev.type) {
+                                "permission_request" ->
+                                    com.zcode.remote.relay.PendingApproval.fromTaskEvent(
+                                        ev.raw,
+                                        ev.taskId,
+                                    )?.let { approvalRepo.ingestTaskApproval(it) }
+                                "permission_resolved" ->
+                                    ev.raw["requestId"]?.let {
+                                        runCatching { it.jsonPrimitive.content }.getOrNull()
+                                    }?.let { approvalRepo.resolveTaskApproval(it) }
+                                "elicitation_request" ->
+                                    com.zcode.remote.relay.PendingElicitation.fromTaskEvent(
+                                        ev.raw,
+                                        ev.taskId,
+                                    )?.let { approvalRepo.ingestTaskElicitation(it) }
+                                "elicitation_resolved" ->
+                                    ev.raw["requestId"]?.let {
+                                        runCatching { it.jsonPrimitive.content }.getOrNull()
+                                    }?.let { approvalRepo.resolveTaskElicitation(it) }
+                            }
+                            // 列表状态实时化：任务事件是 host 推的实时流（PROTOCOL.md §6.2），而列表的
+                            // displayStatus 只在 bootstrap 取过一次快照——不回写就会出现「会话页在跑、
+                            // 退回主界面仍显示已完成」。映射规则见 displayStatusForTaskEvent。
+                            ev.taskId?.let { tid ->
+                                val mapped = displayStatusForTaskEvent(ev.type)
+                                if (mapped != null) {
+                                    val idx = host.hostSessions.indexOfFirst { it.taskId == tid }
+                                    if (idx >= 0 && host.hostSessions[idx].displayStatus != mapped) {
+                                        host.hostSessions[idx] = host.hostSessions[idx].copy(displayStatus = mapped)
+                                    }
                                 }
                             }
                         }
-                    }
                     else -> Unit
                 }
             }
@@ -252,7 +266,8 @@ class ConnectionCoordinator(
                 if (st is RpcChannel.BridgeState.Ready) {
                     // 桥就绪：自动重开预算归零（下次失败可再走完整退避序列）
                     bridgeReopenCount = 0
-                    bridgeReopenJob?.cancel(); bridgeReopenJob = null
+                    bridgeReopenJob?.cancel()
+                    bridgeReopenJob = null
                     // E-1：workspace 级 sessions-index 订阅（权威角标，一次订阅覆盖全部会话）
                     host.hostActiveWorkspaceKey?.let { sidx.subscribe(it, null) }
                     // 从 PC 端 ~/.zcode/v2/provider_config.json 预加载已配置模型目录
@@ -349,15 +364,16 @@ class ConnectionCoordinator(
         ZLog.i(TAG, "握手失败，${delayMs}ms 后自动重订（第 $handshakeRetryCount 次）")
         handshakeRetryJob?.cancel()
         // §11.4 阶段③：重试调度挂进程级作用域 —— VM 被清后自动重订仍要生效（连接韧性）。
-        handshakeRetryJob = RemoteConnectionManager.scope.launch {
-            kotlinx.coroutines.delay(delayMs)
-            // 期间用户可能已切走会话，此时重订无意义
-            if (convRepo.subscribedSessionId != s.taskId) return@launch
-            val conv = ConnectionScope.conversation ?: return@launch
-            val ws = s.workspacePath ?: host.hostActiveWorkspaceKey ?: return@launch
-            ZLog.i(TAG, "自动重订 session=${s.taskId}")
-            conv.subscribe(ws, null, s.taskId, convRepo.rowStore)
-        }
+        handshakeRetryJob =
+            RemoteConnectionManager.scope.launch {
+                kotlinx.coroutines.delay(delayMs)
+                // 期间用户可能已切走会话，此时重订无意义
+                if (convRepo.subscribedSessionId != s.taskId) return@launch
+                val conv = ConnectionScope.conversation ?: return@launch
+                val ws = s.workspacePath ?: host.hostActiveWorkspaceKey ?: return@launch
+                ZLog.i(TAG, "自动重订 session=${s.taskId}")
+                conv.subscribe(ws, null, s.taskId, convRepo.rowStore)
+            }
     }
 
     /**
@@ -375,12 +391,13 @@ class ConnectionCoordinator(
         }
         bridgeReopenCount += 1
         bridgeReopenJob?.cancel()
-        bridgeReopenJob = RemoteConnectionManager.scope.launch {
-            kotlinx.coroutines.delay(delayMs)
-            if (host.hostBridgeState is RpcChannel.BridgeState.Ready) return@launch  // 期间已恢复（如 relay 重连撞回来）
-            ZLog.i(TAG, "桥失败，${delayMs}ms 后自动重开（第 $bridgeReopenCount 次）ws=${LogRedactor.pathLabel(wsKey)}")
-            ConnectionScope.channel?.openBridge(wsKey)
-        }
+        bridgeReopenJob =
+            RemoteConnectionManager.scope.launch {
+                kotlinx.coroutines.delay(delayMs)
+                if (host.hostBridgeState is RpcChannel.BridgeState.Ready) return@launch // 期间已恢复（如 relay 重连撞回来）
+                ZLog.i(TAG, "桥失败，${delayMs}ms 后自动重开（第 $bridgeReopenCount 次）ws=${LogRedactor.pathLabel(wsKey)}")
+                ConnectionScope.channel?.openBridge(wsKey)
+            }
     }
 
     /** 从 bootstrap-response 取当前活动工作区 key。 */
@@ -398,13 +415,16 @@ class ConnectionCoordinator(
     }
 
     companion object {
+        private const val TAG = "ConnCoord"
         private const val MAX_HANDSHAKE_RETRIES = 1
 
         /**
          * 桥自动重开的退避延迟（纯函数，单测覆盖）：第 1/2/3 次 → 1s/2s/4s；
          * 超出上限（默认 3）返回 null = 不再重开（停失败态，等 relay 重连或用户操作兜底）。
          */
-        internal fun bridgeReopenDelayMs(nextAttempt: Int, maxAttempts: Int = 3): Long? =
-            if (nextAttempt in 1..maxAttempts) 1_000L shl (nextAttempt - 1) else null
+        internal fun bridgeReopenDelayMs(
+            nextAttempt: Int,
+            maxAttempts: Int = 3,
+        ): Long? = if (nextAttempt in 1..maxAttempts) 1_000L shl (nextAttempt - 1) else null
     }
 }

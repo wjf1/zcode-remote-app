@@ -15,8 +15,10 @@ import org.junit.Test
  * （表现为点进会话秒开失效），且发生在 IO 线程、无 UI 可观察，必须由单测钉死。
  */
 class SessionCacheStoreTest {
-
-    private fun entry(name: String, modified: Long) = name to modified
+    private fun entry(
+        name: String,
+        modified: Long,
+    ) = name to modified
 
     @Test
     fun withinLimit_deletesNothing() {
@@ -27,11 +29,12 @@ class SessionCacheStoreTest {
 
     @Test
     fun overLimit_deletesOldestFirst() {
-        val entries = listOf(
-            entry("rows_old.json", 100L),
-            entry("rows_mid.json", 200L),
-            entry("rows_new.json", 300L),
-        )
+        val entries =
+            listOf(
+                entry("rows_old.json", 100L),
+                entry("rows_mid.json", 200L),
+                entry("rows_new.json", 300L),
+            )
         assertEquals(listOf("rows_old.json"), SessionCacheStore.staleCacheFilesToDelete(entries, 2))
         assertEquals(
             listOf("rows_mid.json", "rows_old.json"),
@@ -62,7 +65,11 @@ class SessionCacheStoreTest {
 
     // ---------- §11.6 缓存治理：TTL 与字节上限 ----------
 
-    private val testJson = Json { ignoreUnknownKeys = true; encodeDefaults = true }
+    private val testJson =
+        Json {
+            ignoreUnknownKeys = true
+            encodeDefaults = true
+        }
 
     @Test
     fun ttl_freshCache_isNotStale() {

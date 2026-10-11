@@ -16,7 +16,6 @@ import org.junit.Test
  * 不含 Compose UI 断言：项目当前没有 androidTest 基建，视觉部分靠真机验收（见 HANDOVER）。
  */
 class ToolKindLabelsTest {
-
     // ---------- 家族精确匹配 ----------
 
     @Test

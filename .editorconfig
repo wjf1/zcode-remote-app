@@ -1,0 +1,14 @@
+root = true
+
+# §11.8：KtLint 项目级风格基线。
+# 与 Compose 官方惯例/项目既有惯例冲突的三条规则在此关闭（有依据，非遗漏）：
+# - function-naming：@Composable 函数为 PascalCase（Jetpack Compose 官方推荐），
+#   经 ignoreAnnotated 精确豁免，非 Compose 函数仍受小写驼峰约束；
+# - no-wildcard-imports：androidx.compose.material3.* 等通配 import 是 Compose 社区
+#   标准实践（全量枚举会让 import 区膨胀百行且无收益）；
+# - filename：Typography.kt / Dimens.kt 为项目历史命名（文件内含同名顶层对象）。
+[*.{kt,kts}]
+ktlint_function_naming_ignore_annotated = Composable
+ktlint_standard_no-wildcard-imports = disabled
+ktlint_standard_filename = disabled
+max_line_length = 160

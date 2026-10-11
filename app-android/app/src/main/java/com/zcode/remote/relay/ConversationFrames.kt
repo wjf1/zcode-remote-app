@@ -20,26 +20,23 @@ import kotlinx.serialization.json.longOrNull
 object ConversationFrames {
     private const val TAG = "ConvFrames"
 
-    private fun JsonObject.str(k: String): String? =
-        this[k]?.let { runCatching { it.jsonPrimitive.content }.getOrNull() }
+    private fun JsonObject.str(k: String): String? = this[k]?.let { runCatching { it.jsonPrimitive.content }.getOrNull() }
 
-    private fun JsonObject.int(k: String): Int? =
-        this[k]?.let { runCatching { it.jsonPrimitive.intOrNull }.getOrNull() }
+    private fun JsonObject.int(k: String): Int? = this[k]?.let { runCatching { it.jsonPrimitive.intOrNull }.getOrNull() }
 
-    private fun JsonObject.long(k: String): Long? =
-        this[k]?.let { runCatching { it.jsonPrimitive.longOrNull }.getOrNull() }
+    private fun JsonObject.long(k: String): Long? = this[k]?.let { runCatching { it.jsonPrimitive.longOrNull }.getOrNull() }
 
-    private fun JsonObject.obj(k: String): JsonObject? =
-        this[k]?.let { runCatching { it.jsonObject }.getOrNull() }
+    private fun JsonObject.obj(k: String): JsonObject? = this[k]?.let { runCatching { it.jsonObject }.getOrNull() }
 
-    private fun JsonObject.bool(k: String): Boolean? =
-        this[k]?.let { runCatching { it.jsonPrimitive.booleanOrNull }.getOrNull() }
+    private fun JsonObject.bool(k: String): Boolean? = this[k]?.let { runCatching { it.jsonPrimitive.booleanOrNull }.getOrNull() }
 
     /** 逻辑帧信封（204 的 data），kind=complete 时 [frame] 非空。 */
     data class LogicalFrame(
         val wireVersion: Int?,
-        val kind: String,             // complete | fragment
-        val deliveryKind: String?,    // initial | online | recovery
+        // complete | fragment
+        val kind: String,
+        // initial | online | recovery
+        val deliveryKind: String?,
         val logicalFrameId: String,
         val ordinal: Int?,
         val topic: String,
@@ -53,7 +50,8 @@ object ConversationFrames {
         val subscriptionId: String,
         val fromSeq: Long?,
         val toSeq: Long?,
-        val payload: JsonObject,      // {kind:"snapshot"|"deltas", ...}
+        // {kind:"snapshot"|"deltas", ...}
+        val payload: JsonObject,
     ) {
         val payloadKind: String get() = payload.str("kind") ?: ""
     }
@@ -132,10 +130,11 @@ object ConversationFrames {
             phase = o.str("phase"),
             canStop = o.bool("canStop"),
             stopState = o.str("stopState"),
-            foregroundExecutionId = o["activeWorks"]?.let { runCatching { it.jsonArray }.getOrNull() }
-                ?.firstNotNullOfOrNull { el ->
-                    runCatching { el.jsonObject["foregroundExecutionId"]?.jsonPrimitive?.content }.getOrNull()
-                },
+            foregroundExecutionId =
+                o["activeWorks"]?.let { runCatching { it.jsonArray }.getOrNull() }
+                    ?.firstNotNullOfOrNull { el ->
+                        runCatching { el.jsonObject["foregroundExecutionId"]?.jsonPrimitive?.content }.getOrNull()
+                    },
             lastError = SessionItem.errorText(o["lastError"]),
         )
     }
@@ -195,21 +194,24 @@ object ConversationFrames {
         companion object {
             fun from(o: JsonObject?): ContextUsage? {
                 if (o == null) return null
-                val usage = ContextUsage(
-                    usedTokens = o.long("usedTokens"),
-                    maxTokens = o.long("maxTokens"),
-                    cacheHitRate = o.obj("cache")?.let { c ->
-                        c["hitRate"]?.let { runCatching { it.jsonPrimitive.content.toDoubleOrNull() }.getOrNull() }
-                    },
-                    breakdown = o["breakdown"]?.let { runCatching { it.jsonArray }.getOrNull() }
-                        ?.mapNotNull { el ->
-                            runCatching { el.jsonObject }.getOrNull()?.let { b ->
-                                val src = b.str("source")
-                                val chars = b.long("chars")
-                                if (src == null || chars == null) null else ContextSource(src, chars)
-                            }
-                        } ?: emptyList(),
-                )
+                val usage =
+                    ContextUsage(
+                        usedTokens = o.long("usedTokens"),
+                        maxTokens = o.long("maxTokens"),
+                        cacheHitRate =
+                            o.obj("cache")?.let { c ->
+                                c["hitRate"]?.let { runCatching { it.jsonPrimitive.content.toDoubleOrNull() }.getOrNull() }
+                            },
+                        breakdown =
+                            o["breakdown"]?.let { runCatching { it.jsonArray }.getOrNull() }
+                                ?.mapNotNull { el ->
+                                    runCatching { el.jsonObject }.getOrNull()?.let { b ->
+                                        val src = b.str("source")
+                                        val chars = b.long("chars")
+                                        if (src == null || chars == null) null else ContextSource(src, chars)
+                                    }
+                                } ?: emptyList(),
+                    )
                 // 全空（服务端还没算出来）不占分区
                 return usage.takeIf { it.usedTokens != null || it.maxTokens != null || it.breakdown.isNotEmpty() }
             }
@@ -220,13 +222,18 @@ object ConversationFrames {
     data class ContextBreakdownSlice(val source: ContextSource, val ratio: Double)
 
     /** 来源排序兜底：chars 相同时按桌面端固定序（`AI`），未知来源排最后。 */
-    private val SOURCE_RANK = listOf(
-        "messages", "system_prompt", "meta_user_context", "skills",
-        "tool_prompt", "system_tool_schemas", "mcp_tool_schemas",
-    )
+    private val SOURCE_RANK =
+        listOf(
+            "messages",
+            "system_prompt",
+            "meta_user_context",
+            "skills",
+            "tool_prompt",
+            "system_tool_schemas",
+            "mcp_tool_schemas",
+        )
 
-    private fun sourceRank(source: String): Int =
-        SOURCE_RANK.indexOf(source).let { if (it < 0) SOURCE_RANK.size else it }
+    private fun sourceRank(source: String): Int = SOURCE_RANK.indexOf(source).let { if (it < 0) SOURCE_RANK.size else it }
 
     /** 桌面端缓存命中率显示门限（`EZe = 0.78`）。 */
     const val CACHE_HIT_RATE_THRESHOLD = 0.78
@@ -260,16 +267,17 @@ object ConversationFrames {
         companion object {
             fun from(el: JsonElement?): BackgroundWorksState? {
                 val arr = el?.let { runCatching { it.jsonArray }.getOrNull() } ?: return null
-                val works = arr.mapNotNull { item ->
-                    runCatching { item.jsonObject }.getOrNull()?.let { w ->
-                        BackgroundWork(
-                            kind = w.str("kind"),
-                            status = w.str("status"),
-                            childSessionId = w.str("childSessionId"),
-                            workId = w.str("workId"),
-                        )
+                val works =
+                    arr.mapNotNull { item ->
+                        runCatching { item.jsonObject }.getOrNull()?.let { w ->
+                            BackgroundWork(
+                                kind = w.str("kind"),
+                                status = w.str("status"),
+                                childSessionId = w.str("childSessionId"),
+                                workId = w.str("workId"),
+                            )
+                        }
                     }
-                }
                 return BackgroundWorksState(works)
             }
         }
@@ -291,11 +299,12 @@ object ConversationFrames {
                 if (o == null) return null
                 return SubagentsState(
                     // running[] 的元素是对象（取 childSessionId）；顺带容错收字符串形态
-                    runningChildSessionIds = o["running"]?.let { runCatching { it.jsonArray }.getOrNull() }
-                        ?.mapNotNull { el ->
-                            runCatching { el.jsonObject }.getOrNull()?.str("childSessionId")
-                                ?: runCatching { el.jsonPrimitive.content }.getOrNull()
-                        } ?: emptyList(),
+                    runningChildSessionIds =
+                        o["running"]?.let { runCatching { it.jsonArray }.getOrNull() }
+                            ?.mapNotNull { el ->
+                                runCatching { el.jsonObject }.getOrNull()?.str("childSessionId")
+                                    ?: runCatching { el.jsonPrimitive.content }.getOrNull()
+                            } ?: emptyList(),
                     endedTotal = o.long("endedTotal"),
                     revision = o.long("revision"),
                 )
@@ -337,15 +346,16 @@ object ConversationFrames {
 
             fun from(o: JsonObject?): GoalState? {
                 if (o == null) return null
-                val g = GoalState(
-                    objective = o.str("objective"),
-                    summaryTitle = o.str("summaryTitle"),
-                    status = o.str("status"),
-                    tokenBudget = o.long("tokenBudget"),
-                    tokensUsed = o.long("tokensUsed"),
-                    timeUsedSeconds = o.long("timeUsedSeconds"),
-                    activeRunStartedAtMs = o.long("activeRunStartedAtMs"),
-                )
+                val g =
+                    GoalState(
+                        objective = o.str("objective"),
+                        summaryTitle = o.str("summaryTitle"),
+                        status = o.str("status"),
+                        tokenBudget = o.long("tokenBudget"),
+                        tokensUsed = o.long("tokensUsed"),
+                        timeUsedSeconds = o.long("timeUsedSeconds"),
+                        activeRunStartedAtMs = o.long("activeRunStartedAtMs"),
+                    )
                 // 全空视为无目标：服务端下发空对象时不该顶出一个空分区
                 return g.takeIf { it.objective != null || it.summaryTitle != null || it.status != null }
             }
@@ -418,8 +428,9 @@ object ConversationFrames {
 
             fun from(o: JsonObject?): PlanState? {
                 if (o == null) return null
-                val todos = o["items"]?.let { runCatching { it.jsonArray }.getOrNull() }
-                    ?.mapNotNull { PlanTodo.from(it) } ?: emptyList()
+                val todos =
+                    o["items"]?.let { runCatching { it.jsonArray }.getOrNull() }
+                        ?.mapNotNull { PlanTodo.from(it) } ?: emptyList()
                 // 没有待办的「计划」不占分区位置
                 return PlanState(items = todos, updatedAt = o.long("updatedAt")).takeIf { todos.isNotEmpty() }
             }
@@ -446,26 +457,34 @@ object ConversationFrames {
     ) {
         /** 是否有可展示内容 —— 面板与顶栏入口的显示条件（全空时不出现）。 */
         val hasContent: Boolean
-            get() = usage != null || (queue?.itemCount ?: 0) > 0 ||
-                backgroundWorks?.works?.isNotEmpty() == true || subagents != null || goal != null || plan != null
+            get() =
+                usage != null || (queue?.itemCount ?: 0) > 0 ||
+                    backgroundWorks?.works?.isNotEmpty() == true || subagents != null || goal != null || plan != null
 
         /**
          * 增量合并：**patch 里出现的键整块替换，未出现的键原样保留**
          * （桌面端 `state.updated{patch}` 的语义 —— 只推变化的那几块）。
          * 键出现但值为 JSON null → 服务端在清除该块，置空。
          */
-        fun merge(patch: JsonObject): SessionState = copy(
-            usage = if (patch.containsKey("usage")) {
-                patch.obj("usage")?.let { ContextUsage.from(it.obj("contextWindow")) }
-            } else usage,
-            queue = if (patch.containsKey("queue")) QueueState.from(patch.obj("queue")) else queue,
-            backgroundWorks = if (patch.containsKey("backgroundWorks")) {
-                BackgroundWorksState.from(patch["backgroundWorks"])
-            } else backgroundWorks,
-            subagents = if (patch.containsKey("subagents")) SubagentsState.from(patch.obj("subagents")) else subagents,
-            goal = if (patch.containsKey("goal")) GoalState.from(patch.obj("goal")) else goal,
-            plan = if (patch.containsKey("plan")) PlanState.from(patch.obj("plan")) else plan,
-        )
+        fun merge(patch: JsonObject): SessionState =
+            copy(
+                usage =
+                    if (patch.containsKey("usage")) {
+                        patch.obj("usage")?.let { ContextUsage.from(it.obj("contextWindow")) }
+                    } else {
+                        usage
+                    },
+                queue = if (patch.containsKey("queue")) QueueState.from(patch.obj("queue")) else queue,
+                backgroundWorks =
+                    if (patch.containsKey("backgroundWorks")) {
+                        BackgroundWorksState.from(patch["backgroundWorks"])
+                    } else {
+                        backgroundWorks
+                    },
+                subagents = if (patch.containsKey("subagents")) SubagentsState.from(patch.obj("subagents")) else subagents,
+                goal = if (patch.containsKey("goal")) GoalState.from(patch.obj("goal")) else goal,
+                plan = if (patch.containsKey("plan")) PlanState.from(patch.obj("plan")) else plan,
+            )
 
         companion object {
             fun from(o: JsonObject?): SessionState = if (o == null) SessionState() else SessionState().merge(o)
@@ -485,15 +504,18 @@ object ConversationFrames {
             // 标题防御性解包：host 曾把标题双重序列化成 {"title":"…"}（tasks-index 实锤），解出内层
             title = SessionItem.unwrapJsonTitle(snap.obj("meta")?.str("title")),
             phase = control?.phase,
-            rows = rowsObj?.get("window")?.let { w ->
-                runCatching { w.jsonArray }.getOrNull()
-                    ?.mapNotNull { el -> runCatching { ConversationRow.from(el.jsonObject) }.getOrNull() }
-            } ?: emptyList(),
+            rows =
+                rowsObj?.get("window")?.let { w ->
+                    runCatching { w.jsonArray }.getOrNull()
+                        ?.mapNotNull { el -> runCatching { ConversationRow.from(el.jsonObject) }.getOrNull() }
+                } ?: emptyList(),
             totalCount = rowsObj?.int("totalCount"),
             pendingInteractions = PendingApproval.parseFrom(snap, snap.str("sessionId")),
-            elicitations = PendingElicitation.parseArray(
-                runCatching { snap["pendingInteractions"]?.jsonArray }.getOrNull(),
-                snap.str("sessionId")),
+            elicitations =
+                PendingElicitation.parseArray(
+                    runCatching { snap["pendingInteractions"]?.jsonArray }.getOrNull(),
+                    snap.str("sessionId"),
+                ),
             control = control,
             configModel = cfg?.str("model"),
             configProvider = cfg?.str("provider"),
@@ -505,10 +527,14 @@ object ConversationFrames {
     /** 增量操作。 */
     sealed interface Delta {
         data class Upsert(val row: ConversationRow) : Delta
+
         data class RemoveFrom(val fromRowId: Int) : Delta
+
         data class AppendText(val rowId: Int, val path: String, val append: String) : Delta
+
         /** 会话状态补丁；`patch.pendingInteractions` 是**整组替换**（审批请求/消解都走这里）。 */
         data class StateUpdated(val patch: JsonObject?) : Delta
+
         data class Unknown(val op: String) : Delta
     }
 
@@ -525,7 +551,9 @@ object ConversationFrames {
                     val append = o.str("append")
                     if (rowId != null && append != null) {
                         Delta.AppendText(rowId, o.str("path") ?: "text", append)
-                    } else null
+                    } else {
+                        null
+                    }
                 }
                 "state.updated" -> Delta.StateUpdated(o.obj("patch"))
                 null -> null
@@ -558,11 +586,9 @@ data class RowAttachment(
  * 行属性的宽松取值：非字符串标量（数字/布尔）也能取到字面量，`JsonNull` 会抛异常、被静默吞掉。
  * 协议字段形态未穷举，一条畸形行不该让整帧解析失败。
  */
-private fun JsonObject.rowStr(key: String): String? =
-    this[key]?.let { runCatching { it.jsonPrimitive.content }.getOrNull() }
+private fun JsonObject.rowStr(key: String): String? = this[key]?.let { runCatching { it.jsonPrimitive.content }.getOrNull() }
 
-private fun JsonObject.rowLong(key: String): Long? =
-    this[key]?.let { runCatching { it.jsonPrimitive.longOrNull }.getOrNull() }
+private fun JsonObject.rowLong(key: String): Long? = this[key]?.let { runCatching { it.jsonPrimitive.longOrNull }.getOrNull() }
 
 /**
  * 会话行。角色由 [kind] 表达，没有统一的 role 字段。
@@ -647,13 +673,15 @@ data class ConversationRow(
             val arr = o["attachments"]?.let { runCatching { it.jsonArray }.getOrNull() } ?: return emptyList()
             return arr.mapNotNull { item ->
                 val ao = (item as? JsonObject) ?: return@mapNotNull null
+
                 fun s(k: String) = ao[k]?.let { runCatching { it.jsonPrimitive.content }.getOrNull() }
-                val att = RowAttachment(
-                    ref = s("ref"),
-                    fileName = s("fileName"),
-                    mime = s("mime"),
-                    bytes = ao["bytes"]?.let { runCatching { it.jsonPrimitive.longOrNull }.getOrNull() },
-                )
+                val att =
+                    RowAttachment(
+                        ref = s("ref"),
+                        fileName = s("fileName"),
+                        mime = s("mime"),
+                        bytes = ao["bytes"]?.let { runCatching { it.jsonPrimitive.longOrNull }.getOrNull() },
+                    )
                 // 三项标识全空视为垃圾元素，丢弃
                 if (att.ref == null && att.fileName == null && att.mime == null) null else att
             }
@@ -667,7 +695,7 @@ data class ConversationRow(
  * [out] 传 `mutableStateListOf<ConversationRow>()` 即可让 UI 自动刷新。
  */
 class RowStore(private val out: MutableList<ConversationRow>) {
-    private val index = HashMap<Int, Int>()   // rowId -> 在 out 中的下标
+    private val index = HashMap<Int, Int>() // rowId -> 在 out 中的下标
 
     fun clear() {
         index.clear()
@@ -724,7 +752,11 @@ class RowStore(private val out: MutableList<ConversationRow>) {
     }
 
     /** row.delta：把增量片段累加到指定行的 text/inputText/output.text 上。 */
-    fun appendText(rowId: Int, path: String, append: String) {
+    fun appendText(
+        rowId: Int,
+        path: String,
+        append: String,
+    ) {
         val pos = index[rowId]
         if (pos == null) {
             // 理论上先有 row.appended；缺失时兜底建行，避免丢内容
@@ -733,18 +765,19 @@ class RowStore(private val out: MutableList<ConversationRow>) {
             return
         }
         val cur = out[pos]
-        val next = when (path) {
-            "text" -> cur.copy(text = (cur.text ?: "") + append)
-            "inputText" -> cur.copy(inputText = (cur.inputText ?: "") + append)
-            "output.text" -> cur.copy(outputText = (cur.outputText ?: "") + append)
-            // 曾经这里是 `-> cur`（空操作），于是 agent / 子智能体行的摘要只在首帧出现，
-            // 后续增量被静默丢弃，界面表现为「摘要永远停在半句」。
-            "summaryText" -> cur.copy(summaryText = (cur.summaryText ?: "") + append)
-            else -> {
-                ZLog.i("RowStore", "未知 delta path=$path")
-                cur
+        val next =
+            when (path) {
+                "text" -> cur.copy(text = (cur.text ?: "") + append)
+                "inputText" -> cur.copy(inputText = (cur.inputText ?: "") + append)
+                "output.text" -> cur.copy(outputText = (cur.outputText ?: "") + append)
+                // 曾经这里是 `-> cur`（空操作），于是 agent / 子智能体行的摘要只在首帧出现，
+                // 后续增量被静默丢弃，界面表现为「摘要永远停在半句」。
+                "summaryText" -> cur.copy(summaryText = (cur.summaryText ?: "") + append)
+                else -> {
+                    ZLog.i("RowStore", "未知 delta path=$path")
+                    cur
+                }
             }
-        }
         out[pos] = next
     }
 

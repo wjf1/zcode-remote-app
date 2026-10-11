@@ -51,14 +51,17 @@ object SessionFiles {
     }
 
     /** 从会话行抽取文件清单：按路径去重、最近操作者排前。 */
-    fun extract(rows: List<ConversationRow>, cache: PathCache? = null): List<Entry> {
+    fun extract(
+        rows: List<ConversationRow>,
+        cache: PathCache? = null,
+    ): List<Entry> {
         val byPath = LinkedHashMap<String, Entry>()
         for (row in rows) {
             val name = row.toolName?.lowercase()?.substringAfterLast('.') ?: continue
             if (PATH_TOOLS.none { name.contains(it) }) continue
             val path = if (cache != null) cache.pathFor(row) else extractPath(row.inputText)
             if (path == null) continue
-            byPath.remove(path)                       // remove+put 使该路径移到末尾（最新）
+            byPath.remove(path) // remove+put 使该路径移到末尾（最新）
             byPath[path] = Entry(path, row.toolName ?: "?", row.rowId)
         }
         return byPath.values.reversed()

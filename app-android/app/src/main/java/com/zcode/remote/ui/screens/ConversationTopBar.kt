@@ -37,7 +37,6 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.zcode.remote.relay.ConversationChannel
 import com.zcode.remote.relay.WorkspaceConfigChannel
-import com.zcode.remote.ui.components.StatusPanelLabels
 
 /**
  * 会话页顶栏（§11.7 结构性拆分：自 `ConversationScreen.kt` 原样搬出，只移动不改行为）。
@@ -67,16 +66,16 @@ internal fun ConversationTopBar(
     // C-14：testTag 供仪器化布局断言锁定顶栏高度（防「行高被内容换行撑爆」回归）。
     Row(
         verticalAlignment = Alignment.CenterVertically,
-        modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp).testTag("conv-topbar")
+        modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp).testTag("conv-topbar"),
     ) {
         IconButton(
             onClick = onBack,
-            modifier = Modifier.size(36.dp)
+            modifier = Modifier.size(36.dp),
         ) {
             Icon(
                 imageVector = Icons.AutoMirrored.Filled.ArrowBack,
                 contentDescription = "返回列表",
-                tint = MaterialTheme.colorScheme.onSurface
+                tint = MaterialTheme.colorScheme.onSurface,
             )
         }
         Spacer(Modifier.width(6.dp))
@@ -85,18 +84,23 @@ internal fun ConversationTopBar(
                 text = title.ifBlank { "会话控制台" },
                 style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
                 maxLines = 1,
-                overflow = TextOverflow.Ellipsis
+                overflow = TextOverflow.Ellipsis,
             )
             Text(
-                text = listOfNotNull(
-                    statusLabel(status),
-                    meta.phase?.let { phaseLabel(it) },
-                    meta.totalCount?.let { "共 $it 行" },
-                    approvalsCount.takeIf { it > 0 }?.let { "待审批 $it" },
-                ).joinToString(" · "),
+                text =
+                    listOfNotNull(
+                        statusLabel(status),
+                        meta.phase?.let { phaseLabel(it) },
+                        meta.totalCount?.let { "共 $it 行" },
+                        approvalsCount.takeIf { it > 0 }?.let { "待审批 $it" },
+                    ).joinToString(" · "),
                 style = MaterialTheme.typography.labelSmall,
-                color = if (status is ConversationChannel.Status.Failed) MaterialTheme.colorScheme.error
-                else MaterialTheme.colorScheme.onSurfaceVariant,
+                color =
+                    if (status is ConversationChannel.Status.Failed) {
+                        MaterialTheme.colorScheme.error
+                    } else {
+                        MaterialTheme.colorScheme.onSurfaceVariant
+                    },
                 // C-14：右侧胶囊（文件/状态/模式/模型）占满行宽时，本列会被压到 ~0 宽度；
                 // 该文本此前无 maxLines 兜底，会在零宽下逐字符换行成十几行，把整条顶栏
                 // Row 撑到近千像素（顶部布局错乱的直接成因）。此处硬锁单行。
@@ -116,7 +120,7 @@ internal fun ConversationTopBar(
             ) {
                 Row(
                     verticalAlignment = Alignment.CenterVertically,
-                    modifier = Modifier.padding(horizontal = 10.dp)
+                    modifier = Modifier.padding(horizontal = 10.dp),
                 ) {
                     Text(
                         text = "重试",
@@ -131,10 +135,11 @@ internal fun ConversationTopBar(
         // 顶栏右侧：溢出菜单（C-14 空间预算）——把「文件数」「状态」从顶栏直排收进
         // 「⋮」二级菜单。二者作为定宽胶囊会把中部标题列挤到约 16px（标题/元数据不可见，
         // 真机实测），故改为二级入口，把宽度让给标题。仅在确有条目时出现。
-        val overflowEntries = buildList {
-            if (sessionFileCount > 0) add("files" to "📁 文件（$sessionFileCount）")
-            statusEntryLabel?.let { add("status" to it) }
-        }
+        val overflowEntries =
+            buildList {
+                if (sessionFileCount > 0) add("files" to "📁 文件（$sessionFileCount）")
+                statusEntryLabel?.let { add("status" to it) }
+            }
         if (overflowEntries.isNotEmpty()) {
             Box {
                 var overflow by remember { mutableStateOf(false) }
@@ -178,25 +183,29 @@ internal fun ConversationTopBar(
             }
 
             Surface(
-                onClick = { levelStageModel = null; menuExpanded = true },
+                onClick = {
+                    levelStageModel = null
+                    menuExpanded = true
+                },
                 shape = RoundedCornerShape(14.dp),
                 color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.6f),
                 border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
-                modifier = Modifier.height(28.dp)
+                modifier = Modifier.height(28.dp),
             ) {
                 Row(
                     verticalAlignment = Alignment.CenterVertically,
-                    modifier = Modifier.padding(horizontal = 8.dp)
+                    modifier = Modifier.padding(horizontal = 8.dp),
                 ) {
                     Text(
                         text = meta.model?.substringAfterLast('/') ?: "模型",
-                        style = MaterialTheme.typography.labelSmall.copy(
-                            fontWeight = FontWeight.SemiBold,
-                            fontSize = 11.sp
-                        ),
+                        style =
+                            MaterialTheme.typography.labelSmall.copy(
+                                fontWeight = FontWeight.SemiBold,
+                                fontSize = 11.sp,
+                            ),
                         color = MaterialTheme.colorScheme.primary,
                         maxLines = 1,
-                        overflow = TextOverflow.Ellipsis
+                        overflow = TextOverflow.Ellipsis,
                     )
                     Spacer(Modifier.width(2.dp))
                     Text("▾", fontSize = 10.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
@@ -205,7 +214,10 @@ internal fun ConversationTopBar(
 
             DropdownMenu(
                 expanded = menuExpanded,
-                onDismissRequest = { menuExpanded = false; levelStageModel = null }
+                onDismissRequest = {
+                    menuExpanded = false
+                    levelStageModel = null
+                },
             ) {
                 val stage = levelStageModel
                 if (stage == null) {
@@ -214,7 +226,7 @@ internal fun ConversationTopBar(
                         DropdownMenuItem(
                             text = { Text("未读到备选模型目录", style = MaterialTheme.typography.bodySmall) },
                             onClick = {},
-                            enabled = false
+                            enabled = false,
                         )
                     } else {
                         availableModels.forEach { m ->
@@ -225,13 +237,22 @@ internal fun ConversationTopBar(
                                     Column {
                                         Text(m.name, style = MaterialTheme.typography.bodySmall)
                                         m.providerName?.let {
-                                            Text(it, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                            Text(
+                                                it,
+                                                style = MaterialTheme.typography.labelSmall,
+                                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                            )
                                         }
                                     }
                                 },
                                 leadingIcon = {
                                     if (isSelected) {
-                                        Icon(Icons.Default.Check, null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(16.dp))
+                                        Icon(
+                                            Icons.Default.Check,
+                                            null,
+                                            tint = MaterialTheme.colorScheme.primary,
+                                            modifier = Modifier.size(16.dp),
+                                        )
                                     }
                                 },
                                 trailingIcon = {
@@ -248,7 +269,7 @@ internal fun ConversationTopBar(
                                         // 有档位：进入第二阶段
                                         levelStageModel = m
                                     }
-                                }
+                                },
                             )
                         }
                     }
@@ -259,10 +280,10 @@ internal fun ConversationTopBar(
                             Text(
                                 "← ${stage.name.substringAfterLast('/')}",
                                 style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.SemiBold),
-                                color = MaterialTheme.colorScheme.primary
+                                color = MaterialTheme.colorScheme.primary,
                             )
                         },
-                        onClick = { levelStageModel = null }
+                        onClick = { levelStageModel = null },
                     )
                     HorizontalDivider()
                     levelsOf(stage).forEach { lv ->
@@ -272,7 +293,7 @@ internal fun ConversationTopBar(
                                 menuExpanded = false
                                 levelStageModel = null
                                 onSwitchModel(stage.copy(thought = lv))
-                            }
+                            },
                         )
                     }
                 }
@@ -296,24 +317,33 @@ private fun ModeChip(
         Surface(
             onClick = { menuExpanded = true },
             shape = RoundedCornerShape(14.dp),
-            color = if (mode == "yolo") MaterialTheme.colorScheme.errorContainer
-            else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.6f),
+            color =
+                if (mode == "yolo") {
+                    MaterialTheme.colorScheme.errorContainer
+                } else {
+                    MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.6f)
+                },
             border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
-            modifier = Modifier.height(28.dp)
+            modifier = Modifier.height(28.dp),
         ) {
             Row(
                 verticalAlignment = Alignment.CenterVertically,
-                modifier = Modifier.padding(horizontal = 8.dp)
+                modifier = Modifier.padding(horizontal = 8.dp),
             ) {
                 Text(
                     text = if (mode == "yolo") "⚠ $mode" else mode,
-                    style = MaterialTheme.typography.labelSmall.copy(
-                        fontWeight = FontWeight.SemiBold,
-                        fontSize = 11.sp
-                    ),
-                    color = if (mode == "yolo") MaterialTheme.colorScheme.error
-                    else MaterialTheme.colorScheme.tertiary,
-                    maxLines = 1
+                    style =
+                        MaterialTheme.typography.labelSmall.copy(
+                            fontWeight = FontWeight.SemiBold,
+                            fontSize = 11.sp,
+                        ),
+                    color =
+                        if (mode == "yolo") {
+                            MaterialTheme.colorScheme.error
+                        } else {
+                            MaterialTheme.colorScheme.tertiary
+                        },
+                    maxLines = 1,
                 )
                 Spacer(Modifier.width(2.dp))
                 Text("▾", fontSize = 10.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
@@ -329,7 +359,7 @@ private fun ModeChip(
                                 Text(
                                     "免审批：所有工具调用自动放行",
                                     style = MaterialTheme.typography.labelSmall,
-                                    color = MaterialTheme.colorScheme.error
+                                    color = MaterialTheme.colorScheme.error,
                                 )
                             }
                         }
@@ -337,16 +367,17 @@ private fun ModeChip(
                     leadingIcon = {
                         if (m == mode) {
                             Icon(
-                                Icons.Default.Check, null,
+                                Icons.Default.Check,
+                                null,
                                 tint = MaterialTheme.colorScheme.primary,
-                                modifier = Modifier.size(16.dp)
+                                modifier = Modifier.size(16.dp),
                             )
                         }
                     },
                     onClick = {
                         menuExpanded = false
                         if (m != mode) onSwitchMode(m)
-                    }
+                    },
                 )
             }
             HorizontalDivider(modifier = Modifier.padding(vertical = 2.dp))
@@ -355,43 +386,45 @@ private fun ModeChip(
                     Text(
                         "切换仅对下一轮对话生效；运行中的轮次权限不变",
                         style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                 },
                 onClick = {},
-                enabled = false
+                enabled = false,
             )
         }
     }
 }
 
-private fun modeDisplayName(m: String): String = when (m) {
-    "plan" -> "规划 plan（只读规划，不改文件）"
-    "build" -> "构建 build（工具调用需审批）"
-    "yolo" -> "全自动 yolo（免审批）"
-    else -> m
-}
+private fun modeDisplayName(m: String): String =
+    when (m) {
+        "plan" -> "规划 plan（只读规划，不改文件）"
+        "build" -> "构建 build（工具调用需审批）"
+        "yolo" -> "全自动 yolo（免审批）"
+        else -> m
+    }
 
+internal fun statusLabel(s: ConversationChannel.Status) =
+    when (s) {
+        ConversationChannel.Status.Idle -> "未订阅"
+        ConversationChannel.Status.Hello -> "握手中…"
+        ConversationChannel.Status.Initialized -> "订阅中…"
+        is ConversationChannel.Status.Live -> "已连接"
+        // C-2：底层 reason 可能是通道未就绪 / 超时（英文自造短语）这类串，先经 UserFacingError 映射再截断
+        is ConversationChannel.Status.Failed -> "异常：${com.zcode.remote.relay.UserFacingError.map(s.reason).take(50)}"
+    }
 
-internal fun statusLabel(s: ConversationChannel.Status) = when (s) {
-    ConversationChannel.Status.Idle -> "未订阅"
-    ConversationChannel.Status.Hello -> "握手中…"
-    ConversationChannel.Status.Initialized -> "订阅中…"
-    is ConversationChannel.Status.Live -> "已连接"
-    // C-2：底层 reason 可能是通道未就绪 / 超时（英文自造短语）这类串，先经 UserFacingError 映射再截断
-    is ConversationChannel.Status.Failed -> "异常：${com.zcode.remote.relay.UserFacingError.map(s.reason).take(50)}"
-}
-
-internal fun phaseLabel(p: String) = when (p) {
-    "completedSuccess" -> "已完成"
-    "completedInterrupted" -> "已中断"
-    "completedError" -> "执行出错"
-    "idle" -> "空闲"
-    "running" -> "运行中"
-    "waitingUserInput" -> "等待输入"
-    "aborted" -> "已中止"
-    // host 对失败轮次直接送 phase="error"（非 completedError），此前落到 else 显示英文原文，
-    // 与列表里同一状态的「异常」标签不一致。
-    "error" -> "异常"
-    else -> p
-}
+internal fun phaseLabel(p: String) =
+    when (p) {
+        "completedSuccess" -> "已完成"
+        "completedInterrupted" -> "已中断"
+        "completedError" -> "执行出错"
+        "idle" -> "空闲"
+        "running" -> "运行中"
+        "waitingUserInput" -> "等待输入"
+        "aborted" -> "已中止"
+        // host 对失败轮次直接送 phase="error"（非 completedError），此前落到 else 显示英文原文，
+        // 与列表里同一状态的「异常」标签不一致。
+        "error" -> "异常"
+        else -> p
+    }

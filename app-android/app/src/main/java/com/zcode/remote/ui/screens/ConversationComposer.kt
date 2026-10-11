@@ -56,19 +56,21 @@ internal fun ActionChipsBar(
     onSelectChip: (String) -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    val chips = listOf(
-        "继续",
-        "运行测试验证",
-        "修复该问题",
-        "检查 Git 状态",
-        "整理并提交"
-    )
+    val chips =
+        listOf(
+            "继续",
+            "运行测试验证",
+            "修复该问题",
+            "检查 Git 状态",
+            "整理并提交",
+        )
     Row(
-        modifier = modifier
-            .fillMaxWidth()
-            .horizontalScroll(rememberScrollState()),
+        modifier =
+            modifier
+                .fillMaxWidth()
+                .horizontalScroll(rememberScrollState()),
         horizontalArrangement = Arrangement.spacedBy(6.dp),
-        verticalAlignment = Alignment.CenterVertically
+        verticalAlignment = Alignment.CenterVertically,
     ) {
         chips.forEach { chipText ->
             Surface(
@@ -76,19 +78,20 @@ internal fun ActionChipsBar(
                 shape = RoundedCornerShape(12.dp),
                 color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
                 border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)),
-                modifier = Modifier.height(26.dp)
+                modifier = Modifier.height(26.dp),
             ) {
                 Row(
                     verticalAlignment = Alignment.CenterVertically,
-                    modifier = Modifier.padding(horizontal = 10.dp)
+                    modifier = Modifier.padding(horizontal = 10.dp),
                 ) {
                     Text(
                         text = chipText,
-                        style = MaterialTheme.typography.labelSmall.copy(
-                            fontSize = 11.sp,
-                            fontWeight = FontWeight.Medium
-                        ),
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                        style =
+                            MaterialTheme.typography.labelSmall.copy(
+                                fontSize = 11.sp,
+                                fontWeight = FontWeight.Medium,
+                            ),
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                 }
             }
@@ -118,7 +121,10 @@ internal fun InputBar(
         val voiceLine = if (voiceListening) "🎤 正在聆听: ${voiceLive ?: "…"}" else voiceLive
         voiceLine?.let { line ->
             LaunchedEffect(line) {
-                if (line.startsWith("⚠️")) { delay(4000); voiceLive = null }
+                if (line.startsWith("⚠️")) {
+                    delay(4000)
+                    voiceLive = null
+                }
             }
             Text(
                 text = line,
@@ -133,23 +139,23 @@ internal fun InputBar(
             color = MaterialTheme.colorScheme.surface,
             border = CardDefaults.outlinedCardBorder(),
             tonalElevation = 2.dp,
-            modifier = Modifier.fillMaxWidth()
+            modifier = Modifier.fillMaxWidth(),
         ) {
             Row(
                 // B-2：CenterVertically 而非 Bottom —— 文本框 56dp 高、文字垂直居中（距顶 ~28dp），
                 // 按钮若贴底则中心在 ~38dp，错位 ~10dp（用户反馈「文字偏上、按钮偏下」即此）。
                 verticalAlignment = Alignment.CenterVertically,
-                modifier = Modifier.padding(horizontal = 8.dp, vertical = 6.dp)
+                modifier = Modifier.padding(horizontal = 8.dp, vertical = 6.dp),
             ) {
                 // 附件选择（48dp 触控档，图标视觉 18dp；与语音/发送按钮同档，见任务书 B-2）
                 IconButton(
                     onClick = onPick,
-                    modifier = Modifier.size(48.dp)
+                    modifier = Modifier.size(48.dp),
                 ) {
                     Icon(
                         imageVector = Icons.Default.Add,
                         contentDescription = "添加附件",
-                        tint = MaterialTheme.colorScheme.onSurfaceVariant
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                 }
 
@@ -174,10 +180,11 @@ internal fun InputBar(
                     placeholder = { Text("发送指令到 PC 端 Agent…", style = MaterialTheme.typography.bodySmall) },
                     maxLines = 4,
                     shape = RoundedCornerShape(16.dp),
-                    colors = OutlinedTextFieldDefaults.colors(
-                        focusedBorderColor = Color.Transparent,
-                        unfocusedBorderColor = Color.Transparent
-                    )
+                    colors =
+                        OutlinedTextFieldDefaults.colors(
+                            focusedBorderColor = Color.Transparent,
+                            unfocusedBorderColor = Color.Transparent,
+                        ),
                 )
 
                 Spacer(Modifier.width(4.dp))
@@ -188,12 +195,17 @@ internal fun InputBar(
                         onClick = onSend,
                         enabled = !sending,
                         modifier = Modifier.size(48.dp),
-                        colors = IconButtonDefaults.filledIconButtonColors(
-                            containerColor = MaterialTheme.colorScheme.primary
-                        )
+                        colors =
+                            IconButtonDefaults.filledIconButtonColors(
+                                containerColor = MaterialTheme.colorScheme.primary,
+                            ),
                     ) {
                         if (sending) {
-                            CircularProgressIndicator(modifier = Modifier.size(16.dp), strokeWidth = 2.dp, color = MaterialTheme.colorScheme.onPrimary)
+                            CircularProgressIndicator(
+                                modifier = Modifier.size(16.dp),
+                                strokeWidth = 2.dp,
+                                color = MaterialTheme.colorScheme.onPrimary,
+                            )
                         } else {
                             Icon(Icons.Default.Send, contentDescription = "发送", modifier = Modifier.size(18.dp))
                         }
@@ -203,9 +215,10 @@ internal fun InputBar(
                         onClick = onStop,
                         enabled = !stopping,
                         modifier = Modifier.size(48.dp),
-                        colors = IconButtonDefaults.filledIconButtonColors(
-                            containerColor = MaterialTheme.colorScheme.error
-                        )
+                        colors =
+                            IconButtonDefaults.filledIconButtonColors(
+                                containerColor = MaterialTheme.colorScheme.error,
+                            ),
                     ) {
                         Icon(Icons.Default.Close, contentDescription = "中断", modifier = Modifier.size(18.dp))
                     }
@@ -213,13 +226,13 @@ internal fun InputBar(
                     IconButton(
                         onClick = {},
                         enabled = false,
-                        modifier = Modifier.size(48.dp)
+                        modifier = Modifier.size(48.dp),
                     ) {
                         Icon(
                             imageVector = Icons.Default.Send,
                             contentDescription = "发送",
                             tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.35f),
-                            modifier = Modifier.size(18.dp)
+                            modifier = Modifier.size(18.dp),
                         )
                     }
                 }

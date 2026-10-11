@@ -17,7 +17,6 @@ import kotlin.math.roundToInt
  * 保证手机与桌面读到同一个词。
  */
 object StatusPanelLabels {
-
     /**
      * 顶栏「状态」入口文案。**没有内容时返回 null**（入口整个不出现），
      * 与桌面端 `hasContent` 的隐藏条件一致。
@@ -56,16 +55,17 @@ object StatusPanelLabels {
     }
 
     /** 上下文来源的中文标签。未知来源原样回显，不硬塞成「其他」。 */
-    fun contextSourceLabel(source: String): String = when (source) {
-        "messages" -> "消息"
-        "system_prompt" -> "系统提示词"
-        "meta_user_context" -> "其他"
-        "skills" -> "技能"
-        "tool_prompt" -> "工具提示词"
-        "system_tool_schemas" -> "系统工具"
-        "mcp_tool_schemas" -> "MCP 工具"
-        else -> source
-    }
+    fun contextSourceLabel(source: String): String =
+        when (source) {
+            "messages" -> "消息"
+            "system_prompt" -> "系统提示词"
+            "meta_user_context" -> "其他"
+            "skills" -> "技能"
+            "tool_prompt" -> "工具提示词"
+            "system_tool_schemas" -> "系统工具"
+            "mcp_tool_schemas" -> "MCP 工具"
+            else -> source
+        }
 
     /** `上下文 12.3k / 200k`。两个数字缺任一个都返回 null（宁可少一行也不显示 `12.3k / ?`）。 */
     fun contextUsageLine(usage: ContextUsage): String? {
@@ -84,13 +84,14 @@ object StatusPanelLabels {
     }
 
     /** 目标状态的中文标签。未知状态原样回显（协议可能新增枚举，不要静默吞掉）。 */
-    fun goalStatusLabel(status: String?): String? = when (status) {
-        null -> null
-        "active" -> "进行中"
-        "verifying" -> "校验中"
-        "notSatisfied" -> "未达标"
-        else -> status
-    }
+    fun goalStatusLabel(status: String?): String? =
+        when (status) {
+            null -> null
+            "active" -> "进行中"
+            "verifying" -> "校验中"
+            "notSatisfied" -> "未达标"
+            else -> status
+        }
 
     /**
      * 目标耗时：`已运行 3 分 20 秒`。
@@ -98,7 +99,10 @@ object StatusPanelLabels {
      * 进行中的目标要让秒数真的在走（[GoalState.elapsedSeconds] 叠加本轮已跑时长），
      * 所以这里必须由调用方把当前时刻传进来，函数本身不读时钟 —— 否则单测只能靠等一秒。
      */
-    fun goalElapsedLabel(goal: GoalState, nowMs: Long): String {
+    fun goalElapsedLabel(
+        goal: GoalState,
+        nowMs: Long,
+    ): String {
         val d = Format.duration(goal.elapsedSeconds(nowMs) * 1000L)
         return if (d.isEmpty()) "" else "已运行 $d"
     }
@@ -115,16 +119,13 @@ object StatusPanelLabels {
     }
 
     /** 待办分区的计数（`3/7`），全空返回 null。 */
-    fun planCounterLabel(plan: PlanState): String? =
-        if (plan.totalCount == 0) null else "${plan.completedCount}/${plan.totalCount}"
+    fun planCounterLabel(plan: PlanState): String? = if (plan.totalCount == 0) null else "${plan.completedCount}/${plan.totalCount}"
 
     /** 被折叠的已完成项文案（桌面 `todoCompletedFold`：`已完成 {count} 项`）。 */
-    fun planFoldedCompletedLabel(count: Int): String? =
-        if (count > 0) "已完成 $count 项" else null
+    fun planFoldedCompletedLabel(count: Int): String? = if (count > 0) "已完成 $count 项" else null
 
     /** 被截掉的尾部未完成项文案（桌面 `todoLaterFold`：`后面 {count} 项`）。 */
-    fun planFoldedTailLabel(count: Int): String? =
-        if (count > 0) "后面 $count 项" else null
+    fun planFoldedTailLabel(count: Int): String? = if (count > 0) "后面 $count 项" else null
 
     /** 终端分区计数（桌面 `runningStatusValue`：`{count} 个后台运行`）。 */
     fun terminalsLabel(count: Int): String? = if (count > 0) "$count 个后台运行" else null

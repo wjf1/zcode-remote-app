@@ -10,7 +10,6 @@ import org.junit.Test
  * 脱敏输出零命中）。
  */
 class LogRedactorTest {
-
     private val canarySid = "sid_9f3c1ab2deadbeef"
     private val canaryHash = "xoh7AeqK0mNpQrStUvWxYz"
     private val canaryPath = "F:/Users/admin/secret-project/internal/keys.pem"
@@ -77,11 +76,12 @@ class LogRedactorTest {
     @Test
     fun combinedLineHasZeroCanaryHits() {
         // 模拟一处真实日志行的拼装，断言最终字符串对全部 canary 零命中
-        val line = "resolve sid=${LogRedactor.maskId(canarySid)} " +
-            "hash=${LogRedactor.maskId(canaryHash)} " +
-            "ws=${LogRedactor.pathLabel(canaryPath)} " +
-            "answer=${LogRedactor.payloadLabel(canaryPrompt)} " +
-            "endpoint=${LogRedactor.endpointLabel(canaryUrl)}"
+        val line =
+            "resolve sid=${LogRedactor.maskId(canarySid)} " +
+                "hash=${LogRedactor.maskId(canaryHash)} " +
+                "ws=${LogRedactor.pathLabel(canaryPath)} " +
+                "answer=${LogRedactor.payloadLabel(canaryPrompt)} " +
+                "endpoint=${LogRedactor.endpointLabel(canaryUrl)}"
         for (canary in listOf(canarySid, canaryHash, canaryPath, canaryPrompt, canaryUrl)) {
             assertFalse("canary 泄漏到日志行：$canary", line.contains(canary))
         }

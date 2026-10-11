@@ -35,8 +35,10 @@ object TurnChanges {
      */
     class DiffCache {
         private class Cached(
-            val nameHash: Int, val nameLen: Int,
-            val textHash: Int, val textLen: Int,
+            val nameHash: Int,
+            val nameLen: Int,
+            val textHash: Int,
+            val textLen: Int,
             val diff: ToolDiff?,
         )
 
@@ -71,7 +73,10 @@ object TurnChanges {
      * 从会话行中抽取各 Turn 的文件写变更聚合。
      * 返回：以该 Turn 最后一个写操作的 rowId 为键的 Map，便于在 ConversationScreen 中精准挂载渲染。
      */
-    fun aggregate(rows: List<ConversationRow>, cache: DiffCache? = null): Map<Int, TurnDiffSummary> {
+    fun aggregate(
+        rows: List<ConversationRow>,
+        cache: DiffCache? = null,
+    ): Map<Int, TurnDiffSummary> {
         val result = mutableMapOf<Int, TurnDiffSummary>()
         if (rows.isEmpty()) return result
 
@@ -102,11 +107,12 @@ object TurnChanges {
             }
 
             if (diffs.isNotEmpty() && lastWriteRowId != null) {
-                result[lastWriteRowId] = TurnDiffSummary(
-                    turnKey = turnKey,
-                    diffs = diffs,
-                    lastRowId = lastWriteRowId,
-                )
+                result[lastWriteRowId] =
+                    TurnDiffSummary(
+                        turnKey = turnKey,
+                        diffs = diffs,
+                        lastRowId = lastWriteRowId,
+                    )
             }
         }
 

@@ -55,33 +55,35 @@ internal fun ElicitationCard(
     Card(
         shape = RoundedCornerShape(12.dp),
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-        border = CardDefaults.outlinedCardBorder().copy(
-            brush = androidx.compose.ui.graphics.SolidColor(MaterialTheme.colorScheme.tertiary.copy(alpha = 0.5f))
-        ),
-        modifier = Modifier.fillMaxWidth()
+        border =
+            CardDefaults.outlinedCardBorder().copy(
+                brush = androidx.compose.ui.graphics.SolidColor(MaterialTheme.colorScheme.tertiary.copy(alpha = 0.5f)),
+            ),
+        modifier = Modifier.fillMaxWidth(),
     ) {
         Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             Text(
-                text = when {
-                    el.isPlanApproval -> "实施方案待批准"
-                    el.questions.isNotEmpty() -> "提问 · 需要你的回答"
-                    else -> "确认请求"
-                },
+                text =
+                    when {
+                        el.isPlanApproval -> "实施方案待批准"
+                        el.questions.isNotEmpty() -> "提问 · 需要你的回答"
+                        else -> "确认请求"
+                    },
                 style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.Bold),
-                color = MaterialTheme.colorScheme.tertiary
+                color = MaterialTheme.colorScheme.tertiary,
             )
 
             el.plan?.let {
                 Surface(
                     color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
-                    shape = RoundedCornerShape(8.dp)
+                    shape = RoundedCornerShape(8.dp),
                 ) {
                     Text(
                         text = it.take(2000),
                         style = MaterialTheme.typography.bodySmall.copy(fontFamily = FontFamily.Monospace, fontSize = 12.sp),
                         maxLines = 10,
                         overflow = TextOverflow.Ellipsis,
-                        modifier = Modifier.padding(10.dp)
+                        modifier = Modifier.padding(10.dp),
                     )
                 }
             }
@@ -109,9 +111,14 @@ internal fun ElicitationCard(
                             }
                         },
                         modifier = Modifier.fillMaxWidth(),
-                        colors = if (chosen) ButtonDefaults.outlinedButtonColors(
-                            containerColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.12f)
-                        ) else ButtonDefaults.outlinedButtonColors()
+                        colors =
+                            if (chosen) {
+                                ButtonDefaults.outlinedButtonColors(
+                                    containerColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.12f),
+                                )
+                            } else {
+                                ButtonDefaults.outlinedButtonColors()
+                            },
                     ) {
                         Text(opt.label, style = MaterialTheme.typography.bodySmall)
                     }
@@ -125,7 +132,7 @@ internal fun ElicitationCard(
                     placeholder = { Text("输入自定义回答…", style = MaterialTheme.typography.bodySmall) },
                     modifier = Modifier.fillMaxWidth(),
                     shape = RoundedCornerShape(8.dp),
-                    maxLines = 3
+                    maxLines = 3,
                 )
             }
 
@@ -139,7 +146,7 @@ internal fun ElicitationCard(
                         }
                         onAccept(answers.filter { it.value.isNotEmpty() })
                     },
-                    enabled = selected.isNotEmpty() || freeTextDraft.isNotBlank()
+                    enabled = selected.isNotEmpty() || freeTextDraft.isNotBlank(),
                 ) { Text("提交回答") }
                 OutlinedButton(onClick = onDecline) { Text("拒绝") }
             }
@@ -157,17 +164,18 @@ internal fun ApprovalCard(
     Card(
         shape = RoundedCornerShape(12.dp),
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-        border = CardDefaults.outlinedCardBorder().copy(
-            brush = androidx.compose.ui.graphics.SolidColor(statusPendingTone().copy(alpha = 0.6f))
-        ),
-        modifier = Modifier.fillMaxWidth()
+        border =
+            CardDefaults.outlinedCardBorder().copy(
+                brush = androidx.compose.ui.graphics.SolidColor(statusPendingTone().copy(alpha = 0.6f)),
+            ),
+        modifier = Modifier.fillMaxWidth(),
     ) {
         Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text(
                     text = "权限审批 · ${a.toolName ?: "Command"}",
                     style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.Bold),
-                    color = statusPendingTone()
+                    color = statusPendingTone(),
                 )
                 Spacer(Modifier.weight(1f))
                 a.autoResolveAt?.let {
@@ -181,9 +189,13 @@ internal fun ApprovalCard(
             a.detail?.let {
                 Surface(
                     color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
-                    shape = RoundedCornerShape(6.dp)
+                    shape = RoundedCornerShape(6.dp),
                 ) {
-                    Text(it.take(500), style = MaterialTheme.typography.bodySmall.copy(fontFamily = FontFamily.Monospace, fontSize = 11.5.sp), modifier = Modifier.padding(6.dp))
+                    Text(
+                        it.take(500),
+                        style = MaterialTheme.typography.bodySmall.copy(fontFamily = FontFamily.Monospace, fontSize = 11.5.sp),
+                        modifier = Modifier.padding(6.dp),
+                    )
                 }
             }
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth().padding(top = 4.dp)) {
@@ -195,9 +207,10 @@ internal fun ApprovalCard(
                         },
                         modifier = Modifier.weight(1f).height(34.dp),
                         contentPadding = androidx.compose.foundation.layout.PaddingValues(0.dp),
-                        colors = ButtonDefaults.buttonColors(
-                            containerColor = if (opt.isAllow) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.error
-                        )
+                        colors =
+                            ButtonDefaults.buttonColors(
+                                containerColor = if (opt.isAllow) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.error,
+                            ),
                     ) {
                         Text(
                             when {
@@ -206,7 +219,7 @@ internal fun ApprovalCard(
                                 opt.isDeny -> "拒绝"
                                 else -> opt.label.ifBlank { "选项" }
                             },
-                            style = MaterialTheme.typography.labelSmall
+                            style = MaterialTheme.typography.labelSmall,
                         )
                     }
                 }

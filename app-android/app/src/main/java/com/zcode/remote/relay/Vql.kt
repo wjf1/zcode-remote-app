@@ -38,17 +38,25 @@ object Vql {
         return out.toByteArray()
     }
 
-    private fun write(out: ByteArrayOutputStream, v: Any?) {
+    private fun write(
+        out: ByteArrayOutputStream,
+        v: Any?,
+    ) {
         when (v) {
             null -> out.write(T_UNDEFINED)
             is String -> {
-                out.write(T_STRING); writeVarint(out, utf8(v).size); out.write(utf8(v))
+                out.write(T_STRING)
+                writeVarint(out, utf8(v).size)
+                out.write(utf8(v))
             }
             is ByteArray -> {
-                out.write(T_BUFFER); writeVarint(out, v.size); out.write(v)
+                out.write(T_BUFFER)
+                writeVarint(out, v.size)
+                out.write(v)
             }
             is List<*> -> {
-                out.write(T_ARRAY); writeVarint(out, v.size)
+                out.write(T_ARRAY)
+                writeVarint(out, v.size)
                 v.forEach { write(out, it) }
             }
             is JsonElement -> writeJson(out, v)
@@ -57,43 +65,60 @@ object Vql {
                 // 仅 int32 范围的整数走 Int tag（与官方 (e|0)===e 判定一致），其余降级为 JSON
                 val n = (v as Number).toLong()
                 if (n >= Int.MIN_VALUE && n <= Int.MAX_VALUE) {
-                    out.write(T_INT); writeVarint(out, n.toInt())
-                } else writeJson(out, JsonPrimitive(n))
+                    out.write(T_INT)
+                    writeVarint(out, n.toInt())
+                } else {
+                    writeJson(out, JsonPrimitive(n))
+                }
             }
             is Boolean, is Double, is Float -> writeJson(out, toJsonPrimitive(v))
             else -> writeJson(out, JsonPrimitive(v.toString()))
         }
     }
 
-    private fun writeJson(out: ByteArrayOutputStream, el: JsonElement) {
+    private fun writeJson(
+        out: ByteArrayOutputStream,
+        el: JsonElement,
+    ) {
         val b = utf8(el.toString())
-        out.write(T_OBJECT); writeVarint(out, b.size); out.write(b)
+        out.write(T_OBJECT)
+        writeVarint(out, b.size)
+        out.write(b)
     }
 
     private fun utf8(s: String) = s.toByteArray(Charsets.UTF_8)
 
-    private fun toJsonPrimitive(v: Any?): JsonElement = when (v) {
-        null -> JsonNull
-        is Boolean -> JsonPrimitive(v)
-        is Number -> JsonPrimitive(v)
-        else -> JsonPrimitive(v.toString())
-    }
+    private fun toJsonPrimitive(v: Any?): JsonElement =
+        when (v) {
+            null -> JsonNull
+            is Boolean -> JsonPrimitive(v)
+            is Number -> JsonPrimitive(v)
+            else -> JsonPrimitive(v.toString())
+        }
 
-    private fun toJson(m: Map<*, *>): JsonElement = JsonObject(
-        m.entries.associate { (k, v) -> k.toString() to toJsonValue(v) }
-    )
+    private fun toJson(m: Map<*, *>): JsonElement =
+        JsonObject(
+            m.entries.associate { (k, v) -> k.toString() to toJsonValue(v) },
+        )
 
-    private fun toJsonValue(v: Any?): JsonElement = when (v) {
-        null -> JsonNull
-        is Map<*, *> -> toJson(v)
-        is List<*> -> JsonArray(v.map { toJsonValue(it) })
-        else -> toJsonPrimitive(v)
-    }
+    private fun toJsonValue(v: Any?): JsonElement =
+        when (v) {
+            null -> JsonNull
+            is Map<*, *> -> toJson(v)
+            is List<*> -> JsonArray(v.map { toJsonValue(it) })
+            else -> toJsonPrimitive(v)
+        }
 
     /** ULEB128（官方 writeInt32VQL：uint32 语义）。 */
-    private fun writeVarint(out: ByteArrayOutputStream, value: Int) {
+    private fun writeVarint(
+        out: ByteArrayOutputStream,
+        value: Int,
+    ) {
         var v = value
-        if (v == 0) { out.write(0); return }
+        if (v == 0) {
+            out.write(0)
+            return
+        }
         while (v != 0) {
             val b = v and 0x7F
             v = v ushr 7
@@ -105,12 +130,18 @@ object Vql {
 
     private class Reader(val buf: ByteArray) {
         var pos = 0
+
         fun byte(): Int = buf[pos++].toInt() and 0xFF
+
         fun take(n: Int): ByteArray {
-            val r = buf.copyOfRange(pos, pos + n); pos += n; return r
+            val r = buf.copyOfRange(pos, pos + n)
+            pos += n
+            return r
         }
+
         fun varint(): Int {
-            var result = 0; var shift = 0
+            var result = 0
+            var shift = 0
             while (true) {
                 val b = byte()
                 result = result or ((b and 0x7F) shl shift)
@@ -121,7 +152,10 @@ object Vql {
         }
     }
 
-    fun deserialize(buf: ByteArray, offset: Int = 0): Decoded {
+    fun deserialize(
+        buf: ByteArray,
+        offset: Int = 0,
+    ): Decoded {
         val r = Reader(buf)
         r.pos = offset
         val v = read(r)
@@ -130,13 +164,17 @@ object Vql {
 
     data class Decoded(val value: Any?, val nextOffset: Int)
 
-    private fun read(r: Reader): Any? = when (val tag = r.byte()) {
-        T_UNDEFINED -> null
-        T_STRING -> String(r.take(r.varint()), Charsets.UTF_8)
-        T_BUFFER, T_VSBUFFER -> r.take(r.varint())
-        T_ARRAY -> { val n = r.varint(); (0 until n).map { read(r) } }
-        T_OBJECT -> RelayProtocol.json.parseToJsonElement(String(r.take(r.varint()), Charsets.UTF_8))
-        T_INT -> r.varint()
-        else -> throw IllegalArgumentException("unknown vql tag: $tag")
-    }
+    private fun read(r: Reader): Any? =
+        when (val tag = r.byte()) {
+            T_UNDEFINED -> null
+            T_STRING -> String(r.take(r.varint()), Charsets.UTF_8)
+            T_BUFFER, T_VSBUFFER -> r.take(r.varint())
+            T_ARRAY -> {
+                val n = r.varint()
+                (0 until n).map { read(r) }
+            }
+            T_OBJECT -> RelayProtocol.json.parseToJsonElement(String(r.take(r.varint()), Charsets.UTF_8))
+            T_INT -> r.varint()
+            else -> throw IllegalArgumentException("unknown vql tag: $tag")
+        }
 }
