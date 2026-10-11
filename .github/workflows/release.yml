@@ -52,9 +52,8 @@ jobs:
           printf '%s' "$KEYSTORE_PROPERTIES" > app-android/keystore.properties
 
       - name: 组装签名 Release APK + SBOM
-        run: |
-          gradle assembleRelease cyclonedxBom --console=plain
-          working-directory: app-android
+        working-directory: app-android
+        run: gradle assembleRelease cyclonedxBom --console=plain
 
       # ③ 发布资产：APK 规范化命名 + SHA-256 + 签名证书指纹
       - name: 生成校验与指纹资产

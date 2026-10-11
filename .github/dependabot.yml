@@ -6,8 +6,16 @@ updates:
     schedule:
       interval: weekly
     open-pull-requests-limit: 5
+    # 稳定优先（AGENTS.md）：大版本跳跃不自动开 PR（仍会出现在 Dependabot alerts 里），
+    # 需要人工评估兼容性后手动升级；自动 PR 只收 minor/patch。
+    ignore:
+      - dependency-name: "*"
+        update-types: ["version-update:semver-major"]
   - package-ecosystem: github-actions
     directory: /
     schedule:
       interval: weekly
     open-pull-requests-limit: 5
+    ignore:
+      - dependency-name: "*"
+        update-types: ["version-update:semver-major"]
