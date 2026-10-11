@@ -1,5 +1,18 @@
 # 变更记录 / Changelog
 
+## v0.5.0-beta27（2026-10-11）· A-4 失同步自愈（缺口触发重订阅 + SUSPEND 单泵）
+
+### 修复（任务书 A-4，高危项）
+- **入站缓冲 `256/DROP_OLDEST` → `512/SUSPEND` + 单泵**：慢消费时由发射端（`onRpcFrame`，跑在入站泵协程）背压挂起，不再丢帧——丢帧 = seq 缺口 = 会话静默停在旧状态；容量对齐 `RelayClient._inbound`。`tryEmit → emit`，`onRpcFrame/handleMessage` 改 suspend（调用点本就在泵协程）。
+- **缺口不再只 WARN**：新增 `RpcChannel.onSequenceGap` 回调，`connect()` 挂 `retrySubscribe()` —— 缺口帧已 ack、服务端不重发，**重取权威快照是唯一自愈路径**。
+
+### 验证（真机 2410DPN6CC，WiFi adb）
+- 单测 **194/194**（含 `--min 194` 阈值门禁；`hasSeqGap` 纯函数保护网既有）。
+- 装机 Success、启动 **FATAL=0**、**事件流缺口 0 条**；会话列表与**流式内容正常渲染**（SUSPEND 泵在真实流量下工作）。
+
+### 工程
+- 真机调试链路切换为 **adb over WiFi**（HyperOS USB 调试传输自掉线问题的绕行；已配对 192.168.0.102）。
+
 ## v0.5.0-beta26（2026-10-11）· §11.4 阶段③ 连接韧性流整体迁入进程级
 
 ### 变更（架构，任务书 §11.4 完结）
