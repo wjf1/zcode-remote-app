@@ -6,6 +6,7 @@ import androidx.compose.runtime.mutableStateListOf
 import com.zcode.remote.relay.ConversationRow
 import com.zcode.remote.repo.AttachmentUploader
 import com.zcode.remote.repo.ConversationRepository
+import com.zcode.remote.service.ConnectionCoordinator
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotSame
@@ -98,12 +99,12 @@ class AppViewModelTest {
     @Test
     fun bridgeReopenDelay_backsOffThenStops() {
         // 退避序列 1s/2s/4s；到上限即停手——否则会把「服务端持续降级」放大成重开风暴
-        assertEquals(1_000L, AppViewModel.bridgeReopenDelayMs(1))
-        assertEquals(2_000L, AppViewModel.bridgeReopenDelayMs(2))
-        assertEquals(4_000L, AppViewModel.bridgeReopenDelayMs(3))
-        assertNull("超过上限应停手，避免重开风暴", AppViewModel.bridgeReopenDelayMs(4))
-        assertNull(AppViewModel.bridgeReopenDelayMs(0))
-        assertNull(AppViewModel.bridgeReopenDelayMs(-1))
+        assertEquals(1_000L, ConnectionCoordinator.bridgeReopenDelayMs(1))
+        assertEquals(2_000L, ConnectionCoordinator.bridgeReopenDelayMs(2))
+        assertEquals(4_000L, ConnectionCoordinator.bridgeReopenDelayMs(3))
+        assertNull("超过上限应停手，避免重开风暴", ConnectionCoordinator.bridgeReopenDelayMs(4))
+        assertNull(ConnectionCoordinator.bridgeReopenDelayMs(0))
+        assertNull(ConnectionCoordinator.bridgeReopenDelayMs(-1))
     }
 
     // ---------- C-5⑤：异步离线缓存的竞态判定（2026-10-10 立项） ----------

@@ -1,6 +1,7 @@
 package com.zcode.remote
 
 import android.app.Application
+import android.content.Context
 import android.net.ConnectivityManager
 import com.zcode.remote.util.LogRedactor
 import com.zcode.remote.util.ZLog
@@ -49,10 +50,12 @@ import com.zcode.remote.storage.SessionCacheStore
 import com.zcode.remote.repo.ApprovalRepository
 import com.zcode.remote.repo.AttachmentUploader
 import com.zcode.remote.repo.ConversationRepository
+import com.zcode.remote.service.ConnectionCoordinator
 import com.zcode.remote.repo.ModelConfigRepository
 import com.zcode.remote.repo.NotificationCoordinator
 import com.zcode.remote.repo.UpdateRepository
 import com.zcode.remote.storage.SettingsStore
+import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.launch
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
@@ -68,7 +71,7 @@ import kotlinx.serialization.json.put
  * 应用状态中枢：配对 → 中继连接 → bootstrap（会话列表）→ 开桥 → RPC 会话流。
  * 协议见 PROTOCOL.md 与 research/FRAME-CODEC.md。
  */
-class AppViewModel(app: Application) : AndroidViewModel(app) {
+class AppViewModel(app: Application) : AndroidViewModel(app), ConnectionCoordinator.ConnectionHost {
     private val multiStore = MultiDeviceStore(app)
     private val settings = SettingsStore(app)
 
@@ -96,10 +99,7 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         conversation = { conversation },
         activeWorkspaceKey = { activeWorkspaceKey },
         flash = { msg, failure -> if (failure) flash(msg, FlashKind.Failure) else flash(msg) },
-        onNewSubscription = {
-            handshakeRetryJob?.cancel(); handshakeRetryJob = null
-            handshakeRetryCount = 0
-        },
+        onNewSubscription = { connectionCoordinator.resetHandshakeRetry() },
         clearAttachments = { uploader.clearAttachments() },
     )
     private val approvalRepo = ApprovalRepository(
@@ -120,6 +120,35 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         subscribedSessionId = { subscribedSessionId },
         approvalsRepo = approvalRepo,
     )
+    private val connectionCoordinator: ConnectionCoordinator = ConnectionCoordinator(
+        host = this,
+        convRepo = convRepo,
+        approvalRepo = approvalRepo,
+        modelRepo = modelRepo,
+        notifyCoordinator = notifyCoordinator,
+    )
+
+    // ---- §11.7 拆分：ConnectionHost 实现（connect 编排对 VM 的全部触碰点）----
+    override val hostContext: Context get() = getApplication()
+    override val hostScope: CoroutineScope get() = viewModelScope
+    override val hostDevice: PairedDevice? get() = device
+    override fun hostRelayOverride(): String? = relayOverride()
+    override var hostRelayState: RelayState
+        get() = relayState
+        set(value) { relayState = value }
+    override val hostEvents: MutableList<TaskEvent> get() = events
+    override val hostSessions: MutableList<SessionItem> get() = sessions
+    override var hostBridgeState: RpcChannel.BridgeState
+        get() = bridgeState
+        set(value) { bridgeState = value }
+    override var hostActiveWorkspaceKey: String?
+        get() = activeWorkspaceKey
+        set(value) { activeWorkspaceKey = value }
+    override val hostRpcEvents: MutableList<String> get() = rpcEvents
+    override var hostSessionModeOverride: String?
+        get() = sessionModeOverride
+        set(value) { sessionModeOverride = value }
+    override fun hostRetrySubscribe() = retrySubscribe()
 
     /** 活跃设备（当前连接的这台）。 */
     var device by mutableStateOf(multiStore.load().let { s ->
@@ -180,18 +209,6 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
     var activeWorkspaceKey by mutableStateOf<String?>(null)
         private set
 
-    /**
-     * 握手自动重订计数（A-2）：每次新会话订阅归零；`Status.Live` 到达也归零。
-     * 上限 1 次——再失败即置 Failed 并把重试权交回用户（UI 重试入口）。
-     */
-    private var handshakeRetryCount = 0
-    private var handshakeRetryJob: kotlinx.coroutines.Job? = null
-    /**
-     * 桥自动重开计数与任务（2026-10-10 真机故障修复）：桥失败后此前无自愈路径，
-     * 详见 scheduleBridgeReopen。桥就绪即归零。
-     */
-    private var bridgeReopenCount = 0
-    private var bridgeReopenJob: kotlinx.coroutines.Job? = null
     /** 最近收到的 RPC 事件（原始 JSON，供 M2 阶段观测/渲染）。 */
     val rpcEvents = mutableStateListOf<String>()
     // ---- 会话流（§11.7 拆分：实现在 repo/ConversationRepository，此处转发保持签名不变）----
@@ -378,247 +395,7 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
-    fun connect() {
-        val dev = device ?: return
-        ConnectionScope.manuallyDisconnected = false
-        // P0-A：前台服务保住进程 —— App 在后台/锁屏时连接与审批通知才可达（招牌功能的性命）
-        ConnectionService.start(getApplication())
-        // §11.4 阶段②：重建连接栈前先取消旧 collector —— 否则重连会叠加旧流，
-        // 旧流继续写旧实例（重复订阅 / 重复审批卡 / 重复通知）。
-        RemoteConnectionManager.cancelCollectors()
-        client?.close()
-        channel?.reset()
-        conversation?.reset()
-        val c = RelayClient(
-            dev,
-            // B 组：自报真实版本号（原默认 0.1.0，上游按 app_version 做能力协商时是哑雷）
-            appVersion = BuildConfig.VERSION_NAME,
-            relayWsUrlOverride = relayOverride(),
-        )
-        // B 组：网络感知重连 —— 常驻监控：断网立即断 socket 调度重连（attempt 归零），
-        // 恢复即刻放行（不等 OkHttp 迟到的失败回调，真机实证其延迟到恢复才冒出）
-        val cm = getApplication<Application>().getSystemService(ConnectivityManager::class.java)
-        val gate = NetworkGate(cm)
-        gate.onLost = c::onNetworkLost
-        // 网络恢复：重置退避 + 取消已排队的退避等待并立即重连（否则恢复要白等一轮退避，实测 ~47s）
-        gate.onAvailable = c::onNetworkAvailable
-        c.networkWait = gate::waitBeforeReconnect
-        gate.startWatch()
-        val ch = RpcChannel(c)
-        // A-4：事件流 seq 缺口 → 会话重订阅（缺口帧已 ack、服务端不重发，重取权威快照是唯一自愈路径）。
-        ch.onSequenceGap = { retrySubscribe() }
-        val conv = ConversationChannel(ch)
-        conv.onRowsUpdated = { sid, updatedRows ->
-            viewModelScope.launch {
-                SessionCacheStore.saveRows(getApplication(), sid, updatedRows)
-            }
-        }
-        // C-6：服务端回显 userInput 行 → 移除对应的本地 pending 回显气泡
-        conv.onUserInputEcho = { row -> consumePendingEcho(row.text) }
-        // 会话级错误原因回填首页列表：bootstrap 的 tasks[] 形状不含 lastError（PROTOCOL.md 实测样本），
-        // 只有打开过的会话能从快照 control.lastError 拿到原因——聊胜于无，完整原因在会话页横幅。
-        conv.onSessionError = { sid, err ->
-            val idx = sessions.indexOfFirst { it.taskId == sid }
-            if (idx >= 0 && sessions[idx].lastError != err) {
-                sessions[idx] = sessions[idx].copy(lastError = err)
-            }
-        }
-        // 会话相位回填首页列表：列表的 displayStatus 只在配对成功时的 bootstrap 取一次快照，
-        // 全仓没有刷新入口——「会话页明明在跑、退回主界面却没有运行中的会话」就是这一半缺口。
-        conv.onSessionPhase = { sid, phase ->
-            val mapped = displayStatusForPhase(phase)
-            if (mapped != null) {
-                val idx = sessions.indexOfFirst { it.taskId == sid }
-                if (idx >= 0 && sessions[idx].displayStatus != mapped) {
-                    sessions[idx] = sessions[idx].copy(displayStatus = mapped)
-                }
-            }
-        }
-        val sidx = SessionsIndexChannel(ch)
-        val wcfg = WorkspaceConfigChannel(ch)
-        client = c
-        channel = ch
-        conversation = conv
-        sessionsIndex = sidx
-        workspaceConfig = wcfg
-        c.connect()
-
-        // §11.4 阶段③：relay 状态流迁入进程级作用域 —— 终态通知（KICKED/配对失效等）是
-        // 锁屏可达性本体，VM 被清后也必须能发；引导触发与 Widget 刷新随流同迁。
-        RemoteConnectionManager.launchCollector {
-            c.state.collect { st ->
-                relayState = st
-                // Sprint 2 / A 组第 3 项：终态失败发常驻系统通知 —— 手机在兜里时不能
-                // 静默失去全部审批能力（KICKED/配对失效/协议升级用户都必须立刻知道）。
-                val terminal = (st as? RelayState.Failed)?.takeIf {
-                    it.reason == FailureReason.KICKED || it.reason == FailureReason.AUTH_FAILED ||
-                        it.reason == FailureReason.PROTOCOL_MISMATCH ||
-                        it.reason == FailureReason.INVALID_ENDPOINT
-                }
-                if (terminal != null) {
-                    TerminalNotifier.show(getApplication(), terminalTitle(terminal.reason), terminal.message)
-                } else {
-                    TerminalNotifier.clear(getApplication())
-                }
-                if (st is RelayState.Paired) {
-                    ch.reset()
-                    c.sendPayload(BridgeFrames.bootstrapRequest("boot-${System.currentTimeMillis()}"))
-                    // 接管后立即上报视图状态（P1-2）：PC 端知道手机在看哪个工作区/会话
-                    reportViewState()
-                }
-                // 连接状态变化即刷新桌面 Widget（含断线 → 未连接态）
-                syncWidget()
-            }
-        }
-
-        viewModelScope.launch {
-            c.inbound.collect { payload ->
-                when (BridgeFrames.zcodeTypeOf(payload)) {
-                    "bootstrap-response" -> {
-                        val list = parseBootstrapSessions(payload)
-                        if (list.isNotEmpty()) {
-                            sessions.clear(); sessions.addAll(list)
-                            viewModelScope.launch { SessionCacheStore.save(getApplication(), list) }
-                        }
-                        // 取活动工作区 → 开桥（会话流前置条件）
-                        val wsKey = activeWorkspaceKeyOf(payload)
-                        if (wsKey != null) {
-                            activeWorkspaceKey = wsKey
-                            if (ch.bridge.value !is RpcChannel.BridgeState.Ready) ch.openBridge(wsKey)
-                        }
-                    }
-                    "workspace-bridge-ready",
-                    "workspace-bridge-error",
-                    "bridge-degraded" -> ch.onBridgeFrame(payload)
-
-                    "rpc-frame" -> ch.onRpcFrame(payload)
-                    "rpc-frame-ack" -> Unit
-
-                    "workspace-list-response", "workspace-list-updated" -> Unit
-                    null -> TaskEvent.from(payload)?.let { ev ->
-                        events.add(0, ev)
-                        if (events.size > 200) events.removeAt(events.lastIndex)
-                        // 审批推送走任务事件流（实测会话帧里没有 pendingInteractions）：
-                        // permission_request 建卡，permission_resolved 按 requestId 撤卡。
-                        when (ev.type) {
-                            "permission_request" ->
-                                PendingApproval.fromTaskEvent(ev.raw, ev.taskId)?.let { approvalRepo.ingestTaskApproval(it) }
-                            "permission_resolved" ->
-                                ev.raw["requestId"]?.let {
-                                    runCatching { it.jsonPrimitive.content }.getOrNull()
-                                }?.let { approvalRepo.resolveTaskApproval(it) }
-                            "elicitation_request" ->
-                                PendingElicitation.fromTaskEvent(ev.raw, ev.taskId)?.let { approvalRepo.ingestTaskElicitation(it) }
-                            "elicitation_resolved" ->
-                                ev.raw["requestId"]?.let {
-                                    runCatching { it.jsonPrimitive.content }.getOrNull()
-                                }?.let { approvalRepo.resolveTaskElicitation(it) }
-                        }
-                        // 列表状态实时化：任务事件是 host 推的实时流（PROTOCOL.md §6.2），而列表的
-                        // displayStatus 只在 bootstrap 取过一次快照——不回写就会出现「会话页在跑、
-                        // 退回主界面仍显示已完成」。映射规则见 displayStatusForTaskEvent。
-                        ev.taskId?.let { tid ->
-                            val mapped = displayStatusForTaskEvent(ev.type)
-                            if (mapped != null) {
-                                val idx = sessions.indexOfFirst { it.taskId == tid }
-                                if (idx >= 0 && sessions[idx].displayStatus != mapped) {
-                                    sessions[idx] = sessions[idx].copy(displayStatus = mapped)
-                                }
-                            }
-                        }
-                    }
-                    else -> Unit
-                }
-            }
-        }
-
-        // §11.4 阶段③：桥状态流迁入进程级作用域 —— 桥降级后的自动重开是连接韧性本体。
-        RemoteConnectionManager.launchCollector {
-            ch.bridge.collect { st ->
-                bridgeState = st
-                ZLog.i(TAG, "bridge=$st")
-                if (st is RpcChannel.BridgeState.Ready) {
-                    // 桥就绪：自动重开预算归零（下次失败可再走完整退避序列）
-                    bridgeReopenCount = 0
-                    bridgeReopenJob?.cancel(); bridgeReopenJob = null
-                    // E-1：workspace 级 sessions-index 订阅（权威角标，一次订阅覆盖全部会话）
-                    activeWorkspaceKey?.let { sidx.subscribe(it, null) }
-                    // 从 PC 端 ~/.zcode/v2/provider_config.json 预加载已配置模型目录
-                    loadModelsFromConfigFile()
-                    // 模型注册表：各模型的合法思考档位（createSession/switchModelConfig 必需）
-                    loadModelReasoningLevels()
-                    val target = sessions.firstOrNull { it.isRunning } ?: sessions.firstOrNull()
-                    target?.let { convRepo.subscribeConversation(it) }
-                }
-                // 桥失败（服务端降级 `bridge-degraded` 或看门狗用尽）→ 自动重开（2026-10-10 真机故障修复）
-                if (st is RpcChannel.BridgeState.Failed) scheduleBridgeReopen()
-            }
-        }
-
-        // §11.4 阶段②：首条迁入进程级作用域的事件流 —— rpc 事件是会话流 / 会话角标 / 配置
-        // 三通道的唯一入口，此前跑在 viewModelScope：Activity 销毁、VM 被清后这条流一断，
-        // 锁屏审批、离线缓存、会话角标全部停摆（连接对象虽存活、事件却断流）。
-        // 逻辑原样搬迁，仅换作用域；其余流在后续提交逐条迁移（每条独立 commit 可回退）。
-        RemoteConnectionManager.launchCollector {
-            ch.events.collect { ev ->
-                // 会话帧优先交给会话层解析；sessions-index 帧交给 E-1 权威角标通道
-                conv.onEvent(ev, convRepo.rowStore)
-                sidx.onEvent(ev)
-                wcfg.onEvent(ev)
-                // C-5①：观测面板只在 debug 构建保留——release 不再为**每个 delta** 做一次
-                // `ev.data.toString()`（全量 JSON 序列化，主线程 collector 内）与 4000 字符拷贝。
-                // ZLog.d 本身在 release 已被 R8 剥离（proguard -assumenosideeffects），但实参求值
-                // 不会——这才是真凶（任务书 §5 C-5① 纠正点：v1 误判为「ZLog 未剥离」）。
-                if (BuildConfig.DEBUG) {
-                    val text = ev.data.toString()
-                    // P0 日志止血：logcat 里也不落会话正文（canary 验收要求 debug 日志同样零命中）
-                    ZLog.d(TAG, "rpc event id=${ev.id} data=${LogRedactor.payloadLabel(text)}")
-                    rpcEvents.add(0, text.take(4000))
-                    if (rpcEvents.size > 50) rpcEvents.removeAt(rpcEvents.lastIndex)
-                }
-            }
-        }
-
-        // §11.4 阶段③：会话状态流迁入进程级作用域 —— 握手瞬态失败的自动重订（A-2）是连接韧性本体。
-        RemoteConnectionManager.launchCollector {
-            conv.status.collect { st ->
-                convRepo.conversationStatus = st
-                // 换会话/重订阅时清掉上一个会话的模式乐观覆盖，回到订阅 ack 的真实值
-                if (st is ConversationChannel.Status.Idle) sessionModeOverride = null
-                // 模型目录订阅需要会话握手完成（真机实证：bridge Ready 即订会报
-                // fault.connection.handshakeRequired，Live 后才可用）
-                if (st is ConversationChannel.Status.Live) {
-                    handshakeRetryCount = 0
-                    activeWorkspaceKey?.let { wcfg.subscribe(it, null) }
-                }
-                // A-2：握手瞬态失败（超时）→ 退避自动重订一次，避免永久停在「握手中…」
-                if (st is ConversationChannel.Status.Failed && st.retryable) {
-                    scheduleHandshakeRetry()
-                }
-            }
-        }
-        viewModelScope.launch { conv.meta.collect { convRepo.conversationMeta = it } }
-        viewModelScope.launch { conv.snapshotAligned.collect { convRepo.snapshotAligned = it } }
-        viewModelScope.launch { conv.sessionState.collect { convRepo.sessionState = it } }
-        viewModelScope.launch { conv.earlier.collect { convRepo.earlier = it } }
-        // §11.4 阶段②（续）：审批/表单「通知链路」迁入进程级作用域 —— 通知是锁屏可达性的本体，
-        // 必须在 VM 被清后仍能发出。refreshApprovals/refreshElicitations 内部无 viewModelScope
-        // 依赖（getApplication 在 VM 被清后仍可用），故原样换作用域。
-        RemoteConnectionManager.launchCollector {
-            conv.interactions.collect { refreshApprovals() }
-        }
-        RemoteConnectionManager.launchCollector {
-            conv.elicitations.collect { refreshElicitations() }
-        }
-        RemoteConnectionManager.launchCollector {
-            sidx.summaries.collect { recomputeSessionPending() }
-        }
-        // 通知按钮 → AppViewModel 应答（连接只活在这里，所以桥必须在连接建立时挂上）
-        ApprovalBridge.handler = { interactionId, optionId -> resolveById(interactionId, optionId) }
-        ElicitationBridge.handler = { interactionId, answerJson ->
-            resolveElicitationById(interactionId, answerJson)
-        }
-    }
+    fun connect() = connectionCoordinator.connect()
 
 
 
@@ -731,63 +508,6 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
 
     // ---- 表单交互应答（P1-1，构造规则见 PROTOCOL.md §6.5）----
 
-
-    /**
-     * A-2：握手超时等瞬态失败后的自动重订（退避 1s → 2s，上限 1 次）。
-     *
-     * 只重发订阅，不重载离线缓存、不清附件——那些是「进入会话」的一次性副作用。
-     * 再失败则停在 Failed，重试权交回用户（见 [retrySubscribe]）。
-     */
-    private fun scheduleHandshakeRetry() {
-        val s = convRepo.subscribedSession ?: return
-        if (handshakeRetryCount >= MAX_HANDSHAKE_RETRIES) {
-            ZLog.w(TAG, "握手自动重订已用尽（$handshakeRetryCount 次），停在失败态等用户重试")
-            return
-        }
-        handshakeRetryCount += 1
-        val delayMs = if (handshakeRetryCount == 1) 1_000L else 2_000L
-        ZLog.i(TAG, "握手失败，${delayMs}ms 后自动重订（第 $handshakeRetryCount 次）")
-        handshakeRetryJob?.cancel()
-        // §11.4 阶段③：重试调度改挂进程级作用域 —— VM 被清后自动重订仍要生效（连接韧性）。
-        handshakeRetryJob = RemoteConnectionManager.scope.launch {
-            kotlinx.coroutines.delay(delayMs)
-            // 期间用户可能已切走会话，此时重订无意义
-            if (convRepo.subscribedSessionId != s.taskId) return@launch
-            val conv = conversation ?: return@launch
-            val ws = s.workspacePath ?: activeWorkspaceKey ?: return@launch
-            ZLog.i(TAG, "自动重订 session=${s.taskId}")
-            conv.subscribe(ws, null, s.taskId, convRepo.rowStore)
-        }
-    }
-
-    /**
-     * 桥失败后的自动重开（2026-10-10 真机故障修复）。
-     *
-     * 背景：`bridge-degraded`（服务端判定 `rpc-transport-fault` 主动降级）与桥看门狗用尽都会置
-     * `BridgeState.Failed`，但此前**没有任何自愈路径**——只有 relay 重新 Paired 或用户手动操作
-     * 才会再次 `openBridge`。真机实测（2026-10-10）表现为「手机显示异常、桌面端仍显示已连接」
-     * 的长窗口不可用（本次约 2 分钟，靠上层重连撞回来；期间 App 不 ack 服务端帧，
-     * 反而触发服务端重放与降级，形成负反馈）。
-     *
-     * 策略：退避 1s/2s/4s、上限 3 次（[bridgeReopenDelayMs]）；桥就绪即归零；用尽后停失败态
-     * 交由上层兜底，不无限重试（避免把「服务端持续降级」放大成重开风暴）。
-     */
-    private fun scheduleBridgeReopen() {
-        val wsKey = activeWorkspaceKey ?: return
-        val delayMs = bridgeReopenDelayMs(bridgeReopenCount + 1)
-        if (delayMs == null) {
-            ZLog.w(TAG, "桥自动重开已用尽（$bridgeReopenCount 次），停在失败态等待上层重连")
-            return
-        }
-        bridgeReopenCount += 1
-        bridgeReopenJob?.cancel()
-        bridgeReopenJob = RemoteConnectionManager.scope.launch {
-            kotlinx.coroutines.delay(delayMs)
-            if (bridgeState is RpcChannel.BridgeState.Ready) return@launch  // 期间已恢复（如 relay 重连撞回来）
-            ZLog.i(TAG, "桥失败，${delayMs}ms 后自动重开（第 $bridgeReopenCount 次）ws=${LogRedactor.pathLabel(wsKey)}")
-            channel?.openBridge(wsKey)
-        }
-    }
 
     /** 手动订阅指定会话（UI 点击会话卡片时调用）。 */
     fun openSession(s: SessionItem) {
@@ -923,7 +643,7 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
                         if (convRepo.subscribedSessionId == item.taskId) {
                             convRepo.subscribedSessionId = null
                             convRepo.subscribedSession = null
-                            handshakeRetryCount = 0
+                            connectionCoordinator.resetHandshakeRetry()
                             convRepo.rowStore.clear()
                             promptDraft = ""
                             attachments.clear()
@@ -973,8 +693,7 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         sessionsIndex = null
         workspaceConfig = null
         // A-2：连接没了，作废在途的握手自动重订与重试上下文
-        handshakeRetryJob?.cancel(); handshakeRetryJob = null
-        handshakeRetryCount = 0
+        connectionCoordinator.resetHandshakeRetry()
         convRepo.subscribedSession = null
         // 连接没了就没人能应答：摘掉桥并撤掉通知，避免用户点了个"假批准"
         ApprovalBridge.handler = null
@@ -1042,16 +761,5 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         /** 反馈横幅驻留时长（B-3）：失败 8s（4s 真机上易被错过），成功/提示 4s。 */
         internal fun flashDurationMs(kind: FlashKind): Long =
             if (kind == FlashKind.Failure) 8_000L else 4_000L
-
-        /**
-         * 桥自动重开的退避延迟（纯函数，单测覆盖）：第 1/2/3 次 → 1s/2s/4s；
-         * 超出上限（默认 3）返回 null = 不再重开（停失败态，等 relay 重连或用户操作兜底）。
-         */
-        internal fun bridgeReopenDelayMs(nextAttempt: Int, maxAttempts: Int = 3): Long? =
-            if (nextAttempt in 1..maxAttempts) 1_000L shl (nextAttempt - 1) else null
-
-        /** 握手自动重订次数上限（A-2）：1 次。再失败即交回用户手动重试。 */
-        private const val MAX_HANDSHAKE_RETRIES = 1
-
     }
 }
