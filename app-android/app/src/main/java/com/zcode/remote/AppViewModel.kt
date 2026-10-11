@@ -46,6 +46,7 @@ import com.zcode.remote.notify.TerminalNotifier
 import com.zcode.remote.storage.MultiDeviceStore
 import com.zcode.remote.storage.PairedDevice
 import com.zcode.remote.storage.SessionCacheStore
+import com.zcode.remote.repo.ApprovalRepository
 import com.zcode.remote.repo.AttachmentUploader
 import com.zcode.remote.repo.ModelConfigRepository
 import com.zcode.remote.repo.UpdateRepository
@@ -86,6 +87,15 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         firstSessionWorkspace = { sessions.firstOrNull()?.workspacePath },
         onWorkspaceMode = { sessionModeFromWorkspace = it },
         flash = { msg, failure -> if (failure) flash(msg, FlashKind.Failure) else flash(msg) },
+    )
+
+    private val approvalRepo = ApprovalRepository(
+        viewModelScope, app,
+        conversation = { conversation },
+        activeWorkspaceKey = { activeWorkspaceKey },
+        firstSessionWorkspace = { sessions.firstOrNull()?.workspacePath },
+        flash = { msg, failure -> if (failure) flash(msg, FlashKind.Failure) else flash(msg) },
+        onPendingChanged = { recomputeSessionPending() },
     )
 
     /** 活跃设备（当前连接的这台）。 */
@@ -205,18 +215,21 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
     var sessionState by mutableStateOf(ConversationFrames.SessionState())
         private set
 
-    // ---- 权限审批 ----
+    // ---- 权限审批与表单交互（§11.7 拆分：实现在 repo/ApprovalRepository，此处转发保持签名不变）----
     /** 当前会话的待审批项（会话流 pendingInteractions + 任务事件流两条来源合并）。 */
-    var approvals by mutableStateOf<List<PendingApproval>>(emptyList())
-        private set
-    /** 任务事件流（桌面端实证的审批推送路径）来的待审批，按 interactionId 索引。主线程专用。 */
-    private val taskApprovals = LinkedHashMap<String, PendingApproval>()
-
-    // ---- 表单交互（elicitation，P1-1）----
+    val approvals: List<PendingApproval> get() = approvalRepo.approvals
     /** 当前会话的待应答表单（会话帧 userInput 条目 + 任务事件流 elicitation_request 合并）。 */
-    var elicitations by mutableStateOf<List<PendingElicitation>>(emptyList())
-        private set
-    private val taskElicitations = LinkedHashMap<String, PendingElicitation>()
+    val elicitations: List<PendingElicitation> get() = approvalRepo.elicitations
+    fun resolveById(interactionId: String, optionId: String) = approvalRepo.resolveById(interactionId, optionId)
+    fun resolve(approval: PendingApproval, option: ApprovalOption) = approvalRepo.resolve(approval, option)
+    fun answerElicitation(el: PendingElicitation, answers: Map<Int, List<String>>) = approvalRepo.answerElicitation(el, answers)
+    fun declineElicitation(el: PendingElicitation) = approvalRepo.declineElicitation(el)
+    fun approveElicitationPlan(el: PendingElicitation) = approvalRepo.approveElicitationPlan(el)
+    fun answerElicitationFreeText(el: PendingElicitation, text: String) = approvalRepo.answerElicitationFreeText(el, text)
+    private fun refreshApprovals() = approvalRepo.refreshApprovals()
+    private fun refreshElicitations() = approvalRepo.refreshElicitations()
+    private fun resolveElicitationById(interactionId: String, answerJson: String): Boolean =
+        approvalRepo.resolveElicitationById(interactionId, answerJson)
 
     // ---- 多会话看板（P1-2）----
     /**
@@ -489,27 +502,17 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
                         // permission_request 建卡，permission_resolved 按 requestId 撤卡。
                         when (ev.type) {
                             "permission_request" ->
-                                PendingApproval.fromTaskEvent(ev.raw, ev.taskId)?.let {
-                                    taskApprovals[it.interactionId] = it
-                                    refreshApprovals()
-                                }
+                                PendingApproval.fromTaskEvent(ev.raw, ev.taskId)?.let { approvalRepo.ingestTaskApproval(it) }
                             "permission_resolved" ->
                                 ev.raw["requestId"]?.let {
                                     runCatching { it.jsonPrimitive.content }.getOrNull()
-                                }?.let {
-                                    if (taskApprovals.remove(it) != null) refreshApprovals()
-                                }
+                                }?.let { approvalRepo.resolveTaskApproval(it) }
                             "elicitation_request" ->
-                                PendingElicitation.fromTaskEvent(ev.raw, ev.taskId)?.let {
-                                    taskElicitations[it.interactionId] = it
-                                    refreshElicitations()
-                                }
+                                PendingElicitation.fromTaskEvent(ev.raw, ev.taskId)?.let { approvalRepo.ingestTaskElicitation(it) }
                             "elicitation_resolved" ->
                                 ev.raw["requestId"]?.let {
                                     runCatching { it.jsonPrimitive.content }.getOrNull()
-                                }?.let {
-                                    if (taskElicitations.remove(it) != null) refreshElicitations()
-                                }
+                                }?.let { approvalRepo.resolveTaskElicitation(it) }
                         }
                         // 列表状态实时化：任务事件是 host 推的实时流（PROTOCOL.md §6.2），而列表的
                         // displayStatus 只在 bootstrap 取过一次快照——不回写就会出现「会话页在跑、
@@ -617,38 +620,7 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
-    /**
-     * 合并两条审批来源（会话流 pendingInteractions + 任务事件流）并对齐通知栏：
-     * 新审批弹通知，桌面端已处理/自动决议的自动撤下。
-     */
-    private fun refreshApprovals() {
-        val merged = LinkedHashMap<String, PendingApproval>()
-        conversation?.interactions?.value?.forEach { merged[it.interactionId] = it }
-        taskApprovals.forEach { (k, v) -> merged[k] = v }
-        val next = merged.values.toList()
-        if (next == approvals) return
-        approvals = next
-        ZLog.i(TAG, "approvals → ${next.size} 条 " +
-                next.joinToString(",") { "${it.toolName ?: "?"}#${it.interactionId.take(18)}" })
-        runCatching { ApprovalNotifier.sync(getApplication(), next) }
-            .onFailure { ZLog.w(TAG, "通知栏刷新失败", it) }
-        recomputeSessionPending()
-    }
 
-    /** 合并表单交互双来源（会话帧 userInput 条目 + 任务事件流），interactionId 去重。 */
-    private fun refreshElicitations() {
-        val merged = LinkedHashMap<String, PendingElicitation>()
-        conversation?.elicitations?.value?.forEach { merged[it.interactionId] = it }
-        taskElicitations.forEach { (k, v) -> merged.putIfAbsent(k, v) }
-        val next = merged.values.toList()
-        if (next == elicitations) return
-        elicitations = next
-        ZLog.i(TAG, "elicitations → ${next.size} 条 " +
-                next.joinToString(",") { "${it.toolName ?: "?"}#${it.interactionId.take(18)}" })
-        runCatching { ElicitationNotifier.sync(getApplication(), next) }
-            .onFailure { ZLog.w(TAG, "表单通知栏刷新失败", it) }
-        recomputeSessionPending()
-    }
 
     /**
      * 多会话看板（P1-2 / E-1）：汇总每个会话的待处理条数。
@@ -661,18 +633,18 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         val authoritative = sessionsIndex?.summaries?.value ?: emptyMap()
         if (authoritative.isNotEmpty()) {
             authoritative.forEach { (sid, s) -> if (s.total > 0) counts[sid] = s.total }
-            taskApprovals.values.forEach { a ->
+            approvalRepo.taskApprovals.values.forEach { a ->
                 a.sessionId?.let { sid -> if (sid !in authoritative) counts[sid] = (counts[sid] ?: 0) + 1 }
             }
-            taskElicitations.values.forEach { e ->
+            approvalRepo.taskElicitations.values.forEach { e ->
                 e.sessionId?.let { sid -> if (sid !in authoritative) counts[sid] = (counts[sid] ?: 0) + 1 }
             }
         } else {
-            taskApprovals.values.forEach { a -> a.sessionId?.let { counts[it] = (counts[it] ?: 0) + 1 } }
-            taskElicitations.values.forEach { e -> e.sessionId?.let { counts[it] = (counts[it] ?: 0) + 1 } }
+            approvalRepo.taskApprovals.values.forEach { a -> a.sessionId?.let { counts[it] = (counts[it] ?: 0) + 1 } }
+            approvalRepo.taskElicitations.values.forEach { e -> e.sessionId?.let { counts[it] = (counts[it] ?: 0) + 1 } }
         }
         subscribedSessionId?.let { sid ->
-            val n = approvals.size + elicitations.size
+            val n = approvalRepo.approvals.size + approvalRepo.elicitations.size
             when {
                 n > 0 -> counts[sid] = n
                 (authoritative[sid]?.total ?: 0) <= 0 -> counts.remove(sid)
@@ -697,52 +669,6 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         ZLog.i(TAG, "view-state → ws=${LogRedactor.pathLabel(activeWorkspaceKey)} task=${LogRedactor.maskId(subscribedSessionId)}")
     }
 
-    /** 通知栏按钮走这条路径：按 id 找回对象再应答。 */
-    private fun resolveById(interactionId: String, optionId: String) {
-        val a = approvals.firstOrNull { it.interactionId == interactionId }
-        val opt = a?.options?.firstOrNull { it.optionId == optionId }
-        if (a == null || opt == null) {
-            flash("这条审批已经不在待处理列表里了（可能桌面端已处理）")
-            return
-        }
-        resolve(a, opt)
-    }
-
-    /** 应答一次审批（乐观消除 + 会话隔离修复）。 */
-    fun resolve(approval: PendingApproval, option: ApprovalOption) {
-        val conv = conversation ?: run {
-            flash("连接已断开，未发出", FlashKind.Failure)
-            return
-        }
-        val ws = activeWorkspaceKey ?: sessions.firstOrNull()?.workspacePath
-        val interId = approval.interactionId
-
-        // 乐观消除：点击瞬间立即从本地列表移除，并刷新系统通知栏
-        taskApprovals.remove(interId)
-        approvals = approvals.filter { it.interactionId != interId }
-        runCatching { ApprovalNotifier.sync(getApplication(), approvals) }
-        recomputeSessionPending()
-
-        conv.resolve(approval, option, fallbackWorkspacePath = ws) { r ->
-            viewModelScope.launch {
-                val (feedback, kind) = when (r) {
-                    is ConversationChannel.ResolveResult.Accepted -> when (r.status) {
-                        "accepted" -> (if (option.isAllow) "已批准" else "已拒绝") to FlashKind.Info
-                        "duplicate" -> "已收到（重复提交，服务端只认第一次）" to FlashKind.Info
-                        else -> "服务端已消解（可能桌面端先处理了）" to FlashKind.Info
-                    }
-                    is ConversationChannel.ResolveResult.Failed -> {
-                        // 失败回滚：放回审批列表中
-                        taskApprovals[interId] = approval
-                        refreshApprovals()
-                        "发送失败：${UserFacingError.map(r.message)}" to FlashKind.Failure
-                    }
-                }
-                flash(feedback, kind)
-                ZLog.i(TAG, "resolve result=$r interaction=$interId feedback=$feedback")
-            }
-        }
-    }
 
     // ---- 发送消息 / 停止（P0-1）----
 
@@ -870,134 +796,6 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
 
     // ---- 表单交互应答（P1-1，构造规则见 PROTOCOL.md §6.5）----
 
-    /**
-     * 提交表单答案：[answers] 为 题号 → 该题答案值列表（含自定义文本）。
-     * 官方 web rut 构造：单题 content.answer、多题 content.answer_N，
-     * 同时附 answers:{问题文本: "合并答案"} 便于桌面端日志可读。
-     */
-    fun answerElicitation(el: PendingElicitation, answers: Map<Int, List<String>>) {
-        val conv = conversation ?: run { flash("连接已断开，未发送", FlashKind.Failure); return }
-        val ws = activeWorkspaceKey ?: sessions.firstOrNull()?.workspacePath
-        val interId = el.interactionId
-
-        // 乐观消除：点击后立即从本地列表移除
-        taskElicitations.remove(interId)
-        elicitations = elicitations.filter { it.interactionId != interId }
-        recomputeSessionPending()
-
-        val content = buildJsonObject {
-            val readable = LinkedHashMap<String, String>()
-            answers.forEach { (idx, values) ->
-                if (values.isEmpty()) return@forEach
-                val q = el.questions.getOrNull(idx)
-                val jsonValues = buildJsonArray { values.forEach { add(JsonPrimitive(it)) } }
-                if (el.questions.size == 1) {
-                    put("answer", if (q?.multiSelect == true) jsonValues else JsonPrimitive(values.first()))
-                } else {
-                    put("answer_$idx", if (q?.multiSelect == true) jsonValues else JsonPrimitive(values.first()))
-                }
-                q?.let { readable[it.question] = values.joinToString(", ") }
-            }
-            if (readable.isNotEmpty()) {
-                put("answers", buildJsonObject { readable.forEach { (k, v) -> put(k, JsonPrimitive(v)) } })
-            }
-        }
-        val answer = buildJsonObject {
-            put("action", "accept")
-            put("content", content)
-        }
-        conv.resolveElicitation(el, answer, fallbackWorkspacePath = ws) { r ->
-            handleElicitationResult(r, "已提交回答", el)
-        }
-    }
-
-    /** 拒绝表单/计划。 */
-    fun declineElicitation(el: PendingElicitation) {
-        val conv = conversation ?: run { flash("连接已断开，未发送", FlashKind.Failure); return }
-        val ws = activeWorkspaceKey ?: sessions.firstOrNull()?.workspacePath
-        val interId = el.interactionId
-
-        taskElicitations.remove(interId)
-        elicitations = elicitations.filter { it.interactionId != interId }
-        recomputeSessionPending()
-
-        conv.resolveElicitation(el, buildJsonObject { put("action", "decline") }, fallbackWorkspacePath = ws) { r ->
-            handleElicitationResult(r, "已拒绝", el)
-        }
-    }
-
-    /** 计划批准（plan_approval）。 */
-    fun approveElicitationPlan(el: PendingElicitation) {
-        val conv = conversation ?: run { flash("连接已断开，未发送", FlashKind.Failure); return }
-        val ws = activeWorkspaceKey ?: sessions.firstOrNull()?.workspacePath
-        val interId = el.interactionId
-
-        taskElicitations.remove(interId)
-        elicitations = elicitations.filter { it.interactionId != interId }
-        recomputeSessionPending()
-
-        conv.resolveElicitation(el, buildJsonObject { put("action", "accept") }, fallbackWorkspacePath = ws) { r ->
-            handleElicitationResult(r, "已批准计划", el)
-        }
-    }
-
-    /** 自由文本应答（无 questions 的 userInput 条目，freeText=true）。 */
-    fun answerElicitationFreeText(el: PendingElicitation, text: String) {
-        val conv = conversation ?: run { flash("连接已断开，未发送", FlashKind.Failure); return }
-        val ws = activeWorkspaceKey ?: sessions.firstOrNull()?.workspacePath
-        val interId = el.interactionId
-
-        taskElicitations.remove(interId)
-        elicitations = elicitations.filter { it.interactionId != interId }
-        recomputeSessionPending()
-
-        // 服务端 resolveInteraction.answer 的 action 为枚举 accept|decline|cancel：
-        // 此前只发 {freeText} 缺 action，真机报 `invalid_value @ answer.action`（表单应答失败）。
-        conv.resolveElicitation(
-            el,
-            buildJsonObject { put("action", "accept"); put("freeText", text) },
-            fallbackWorkspacePath = ws,
-        ) { r ->
-            handleElicitationResult(r, "已提交", el)
-        }
-    }
-
-    private fun handleElicitationResult(r: ConversationChannel.ResolveResult, okText: String, el: PendingElicitation) {
-        viewModelScope.launch {
-            when (r) {
-                is ConversationChannel.ResolveResult.Accepted -> flash(okText)
-                is ConversationChannel.ResolveResult.Failed -> {
-                    taskElicitations[el.interactionId] = el
-                    refreshElicitations()
-                    flash("应答失败：${UserFacingError.map(r.message)}", FlashKind.Failure)
-                }
-            }
-        }
-    }
-
-    /**
-     * 通知栏快捷应答（D-3）：携带预构造好的 answer JSON 直接提交。
-     * 返回 false = 当前无连接（由 receiver 显示"没发出去"）。
-     */
-    private fun resolveElicitationById(interactionId: String, answerJson: String): Boolean {
-        val conv = conversation ?: return false
-        val el = elicitations.firstOrNull { it.interactionId == interactionId } ?: return false
-        val answer = runCatching {
-            kotlinx.serialization.json.Json.parseToJsonElement(answerJson).jsonObject
-        }.getOrNull() ?: return false
-        conv.resolveElicitation(el, answer) { r -> flashResolve(r, "已提交") }
-        return true
-    }
-
-    private fun flashResolve(r: ConversationChannel.ResolveResult, okText: String) {
-        viewModelScope.launch {
-            when (r) {
-                is ConversationChannel.ResolveResult.Accepted -> flash(okText)
-                is ConversationChannel.ResolveResult.Failed ->
-                    flash("应答失败：${UserFacingError.map(r.message)}", FlashKind.Failure)
-            }
-        }
-    }
 
     /**
      * 订阅某会话的流式内容。
@@ -1315,10 +1113,7 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         ElicitationBridge.handler = null
         runCatching { ApprovalNotifier.clearAll(getApplication()) }
         runCatching { ElicitationNotifier.clearAll(getApplication()) }
-        taskApprovals.clear()
-        taskElicitations.clear()
-        approvals = emptyList()
-        elicitations = emptyList()
+        approvalRepo.clearAll()
         sessionPending = emptyMap()
         syncWidget(0)
         clearAttachments()
