@@ -85,67 +85,10 @@ import kotlinx.serialization.json.JsonPrimitive
 @OptIn(androidx.compose.material3.ExperimentalMaterial3Api::class)
 @Composable
 fun ConversationScreen(
-    title: String,
-    status: ConversationChannel.Status,
-    meta: ConversationChannel.ConversationMeta,
-    rows: List<ConversationRow>,
-    /** C-6：已发出但服务端尚未回显的消息（本地 pending 气泡，渲染在消息流末尾）。 */
-    pendingUserMessages: List<AppViewModel.PendingUserMessage> = emptyList(),
-    approvals: List<PendingApproval> = emptyList(),
-    elicitations: List<PendingElicitation> = emptyList(),
-    earlier: ConversationChannel.EarlierState = ConversationChannel.EarlierState(),
-    /** C3：会话级状态（上下文用量 / 目标 / 待办 / 后台任务 / 子智能体 / 排队输入）。
-     *  顶栏「状态」入口只在 [com.zcode.remote.relay.ConversationFrames.SessionState.hasContent] 为真时出现。 */
-    sessionState: com.zcode.remote.relay.ConversationFrames.SessionState =
-        com.zcode.remote.relay.ConversationFrames.SessionState(),
-    prompt: String = "",
-    sending: Boolean = false,
-    canStop: Boolean = false,
-    stopState: String? = null,
-    commandFeedback: String? = null,
-    /** C-11：反馈横幅是否为失败语义（决定配色，与 VM 的 FlashKind 同源）。 */
-    feedbackIsFailure: Boolean = false,
-    attachments: List<ConversationChannel.AttachmentRef> = emptyList(),
-    attachUploadName: String? = null,
-    attachUploadPercent: Int = 0,
-    /** C-1：上传失败态（UI 显示重试/取消）；重试复用原 uploadId，已传分片不重来。 */
-    attachFailed: AppViewModel.FailedUpload? = null,
-    onCancelUpload: () -> Unit = {},
-    onRetryUpload: () -> Unit = {},
-    onDismissUploadFailure: () -> Unit = {},
-    onResolve: (PendingApproval, ApprovalOption) -> Unit = { _, _ -> },
-    onElicitationAccept: (PendingElicitation, Map<Int, List<String>>) -> Unit = { _, _ -> },
-    onElicitationDecline: (PendingElicitation) -> Unit = {},
-    onElicitationFreeText: (PendingElicitation, String) -> Unit = { _, _ -> },
-    onLoadEarlier: () -> Unit = {},
-    onPromptChange: (String) -> Unit = {},
-    onSend: () -> Unit = {},
-    onStop: () -> Unit = {},
-    onAttachmentPicked: (uri: android.net.Uri, name: String, mime: String, size: Long) -> Unit = { _, _, _, _ -> },
-    onRemoveAttachment: (ConversationChannel.AttachmentRef) -> Unit = {},
-    availableModels: List<com.zcode.remote.relay.WorkspaceConfigChannel.ModelOption> = emptyList(),
-    /** 各模型合法思考档位：key = "providerId/modelId"（会话内切模型时用于二级档位菜单）。 */
-    modelReasoningLevels: Map<String, List<String>> = emptyMap(),
-    onSwitchModel: (com.zcode.remote.relay.WorkspaceConfigChannel.ModelOption) -> Unit = {},
-    onSwitchModelCustom: (String) -> Unit = {},
-    /** 进入会话页时触发一次模型目录刷新（PC 端配置变更准实时同步）。 */
-    onLoadModels: () -> Unit = {},
-    /** 当前会话执行模式（P0-B：订阅 ack / 快照；用户切换后的乐观值由上层合并后传入）。 */
-    currentSessionMode: String? = null,
-    /** 切换执行模式（协议语义：仅对下一轮 agent turn 生效）。 */
-    onSwitchMode: (String) -> Unit = {},
-    /** 剧本 B「最近文件」：本会话文件预览状态与操作（AppViewModel 持有状态）。 */
-    filePreview: AppViewModel.FilePreview? = null,
-    onPreviewFile: (String) -> Unit = {},
-    onDismissFilePreview: () -> Unit = {},
-    /** B-1：权威快照是否已落地（含 seq，用于「缓存行数 == 快照行数」时仍能定位最新行）。 */
-    snapshotAligned: ConversationChannel.SnapshotAligned? = null,
-    /** B-3：附件上传成/败信号（tick 变化触发一次触觉）。 */
-    attachmentFeedback: AppViewModel.AttachmentFeedback? = null,
-    /** A-2：握手失败后用户手动重试订阅。 */
-    onRetrySubscribe: () -> Unit = {},
-    onBack: () -> Unit,
-) {
+    ui: ConversationUiState,
+    actions: ConversationAction,
+) = with(ui) {
+    with(actions) {
     val listState = rememberLazyListState()
     val headerCount = if (rows.isEmpty()) 0 else 1
     // 剧本 B「最近文件」：从会话行派生文件清单（纯客户端零协议）
@@ -437,94 +380,31 @@ fun ConversationScreen(
                 }
             }
         } else {
-            // 2. 消息流列表（外层 Box 承载悬浮「回到底部」提示胶囊）
-            Box(modifier = Modifier.weight(1f).fillMaxWidth()) {
-                LazyColumn(
-                    state = listState,
-                    modifier = Modifier.fillMaxSize(),
-                    verticalArrangement = Arrangement.spacedBy(8.dp),
-                ) {
-                    item(key = "earlier-head") {
-                        Text(
-                            text = when {
-                                earlier.loading -> "加载更早历史…"
-                                earlier.pulled && !earlier.hasMore -> "已到会话开头"
-                                else -> "上滑加载更早历史"
-                            },
-                            style = MaterialTheme.typography.labelSmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
-                            modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
-                            textAlign = androidx.compose.ui.text.style.TextAlign.Center,
-                        )
-                    }
-                    items(rows, key = { it.rowId }) { row ->
-                        val expandKey = rowExpandKey(row)
-                        RowItem(
-                            row = row,
-                            expanded = expandKey in expandedRows,
-                            onToggleExpand = { toggleExpanded(expandKey) },
-                        )
-                        turnSummaries[row.rowId]?.let { summary ->
-                            com.zcode.remote.ui.components.TurnChangesCard(
-                                summary = summary,
-                                modifier = Modifier.padding(vertical = 4.dp)
-                            )
+            // 2. 消息流列表（外层 Box 承载悬浮「回到底部」提示胶囊；实现见 ConversationTimeline.kt）
+            ConversationTimelineArea(
+                listState = listState,
+                rows = rows,
+                pendingUserMessages = pendingUserMessages,
+                earlier = earlier,
+                turnSummaries = turnSummaries,
+                expandedRows = expandedRows,
+                toggleExpanded = toggleExpanded,
+                isNearBottom = isNearBottom,
+                onJumpToBottom = {
+                    // B-1：显式回到最新 = 解除「已上翻」意图锁，此后增量持续跟随
+                    userScrolledAway = false
+                    jumpingToBottom = true
+                    coroutineScope.launch {
+                        try {
+                            listState.animateScrollToItem(rows.lastIndex + headerCount)
+                        } finally {
+                            // 丢弃跳转期间翻页逻辑可能设上的锚点（否则它随后会把视口拽回中段）
+                            anchorRowId = null
+                            jumpingToBottom = false
                         }
                     }
-                    // C-6：本地 pending 回显气泡（服务端 userInput 行到达后由 VM 移除）
-                    items(pendingUserMessages, key = { "pending-${it.id}" }) { p ->
-                        PendingUserBubble(p)
-                    }
-                }
-
-                // 悬浮「回到底部」胶囊按钮（仅在用户主动上翻查阅历史且列表有内容时展示）
-                androidx.compose.animation.AnimatedVisibility(
-                    visible = !isNearBottom && rows.isNotEmpty(),
-                    enter = fadeIn() + expandVertically(),
-                    exit = fadeOut() + shrinkVertically(),
-                    modifier = Modifier.align(Alignment.BottomEnd).padding(bottom = 10.dp, end = 6.dp)
-                ) {
-                    Surface(
-                        onClick = {
-                            haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
-                            // B-1：显式回到最新 = 解除「已上翻」意图锁，此后增量持续跟随
-                            userScrolledAway = false
-                            jumpingToBottom = true
-                            coroutineScope.launch {
-                                try {
-                                    listState.animateScrollToItem(rows.lastIndex + headerCount)
-                                } finally {
-                                    // 丢弃跳转期间翻页逻辑可能设上的锚点（否则它随后会把视口拽回中段）
-                                    anchorRowId = null
-                                    jumpingToBottom = false
-                                }
-                            }
-                        },
-                        shape = RoundedCornerShape(16.dp),
-                        color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.95f),
-                        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
-                        shadowElevation = 4.dp
-                    ) {
-                        Row(
-                            verticalAlignment = Alignment.CenterVertically,
-                            modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp)
-                        ) {
-                            Icon(
-                                imageVector = Icons.Default.KeyboardArrowDown,
-                                contentDescription = "回到底部",
-                                tint = MaterialTheme.colorScheme.onPrimaryContainer,
-                                modifier = Modifier.size(16.dp)
-                            )
-                            Spacer(Modifier.width(4.dp))
-                            Text(
-                                text = "回到底部",
-                                style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.SemiBold),
-                                color = MaterialTheme.colorScheme.onPrimaryContainer
-                            )
-                        }
-                    }
-                }
-            }
+                },
+            )
         }
 
         // 3. 附件条
@@ -611,3 +491,4 @@ fun ConversationScreen(
     }
 }
 
+}

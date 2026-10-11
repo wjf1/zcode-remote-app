@@ -4,8 +4,17 @@ import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
 import android.widget.Toast
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.expandVertically
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -22,6 +31,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.AttachFile
+import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.Build
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Email
@@ -51,6 +61,8 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalHapticFeedback
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -731,5 +743,101 @@ private fun PlainRow(row: ConversationRow) {
             overflow = TextOverflow.Ellipsis,
             modifier = Modifier.fillMaxWidth().padding(bottom = 2.dp),
         )
+    }
+}
+
+/**
+ * 消息流列表容器（§11.7 结构性拆分：自 `ConversationScreen.kt` 原样搬出，只移动不改行为）。
+ * 外层 Box 承载悬浮「回到底部」提示胶囊；列表状态、滚动意图锁与跳转执行仍在 Route 层
+ * （会话级副作用），经 [onJumpToBottom] 回调触发。
+ */
+@Composable
+internal fun ConversationTimelineArea(
+    listState: androidx.compose.foundation.lazy.LazyListState,
+    rows: List<ConversationRow>,
+    pendingUserMessages: List<AppViewModel.PendingUserMessage>,
+    earlier: com.zcode.remote.relay.ConversationChannel.EarlierState,
+    turnSummaries: Map<Int, com.zcode.remote.relay.TurnDiffSummary>,
+    expandedRows: List<String>,
+    toggleExpanded: (String) -> Unit,
+    isNearBottom: Boolean,
+    onJumpToBottom: () -> Unit,
+) {
+    val haptic = LocalHapticFeedback.current
+    Box(modifier = Modifier.fillMaxWidth()) {
+        LazyColumn(
+            state = listState,
+            modifier = Modifier.fillMaxSize(),
+            verticalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            item(key = "earlier-head") {
+                Text(
+                    text = when {
+                        earlier.loading -> "加载更早历史…"
+                        earlier.pulled && !earlier.hasMore -> "已到会话开头"
+                        else -> "上滑加载更早历史"
+                    },
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
+                    modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
+                    textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+                )
+            }
+            items(rows, key = { it.rowId }) { row ->
+                val expandKey = rowExpandKey(row)
+                RowItem(
+                    row = row,
+                    expanded = expandKey in expandedRows,
+                    onToggleExpand = { toggleExpanded(expandKey) },
+                )
+                turnSummaries[row.rowId]?.let { summary ->
+                    com.zcode.remote.ui.components.TurnChangesCard(
+                        summary = summary,
+                        modifier = Modifier.padding(vertical = 4.dp)
+                    )
+                }
+            }
+            // C-6：本地 pending 回显气泡（服务端 userInput 行到达后由 VM 移除）
+            items(pendingUserMessages, key = { "pending-${it.id}" }) { p ->
+                PendingUserBubble(p)
+            }
+        }
+
+        // 悬浮「回到底部」胶囊按钮（仅在用户主动上翻查阅历史且列表有内容时展示）
+        androidx.compose.animation.AnimatedVisibility(
+            visible = !isNearBottom && rows.isNotEmpty(),
+            enter = fadeIn() + expandVertically(),
+            exit = fadeOut() + shrinkVertically(),
+            modifier = Modifier.align(Alignment.BottomEnd).padding(bottom = 10.dp, end = 6.dp)
+        ) {
+            Surface(
+                onClick = {
+                    haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                    onJumpToBottom()
+                },
+                shape = RoundedCornerShape(16.dp),
+                color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.95f),
+                border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
+                shadowElevation = 4.dp
+            ) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp)
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.KeyboardArrowDown,
+                        contentDescription = "回到底部",
+                        tint = MaterialTheme.colorScheme.onPrimaryContainer,
+                        modifier = Modifier.size(16.dp)
+                    )
+                    Spacer(Modifier.width(4.dp))
+                    Text(
+                        text = "回到底部",
+                        style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.SemiBold),
+                        color = MaterialTheme.colorScheme.onPrimaryContainer
+                    )
+                }
+            }
+        }
     }
 }
