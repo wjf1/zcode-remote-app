@@ -1,5 +1,22 @@
 # 变更记录 / Changelog
 
+## v0.5.0-beta28（2026-10-11）· 缓存治理（§11.6）：C-9 凭据入 Keystore + 缓存 TTL/上限/串行化
+
+### 安全（C-9）
+- 新增 `storage/TokenStore`（AES-256-GCM，密钥入 Android Keystore，**复用 `CredentialCrypto` 主密钥**；按任务书禁用 `EncryptedSharedPreferences`）。
+- GitHub Token 由**明文 SharedPreferences** 迁移为加密存储；旧明文首次读取即迁移并删除（迁移失败保留明文待重试，不阻断）。
+
+### 缓存治理
+- **写串行化**：`SessionCacheStore` 写侧加 `Mutex` —— 流式期同一会话并发保存时「tmp 写 + rename」序列不交错。
+- **TTL 7 天**：会话列表与行缓存同治，过期即弃（换设备/长期未用后不回放陈旧会话）。
+- **读侧行数上限 200**（与写侧 `takeLast(200)` 对齐，防旧文件超限）。
+- **单文件字节上限 2MiB**：折半丢行纯函数 `trimRowsToBytes`（病态单行超限原样返回，不死循环）。
+- **删设备即清全部会话缓存**（`removeDevice → clearAll`，避免残留上一设备的会话正文）。
+
+### 验证
+- 单测 **201/201**（新增 TTL 判定 / 字节裁剪 / 病态单行共 7 项保护性测试，含 `--min 201` 门禁提升）。
+- 真机（2410DPN6CC，WiFi adb）：装机 Success、启动 FATAL=0、连接/会话列表正常。
+
 ## v0.5.0-beta27（2026-10-11）· A-4 失同步自愈（缺口触发重订阅 + SUSPEND 单泵）
 
 ### 修复（任务书 A-4，高危项）

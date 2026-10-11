@@ -2,8 +2,9 @@
 
 > ## ✅ 当前项目状态（2026-10-10，权威覆盖层）
 >
-> - **当前主干**：`master`；构建配置 `versionName=0.5.0-beta27`、`versionCode=39`。
+> - **当前主干**：`master`；构建配置 `versionName=0.5.0-beta28`、`versionCode=40`。
 > - **A-4 已完结（2026-10-11）**：缺口触发重订阅 + SUSPEND 单泵，真机回归通过（缺口 0 条、流式正常）。
+> - **缓存治理（§11.6）已完结（2026-10-11）**：C-9 Token 入 Keystore（TokenStore，复用 CredentialCrypto）+ 缓存 TTL 7 天/读侧行数上限/单文件 2MiB/写串行化/删设备清缓存；单测 201/201。
 > - **§11.4 已完结（2026-10-11，阶段①②③）**：进程级 RemoteConnectionManager + 全部连接韧性流/重试调度器迁入进程级作用域；**锁屏存活金标准通过**（UI 销毁后通知弹出、手机通知上作答直达桌面端）。纯代码组织的「编排整体搬迁」列入后续清理（不影响行为）。
 > - **最新发布**：tag/Release `v0.5.0-beta23`（C-14 修复 + 安全止血 + CI 门禁）。**发布治理已修正**：`v0.5.0-beta19..beta22` 的 Release 此前被 GitHub 标为非 prerelease，已统一改为 `prerelease=true`。
 > - **验证基线**：JVM 单测 **194/194**；`lintDebug`+`lintRelease` 0 error；`assembleRelease` 通过；仪器化 `ConversationTopBarLayoutTest` 在模拟器 PASS（负向对照去修复 FAIL 554.29dp）。
