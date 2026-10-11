@@ -753,6 +753,7 @@ private fun PlainRow(row: ConversationRow) {
  */
 @Composable
 internal fun ConversationTimelineArea(
+    modifier: Modifier = Modifier,
     listState: androidx.compose.foundation.lazy.LazyListState,
     rows: List<ConversationRow>,
     pendingUserMessages: List<AppViewModel.PendingUserMessage>,
@@ -764,7 +765,7 @@ internal fun ConversationTimelineArea(
     onJumpToBottom: () -> Unit,
 ) {
     val haptic = LocalHapticFeedback.current
-    Box(modifier = Modifier.fillMaxWidth()) {
+    Box(modifier = modifier.fillMaxWidth()) {
         LazyColumn(
             state = listState,
             modifier = Modifier.fillMaxSize(),

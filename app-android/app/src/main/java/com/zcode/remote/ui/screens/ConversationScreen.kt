@@ -382,6 +382,7 @@ fun ConversationScreen(
         } else {
             // 2. 消息流列表（外层 Box 承载悬浮「回到底部」提示胶囊；实现见 ConversationTimeline.kt）
             ConversationTimelineArea(
+                modifier = Modifier.weight(1f),
                 listState = listState,
                 rows = rows,
                 pendingUserMessages = pendingUserMessages,
