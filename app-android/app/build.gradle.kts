@@ -24,9 +24,9 @@ android {
         targetSdk = 35
         // 0.5.0-beta22 = beta21 + C-3（输入栏：Material 图标替换 emoji；
         // 键盘 inset 真机量测结论 = 现有链条正确、无需改动，详见 HANDOVER 坑 30）
-        // versionCode 41：beta29 —— C-12 大文件拆分（§11.7：会话页槽位化 + UiState/Action + 三域 repository）
-        versionCode = 41
-        versionName = "0.5.0-beta29"
+        // versionCode 42：beta30 —— §11.7 第二/三批拆分（审批/表单 + 通知协调 + 会话流域入 repo）
+        versionCode = 42
+        versionName = "0.5.0-beta30"
         // 仪器化渲染回归网（src/androidTest）用 androidx.test 默认 runner。
         // 只在模拟器/真机上跑；CI runner 无设备，故 ci.yml 不接（见 HANDOVER §6.1 回归网）。
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"

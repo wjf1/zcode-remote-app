@@ -1,5 +1,21 @@
 # 变更记录 / Changelog
 
+## v0.5.0-beta30（2026-10-11）· §11.7 第二/三批拆分：审批/表单 + 通知协调 + 会话流域入 repo
+
+### 拆分（纯代码组织，行为不变；`AppViewModel` 1181 → 1057 行，两轮累计 1945 → 1057）
+- **死参数清理**：`ConversationAction.onSwitchModelCustom`（无调用点）全链删除——Contract 字段、MainActivity 传值、VM 转发、`ModelConfigRepository.switchCurrentSessionModelCustom` 及专属 getter。
+- **`repo/ApprovalRepository`**（~300 行）：审批/表单双来源合并（会话流 pendingInteractions + 任务事件流）、`resolve`/`resolveById`/`answer` 系列/通知栏快捷应答（D-3）整体迁出；任务事件流 collector 改调 `ingestTaskApproval` 等入口；失败回滚、乐观消除逻辑原样保留。
+- **`repo/NotificationCoordinator`**（~105 行，任务书 NotificationCoordinator 职责）：多会话看板计数（E-1 权威角标优先 + 事件流回退）、桌面 Widget 推送（P2-3）、「手机正在看哪个会话」视图上报（P1-2）、连接终态文案。
+- **`repo/ConversationRepository`**（~210 行）：rows/rowStore/派生快照（C-5③）、meta/earlier/snapshotAligned/sessionState、订阅（含 C-5⑤ 离线缓存秒开与 C-5⑤ 竞态判定纯函数）、重订、翻页、C-6 本地 pending 回显气泡（`PendingUserMessage` 类型随迁）；connect 的状态 collector 改直写 repo（internal var——通道在 connect 时才创建，repo 无法自挂 collector）；重订预算复位与附件清理经回调注入。
+- 连接栈（conversation/channel/activeWorkspaceKey 等）全部经 getter 注入，flash 统一为 `(文案, 失败语义)` 回调；单测引用随纯函数迁移 15 处，**用例数 201 不变**。
+
+### 验证
+- 单测 **201/201**（`check_test_count.py` 核对）；`lintDebug`/`lintRelease` 0 error；`assembleDebug`/`assembleRelease` 通过。
+- **真机回归通过**（2410DPN6CC，WiFi adb 同签名覆盖装机）：启动连接就绪（72 会话）、会话页顶栏单行 + 时间线全行型渲染（思考/终端/读取/工具行）+ 快捷胶囊 + 输入栏停止态（会话流 repo 渲染链路）、待办 Tab 空态正确（审批 repo + 看板）、设置页版本与检查更新链路正常、logcat **FATAL=0** 且无新 repo 告警。
+
+### §11.7 剩余（下一轮）
+- `connect()` 编排与握手/桥重开调度器迁 ConnectionCoordinator（A-4/§11.4 刚稳定路径，须独立灰度）。
+
 ## v0.5.0-beta29（2026-10-11）· C-12 大文件拆分（§11.7）：会话页槽位化 + UiState/Action 契约 + 三域 repository
 
 ### 拆分（纯代码组织，行为不变、不加功能）
