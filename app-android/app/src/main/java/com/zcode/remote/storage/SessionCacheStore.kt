@@ -5,6 +5,8 @@ import com.zcode.remote.relay.ConversationRow
 import com.zcode.remote.relay.SessionItem
 import com.zcode.remote.util.ZLog
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
@@ -23,6 +25,18 @@ object SessionCacheStore {
     private const val TAG = "SessionCache"
     private const val CACHE_FILE = "sessions_cache.json"
 
+    /** §11.6：写串行化 —— 流式期同一会话的保存可能并发，Mutex 保证「tmp 写 + rename」序列不交错。 */
+    private val writeMutex = Mutex()
+
+    /** §11.6：缓存 TTL —— 超过 7 天视为过期（换设备/长期未用后不再回放陈旧会话）。 */
+    const val CACHE_TTL_MS = 7 * 24 * 60 * 60_000L
+
+    /** §11.6：单个行缓存文件的字节上限（200 行长正文仍可能到数 MB，这里硬封顶）。 */
+    const val MAX_ROW_FILE_BYTES = 2 * 1024 * 1024
+
+    /** 读侧行数上限（与写侧 takeLast(200) 对齐——写侧有兜底，读侧防旧文件超限）。 */
+    const val MAX_ROWS_PER_FILE = 200
+
     private val json = Json {
         ignoreUnknownKeys = true
         encodeDefaults = true
@@ -32,6 +46,11 @@ object SessionCacheStore {
     fun load(context: Context): List<SessionItem> {
         val file = File(context.filesDir, CACHE_FILE)
         if (!file.exists()) return emptyList()
+        if (isCacheStale(file.lastModified(), System.currentTimeMillis())) {
+            ZLog.d(TAG, "会话列表缓存超过 TTL，丢弃")
+            file.delete()
+            return emptyList()
+        }
         return runCatching {
             val raw = file.readText()
             json.decodeFromString<List<SessionItem>>(raw)
@@ -43,16 +62,18 @@ object SessionCacheStore {
     /** 异步持久化保存会话列表（原子写）。 */
     suspend fun save(context: Context, sessions: List<SessionItem>) = withContext(Dispatchers.IO) {
         if (sessions.isEmpty()) return@withContext
-        runCatching {
-            val raw = json.encodeToString(sessions)
-            val target = File(context.filesDir, CACHE_FILE)
-            val tmp = File(context.filesDir, "$CACHE_FILE.tmp")
-            tmp.writeText(raw)
-            if (tmp.renameTo(target) || (target.delete() && tmp.renameTo(target))) {
-                ZLog.d(TAG, "成功持久化 ${sessions.size} 条会话缓存")
+        writeMutex.withLock {
+            runCatching {
+                val raw = json.encodeToString(sessions)
+                val target = File(context.filesDir, CACHE_FILE)
+                val tmp = File(context.filesDir, "$CACHE_FILE.tmp")
+                tmp.writeText(raw)
+                if (tmp.renameTo(target) || (target.delete() && tmp.renameTo(target))) {
+                    ZLog.d(TAG, "成功持久化 ${sessions.size} 条会话缓存")
+                }
+            }.onFailure {
+                ZLog.w(TAG, "保存会话缓存失败: ${it.message}")
             }
-        }.onFailure {
-            ZLog.w(TAG, "保存会话缓存失败: ${it.message}")
         }
     }
 
@@ -61,9 +82,16 @@ object SessionCacheStore {
         val safeId = sessionId.replace(Regex("[^a-zA-Z0-9_-]"), "_")
         val file = File(context.filesDir, "rows_$safeId.json")
         if (!file.exists()) return emptyList()
+        // §11.6：TTL —— 过期行缓存直接丢弃（陈旧会话不回放）
+        if (isCacheStale(file.lastModified(), System.currentTimeMillis())) {
+            ZLog.d(TAG, "会话行缓存超过 TTL，丢弃 ($sessionId)")
+            file.delete()
+            return emptyList()
+        }
         return runCatching {
             val raw = file.readText()
-            json.decodeFromString<List<ConversationRow>>(raw)
+            // §11.6：读侧行数上限 —— 与写侧对齐，防旧文件/异常文件超限
+            json.decodeFromString<List<ConversationRow>>(raw).takeLast(MAX_ROWS_PER_FILE)
         }.onFailure {
             ZLog.w(TAG, "解析会话行缓存失败 ($sessionId): ${it.message}")
         }.getOrDefault(emptyList())
@@ -73,8 +101,13 @@ object SessionCacheStore {
     suspend fun saveRows(context: Context, sessionId: String, rows: List<ConversationRow>) = withContext(Dispatchers.IO) {
         if (rows.isEmpty()) return@withContext
         val safeId = sessionId.replace(Regex("[^a-zA-Z0-9_-]"), "_")
+        writeMutex.withLock {
         runCatching {
-            val slice = if (rows.size > 200) rows.takeLast(200) else rows
+            // §11.6：写侧行数上限 + 字节上限（200 行长正文仍可能到数 MB）
+            val slice = trimRowsToBytes(
+                if (rows.size > MAX_ROWS_PER_FILE) rows.takeLast(MAX_ROWS_PER_FILE) else rows,
+                MAX_ROW_FILE_BYTES,
+            )
             val raw = json.encodeToString(slice)
             val target = File(context.filesDir, "rows_$safeId.json")
             val tmp = File(context.filesDir, "rows_$safeId.json.tmp")
@@ -86,6 +119,7 @@ object SessionCacheStore {
             }
         }.onFailure {
             ZLog.w(TAG, "保存会话行缓存失败 ($sessionId): ${it.message}")
+        }
         }
     }
 
@@ -133,4 +167,33 @@ object SessionCacheStore {
 
     /** 行缓存文件数量上限（LRU）：单个文件约 ≤200 行文本，30 个足够覆盖常用会话。 */
     const val MAX_ROW_CACHE_FILES = 30
+
+    /** §11.6：TTL 判定（纯函数，单测覆盖）——lastModified 距今超过 [ttlMs] 即过期。 */
+    internal fun isCacheStale(lastModified: Long, now: Long, ttlMs: Long = CACHE_TTL_MS): Boolean =
+        lastModified > 0 && (now - lastModified) > ttlMs
+
+    /**
+     * §11.6：字节上限裁剪（纯函数，单测覆盖）。从最旧一端丢行直到序列化体积 ≤ [maxBytes]
+     * （折半丢，避免逐行序列化过慢）；只剩 1 行仍超限则原样返回（单行即超限属病态，交由调用方兜底）。
+     */
+    internal fun trimRowsToBytes(rows: List<ConversationRow>, maxBytes: Int): List<ConversationRow> {
+        var slice = rows
+        while (slice.size > 1 &&
+            json.encodeToString(slice).toByteArray(Charsets.UTF_8).size > maxBytes
+        ) {
+            slice = slice.takeLast(slice.size / 2)
+        }
+        return slice
+    }
+
+    /** §11.6：删设备/登出时清空全部会话缓存（会话列表 + 全部行缓存）。 */
+    fun clearAll(context: Context) {
+        runCatching {
+            File(context.filesDir, CACHE_FILE).delete()
+            context.filesDir
+                .listFiles { f -> f.name.startsWith("rows_") && f.name.endsWith(".json") }
+                ?.forEach { it.delete() }
+            ZLog.d(TAG, "已清空全部会话缓存")
+        }.onFailure { ZLog.w(TAG, "清空会话缓存失败: ${it.message}") }
+    }
 }

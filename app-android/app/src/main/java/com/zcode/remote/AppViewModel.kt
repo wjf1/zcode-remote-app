@@ -414,6 +414,9 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
     /** 移除一台设备；若移除的是活跃设备则落到下一台（无设备则断开）。 */
     fun removeDevice(sid: String) {
         val snap = multiStore.remove(sid)
+        // §11.6：删设备即清其关联离线缓存（会话列表 + 全部行缓存）——
+        // 缓存按会话 id 落盘、不分设备，保守起见随删设备整体清空，避免残留上一设备的会话正文。
+        SessionCacheStore.clearAll(getApplication())
         devices = snap.devices
         if (device?.deviceSid == sid) {
             device = snap.devices.firstOrNull { it.deviceSid == snap.activeSid }
