@@ -1,5 +1,19 @@
 # 变更记录 / Changelog
 
+## v0.5.0-beta25（2026-10-11）· 连接生命周期 §11.4（①②）+ 通知应答修复
+
+### 变更（架构，任务书 §11.4）
+- **阶段① 旁路 manager**：新增进程级 `RemoteConnectionManager`（连接栈字段迁入 + 进程级协程作用域 `SupervisorJob+Default`）；`ConnectionScope` 变为读写代理（调用点零改动、可整体回退）；`ConnectionService.onDestroy` 统一收口 `shutdown()`（此前服务止后连接对象挂在静态字段上无人回收）。
+- **阶段② 事件流迁移（首批，通知关键路径）**：`ch.events.collect`（会话流/角标/配置三通道唯一入口）与 `conv.interactions`/`conv.elicitations`（审批/表单**通知链路**）由 `viewModelScope` 迁入进程级作用域 —— **Activity 销毁、VM 被清后通知仍可发出**。配套 `launchCollector/cancelCollectors`（重连前取消旧流，防叠加/重复订阅）。
+- 阶段③（connect() 编排整体迁入、VM 只留 UI 映射）待后续提交；其余流（relayState/bridge/conv.*）逐条迁移中。
+
+### 修复
+- **表单应答失败（`invalid_value @ answer.action`）第二处同源缺陷**：通知栏 RemoteInput 内联回复（`ElicitationReceiver` 的 `ACTION_REPLY_TEXT`）此前只发 `{"freeText":…}` 缺必填枚举 `action`；补 `action:"accept"`（与 `answerElicitationFreeText` 同源同修）。**全仓 freeText 构造点清零**。
+
+### 验证（真机 2410DPN6CC / HyperOS，端到端金标准）
+- **锁屏存活**：`always_finish_activities=1` + HOME 销毁 UI（顶层 Activity=桌面、进程与前台服务存活）→ 触发提问 → **通知正常弹出** → **在手机通知上直接作答 → 桌面端收到答案**（通知→RemoteInput→resolveInteraction→桌面 全链路闭环）。旧版在该场景下 collector 已死、通知不弹。
+- 单测 **194/194**（含 `--min 194` 阈值门禁）；启动 FATAL=0；连接/引导/会话列表正常。
+
 ## v0.5.0-beta24（2026-10-11）· 顶栏溢出菜单 + 表单应答修复 + 发布签名归一
 
 ### 修复
