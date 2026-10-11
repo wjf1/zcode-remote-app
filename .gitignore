@@ -25,3 +25,6 @@ Thumbs.db
 keystore.properties
 *.keystore
 *.jks
+
+# 发布链本地产物（CI 自行生成）
+_release_meta/

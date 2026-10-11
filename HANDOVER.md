@@ -2,7 +2,7 @@
 
 > ## ✅ 当前项目状态（2026-10-10，权威覆盖层）
 >
-> - **当前主干**：`master`；构建配置 `versionName=0.5.0-beta31`、`versionCode=43`。
+> - **当前主干**：`master`；构建配置 `versionName=0.5.0-beta32`、`versionCode=44`。
 > - **A-4 已完结（2026-10-11）**：缺口触发重订阅 + SUSPEND 单泵，真机回归通过（缺口 0 条、流式正常）。
 > - **✅ §11.7 结构性拆分全部完结（2026-10-11，beta29/30/31 三连发）**：会话页 2210 → 494 行（ConversationTimeline/TopBar/PendingCards/AttachmentTray/Composer/Dialogs 六槽位 + ConversationUiState/Action 契约）；`AppViewModel` 1945 → 765 行（repo/ 六域类 + service/ConnectionCoordinator 编排器与连接韧性调度器，ConnectionHost 接口收敛对 VM 写入）。201 项单测全绿、lint 0 error、真机回归三轮通过（FATAL=0）。**下一轮入口**：维护与缺陷修复为主；会话 CRUD 编排（createNewSession/deleteSession/stopSession/sendPrompt）属 VM intent 本职可留；如需演进须用户重新拍板立项。
 > - **缓存治理（§11.6）已完结（2026-10-11）**：C-9 Token 入 Keystore（TokenStore，复用 CredentialCrypto）+ 缓存 TTL 7 天/读侧行数上限/单文件 2MiB/写串行化/删设备清缓存；单测 201/201。
@@ -11,11 +11,11 @@
 > - **验证基线**：JVM 单测 **201/201**（`check_test_count.py` 门禁下限 201）；`lintDebug`+`lintRelease` 0 error；`assembleDebug`/`assembleRelease` 通过；仪器化 `ConversationTopBarLayoutTest` 在模拟器 PASS（负向对照修复 FAIL 554.29dp）。
 > - **本轮已关闭的 P0**：① **C-14 会话页顶栏布局错乱**——根因＝顶栏标题列被四胶囊压到 ~20dp、元数据 `Text` 缺 `maxLines` 兜底而零宽换行成 20+ 行撑高整行；已加 `maxLines=1` 修复 + 仪器化断言。② **传输与日志安全止血**——Release 仅 `wss://`、明文关闭、日志脱敏、debug 组件令牌门、Release 产物断言。
 > - **附带修复**：`Vql.kt` 用了 API 33 的 `ByteArrayOutputStream#writeBytes`（minSdk 31 → Android 12/12L 崩溃），由新增 lint 门禁抓出并改为等价 `write(byte[])`。
-> - **当前工程主线**：《体验提升任务书 v2》§11 阶段 0–5 已全部完结；**仅剩 §11.5.2 RPC generation/分片完整性（依赖真实帧样本）、§11.5.3 A-5 逻辑 fragment（无样本不实现）、§11.8 阶段 6 第二层门禁与发布链**。执行卡见任务书 §11，剩余项明细见下方「待办（下一轮入口）」。
+> - **当前工程主线**：《体验提升任务书 v2》§11 阶段 0–5 已完结、**§11.8 阶段 6 已落地（beta32：CI 加固 + Detekt/Kover + 仪器化进 CI + 全自动发布链 + Dependabot）**；**仅剩 §11.5.2 RPC generation/分片完整性（依赖真实帧样本）、§11.5.3 A-5 逻辑 fragment（无样本不实现）、KtLint 存量格式专项**。执行卡见任务书 §11，明细见下方「待办（下一轮入口）」。
 > - **观察期决策**：P0-2“三天观察期”已于 2026-10-10 取消，不再构成发布门禁；旧记录仅保留作历史证据。
 > - **真机复验（2026-10-10）**：C-14 已在小米 2410DPN6CC / HyperOS 真机（release beta23）复验通过——uiautomator 实测顶栏由 y≈520/行高≈855px 回到 y=161–251/单行，标题与元数据恢复可见（证据 `docs/screenshots/conv-layout-fixed-phone.png`）。卸载重装（跨签名）后配对凭据保留、无需重扫码。
 > - **签名决策（2026-10-11）**：历史发布密钥 `e1571a49…` 不可得 → **以本机 keystore（`toolchain/keys/zcode-remote.keystore`，SHA-256 `1d46e9e8…`）为唯一官方签名**；历史设备升级需卸载一次，此后可覆盖升级；**必须备份该 keystore 与口令**。
-> - **待办（下一轮入口，均为独立灰度项，无阻塞依赖）**：① **§11.5.2 RPC generation/分片完整性**——请求 key 绑 `(bridgeGeneration, requestId)`、旧连接迟到响应不得完成新请求、单/多分片统一 CRC/声明长度校验、出站大 RPC 物理分片（高危协议路径，须真机灰度）；② **§11.5.3 A-5 逻辑 fragment**——任务书硬门：无真实帧样本不实现，需先官方 bundle + `tools/probe.py` 采样建 fixture；③ **§11.3.3 集中 ProtocolLimits**——帧/payload 字节、字段长度、在途分片总字节、分片超时与过载策略（与 ① 同批最稳）；④ **§11.8 第二层门禁与发布链**——仪器化测试进 CI（本机兆芯无模拟器加速，CI runner 可跑）、Kover/Detekt/Ktlint/CodeQL/Dependabot、协议帧回放、Macrobenchmark、Actions 加固、tag 驱动自动发布（五处版本一致核对）、Release 附 SBOM/SHA-256/provenance、脱敏诊断环形缓冲；⑤ **§11.10 `1.0.0` 发布门**——依赖 ①②④ + 连续两个 Beta 周期无严重回归。**明确不做（历史用户决策，勿当遗漏）**：C-5⑥⑦、Sprint 7 生物识别/自建中继 E2EE、P2-3 余项；A-5 在拿到帧样本前不写伪实现。
+> - **待办（下一轮入口，均为独立灰度项，无阻塞依赖）**：（**§11.8 阶段 6 大部分已于 beta32 落地**：Actions 加固 / Detekt 门禁 / Kover / 仪器化进 CI / tag 驱动发布链 五处一致 + SBOM/SHA-256/指纹/provenance / Dependabot。剩余工程化项：KtLint 存量格式专项——test 661 + main 118 条，需独立 PR；CodeQL、协议帧回放、Macrobenchmark、诊断环形缓冲仍待做。）① **§11.5.2 RPC generation/分片完整性**——请求 key 绑 `(bridgeGeneration, requestId)`、旧连接迟到响应不得完成新请求、单/多分片统一 CRC/声明长度校验、出站大 RPC 物理分片（高危协议路径，须真机灰度）；② **§11.5.3 A-5 逻辑 fragment**——任务书硬门：无真实帧样本不实现，需先官方 bundle + `tools/probe.py` 采样建 fixture；③ **§11.3.3 集中 ProtocolLimits**——帧/payload 字节、字段长度、在途分片总字节、分片超时与过载策略（与 ① 同批最稳）；④ **§11.8 第二层门禁与发布链**——仪器化测试进 CI（本机兆芯无模拟器加速，CI runner 可跑）、Kover/Detekt/Ktlint/CodeQL/Dependabot、协议帧回放、Macrobenchmark、Actions 加固、tag 驱动自动发布（五处版本一致核对）、Release 附 SBOM/SHA-256/provenance、脱敏诊断环形缓冲；⑤ **§11.10 `1.0.0` 发布门**——依赖 ①②④ + 连续两个 Beta 周期无严重回归。**明确不做（历史用户决策，勿当遗漏）**：C-5⑥⑦、Sprint 7 生物识别/自建中继 E2EE、P2-3 余项；A-5 在拿到帧样本前不写伪实现。
 > - **表单应答（invalid_value）已修**：两处 freeText 同源缺陷清零；锁屏存活金标准（通知→RemoteInput→resolveInteraction→桌面）真机通过。
 >
 > 以下 beta13～beta21 状态块为**历史交付档案**，其中“当前版本”“最近发布”“唯一剩余项”等口径已由上方权威覆盖层取代；保留内容仅用于追溯实测、签名迁移和故障诊断证据。

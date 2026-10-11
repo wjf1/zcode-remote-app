@@ -69,8 +69,8 @@ jobs:
           "$APKSIGNER" verify --print-certs "$APK" | grep -E "Signer #1 certificate (SHA-256|SHA-1) digest" \
             > certificate-fingerprints.txt
           cat certificate-fingerprints.txt
-          test -f app-android/app/build/reports/cyclonedx/bom.json || { echo "::error::未产出 SBOM"; exit 1; }
-          cp app-android/app/build/reports/cyclonedx/bom.json sbom.cdx.json
+          test -f app-android/app/build/reports/bom.json || { echo "::error::未产出 SBOM"; exit 1; }
+          cp app-android/app/build/reports/bom.json sbom.cdx.json
 
       # ④ 构建来源证明（SLSA provenance，绑定本次 workflow 与产物摘要）
       - uses: actions/attest-build-provenance@c074443f1aee8d4aeeae555aebba3282517141b2 # v2.2.3

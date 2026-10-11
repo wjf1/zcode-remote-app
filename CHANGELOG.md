@@ -1,5 +1,21 @@
 # 变更记录 / Changelog
 
+## v0.5.0-beta32（2026-10-11）· §11.8 阶段 6：CI 加固 + 静态分析 + 全自动发布链
+
+### 新增（工程化，无用户可见行为变化）
+- **CI 加固**（`ci.yml`）：最小权限（`contents: read`）、按 ref 的 `concurrency` 取消、job 级 `timeout-minutes`、全部 action 固定 commit SHA。
+- **静态分析门禁**：Detekt（`buildUponDefaultConfig` + `detekt-config.yml` + 105 条存量 baseline——新增违规即红）；Kover 覆盖率报告。
+- **仪器化回归网进 CI**（`instrumentation` job）：ubuntu runner 自带 KVM，用 `android-emulator-runner` 跑 `connectedDebugAndroidTest`（C-14 顶栏布局 + Markdown 渲染两张网）——补上「本机兆芯 CPU 无虚拟化扩展、仪器化只能真机跑」的空洞。
+- **全自动发布链**（`release.yml`，tag 驱动）：① 五处版本一致性门禁 `tools/check_release_consistency.py`（tag = versionName = APK versionName = CHANGELOG 版本 = Release 标题版本）；② Secrets 解码签名材料 → 签名 Release APK + CycloneDX SBOM；③ 资产 = 规范化 APK + `SHA256SUMS.txt` + apksigner 证书指纹 + `sbom.cdx.json`；④ `attest-build-provenance` 生成 SLSA provenance；⑤ `gh release create --prerelease`，标题由 CHANGELOG 头条生成（杜绝裸标题/提交信息当标题）。
+- **Dependabot**（gradle + github-actions 周检）；**`.editorconfig`**（Compose PascalCase 函数名等三条规则有据豁免）。
+
+### 验证
+- 单测 **201/201**；Detekt / `lintDebug` / `lintRelease` 0 error；`assembleDebug` / `assembleRelease` 通过；SBOM 与 Kover 报告正常产出。
+- 本版本由**新发布链自动发布**（推 tag 即触发），即对整条链路（一致性门禁 → 签名 → 校验资产 → provenance → prerelease）的端到端验证。
+
+### 遗留（登记，非遗漏）
+- KtLint 存量格式噪音（test 661 条 + main 118 条，多为历史 KDoc 连排/命名惯例）本轮不入门禁——Detekt 已覆盖静态分析；KtLint 留专项治理轮次（文件级 format 会改写大量历史文件，需独立 PR + 回归）。
+
 ## v0.5.0-beta31（2026-10-11）· §11.7 收官：connect() 编排与连接韧性调度器迁 ConnectionCoordinator
 
 ### 拆分（纯代码组织，行为不变；`AppViewModel` 1057 → 765 行，三轮累计 1945 → 765）
