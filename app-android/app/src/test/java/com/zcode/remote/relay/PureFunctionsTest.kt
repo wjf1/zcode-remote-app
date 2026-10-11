@@ -1,6 +1,8 @@
 package com.zcode.remote.relay
 
 import com.zcode.remote.AppViewModel
+import com.zcode.remote.repo.AttachmentUploader
+import com.zcode.remote.repo.UpdateRepository
 import com.zcode.remote.storage.PairedDevice
 import com.zcode.remote.ui.screens.ConversationScrollPolicy
 import kotlinx.serialization.decodeFromString
@@ -101,22 +103,22 @@ class PureFunctionsTest {
         assertEquals("glm" to "deepseek-v4.1", WorkspaceConfigChannel.splitModelValue("deepseek-v4.1"))
     }
 
-    // ---------- AppViewModel.isNewerVersion（检查更新）----------
+    // ---------- UpdateRepository.isNewerVersion（检查更新）----------
 
     @Test
     fun versionComparisonSemantics() {
         // 原 bug 场景：远端是旧版本，字符串不等判断会误报"有新版本"
-        assertEquals(false, AppViewModel.isNewerVersion("0.5.0-beta5", "0.4.0-beta6"))
-        assertEquals(false, AppViewModel.isNewerVersion("0.5.0-beta5", "0.5.0-beta5"))
+        assertEquals(false, UpdateRepository.isNewerVersion("0.5.0-beta5", "0.4.0-beta6"))
+        assertEquals(false, UpdateRepository.isNewerVersion("0.5.0-beta5", "0.5.0-beta5"))
         // 正常升级
-        assertEquals(true, AppViewModel.isNewerVersion("0.5.0-beta5", "0.5.0-beta6"))
-        assertEquals(true, AppViewModel.isNewerVersion("0.5.0-beta5", "0.6.0-beta1"))
+        assertEquals(true, UpdateRepository.isNewerVersion("0.5.0-beta5", "0.5.0-beta6"))
+        assertEquals(true, UpdateRepository.isNewerVersion("0.5.0-beta5", "0.6.0-beta1"))
         // 同核心版本：remote 正式版 > current 预发布；反之不然
-        assertEquals(true, AppViewModel.isNewerVersion("0.5.0-beta5", "0.5.0"))
-        assertEquals(false, AppViewModel.isNewerVersion("0.5.0", "0.5.0-beta5"))
+        assertEquals(true, UpdateRepository.isNewerVersion("0.5.0-beta5", "0.5.0"))
+        assertEquals(false, UpdateRepository.isNewerVersion("0.5.0", "0.5.0-beta5"))
         // prerelease 数字感知（字典序会把 beta10 排在 beta9 前）
-        assertEquals(true, AppViewModel.isNewerVersion("0.5.0-beta9", "0.5.0-beta10"))
-        assertEquals(false, AppViewModel.isNewerVersion("0.5.0-beta10", "0.5.0-beta9"))
+        assertEquals(true, UpdateRepository.isNewerVersion("0.5.0-beta9", "0.5.0-beta10"))
+        assertEquals(false, UpdateRepository.isNewerVersion("0.5.0-beta10", "0.5.0-beta9"))
     }
 
     // ---------- SessionFiles（剧本 B「最近文件」）----------
@@ -388,13 +390,13 @@ class PureFunctionsTest {
     @Test
     fun uploadBelongsToSession() {
         // 同会话：允许回写
-        assertTrue(AppViewModel.uploadBelongsTo("sess_A", "sess_A"))
+        assertTrue(AttachmentUploader.uploadBelongsTo("sess_A", "sess_A"))
         // 跨会话：必须丢弃（否则 A 的在途上传会把文件注入 B 的附件条）
-        assertFalse(AppViewModel.uploadBelongsTo("sess_A", "sess_B"))
+        assertFalse(AttachmentUploader.uploadBelongsTo("sess_A", "sess_B"))
         // 发起时未订阅 / 当前已断开：一律丢弃
-        assertFalse(AppViewModel.uploadBelongsTo(null, "sess_A"))
-        assertFalse(AppViewModel.uploadBelongsTo("sess_A", null))
-        assertFalse(AppViewModel.uploadBelongsTo(null, null))
+        assertFalse(AttachmentUploader.uploadBelongsTo(null, "sess_A"))
+        assertFalse(AttachmentUploader.uploadBelongsTo("sess_A", null))
+        assertFalse(AttachmentUploader.uploadBelongsTo(null, null))
     }
 
     // ---------- B-3：反馈横幅时长档位（显式类型，不再靠字符串前缀猜）----------

@@ -124,69 +124,73 @@ class MainActivity : ComponentActivity() {
                         // 否则「A 停在顶部 → 进 B」会沿用 A 的偏移量（进 B 不停在最新行）。
                         target != null -> androidx.compose.runtime.key(target.taskId) {
                             ConversationScreen(
-                            title = vm.conversationMeta.title ?: target.title,
-                            status = vm.conversationStatus,
-                            meta = vm.conversationMeta,
-                            rows = vm.rowsSnapshot,
-                            pendingUserMessages = vm.pendingUserMessages,
-                            // 跨会话隔离（2026-10-09 真机反馈）：待处理项合并了
-                            // 「任务事件流（全 workspace）」与「会话流（当前订阅）」两路，
-                            // 会话页只能渲染属于本会话的卡，否则 B 会话会弹出 A 会话的审批。
-                            approvals = approvalsForSession(vm.approvals, target.taskId),
-                            elicitations = elicitationsForSession(vm.elicitations, target.taskId),
-                            earlier = vm.earlier,
-                            sessionState = vm.sessionState,
-                            prompt = vm.promptDraft,
-                            sending = vm.sending,
-                            canStop = vm.conversationMeta.canStop == true,
-                            stopState = vm.conversationMeta.stopState,
-                            commandFeedback = vm.commandFeedback,
-                            feedbackIsFailure = vm.feedbackIsFailure,
-                            attachments = vm.attachments.toList(),
-                            attachUploadName = vm.attachUpload?.name,
-                            attachUploadPercent = vm.attachUpload?.percent ?: 0,
-                            attachFailed = vm.attachFailed,
-                            onCancelUpload = { vm.cancelAttachmentUpload() },
-                            onRetryUpload = { vm.retryAttachmentUpload() },
-                            onDismissUploadFailure = { vm.dismissAttachFailure() },
-                            onResolve = { a: PendingApproval, opt: ApprovalOption -> vm.resolve(a, opt) },
-                            onElicitationAccept = { el, answers -> vm.answerElicitation(el, answers) },
-                            onElicitationDecline = { vm.declineElicitation(it) },
-                            onElicitationFreeText = { el, text -> vm.answerElicitationFreeText(el, text) },
-                            onLoadEarlier = { vm.loadEarlier() },
-                            onPromptChange = { vm.updatePromptDraft(it) },
-                            onSend = { vm.sendPrompt() },
-                            onStop = { vm.stopSession() },
-                            onAttachmentPicked = { uri, name, mime, size -> vm.addAttachment(uri, name, mime, size) },
-                            onRemoveAttachment = { vm.removeAttachment(it) },
-                            availableModels = vm.allAvailableModels,
-                            modelReasoningLevels = vm.modelReasoningLevels,
-                            onSwitchModel = { m -> vm.switchCurrentSessionModel(m) },
-                            onSwitchModelCustom = { id -> vm.switchCurrentSessionModelCustom(id) },
-                            onLoadModels = { vm.loadWorkspaceModels() },
-                            currentSessionMode = vm.sessionModeOverride
-                                ?: vm.sessionModeFromWorkspace,
-                            // ⚠️ 执行模式勿取 ConversationChannel.Status.Live.mode——那是订阅模式
-                            // （snapshot/live），与执行模式（plan/build/yolo）撞名（真机验收 2026-10-05 实证）
-                            onSwitchMode = { m ->
-                                vm.setSessionMode(m) { err ->
-                                    if (err != null) {
-                                        // C-2：exec mode 切换失败同样经错误映射，不直出裸英文
-                                        android.widget.Toast.makeText(
-                                            this@MainActivity,
-                                            "切换失败：${com.zcode.remote.relay.UserFacingError.map(err)}",
-                                            android.widget.Toast.LENGTH_SHORT
-                                        ).show()
+                            ui = ConversationUiState(
+                                title = vm.conversationMeta.title ?: target.title,
+                                status = vm.conversationStatus,
+                                meta = vm.conversationMeta,
+                                rows = vm.rowsSnapshot,
+                                pendingUserMessages = vm.pendingUserMessages,
+                                // 跨会话隔离（2026-10-09 真机反馈）：待处理项合并了
+                                // 「任务事件流（全 workspace）」与「会话流（当前订阅）」两路，
+                                // 会话页只能渲染属于本会话的卡，否则 B 会话会弹出 A 会话的审批。
+                                approvals = approvalsForSession(vm.approvals, target.taskId),
+                                elicitations = elicitationsForSession(vm.elicitations, target.taskId),
+                                earlier = vm.earlier,
+                                sessionState = vm.sessionState,
+                                prompt = vm.promptDraft,
+                                sending = vm.sending,
+                                canStop = vm.conversationMeta.canStop == true,
+                                stopState = vm.conversationMeta.stopState,
+                                commandFeedback = vm.commandFeedback,
+                                feedbackIsFailure = vm.feedbackIsFailure,
+                                attachments = vm.attachments.toList(),
+                                attachUploadName = vm.attachUpload?.name,
+                                attachUploadPercent = vm.attachUpload?.percent ?: 0,
+                                attachFailed = vm.attachFailed,
+                                availableModels = vm.allAvailableModels,
+                                modelReasoningLevels = vm.modelReasoningLevels,
+                                currentSessionMode = vm.sessionModeOverride
+                                    ?: vm.sessionModeFromWorkspace,
+                                filePreview = vm.filePreview,
+                                snapshotAligned = vm.snapshotAligned,
+                                attachmentFeedback = vm.attachmentFeedback,
+                            ),
+                            actions = ConversationAction(
+                                onBack = { opened = null },
+                                onCancelUpload = { vm.cancelAttachmentUpload() },
+                                onRetryUpload = { vm.retryAttachmentUpload() },
+                                onDismissUploadFailure = { vm.dismissAttachFailure() },
+                                onResolve = { a: PendingApproval, opt: ApprovalOption -> vm.resolve(a, opt) },
+                                onElicitationAccept = { el, answers -> vm.answerElicitation(el, answers) },
+                                onElicitationDecline = { vm.declineElicitation(it) },
+                                onElicitationFreeText = { el, text -> vm.answerElicitationFreeText(el, text) },
+                                onLoadEarlier = { vm.loadEarlier() },
+                                onPromptChange = { vm.updatePromptDraft(it) },
+                                onSend = { vm.sendPrompt() },
+                                onStop = { vm.stopSession() },
+                                onAttachmentPicked = { uri, name, mime, size -> vm.addAttachment(uri, name, mime, size) },
+                                onRemoveAttachment = { vm.removeAttachment(it) },
+                                onSwitchModel = { m -> vm.switchCurrentSessionModel(m) },
+                                onSwitchModelCustom = { id -> vm.switchCurrentSessionModelCustom(id) },
+                                onLoadModels = { vm.loadWorkspaceModels() },
+                                // ⚠️ 执行模式勿取 ConversationChannel.Status.Live.mode——那是订阅模式
+                                // （snapshot/live），与执行模式（plan/build/yolo）撞名（真机验收 2026-10-05 实证）
+                                onSwitchMode = { m ->
+                                    vm.setSessionMode(m) { err ->
+                                        if (err != null) {
+                                            // C-2：exec mode 切换失败同样经错误映射，不直出裸英文
+                                            android.widget.Toast.makeText(
+                                                this@MainActivity,
+                                                "切换失败：${com.zcode.remote.relay.UserFacingError.map(err)}",
+                                                android.widget.Toast.LENGTH_SHORT
+                                            ).show()
+                                        }
                                     }
-                                }
-                            },
-                            filePreview = vm.filePreview,
-                            onPreviewFile = { vm.previewSessionFile(it) },
-                            onDismissFilePreview = { vm.dismissFilePreview() },
-                            snapshotAligned = vm.snapshotAligned,
-                            attachmentFeedback = vm.attachmentFeedback,
-                            onRetrySubscribe = { vm.retrySubscribe() },
-                            onBack = { opened = null },
+                                },
+                                onPreviewFile = { vm.previewSessionFile(it) },
+                                onDismissFilePreview = { vm.dismissFilePreview() },
+                                onRetrySubscribe = { vm.retrySubscribe() },
+                            ),
                             )
                         }
 
