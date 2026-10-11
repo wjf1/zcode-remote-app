@@ -74,8 +74,10 @@ jobs:
 
           # 签名证书指纹：直接读 keystore（keytool 随 JDK 恒在，比解析 apksigner 输出稳定；
           # 早期写法 `apksigner ... | grep` 在 set -e 下会静默退出导致整步失败）。
-          STORE_PASS="$(grep '^storePassword=' app-android/keystore.properties | cut -d= -f2-)"
-          KEY_ALIAS="$(grep '^keyAlias=' app-android/keystore.properties | cut -d= -f2-)"
+          # tr -d '\r'：keystore.properties 源自 Windows（CRLF），Java Properties 容忍 \r，
+          # 但 shell 变量会把它带进口令 → keytool 报 "password was incorrect" 且无输出。
+          STORE_PASS="$(grep '^storePassword=' app-android/keystore.properties | cut -d= -f2- | tr -d '\r')"
+          KEY_ALIAS="$(grep '^keyAlias=' app-android/keystore.properties | cut -d= -f2- | tr -d '\r')"
           keytool -list -v -keystore toolchain/keys/zcode-remote.keystore \
             -storepass "$STORE_PASS" -alias "$KEY_ALIAS" 2>/dev/null \
             | grep -E "SHA256:|SHA1:" > certificate-fingerprints.txt || true

@@ -38,19 +38,22 @@ class ConversationTopBarLayoutTest {
             ) {
                 ZCodeTheme(forceDark = true) {
                     ConversationScreen(
-                        title = "分析 ZCode STREAM_IDLE_TIMEOUT 报错原因并给出修复建议",
-                        status = ConversationChannel.Status.Idle,
-                        meta =
-                            ConversationChannel.ConversationMeta(
-                                phase = "executing",
-                                totalCount = 254,
-                                model = "cn:deepseek-v4.1-flash-preview-extremely-long-name",
+                        ui =
+                            ConversationUiState(
+                                title = "分析 ZCode STREAM_IDLE_TIMEOUT 报错原因并给出修复建议",
+                                status = ConversationChannel.Status.Idle,
+                                meta =
+                                    ConversationChannel.ConversationMeta(
+                                        phase = "executing",
+                                        totalCount = 254,
+                                        model = "cn:deepseek-v4.1-flash-preview-extremely-long-name",
+                                    ),
+                                rows =
+                                    listOf(
+                                        ConversationRow(rowId = 1, kind = "assistant", text = "hello"),
+                                    ),
                             ),
-                        rows =
-                            listOf(
-                                ConversationRow(rowId = 1, kind = "assistant", text = "hello"),
-                            ),
-                        onBack = {},
+                        actions = ConversationAction(onBack = {}),
                     )
                 }
             }
