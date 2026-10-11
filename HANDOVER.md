@@ -2,9 +2,9 @@
 
 > ## ✅ 当前项目状态（2026-10-10，权威覆盖层）
 >
-> - **当前主干**：`master`；构建配置 `versionName=0.5.0-beta30`、`versionCode=42`。
+> - **当前主干**：`master`；构建配置 `versionName=0.5.0-beta31`、`versionCode=43`。
 > - **A-4 已完结（2026-10-11）**：缺口触发重订阅 + SUSPEND 单泵，真机回归通过（缺口 0 条、流式正常）。
-> - **✅ §11.7 第二/三批拆分已完结并随 beta30 发布（2026-10-11）**：死参数 `onSwitchModelCustom` 清理 + `repo/ApprovalRepository`（审批/表单应答）+ `repo/NotificationCoordinator`（看板/Widget/视图上报/终态文案）+ `repo/ConversationRepository`（会话流状态/订阅含离线缓存秒开/翻页/C-6 pending 回显）。`AppViewModel` 两轮累计 1945 → 1057 行，repo/ 包 6 类。201 项单测全绿、lint 0 error、真机回归通过（FATAL=0，会话流/待办/设置链路正常）。**§11.7 仅剩**：`connect()` 编排与握手/桥重开调度器迁 ConnectionCoordinator（A-4/§11.4 刚稳定路径，须独立灰度、独立 commit）；会话 CRUD 编排（createNewSession/deleteSession/stopSession/sendPrompt 跨 repo 边界，属 VM intent 本职，可留）。
+> - **✅ §11.7 结构性拆分全部完结（2026-10-11，beta29/30/31 三连发）**：会话页 2210 → 494 行（ConversationTimeline/TopBar/PendingCards/AttachmentTray/Composer/Dialogs 六槽位 + ConversationUiState/Action 契约）；`AppViewModel` 1945 → 765 行（repo/ 六域类 + service/ConnectionCoordinator 编排器与连接韧性调度器，ConnectionHost 接口收敛对 VM 写入）。201 项单测全绿、lint 0 error、真机回归三轮通过（FATAL=0）。**下一轮入口**：维护与缺陷修复为主；会话 CRUD 编排（createNewSession/deleteSession/stopSession/sendPrompt）属 VM intent 本职可留；如需演进须用户重新拍板立项。
 > - **C-12 大文件拆分（§11.7）阶段成果（2026-10-11，分支 refactor/split-viewmodel 六个提交 + weight 回归修复，已 merge）**：`ConversationScreen` 2210 → 494 行（Timeline/TopBar/PendingCards/AttachmentTray/Composer/Dialogs 六槽位 + `ConversationUiState/Action` 契约）；`AppViewModel` 1945 → 1428 行（UpdateRepository / AttachmentUploader / ModelConfigRepository 三域入 `repo/`，VM 保留转发层）。201 项单测全绿、lint 0 error、真机（2410DPN6CC，WiFi adb）冒烟通过——**真机抓到并修复一例布局回归**（TimelineArea 丢 `weight(1f)` 把输入栏挤出屏幕，详见 CHANGELOG beta29）。**剩余**：审批/表单 Repository、Session/会话流 Repository、`connect()` 编排迁 ConnectionCoordinator（与连接韧性路径纠缠，须独立灰度）；死参数 `onSwitchModelCustom` 清理。
 > - **缓存治理（§11.6）已完结（2026-10-11）**：C-9 Token 入 Keystore（TokenStore，复用 CredentialCrypto）+ 缓存 TTL 7 天/读侧行数上限/单文件 2MiB/写串行化/删设备清缓存；单测 201/201。
 > - **§11.4 已完结（2026-10-11，阶段①②③）**：进程级 RemoteConnectionManager + 全部连接韧性流/重试调度器迁入进程级作用域；**锁屏存活金标准通过**（UI 销毁后通知弹出、手机通知上作答直达桌面端）。纯代码组织的「编排整体搬迁」列入后续清理（不影响行为）。

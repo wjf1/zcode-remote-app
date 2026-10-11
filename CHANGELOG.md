@@ -1,5 +1,19 @@
 # 变更记录 / Changelog
 
+## v0.5.0-beta31（2026-10-11）· §11.7 收官：connect() 编排与连接韧性调度器迁 ConnectionCoordinator
+
+### 拆分（纯代码组织，行为不变；`AppViewModel` 1057 → 765 行，三轮累计 1945 → 765）
+- **`service/ConnectionCoordinator`**（~410 行）：RelayClient/RpcChannel/ConversationChannel/SessionsIndexChannel/WorkspaceConfigChannel/NetworkGate 装配 + 全部状态流 collector（relay/桥/rpc 事件/会话状态/审批与表单通知链路）+ **A-2 握手自动重订与桥自动重开两个连接韧性调度器**（状态随迁）+ bootstrap 工作区解析。
+- 对 VM 状态的写入收敛到 **`ConnectionHost` 接口**（AppViewModel 实现，12 成员）；职责域操作直接调用注入的 convRepo/approvalRepo/modelRepo/notifyCoordinator——coordinator 不感知 ViewModel 类型，无新增跨层依赖。
+- `bridgeReopenDelayMs` 纯函数随迁（单测引用 6 处改指向）；`deleteSession`/`disconnect` 的调度复位改 `resetHandshakeRetry()`；VM 保留 `connect()` 一行转发（init/pair/switchDevice/removeDevice/setEndpoint 调用点零改动）。
+
+### 验证
+- 单测 **201/201**（声明 = 实际执行）；`lintDebug`/`lintRelease` 0 error；`assembleDebug`/`assembleRelease` 通过。
+- **真机回归通过**（2410DPN6CC，WiFi adb 同签名覆盖装机）：启动连接就绪（72 会话，bootstrap→开桥→订阅全链路活）、首页「正在查看」角标（视图上报链路实证）、前台服务通知在（dumpsys notification）、logcat **FATAL=0**。
+
+### §11.7 全部完结
+任务书阶段 5「结构性拆分」九个提交全部落地：会话页 2210 → 494 行（六槽位 + UiState/Action 契约）、`AppViewModel` 1945 → 765 行（repo/ 六域类 + service/ 编排器）。剩余会话 CRUD 编排（createNewSession/deleteSession/stopSession/sendPrompt）属 VM 的 UI intent 本职，按任务书语义保留。
+
 ## v0.5.0-beta30（2026-10-11）· §11.7 第二/三批拆分：审批/表单 + 通知协调 + 会话流域入 repo
 
 ### 拆分（纯代码组织，行为不变；`AppViewModel` 1181 → 1057 行，两轮累计 1945 → 1057）
