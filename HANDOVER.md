@@ -14,7 +14,8 @@
 > - **观察期决策**：P0-2“三天观察期”已于 2026-10-10 取消，不再构成发布门禁；旧记录仅保留作历史证据。
 > - **真机复验（2026-10-10）**：C-14 已在小米 2410DPN6CC / HyperOS 真机（release beta23）复验通过——uiautomator 实测顶栏由 y≈520/行高≈855px 回到 y=161–251/单行，标题与元数据恢复可见（证据 `docs/screenshots/conv-layout-fixed-phone.png`）。卸载重装（跨签名）后配对凭据保留、无需重扫码。
 > - **签名决策（2026-10-11）**：历史发布密钥 `e1571a49…` 不可得 → **以本机 keystore（`toolchain/keys/zcode-remote.keystore`，SHA-256 `1d46e9e8…`）为唯一官方签名**；历史设备升级需卸载一次，此后可覆盖升级；**必须备份该 keystore 与口令**。
-> - **待办**：表单应答修复待真机复测（若仍报错则放开该处日志脱敏抓 wire 载荷）；Service 生命周期 → A-4 → 缓存治理 → 拆分 → CI/发布治理（任务书 §11）。
+> - **待办（下一轮入口）**：**C-12 大文件拆分**——`AppViewModel` 约 1900 行 / `ConversationScreen` 约 2200 行，目标收敛到 400–600 / 300–500 行，引入 `ConversationUiState/Action`；前置门已满足（§11.4 / A-4 / 缓存治理均稳定且回归网 201 项），**建议新会话承接**：先读本文件与《体验提升任务书 v2》§11.7，立 `refactor/split-viewmodel` 分支小步拆（每步跑 201 项单测 + WiFi adb 真机回归）。
+> - **表单应答（invalid_value）已修**：两处 freeText 同源缺陷清零；锁屏存活金标准（通知→RemoteInput→resolveInteraction→桌面）真机通过。
 >
 > 以下 beta13～beta21 状态块为**历史交付档案**，其中“当前版本”“最近发布”“唯一剩余项”等口径已由上方权威覆盖层取代；保留内容仅用于追溯实测、签名迁移和故障诊断证据。
 >
