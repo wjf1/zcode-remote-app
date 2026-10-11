@@ -84,7 +84,6 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         workspaceConfig = { workspaceConfig },
         activeWorkspaceKey = { activeWorkspaceKey },
         firstSessionWorkspace = { sessions.firstOrNull()?.workspacePath },
-        conversationProvider = { conversationMeta.provider },
         onWorkspaceMode = { sessionModeFromWorkspace = it },
         flash = { msg, failure -> if (failure) flash(msg, FlashKind.Failure) else flash(msg) },
     )
@@ -1213,7 +1212,6 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
     fun loadWorkspaceModels() = modelRepo.loadWorkspaceModels()
     fun loadModelsFromConfigFile(onDone: () -> Unit = {}) = modelRepo.loadModelsFromConfigFile(onDone)
     fun switchCurrentSessionModel(modelOption: WorkspaceConfigChannel.ModelOption) = modelRepo.switchCurrentSessionModel(modelOption)
-    fun switchCurrentSessionModelCustom(modelId: String, providerId: String? = null) = modelRepo.switchCurrentSessionModelCustom(modelId, providerId)
     /** 取该模型应当下发的思考档位（无合法档位信息时返回 null）。实现在 ModelConfigRepository。 */
     private fun pickReasoningLevel(providerId: String, modelId: String): String? = modelRepo.pickReasoningLevel(providerId, modelId)
 
