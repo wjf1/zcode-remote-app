@@ -68,8 +68,8 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.zcode.remote.AppViewModel
 import com.zcode.remote.relay.ConversationRow
+import com.zcode.remote.repo.ConversationRepository
 import com.zcode.remote.ui.components.CollapsibleRow
 import com.zcode.remote.ui.components.MarkdownView
 import com.zcode.remote.ui.components.ShimmerText
@@ -207,7 +207,7 @@ private fun UserBubble(row: ConversationRow) {
  * AppViewModel.pendingUserMessages）。形态与 [UserBubble] 一致，仅降透明度并加状态行。
  */
 @Composable
-internal fun PendingUserBubble(p: AppViewModel.PendingUserMessage) {
+internal fun PendingUserBubble(p: ConversationRepository.PendingUserMessage) {
     val dark = LocalZCodeDark.current
     val bubbleBg = if (dark) ZCodeTokens.OverlaySurfaceHoverDark else ZCodeTokens.OverlaySurfaceHoverLight
     val bubbleBorder = if (dark) ZCodeTokens.BorderSubtleDark else ZCodeTokens.BorderSubtleLight
@@ -756,7 +756,7 @@ internal fun ConversationTimelineArea(
     modifier: Modifier = Modifier,
     listState: androidx.compose.foundation.lazy.LazyListState,
     rows: List<ConversationRow>,
-    pendingUserMessages: List<AppViewModel.PendingUserMessage>,
+    pendingUserMessages: List<ConversationRepository.PendingUserMessage>,
     earlier: com.zcode.remote.relay.ConversationChannel.EarlierState,
     turnSummaries: Map<Int, com.zcode.remote.relay.TurnDiffSummary>,
     expandedRows: List<String>,

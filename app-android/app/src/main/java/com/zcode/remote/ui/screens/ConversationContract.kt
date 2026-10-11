@@ -3,6 +3,7 @@ package com.zcode.remote.ui.screens
 import android.net.Uri
 import com.zcode.remote.AppViewModel
 import com.zcode.remote.repo.AttachmentUploader
+import com.zcode.remote.repo.ConversationRepository
 import com.zcode.remote.relay.ApprovalOption
 import com.zcode.remote.relay.ConversationChannel
 import com.zcode.remote.relay.ConversationRow
@@ -23,7 +24,7 @@ data class ConversationUiState(
     val meta: ConversationChannel.ConversationMeta,
     val rows: List<ConversationRow>,
     /** C-6：已发出但服务端尚未回显的消息（本地 pending 气泡，渲染在消息流末尾）。 */
-    val pendingUserMessages: List<AppViewModel.PendingUserMessage> = emptyList(),
+    val pendingUserMessages: List<ConversationRepository.PendingUserMessage> = emptyList(),
     val approvals: List<PendingApproval> = emptyList(),
     val elicitations: List<PendingElicitation> = emptyList(),
     val earlier: ConversationChannel.EarlierState = ConversationChannel.EarlierState(),
