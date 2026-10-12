@@ -1,5 +1,27 @@
 # 变更记录 / Changelog
 
+## v0.5.0-beta34（2026-10-12）· §11.8 第二层门禁：协议帧回放 + 资源预算模糊/压力测试 + CodeQL
+
+### 新增（验证网与静态分析；无用户可见行为变化）
+- **协议帧回放网**：`tools/gen_rpc_frame_fixtures.py` 以**独立 Python 实现**（复用 `tools/probe.py` 的 VQL/CRC32）按官方等长切分算法构造完整 rpc-frame 信封（整条消息 CRC32、`fragmentCount ≤ 64`、标准 base64 带 padding；算法依据 `research/FRAME-CODEC.md` §3.6/§6），产出 20 用例 / 94 帧的 `rpc_frame_fixtures.json`；`RpcFrameReplayTest` 用同一组帧回放**纯逻辑层**（身份判定 / base64 规范性 / 元数据校验 / 分片组装结果序列），并用官方 §4.4 文档示例报文对拍 Kotlin `Vql` 编码字节——两份独立实现互为校验，上游协议漂移即红。
+- **资源预算模糊测试**：`ProtocolFuzzTest`（确定性种子，可复现）——3 万轮组装（含 `Int.MIN/MAX` 级畸形元数据、2 MB 级分片、随机时钟与 sweep）+ 5 千轮解析器 + 2 万轮 base64 规范性性质 + 5 万轮入站准入；断言：**无异常逃逸、拒绝码全部命中固定枚举、在途字节/条数/准入深度任意时刻不越界**。
+- **30 分钟压力测试**：`ProtocolStressTest`（`ZCODE_STRESS_SECONDS=1800` 启用，默认跳过、不占 CI 门禁时长）——混合流量（正常多分片 + 5% 篡改片 + 5% 重复片 + 3% 跳号 + 周期超时淘汰）持续灌入，断言在途分片字节/条数、入站深度始终受预算约束，并新增 **GC 后驻留内存**量测（比裸堆数字更能说明无泄漏）。**实跑证据（最终版本，2026-10-12，30m14s，failures=0）**：**64,749,568 帧**（约 3.59 万帧/秒）｜完成 1,222,922 / 拒绝 5,844,155（码分布 `fragmentGap` 4,499,316、`checksumMismatch` 752,613、`fragmentLimitExceeded` 444,399、`conflictingDuplicate` 147,827，全为固定枚举码）｜**在途分片字节峰值 65,555 B（预算 16 MiB 的 0.39%）**、在途消息条数峰值 1（预算 4）｜入站准入 峰值=容量=1024，准入 4,533 万 / 丢弃 1,942 万（过载路径被充分压到）｜堆内存 起点 62 MiB → 裸堆 148 MiB → **GC 后驻留 16 MiB**（远低于起点，无泄漏迹象）。
+- **入站队列策略可测化**：抽出纯逻辑 `relay/InboundAdmission.kt`（容量/峰值/准入/丢弃记账），`RelayClient` 改为经它记账——过载路径此前只能靠读代码，现在被单测与压测直接驱动。
+- **CodeQL 接入**（`.github/workflows/codeql.yml`）：`java-kotlin` + `build-mode: manual`（Gradle 构建提取）+ `security-and-quality` 查询集；最小权限（仅 `security-events: write`）、action 固定 SHA、`timeout-minutes`、`concurrency`、`persist-credentials=false`、周一定时。补上「Detekt 只看风格/复杂度、不看数据流安全缺陷」的空洞。
+
+### 修复（模糊测试当场抓到的真实缺陷）
+- **base64 规范性判定不完整**：原「形状校验」只查字母表/长度/填充位置，会放过**尾部悬空位非零**的串（如 `+C/=`——能解码、但重编码得 `+C8=`，官方 `isCanonicalBase64` 会拒）。现 `isCanonicalBase64Shape` 为完整规范性判定（末字符低 2/4 位必须为零），生产侧解码-重编码往返校验保留作纵深防御；新增 fixture 用例与 4 项单测钉死该行为。
+
+### 验证
+- 单测 **253/253**（244 → 253，新增 9 项；`check_test_count.py` 核对声明 = 实际执行，CI 下限提到 253）。
+- `lintDebug`/`lintRelease` 0 error；`detekt` 通过；`assembleDebug`/`assembleRelease` 通过。
+- 30 分钟压力测试与模糊测试证据见上（结构性边界为硬断言；裸堆数字仅作观测）。
+- 行程说明：本轮为**无真机批次**（任务书允许的独立项），协议路径真机灰度仍为下一轮第一件事。
+
+### 遗留（登记，非遗漏）
+- §11.8 余项：KtLint 存量格式专项（test 661 + main 118 条，需独立 PR）、Macrobenchmark（长会话基准）、`dependency review`、脱敏诊断环形缓冲（用户主动导出；纯逻辑部分可先做，UI 导出入口须真机走查）。
+- 真机灰度（beta33 起的协议改动）与出站物理分片 / A-5 逻辑 fragment 重组（硬门：无真实样本不实现）不变。
+
 ## v0.5.0-beta33（2026-10-12）· §11.3.3 集中协议预算 + §11.5.2 RPC 代次键控与分片完整性
 
 ### 修复（CI：仪器化回归网此前从未真正跑通）
