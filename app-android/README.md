@@ -119,3 +119,23 @@ app/src/main/java/com/zcode/remote/
 │                   ConversationScreen（会话流渲染+审批条）
 └── AppViewModel    状态中枢（连接/会话/审批合并与通知同步）
 ```
+
+## Macrobenchmark（长会话基准，§11.8，v0.5.0-beta37）
+
+`benchmark/`（`com.android.test` 模块）+ `app/src/benchmark/`（宿主 Activity 与确定性 fixture，
+只进 `benchmark` 构建变体、不进 debug/release 包）在**无中继、无配对、无网络**下用 1200 行
+fixture 渲染真实 `ConversationScreen`，量测「打开长会话 / 滚动 / 流式追加」三场景帧时
+（janky 口径 = `frameOverrunMs > 0`；`CompilationMode.None`，绝对值不与真机直接比较）。
+
+```bash
+# 设备/模拟器上跑（需要 adb 设备；本机兆芯 CPU 无虚拟化，实跑在 CI 或真机）
+gradle :benchmark:connectedBenchmarkAndroidTest --console=plain
+# 解析结果 + 结构性门禁（场景齐备 / 帧数非零）
+python ../tools/bench_check.py --dir benchmark/build/outputs
+# 与基线比对（回退即红）；--record 生成基线
+python ../tools/bench_check.py --dir benchmark/build/outputs \
+  --baseline ../tools/bench_baseline_emulator.json --factor 3.0
+```
+
+判读口径与 CI 接线见主 README「接力开发 / Handover」的 beta37 段与
+[../HANDOVER.md](../HANDOVER.md) §3。

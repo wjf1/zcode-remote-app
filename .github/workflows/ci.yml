@@ -175,7 +175,9 @@ jobs:
           api-level: 35
           target: google_apis
           arch: x86_64
-          script: cd app-android && gradle connectedDebugAndroidTest --console=plain
+          # 显式限定 :app——不带前缀的 connectedDebugAndroidTest 会跨模块执行，
+          # 把 :benchmark 模块（若有 debug 变体）也拖进来（2026-10-12 首跑实测踩坑）。
+          script: cd app-android && gradle :app:connectedDebugAndroidTest --console=plain
 
   # §11.8 第二层门禁（最后一项）：长会话 Macrobenchmark。宿主 Activity（`benchmark` 变体）
   # 用 fixture 长会话渲染真实 ConversationScreen（无中继/无配对），量测「打开 1200 行长会话 /
@@ -225,7 +227,13 @@ jobs:
           api-level: 35
           target: google_apis
           arch: x86_64
-          script: cd app-android && gradle :benchmark:connectedBenchmarkAndroidTest --console=plain
+          # suppressErrors 在模块 defaultConfig 里已设；此处用命令行属性再注入一次（双保险，
+          # 覆盖路径不同：defaultConfig → AGP 运行参数 / -P → AGP 属性读取）。
+          script: |
+            cd app-android
+            gradle :benchmark:connectedBenchmarkAndroidTest \
+              -Pandroid.testInstrumentationRunnerArguments.androidx.benchmark.suppressErrors=EMULATOR \
+              --console=plain
 
       # 结构性门禁（场景齐备 / 帧数非零——防空跑假绿）+ 基线比对（存在基线文件时生效，
       # 回退即红）；表格写入 Step Summary 供人工趋势比对。

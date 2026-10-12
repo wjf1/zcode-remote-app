@@ -45,6 +45,11 @@ android {
         minSdk = 31
         targetSdk = 35
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
+        // macrobenchmark 默认把「模拟器」列为未抑制错误（`ERRORS (not suppressed): EMULATOR`）
+        // 并直接拒绝测量；CI 只有模拟器可跑（本机兆芯 CPU 无虚拟化）。按官方推荐方式抑制
+        // （Errors.kt 给出的示例写法）。判读口径不变：模拟器数值只做趋势信号，真实性能验收
+        // = 人工在真机跑同一任务（见 README / HANDOVER §3）。
+        testInstrumentationRunnerArguments["androidx.benchmark.suppressErrors"] = "EMULATOR"
     }
 
     compileOptions {
@@ -65,6 +70,16 @@ android {
     targetProjectPath = ":app"
     // 本模块自带测试 APK（不自 instrument 其它模块的测试源集）
     experimentalProperties["android.experimental.self-instrumenting"] = true
+}
+
+// `com.android.test` 默认还会创建 debug 变体，而它会被不带模块前缀的 `connectedDebugAndroidTest`
+// 一并执行（2026-10-12 首跑实测：CI 的 instrumentation job 因此在 debuggable 包上跑到本模块的
+// 基准测试，报 `ERRORS (not suppressed): EMULATOR DEBUGGABLE` 而整单变红）。本模块只保留
+// `benchmark` 变体；CI 侧同时把命令改为显式 `:app:connectedDebugAndroidTest`（双保险）。
+androidComponents {
+    beforeVariants { variantBuilder ->
+        variantBuilder.enable = variantBuilder.buildType == "benchmark"
+    }
 }
 
 dependencies {

@@ -137,8 +137,8 @@ class LongConversationBenchmark {
         const val STREAM_INTERVAL_MS = 33L
         const val STREAM_WINDOW_MS = 2_000L
 
-        /** 模拟器上首轮渲染较慢，等待窗口放宽；与 CI timeout 一并留有裕量。 */
-        const val UI_TIMEOUT_MS = 10_000L
+        /** 模拟器上未 AOT 编译的首帧与 UiAutomator 首次连接都慢，等待窗口放宽；与 CI timeout 一并留有裕量。 */
+        const val UI_TIMEOUT_MS = 30_000L
 
         /** 轮数控制总时长（3 场景 × 3 轮）；真机复测可上调以收紧置信区间。 */
         const val ITERATIONS = 3

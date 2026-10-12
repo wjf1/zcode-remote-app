@@ -10,6 +10,11 @@
 - **CI 新增 `benchmark` job**（`ci.yml`）：ubuntu runner + KVM 权限步骤 + android-emulator-runner，跑 `:benchmark:connectedBenchmarkAndroidTest`（`benchmark` 变体与 `com.android.test` 模块同名变体匹配；组装产物在 runner 上先完成），随后跑 `bench_check.py`（`--baseline tools/bench_baseline_emulator.json --factor 3.0`，`if: always()` 保证结果解析失败也可见）。
 - **生产代码最小接线**：`ConversationTimeline` 的消息流 `LazyColumn` 增加 `testTag("conv-timeline-list")`（供基准用 UiAutomator 定位；生产包不开启 `testTagsAsResourceId`，该 tag 不可见，无行为影响）。
 
+### 修复（CI 首跑实测踩坑，已修）
+- **`connectedDebugAndroidTest` 跨模块波及新模块**：CI 的 instrumentation job 用不带模块前缀的 `gradle connectedDebugAndroidTest`，新增 `:benchmark` 模块后该命令把其 **debug 变体**的基准测试也一并执行——macrobenchmark 在 debuggable 包上直接拒绝（`ERRORS (not suppressed): EMULATOR DEBUGGABLE`），instrumentation 从绿转红。修法双保险：① `benchmark/build.gradle.kts` 用 `androidComponents.beforeVariants` **只保留 `benchmark` 变体**（debug 变体不再生成，`connectedDebugAndroidTest` 在根项目不再匹配到它）；② CI 命令改为显式 `gradle :app:connectedDebugAndroidTest`。
+- **模拟器错误阻断基准**：macrobenchmark 默认把「在模拟器上跑」列为未抑制错误（`ERRORS (not suppressed): EMULATOR`）并拒绝测量——CI 只有模拟器可跑（本机兆芯 CPU 无虚拟化）。按官方推荐方式（`Errors.kt` 示例）在模块 `defaultConfig` 设置 `testInstrumentationRunnerArguments["androidx.benchmark.suppressErrors"] = "EMULATOR"`（AGP 经 `am instrument -e` 传递，不写进 APK manifest），并在 CI 命令上以 `-Pandroid.testInstrumentationRunnerArguments...` 再注入一次（覆盖路径不同、双保险）。判读口径不变：模拟器数值只做趋势信号。
+- 顺带把宿主等待窗口从 10s 放宽到 30s（模拟器上未 AOT 编译的首帧与 UiAutomator 首次连接明显更慢）。
+
 ### 验证
 - 单测 **260/260**（无 JVM 用例变化；`check_test_count.py` 核对声明 = 实际执行）；`ktlintCheck` 0 违规（含新增 benchmark 源集与 `:benchmark` 模块）；`detekt` 通过（`:benchmark` 模块不挂 baseline——新代码零告警）；`lintDebug`/`lintRelease`/`lintBenchmark` 0 error；`assembleDebug`/`assembleDebugAndroidTest`/`assembleRelease`/`assembleBenchmark` 通过；`:benchmark:assembleBenchmark`（测试 APK）通过。
 - 产物核验：`app-benchmark.apk` 合并 Manifest 含 `<profileable>` 与宿主 Activity、无 `debuggable=true`。
