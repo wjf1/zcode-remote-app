@@ -1,5 +1,27 @@
 # 变更记录 / Changelog
 
+## v0.5.0-beta35（2026-10-12）· §11.8 可观测性：本地脱敏诊断缓冲 + 用户主动导出
+
+### 新增（本地可观测性；无自动上传、无行为变化）
+- **`util/diag/DiagnosticsRing.kt`**：容量有界（默认 512 条）的诊断环形缓冲 + **固定事件码**枚举（`DiagEventCode`）+ 机械脱敏：detail 一律截断到 120 字符，并把长度 ≥16 的连续 base64/hex/标识符样式串掩码为 `<masked>`（SID、token、分片数据不会落入缓冲）。满员覆盖最旧，`totalRecorded` 单独计数。
+- **`util/diag/Diagnostics.kt`**：进程级极薄入口（`Diagnostics.record`）+ 纯函数 `exportText`（头部 = 应用版本/版本码/条数/总量；正文 = 事件行 `[-]elapsed  code  detail`）+ `recordAppStart`（进程内仅一次）。**不做任何自动上传**。
+- **埋点（12 处，全部只记码/计数/状态名/耗时）**：应用启动（版本/版本码）、relay 状态迁移、桥 open/ready/failed/reopen、**协议违例**（`remote.rpcFrame.*` 固定码）、**入站队列溢出**（丢帧计数）、**重同步触发/节流**、会话失同步（reason）、订阅成功/失败（retryable）、握手自动重订（次数/退避）。全部落在 `service/ConnectionCoordinator`——连接栈零改动。
+- **设置页「诊断与排障」区块**（`ui/screens/DiagnosticsSection.kt`）：展示当前条数/容量/累计，**导出诊断日志**按钮走系统 SAF（`ACTION_CREATE_DOCUMENT`，由用户选落盘位置；取消不写盘），成功/失败都记事件（失败只记异常类名）。文件名 `zcode-diagnostics-<yyyyMMdd-HHmmss>.txt`，不含设备/会话信息。
+- **测试**：JVM `DiagnosticsRingTest` 7 项（有界与覆盖最旧、计数、清空、截断、长标识符掩码、导出结构与掩码、快照副本、容量下限）；仪器化 `DiagnosticsSectionTest` 3 项（区块可见可点、**真实点击**后导出请求事件入缓冲且请求的时间戳文件名形态正确、计数文案与缓冲一致）——UI 变更的真实点击走查在 CI 模拟器上执行。
+
+### 隐私边界（硬约束）
+- 只记录固定事件码、计数、耗时、状态名；**不记录**会话正文/提示词/文件路径/凭据/SID/完整 URL/RPC payload。
+- 导出**仅由用户主动触发**（系统保存对话框），App 不接入任何默认上传；缓冲常驻内存 ≤ 512 条（约几十 KB）。
+
+### 验证
+- 单测 **260/260**（253 → 260，新增 7 项；`check_test_count.py` 核对声明 = 实际执行，CI 下限提到 260）。
+- `lintDebug`/`lintRelease` 0 error；`detekt` 通过；`assembleDebug`/`assembleDebugAndroidTest`/`assembleRelease` 通过。
+- 仪器化 `DiagnosticsSectionTest`（3 项）随 CI emulator job 执行。
+
+### 遗留（登记，非遗漏）
+- 真机走查：SAF 保存对话框的真实落盘、Toast 反馈与「导出后文件内容不含正文」在真机确认（CI 模拟器覆盖点击与事件链路；纯逻辑与脱敏由 JVM 单测覆盖）。
+- §11.8 余项：KtLint 存量格式专项、Macrobenchmark、`dependency review`；真机灰度（beta33 协议改动）与 A-5/物理分片硬门不变。
+
 ## v0.5.0-beta34（2026-10-12）· §11.8 第二层门禁：协议帧回放 + 资源预算模糊/压力测试 + CodeQL
 
 ### 新增（验证网与静态分析；无用户可见行为变化）
