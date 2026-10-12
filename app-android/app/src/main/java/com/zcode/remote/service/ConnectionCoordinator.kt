@@ -3,6 +3,7 @@ package com.zcode.remote.service
 import android.app.Application
 import android.content.Context
 import android.net.ConnectivityManager
+import android.os.SystemClock
 import com.zcode.remote.BuildConfig
 import com.zcode.remote.notify.ApprovalBridge
 import com.zcode.remote.notify.ElicitationBridge
@@ -13,6 +14,7 @@ import com.zcode.remote.relay.FailureReason
 import com.zcode.remote.relay.NetworkGate
 import com.zcode.remote.relay.RelayClient
 import com.zcode.remote.relay.RelayState
+import com.zcode.remote.relay.ResyncThrottle
 import com.zcode.remote.relay.RpcChannel
 import com.zcode.remote.relay.SessionItem
 import com.zcode.remote.relay.SessionsIndexChannel
@@ -86,11 +88,29 @@ class ConnectionCoordinator(
     private var bridgeReopenCount = 0
     private var bridgeReopenJob: kotlinx.coroutines.Job? = null
 
+    /** 协议违例 → 重订阅的节流器（§11.5.2；见 [requestResync]）。 */
+    private val resyncThrottle = ResyncThrottle()
+
     /** A-2/删会话/断开共用：作废在途的握手自动重订并把预算归零。 */
     fun resetHandshakeRetry() {
         handshakeRetryJob?.cancel()
         handshakeRetryJob = null
         handshakeRetryCount = 0
+    }
+
+    /**
+     * §11.5.2/§11.3.3：协议违例 / 入站丢帧 / 未知逻辑帧 → 重订阅权威快照（A-4 同一自愈路径）。
+     *
+     * 节流：每次重订阅都会复位 A-2 重订预算，若持续违例（如 CRC 错帧风暴）不节流会把
+     * 「帧错误」放大成「订阅风暴」；间隔内被抑制的次数只记计数（观测用，不记 payload）。
+     */
+    private fun requestResync(cause: String) {
+        if (!resyncThrottle.shouldTrigger(SystemClock.elapsedRealtime())) {
+            ZLog.i(TAG, "重同步节流中（累计抑制 ${resyncThrottle.suppressed}）cause=$cause")
+            return
+        }
+        ZLog.w(TAG, "协议违例 → 重订阅权威快照 cause=$cause")
+        host.hostRetrySubscribe()
     }
 
     fun connect() {
@@ -123,7 +143,13 @@ class ConnectionCoordinator(
         val ch = RpcChannel(c)
         // A-4：事件流 seq 缺口 → 会话重订阅（缺口帧已 ack、服务端不重发，重取权威快照是唯一自愈路径）。
         ch.onSequenceGap = { host.hostRetrySubscribe() }
+        // §11.5.2：协议违例（分片顺序/CRC/长度/容量/解码失败）→ 节流重订阅（固定错误码已在此前落日志）
+        ch.onProtocolViolation = { v -> requestResync(v.code) }
+        // §11.3.3：入站队列溢出丢帧 = 失同步信号 → 节流重订阅（未 ack 的帧服务端可重放）
+        c.onInboundOverflow = { requestResync("inbound-queue-overflow") }
         val conv = ConversationChannel(ch)
+        // §11.5.3：未知逻辑 fragment / 异常规模帧 → 显式失同步（不得静默停在旧状态）
+        conv.onDesync = { reason -> requestResync(reason) }
         conv.onRowsUpdated = { sid, updatedRows ->
             host.hostScope.launch {
                 SessionCacheStore.saveRows(host.hostContext, sid, updatedRows)

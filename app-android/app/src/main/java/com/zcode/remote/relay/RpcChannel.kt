@@ -2,6 +2,7 @@ package com.zcode.remote.relay
 
 import android.os.Handler
 import android.os.Looper
+import android.os.SystemClock
 import android.util.Base64
 import com.zcode.remote.util.LogRedactor
 import com.zcode.remote.util.ZLog
@@ -18,13 +19,16 @@ import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.put
 import java.util.UUID
 import java.util.concurrent.ConcurrentHashMap
-import java.util.zip.CRC32
+import java.util.concurrent.atomic.AtomicInteger
 
 /**
  * 会话桥 + RPC 通道（规格见 research/FRAME-CODEC.md、research/CONVERSATION-PROTOCOL.md）。
  *
  * 流程：workspace-bridge-open → workspace-bridge-ready → 发 rpc-frame（Vql 编码）→ 收 204 EventFire。
- * M1 简化：仅单分片（消息 < 1MiB envelope 预算），分片/重传待后续。
+ *
+ * §11.5.2（beta33）：请求 key 绑 `(桥代次, requestId)`、入站身份三元组校验、单/多分片统一
+ * 校验（声明长度 + 整条消息 CRC32）、**完整解码成功后才 ack**、在途分片与队列有界、
+ * 出站超限本地拒绝（物理分片待真实样本，见 ProtocolLimits / 任务书 §11.5.2）。
  */
 class RpcChannel(private val relay: RelayClient) {
     sealed interface BridgeState {
@@ -65,10 +69,11 @@ class RpcChannel(private val relay: RelayClient) {
     data class RpcEvent(val id: Int?, val data: JsonElement)
 
     // A-4：SUSPEND + 单泵 —— 慢消费时由发射端（onRpcFrame，跑在入站单泵协程里）背压挂起，
-    // 而非 DROP_OLDEST 丢帧：丢帧 = seq 缺口 = 会话静默停在旧状态。容量 512 对齐 RelayClient._inbound。
+    // 而非 DROP_OLDEST 丢帧：丢帧 = seq 缺口 = 会话静默停在旧状态。
+    // 容量收敛到集中预算 ProtocolLimits.RPC_EVENT_BUFFER_CAPACITY（§11.3.3）。
     private val _events =
         MutableSharedFlow<RpcEvent>(
-            extraBufferCapacity = 512,
+            extraBufferCapacity = ProtocolLimits.RPC_EVENT_BUFFER_CAPACITY,
             onBufferOverflow = BufferOverflow.SUSPEND,
         )
 
@@ -78,6 +83,13 @@ class RpcChannel(private val relay: RelayClient) {
      * 在入站泵协程上回调；实现方须可跨线程调用。
      */
     var onSequenceGap: (() -> Unit)? = null
+
+    /**
+     * §11.5.2：协议违例回调（分片顺序/CRC/长度/超限/解码失败等固定错误码）。
+     * 与 [onSequenceGap] 同一语义——上层须进入重同步（重订阅权威快照）；实现方自行节流。
+     * 身份不匹配（旧桥迟到帧）**不**走此回调：那是丢弃即可的正常竞态，不构成失同步。
+     */
+    var onProtocolViolation: ((ProtocolViolation) -> Unit)? = null
     val events: SharedFlow<RpcEvent> = _events
 
     private val _bridge = MutableStateFlow<BridgeState>(BridgeState.Closed)
@@ -91,20 +103,27 @@ class RpcChannel(private val relay: RelayClient) {
     private var bridgeGeneration: Int? = null
     private var recoveryId: String? = null
 
-    private var nextRequestId = 0
+    /**
+     * §11.5.2 请求位点代次：桥就绪/通道复位时递增。
+     * 挂起请求以 `(bridgeEpoch, requestId)` 为 key —— 旧连接的迟到应答在结构上无法串单。
+     */
+    private var bridgeEpoch = 0
+
+    /** 请求 id 由 [AtomicInteger] 生成（call/listen 可能来自任意线程）；保持非负（线格式为 uint32）。 */
+    private val nextRequestId = AtomicInteger(0)
     private var nextPhysicalSeq = 1
     private var nextMessageSeq = 1
     private var lastAckedMessageSeq = 0
 
-    // WS 线程收响应、主线程调度超时，两侧都会 remove——必须并发安全。
-    private val pendingResponses = ConcurrentHashMap<Int, (RpcReply) -> Unit>()
+    // WS 线程收响应、主线程调度超时，两侧都会 remove——必须并发安全；key 含代次。
+    private val pendingResponses = PendingRequests<(RpcReply) -> Unit>()
 
-    /** 需要超时兜底的请求 id -> 超时任务（call 侧传入 timeoutMs 时登记）。 */
-    private val timeoutTasks = ConcurrentHashMap<Int, Runnable>()
+    /** 需要超时兜底的请求 key（同 PendingRequests.key）-> 超时任务。 */
+    private val timeoutTasks = ConcurrentHashMap<Long, Runnable>()
     private val mainHandler = Handler(Looper.getMainLooper())
 
-    /** 桥握手看门狗令牌（仅 main 线程读写）：只有最新一次 openBridge 的看门狗有效。 */
-    private var bridgeOpenToken = 0
+    /** §11.5.2：入站分片组装器（纯逻辑，校验/去重/超时/容量全在其内）。 */
+    private val assembler = RpcFrameAssembler()
 
     /**
      * 桥重建 / 通道复位时，旧桥上的挂起请求永远等不到应答（新桥 ack 序列空间不同），
@@ -112,21 +131,43 @@ class RpcChannel(private val relay: RelayClient) {
      * 修的就是真机验收发现的「发送中」永久卡死（2026-09-30，HANDOVER §6.0）。
      */
     private fun failPending(reason: String) {
-        val stale = pendingResponses.keys.toList()
-        for (id in stale) {
-            val cb = pendingResponses.remove(id) ?: continue
-            cancelTimeout(id)
+        cancelAllTimeouts()
+        for ((id, cb) in pendingResponses.drainAll()) {
             ZLog.w(TAG, "failPending id=$id reason=$reason")
             runCatching { cb(RpcReply.Err(reason, null)) }
         }
     }
 
-    private fun cancelTimeout(id: Int) {
-        timeoutTasks.remove(id)?.let { mainHandler.removeCallbacks(it) }
+    private fun cancelTimeout(key: Long) {
+        timeoutTasks.remove(key)?.let { mainHandler.removeCallbacks(it) }
     }
 
-    /** 接收分片缓冲：messageSeq -> (fragmentIndex -> 分片字节)。收齐即拼装校验。 */
-    private val fragmentBuffers = HashMap<Int, MutableMap<Int, ByteArray>>()
+    private fun cancelAllTimeouts() {
+        timeoutTasks.values.forEach { mainHandler.removeCallbacks(it) }
+        timeoutTasks.clear()
+    }
+
+    /** 桥握手看门狗令牌（仅 main 线程读写）：只有最新一次 openBridge 的看门狗有效。 */
+    private var bridgeOpenToken = 0
+
+    /** 当前桥身份（无桥时字段为 null；[identityMismatch] 对「无桥 + 带身份键的帧」判为不一致）。 */
+    private fun currentIdentity(): FrameIdentity =
+        FrameIdentity(
+            sessionId = (_bridge.value as? BridgeState.Ready)?.bridgeSessionId,
+            generation = bridgeGeneration?.toString(),
+            recoveryId = recoveryId,
+        )
+
+    /** 固定错误码 + 计数落日志（只记码/序号/长度，绝不记 payload），并按需上抛重同步。 */
+    private fun reject(
+        violation: ProtocolViolation,
+        messageSeq: Int?,
+        detail: String,
+        resync: Boolean = true,
+    ) {
+        ZLog.w(TAG, "rpc frame rejected code=${violation.code} seq=${messageSeq ?: "-"} $detail")
+        if (resync) onProtocolViolation?.invoke(violation)
+    }
 
     val bridgeIdentity: JsonObject?
         get() {
@@ -222,6 +263,14 @@ class RpcChannel(private val relay: RelayClient) {
                         sid,
                     )} gen=$bridgeGeneration payload=${LogRedactor.payloadLabel(payload.toString())}",
                 )
+                // §11.5.2：新桥 = 新 seq 空间。官方每条桥各自维护一套 seq（两侧从 1 起、
+                // 组装器 expectedPhysicalSeq 默认 1，见 research/FRAME-CODEC.md §6）——
+                // 若沿用旧 seq，PC 侧组装器会判 physicalGap（终态）；重置使两侧同起点。
+                bridgeEpoch += 1
+                nextPhysicalSeq = 1
+                nextMessageSeq = 1
+                lastAckedMessageSeq = 0
+                assembler.clear()
                 if (sid != null) {
                     // 新桥 ack 序列空间全新：旧桥挂起请求立即失败收场，防止调用方状态卡死
                     failPending("bridge re-established")
@@ -255,25 +304,32 @@ class RpcChannel(private val relay: RelayClient) {
             onResponse?.invoke(RpcReply.Err("bridge not ready", null))
             return null
         }
-        val id = nextRequestId++
+        val epoch = bridgeEpoch
+        val id = nextRequestId.getAndIncrement() and ID_MASK
         if (onResponse != null) {
-            pendingResponses[id] = onResponse
+            pendingResponses.register(epoch, id, onResponse)
             if (timeoutMs != null && timeoutMs > 0) {
                 // 超时兜底：服务端不回/桥半死时，调用方不能永久挂起。
                 // remove 原子性保证与 WS 线程的应答分发不会双触发。
+                val key = PendingRequests.key(epoch, id)
                 val task =
                     Runnable {
-                        val cb = pendingResponses.remove(id) ?: return@Runnable
+                        val cb = pendingResponses.complete(epoch, id) ?: return@Runnable
                         ZLog.w(TAG, "rpc timeout id=$id method=$method after=${timeoutMs}ms")
                         cb(RpcReply.Err("timeout after ${timeoutMs}ms", null))
                     }
-                timeoutTasks[id] = task
+                timeoutTasks[key] = task
                 mainHandler.postDelayed(task, timeoutMs)
             }
         }
         val msg = Vql.serialize(listOf(TYPE_PROMISE, id, channelName, method), args)
         ZLog.i(TAG, "rpc call channel=$channelName method=$method id=$id bytes=${msg.size}")
-        sendMessage(msg, bridge.bridgeSessionId)
+        if (!sendMessage(msg, bridge.bridgeSessionId)) {
+            // 出站超限（>16MiB 或信封 >1MiB）本地即拒：以可见失败收场，不留「已发送却等不到应答」的挂起
+            pendingResponses.complete(epoch, id)?.let { it(RpcReply.Err("消息过大，已被本地拒绝发送", null)) }
+            cancelTimeout(PendingRequests.key(epoch, id))
+            return null
+        }
         return id
     }
 
@@ -296,11 +352,15 @@ class RpcChannel(private val relay: RelayClient) {
             onResponse?.invoke(RpcReply.Err("bridge not ready", null))
             return null
         }
-        val id = nextRequestId++
-        if (onResponse != null) pendingResponses[id] = onResponse
+        val epoch = bridgeEpoch
+        val id = nextRequestId.getAndIncrement() and ID_MASK
+        if (onResponse != null) pendingResponses.register(epoch, id, onResponse)
         val msg = Vql.serialize(listOf(TYPE_EVENT_LISTEN, id, channelName, event), arg)
         ZLog.i(TAG, "rpc listen channel=$channelName event=$event id=$id bytes=${msg.size}")
-        sendMessage(msg, bridge.bridgeSessionId)
+        if (!sendMessage(msg, bridge.bridgeSessionId)) {
+            pendingResponses.complete(epoch, id)?.let { it(RpcReply.Err("消息过大，已被本地拒绝发送", null)) }
+            return null
+        }
         return id
     }
 
@@ -320,16 +380,24 @@ class RpcChannel(private val relay: RelayClient) {
         return true
     }
 
+    /**
+     * 组 rpc-frame 并发出。返回 false = **本地预算拒绝**（未发送）：
+     * ① 报文 > 16 MiB（官方 `messageTooLarge`）；② `data` 信封 > 1 MiB（官方 `envelopeTooLarge`，
+     * 官方发送端在此按 ≤1 MiB 物理分片；App 侧物理分片待真实样本，先显式拒绝而非发超限帧）。
+     */
     private fun sendMessage(
         message: ByteArray,
         bridgeSessionId: String,
-    ) {
+    ): Boolean {
         val bytes = message
-        val crc = CRC32().apply { update(bytes) }.value
+        if (bytes.size > ProtocolLimits.MAX_MESSAGE_BYTES) {
+            ZLog.w(TAG, "outbound refused code=${ProtocolViolation.OUTBOUND_TOO_LARGE.code} bytes=${bytes.size}")
+            return false
+        }
         val checksum =
             buildJsonObject {
                 put("algorithm", "crc32")
-                put("value", String.format("%08x", crc))
+                put("value", crc32Hex(bytes))
             }
         val seq = nextPhysicalSeq++
         val messageSeq = nextMessageSeq++
@@ -347,112 +415,140 @@ class RpcChannel(private val relay: RelayClient) {
                 put("checksum", checksum)
                 put("dataBase64", Base64.encodeToString(bytes, Base64.NO_WRAP))
             }
+        // 快速路径：base64 膨胀 4/3 后仍远离 1 MiB 的报文无需序列化整帧做预算判定
+        // （700_000 × 4/3 ≈ 933 KB + 信封余量 < 1 MiB，数学上必然合规）
+        if (bytes.size <= ENVELOPE_SAFE_MESSAGE_BYTES) {
+            relay.sendPayload(frame)
+            return true
+        }
+        // 官方 envelopeTooLarge 的同一口径：data 信封（含 client_ts）UTF-8 字节 ≤ 1 MiB
+        val envelopeBytes = relay.envelopeBytes(frame)
+        if (envelopeBytes > ProtocolLimits.MAX_PHYSICAL_FRAME_BYTES) {
+            ZLog.w(
+                TAG,
+                "outbound refused code=${ProtocolViolation.OUTBOUND_TOO_LARGE.code} envelope=$envelopeBytes",
+            )
+            return false
+        }
         relay.sendPayload(frame)
+        return true
     }
 
     /**
-     * 收到 rpc-frame → 按 fragmentIndex/fragmentCount 重组 → CRC 校验 → 解码 → 路由。
+     * 收到 rpc-frame → 身份校验 → 分片组装（统一校验）→ **完整解码成功后** ack → 路由。
      *
-     * 单分片（fragmentCount<=1）直通；多分片按 messageSeq 缓冲、收齐后按 index 升序拼接，
-     * checksum/messageBytes 校验通过才解码与 ack（不通过则不 ack，服务端会按 messageSeq 重放）。
+     * §11.5.2 的判定全部落在纯逻辑里（[RpcFrameAssembler] / [ProtocolLimits]），本函数只做
+     * 与 Android 相关的取字段、base64 与日志：
+     * - 身份三元组与当前桥不符（旧桥迟到帧）→ 丢弃且不回 ack（官方非终态，不触发重同步）；
+     * - 已 ack 的 messageSeq 重放（服务端累计 ack 语义下的重传）→ 幂等忽略；
+     * - 分片顺序/CRC/声明长度/容量违例 → 固定错误码 + 重同步（**不 ack**，服务端可重放）；
+     * - 解码失败的帧**绝不 ack**（旧实现在 ack 之后才解码，等于对无法处理的帧确认收货）。
      */
     suspend fun onRpcFrame(payload: JsonObject) {
-        val b64 = payload["dataBase64"]?.let { runCatching { it.jsonPrimitive.content }.getOrNull() } ?: return
-        val bytes = runCatching { Base64.decode(b64, Base64.NO_WRAP) }.getOrNull() ?: return
-        val messageSeq =
-            payload["messageSeq"]?.let {
-                runCatching { it.jsonPrimitive.content.toIntOrNull() }.getOrNull()
-            }
-        val fragIndex =
-            payload["fragmentIndex"]?.let {
-                runCatching { it.jsonPrimitive.content.toIntOrNull() }.getOrNull()
-            } ?: 0
-        val fragCount =
-            payload["fragmentCount"]?.let {
-                runCatching { it.jsonPrimitive.content.toIntOrNull() }.getOrNull()
-            } ?: 1
-        val bridgeSessionId = (bridge.value as? BridgeState.Ready)?.bridgeSessionId
-
-        val complete: ByteArray =
-            if (fragCount <= 1) {
-                bytes
-            } else {
-                val buf = fragmentBuffers.getOrPut(messageSeq ?: -1) { HashMap() }
-                buf[fragIndex] = bytes
-                if (buf.size < fragCount) {
-                    ZLog.d(TAG, "fragment buffered seq=$messageSeq ${buf.size}/$fragCount")
-                    trimFragmentBuffers()
-                    return
-                }
-                val joined = ByteArray(buf.entries.sortedBy { it.key }.sumOf { it.value.size })
-                var off = 0
-                for ((_, part) in buf.entries.sortedBy { it.key }) {
-                    part.copyInto(joined, off)
-                    off += part.size
-                }
-                fragmentBuffers.remove(messageSeq ?: -1)
-                val expectCrc = payload["checksum"]?.let { runCatching { it.jsonObject["value"]?.jsonPrimitive?.content }.getOrNull() }
-                val actualCrc = String.format("%08x", CRC32().apply { update(joined) }.value)
-                if (expectCrc != null && !expectCrc.equals(actualCrc, ignoreCase = true)) {
-                    ZLog.w(TAG, "fragment checksum mismatch seq=$messageSeq expect=$expectCrc actual=$actualCrc")
-                    return
-                }
-                val messageBytes =
-                    payload["messageBytes"]?.let {
-                        runCatching { it.jsonPrimitive.content.toIntOrNull() }.getOrNull()
-                    }
-                if (messageBytes != null && messageBytes != joined.size) {
-                    ZLog.w(TAG, "fragment size mismatch seq=$messageSeq expect=$messageBytes actual=${joined.size}")
-                    return
-                }
-                joined
-            }
-        messageSeq?.let { seq ->
-            // A-4：事件流缺口 = 中间有帧被丢（ack 已发、服务端不重发）→ 会话会静默停在旧状态。
-            // 唯一自愈路径是**重订阅**（服务端重放权威快照）；连接层不自知会话语义，经回调交上层。
-            if (lastAckedMessageSeq > 0 && hasSeqGap(seq, lastAckedMessageSeq)) {
-                ZLog.w(TAG, "事件流缺口检测: seq=$seq lastAcked=$lastAckedMessageSeq（中间有帧未收到）→ 触发会话重订阅")
-                onSequenceGap?.invoke()
-            }
-            ack(seq, bridgeSessionId)
+        val identity = frameIdentityOf(payload)
+        validateIdentityLengths(identity)?.let {
+            return reject(it, null, "identity field too long")
         }
-        handleMessage(complete)
-    }
+        if (identityMismatch(identity, currentIdentity())) {
+            // 旧桥/旧连接的迟到帧：结构上就是不该处理的帧，丢弃即可（不 ack、不重同步）
+            return reject(ProtocolViolation.IDENTITY_MISMATCH, null, "identity mismatch", resync = false)
+        }
+        val b64 =
+            payload["dataBase64"]?.let { runCatching { it.jsonPrimitive.content }.getOrNull() }
+                ?: return reject(ProtocolViolation.METADATA, null, "missing dataBase64")
+        if (b64.length > ProtocolLimits.MAX_PHYSICAL_FRAME_BYTES) {
+            return reject(ProtocolViolation.FRAME_BYTES, null, "b64Chars=${b64.length}")
+        }
+        val slice = runCatching { Base64.decode(b64, Base64.NO_WRAP) }.getOrNull()
+        if (slice == null || slice.isEmpty()) return reject(ProtocolViolation.INVALID_BASE64, null, "decode failed")
+        // 官方 isCanonicalBase64：必须能原样往返（非规范编码一律拒）
+        if (Base64.encodeToString(slice, Base64.NO_WRAP) != b64) {
+            return reject(ProtocolViolation.INVALID_BASE64, null, "non-canonical base64")
+        }
+        val metadata =
+            rpcFrameMetadataOf(payload)
+                ?: return reject(ProtocolViolation.METADATA, null, "metadata parse failed")
+        // 信封字节按重序列化长度判定（解析后的 JsonObject 已无原始字节；量级与官方口径一致）。
+        // 快速路径：dataBase64 是帧内绝对主字段（其余字段合计仅数百字节），其字符数 ≤ 阈值时
+        // envelope 必然 < 1 MiB —— 流式期每帧免一次整帧重序列化（与出站快速路径同一阈值口径）。
+        if (b64.length > ENVELOPE_SAFE_MESSAGE_BYTES) {
+            val envelopeBytes = payload.toString().toByteArray(Charsets.UTF_8).size
+            if (envelopeBytes > ProtocolLimits.MAX_PHYSICAL_FRAME_BYTES) {
+                return reject(ProtocolViolation.FRAME_BYTES, metadata.messageSeq, "envelope=$envelopeBytes")
+            }
+        }
+        // 已 ack 的 messageSeq 重放：累计 ack 覆盖，幂等忽略（官方 kind:"duplicate" 同一语义）
+        if (metadata.messageSeq <= lastAckedMessageSeq) {
+            ZLog.d(TAG, "rpc frame replay ignored seq=${metadata.messageSeq} acked=$lastAckedMessageSeq")
+            return
+        }
 
-    /** 分片缓冲上限（防泄漏）：只留最近几条未完成消息的碎片。 */
-    private fun trimFragmentBuffers() {
-        while (fragmentBuffers.size > 8) {
-            val oldest = fragmentBuffers.keys.minOrNull() ?: return
-            fragmentBuffers.remove(oldest)
+        val nowMs = SystemClock.elapsedRealtime()
+        for (v in assembler.sweepExpired(nowMs)) {
+            ZLog.w(TAG, "assembly evicted code=${v.code} seq=${metadata.messageSeq} inFlight=${assembler.inFlightBytes}")
+            onProtocolViolation?.invoke(v)
+        }
+        when (val outcome = assembler.accept(slice, metadata, nowMs)) {
+            is RpcFrameAssembler.Outcome.Buffered -> return
+            is RpcFrameAssembler.Outcome.Rejected ->
+                return reject(outcome.violation, metadata.messageSeq, "assembly rejected")
+            is RpcFrameAssembler.Outcome.Complete -> {
+                val decoded =
+                    decodeMessage(outcome.bytes)
+                        ?: return reject(ProtocolViolation.DECODE_FAILED, outcome.messageSeq, "vql decode failed")
+                // A-4：事件流缺口 = 中间有帧被丢（ack 已发、服务端不重发）→ 会话会静默停在旧状态。
+                // 唯一自愈路径是**重订阅**（服务端重放权威快照）；连接层不自知会话语义，经回调交上层。
+                if (lastAckedMessageSeq > 0 && hasSeqGap(outcome.messageSeq, lastAckedMessageSeq)) {
+                    ZLog.w(TAG, "事件流缺口检测: seq=${outcome.messageSeq} lastAcked=$lastAckedMessageSeq（中间有帧未收到）→ 触发会话重订阅")
+                    onSequenceGap?.invoke()
+                }
+                ack(outcome.messageSeq, (_bridge.value as? BridgeState.Ready)?.bridgeSessionId)
+                dispatch(decoded)
+            }
         }
     }
 
-    /** 解码一条完整消息（VQL head + payload）并按类型路由。 */
-    private suspend fun handleMessage(bytes: ByteArray) {
-        var type = -1
-        var id: Int? = null
-        var data: Any? = null
+    /** 解码结果（VQL head + payload 都解析成功才算成功；null = 解码失败，不得 ack）。 */
+    private class DecodedMessage(
+        val type: Int,
+        val id: Int?,
+        val data: Any?,
+    )
+
+    /** 解码一条完整消息（VQL head + payload）。返回 null = 解码失败。 */
+    private fun decodeMessage(bytes: ByteArray): DecodedMessage? =
         try {
             val head = Vql.deserialize(bytes)
             val kind = head.value as? List<*>
             if (kind == null) {
                 ZLog.w(TAG, "rpc frame head not array type=${head.value?.let { it::class.simpleName }}")
-                return
+                null
+            } else {
+                val type = kind.getOrNull(0) as? Int
+                if (type == null) {
+                    ZLog.w(TAG, "rpc frame head missing type")
+                    null
+                } else {
+                    DecodedMessage(type, kind.getOrNull(1) as? Int, Vql.deserialize(bytes, head.nextOffset).value)
+                }
             }
-            type = (kind.getOrNull(0) as? Int) ?: -1
-            id = kind.getOrNull(1) as? Int
-            data = Vql.deserialize(bytes, head.nextOffset).value
         } catch (t: Throwable) {
             ZLog.w(TAG, "rpc decode failed", t)
-            return
+            null
         }
 
+    /** 完整解码成功后按类型路由（201/202/203 对应请求位点；204 进事件流）。 */
+    private suspend fun dispatch(m: DecodedMessage) {
+        val type = m.type
+        val id = m.id
+        val data = m.data
         // P0 日志止血：不再打印 data 正文（旧实现 take(6000)，workspace-config 等帧含全文）
         ZLog.i(TAG, "rpc recv type=$type id=$id data=${LogRedactor.payloadLabel(data?.toString())}")
+        val epoch = bridgeEpoch
         when (type) {
             TYPE_SUCCESS -> {
-                val cb = id?.let { pendingResponses.remove(it) }
-                id?.let { cancelTimeout(it) }
+                val cb = id?.let { pendingResponses.complete(epoch, it) }
+                id?.let { cancelTimeout(PendingRequests.key(epoch, it)) }
                 cb?.invoke(RpcReply.Ok(toJsonElement(data)))
             }
             TYPE_ERROR, TYPE_ERROR_OBJ -> {
@@ -461,8 +557,8 @@ class RpcChannel(private val relay: RelayClient) {
                     el.let { runCatching { it.jsonObject["message"]?.jsonPrimitive?.content }.getOrNull() }
                         ?: el.toString().take(300)
                 ZLog.w(TAG, "rpc error id=$id msg=${LogRedactor.payloadLabel(msg)}")
-                val cb = id?.let { pendingResponses.remove(it) }
-                id?.let { cancelTimeout(it) }
+                val cb = id?.let { pendingResponses.complete(epoch, it) }
+                id?.let { cancelTimeout(PendingRequests.key(epoch, it)) }
                 cb?.invoke(RpcReply.Err(msg, el))
             }
             TYPE_EVENT_FIRE -> _events.emit(RpcEvent(id, toJsonElement(data)))
@@ -502,15 +598,26 @@ class RpcChannel(private val relay: RelayClient) {
         )
     }
 
+    /**
+     * 通道复位（relay 重新配对/换设备时调用）：§11.5.2 要求清理 **pending、看门狗、ACK、
+     * 序列与分片状态**——旧实现漏了看门狗令牌与身份字段（复位后旧看门狗仍可能用旧 wsKey
+     * 重开桥、且出站帧会带上旧桥身份）。
+     */
     fun reset() {
+        // 令牌失效：在途看门狗到点后判定 Noop，不再用旧 wsKey 重开桥
+        bridgeOpenToken += 1
         _bridge.value = BridgeState.Closed
         readyPayload = null
-        nextRequestId = 0
+        bridgeGeneration = null
+        recoveryId = null
+        // 代次递增：旧代次的迟到应答在 key 上即不匹配，结构上不可能串单
+        bridgeEpoch += 1
+        nextRequestId.set(0)
         nextPhysicalSeq = 1
         nextMessageSeq = 1
         lastAckedMessageSeq = 0
+        assembler.clear()
         failPending("channel reset")
-        fragmentBuffers.clear()
     }
 
     companion object {
@@ -523,6 +630,15 @@ class RpcChannel(private val relay: RelayClient) {
          */
         private const val BRIDGE_OPEN_TIMEOUT_MS = 6_000L
         private const val MAX_BRIDGE_OPEN_ATTEMPTS = 3
+
+        /** 请求 id 掩码：线格式为 uint32，保持非负且不溢出（回绕后复用旧 id 由桥代次隔离）。 */
+        private const val ID_MASK = 0x7fffffff
+
+        /**
+         * 出站信封预算快速路径阈值（字节）：≤ 此值的报文经 base64（4/3）+ JSON 信封后
+         * 必然 < 1 MiB（[ProtocolLimits.MAX_PHYSICAL_FRAME_BYTES]），无需序列化整帧判定。
+         */
+        private const val ENVELOPE_SAFE_MESSAGE_BYTES = 700_000
 
         const val TYPE_PROMISE = 100
         const val TYPE_PROMISE_CANCEL = 101

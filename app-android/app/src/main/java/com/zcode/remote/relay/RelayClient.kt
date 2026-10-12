@@ -124,7 +124,7 @@ class RelayClient(
     private val _inbound =
         MutableSharedFlow<JsonObject>(
             replay = 0,
-            extraBufferCapacity = 512,
+            extraBufferCapacity = ProtocolLimits.RPC_EVENT_BUFFER_CAPACITY,
             onBufferOverflow = BufferOverflow.SUSPEND,
         )
 
@@ -134,8 +134,19 @@ class RelayClient(
     /**
      * 入站帧队列（B 组）：OkHttp 线程只入队，单泵协程顺序 emit —— 保证帧序，且突发时
      * 挂起而非丢弃（原 DROP_OLDEST 会在长流式输出时静默丢最旧帧，会话行悄悄错位）。
+     *
+     * §11.3.3：容量有界（[ProtocolLimits.INBOUND_QUEUE_CAPACITY]）。溢出时**不静默**——
+     * 计数 + [onInboundOverflow] 上抛（调用方进入重同步；被丢弃的帧未 ack，服务端可重放）。
      */
-    private val frameQueue = Channel<JsonObject>(Channel.UNLIMITED)
+    private val frameQueue = Channel<JsonObject>(ProtocolLimits.INBOUND_QUEUE_CAPACITY)
+
+    /** 入站队列溢出回调（掉帧 = 失同步信号，必须可见）。 */
+    var onInboundOverflow: (() -> Unit)? = null
+
+    /** 累计因队列溢出丢弃的帧数（观测用，只记计数）。 */
+    @Volatile
+    var inboundDropped: Int = 0
+        private set
 
     init {
         startPump()
@@ -226,15 +237,22 @@ class RelayClient(
     }
 
     /** 业务负载必须包 data 信封并带 client_ts（官方 prepare() 实证）。 */
-    fun sendPayload(payload: JsonObject): Boolean {
-        val wrapped =
-            kotlinx.serialization.json.buildJsonObject {
-                put("type", "data")
-                put("payload", payload)
-                put("client_ts", System.currentTimeMillis())
-            }
-        return send(wrapped)
-    }
+    fun sendPayload(payload: JsonObject): Boolean = send(wrap(payload))
+
+    /** 包裹 data 信封（与 [sendPayload] 同一构造，供出站预算判定的字节口径复用）。 */
+    private fun wrap(payload: JsonObject): JsonObject =
+        kotlinx.serialization.json.buildJsonObject {
+            put("type", "data")
+            put("payload", payload)
+            put("client_ts", System.currentTimeMillis())
+        }
+
+    /**
+     * 出站信封 UTF-8 字节数（官方 `envelopeTooLarge` 判定口径：`{type,payload,client_ts}` 整体）。
+     * 用于 [RpcChannel] 在发送前拒绝超 1 MiB 的帧（物理分片未实现，见任务书 §11.5.2）。
+     */
+    fun envelopeBytes(payload: JsonObject): Int =
+        RelayProtocol.json.encodeToString(JsonObject.serializer(), wrap(payload)).toByteArray(Charsets.UTF_8).size
 
     /** 每次连接独立 listener：回调首行校验代次，旧 socket 的迟到回调一律丢弃。 */
     private fun makeListener(gen: Int): WebSocketListener =
@@ -301,7 +319,15 @@ class RelayClient(
                             frame["payload"]?.let {
                                 runCatching { it.jsonObject }.getOrNull()
                             } ?: return
-                        frameQueue.trySend(payload)
+                        // §11.3.3：有界队列 + 溢出可见（掉帧不再静默；未 ack 的帧服务端可重放）
+                        if (!frameQueue.trySend(payload).isSuccess) {
+                            inboundDropped += 1
+                            ZLog.w(
+                                TAG,
+                                "inbound queue overflow dropped=${inboundDropped} cap=${ProtocolLimits.INBOUND_QUEUE_CAPACITY}",
+                            )
+                            onInboundOverflow?.invoke()
+                        }
                     }
                     "error" -> {
                         val err = RelayProtocol.RelayError.from(RelayProtocol.errorCodeOf(frame))

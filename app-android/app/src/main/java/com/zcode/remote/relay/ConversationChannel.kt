@@ -106,6 +106,12 @@ class ConversationChannel(private val rpc: RpcChannel) {
      */
     var onUserInputEcho: ((ConversationRow) -> Unit)? = null
 
+    /**
+     * §11.5.3：显式失同步钩子（未知逻辑 fragment / 异常规模帧）。**不得静默返回**——
+     * 上层据此进入重同步（重订阅权威快照），与 A-4 的 seq 缺口同一自愈路径。
+     */
+    var onDesync: ((reason: String) -> Unit)? = null
+
     data class ConversationMeta(
         val title: String? = null,
         val phase: String? = null,
@@ -310,7 +316,11 @@ class ConversationChannel(private val rpc: RpcChannel) {
             return
         }
         if (lf.kind == "fragment") {
-            ZLog.w(TAG, "收到分片逻辑帧（未实现重组）frameId=${lf.logicalFrameId}")
+            // §11.5.3：逻辑帧重组（kind:"fragment"，官方 ≤1024 片 / 16 MiB）**无真实样本前不实现**
+            // （任务书硬门：不猜字段、不写伪实现）；但**不得静默返回**——未知 fragment = 失同步，
+            // 显式要求重订阅权威快照（旧实现只写一行 WARN，会话会停在旧状态）。
+            ZLog.w(TAG, "未知逻辑 fragment：显式失同步 → 重订阅 frameId=${LogRedactor.maskId(lf.logicalFrameId)}")
+            onDesync?.invoke("logical-fragment")
             return
         }
         val frame = lf.frame ?: return
@@ -321,6 +331,13 @@ class ConversationChannel(private val rpc: RpcChannel) {
         when (frame.payloadKind) {
             "snapshot" -> {
                 val snap = ConversationFrames.parseSnapshot(frame.payload) ?: return
+                // §11.3.3：快照规模健全性护栏（真机最长会话 1100+ 行、缓存上限 200 行；
+                // 2 万行以上视为异常帧 → 显式失同步，**不做静默截断**）
+                if (snap.rows.size > ProtocolLimits.MAX_SNAPSHOT_ROWS) {
+                    ZLog.w(TAG, "快照异常规模 rows=${snap.rows.size} cap=${ProtocolLimits.MAX_SNAPSHOT_ROWS} → 显式失同步")
+                    onDesync?.invoke("snapshot-too-large")
+                    return
+                }
                 store.replaceAll(snap.rows)
                 sessionId?.let { sid ->
                     onRowsUpdated?.invoke(sid, snap.rows)
@@ -373,6 +390,12 @@ class ConversationChannel(private val rpc: RpcChannel) {
             }
             "deltas" -> {
                 val deltas = ConversationFrames.parseDeltas(frame.payload)
+                // §11.3.3：单帧增量条数健全性护栏（防御异常帧；超限显式失同步，不静默丢条目）
+                if (deltas.size > ProtocolLimits.MAX_DELTAS_PER_FRAME) {
+                    ZLog.w(TAG, "增量异常规模 count=${deltas.size} cap=${ProtocolLimits.MAX_DELTAS_PER_FRAME} → 显式失同步")
+                    onDesync?.invoke("deltas-too-many")
+                    return
+                }
                 for (d in deltas) {
                     when (d) {
                         is ConversationFrames.Delta.Upsert -> {
@@ -1541,9 +1564,9 @@ class ConversationChannel(private val rpc: RpcChannel) {
 
         /** host 常量 attachmentMaxBytes = 20MiB、attachmentUploadMaxChunks = 64。 */
 
-        /** 与 host 常量 attachmentMaxBytes 一致（UI 选附件时同值校验）。 */
-        internal const val MAX_ATTACHMENT_BYTES = 20 * 1024 * 1024
-        private const val MAX_CHUNKS = 64
+        /** 与 host 常量 attachmentMaxBytes 一致（UI 选附件时同值校验）；预算收敛到 ProtocolLimits。 */
+        internal const val MAX_ATTACHMENT_BYTES = ProtocolLimits.MAX_UPLOAD_ATTACHMENT_BYTES
+        private const val MAX_CHUNKS = ProtocolLimits.MAX_UPLOAD_CHUNKS
 
         /** 服务端命令 ack 中算成功三种状态（duplicate/noop 表示已被他处消解）。 */
         private val SUCCESS_STATUSES = setOf("accepted", "duplicate", "noop")
