@@ -31,6 +31,8 @@ import com.zcode.remote.storage.PairedDevice
 import com.zcode.remote.storage.SessionCacheStore
 import com.zcode.remote.util.LogRedactor
 import com.zcode.remote.util.ZLog
+import com.zcode.remote.util.diag.DiagEventCode
+import com.zcode.remote.util.diag.Diagnostics
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.launch
 import kotlinx.serialization.json.jsonArray
@@ -106,15 +108,19 @@ class ConnectionCoordinator(
      */
     private fun requestResync(cause: String) {
         if (!resyncThrottle.shouldTrigger(SystemClock.elapsedRealtime())) {
+            Diagnostics.record(DiagEventCode.RESYNC_THROTTLED, "cause=$cause suppressed=${resyncThrottle.suppressed}")
             ZLog.i(TAG, "重同步节流中（累计抑制 ${resyncThrottle.suppressed}）cause=$cause")
             return
         }
+        Diagnostics.record(DiagEventCode.RESYNC_TRIGGERED, "cause=$cause")
         ZLog.w(TAG, "协议违例 → 重订阅权威快照 cause=$cause")
         host.hostRetrySubscribe()
     }
 
     fun connect() {
         val dev = host.hostDevice ?: return
+        // §11.8：进程内首次连接时记一次启动事件（版本/版本码，供导出与排障对齐时间线）
+        Diagnostics.recordAppStart(BuildConfig.VERSION_NAME, BuildConfig.VERSION_CODE)
         ConnectionScope.manuallyDisconnected = false
         // P0-A：前台服务保住进程 —— App 在后台/锁屏时连接与审批通知才可达（招牌功能的性命）
         ConnectionService.start(host.hostContext)
@@ -144,12 +150,21 @@ class ConnectionCoordinator(
         // A-4：事件流 seq 缺口 → 会话重订阅（缺口帧已 ack、服务端不重发，重取权威快照是唯一自愈路径）。
         ch.onSequenceGap = { host.hostRetrySubscribe() }
         // §11.5.2：协议违例（分片顺序/CRC/长度/容量/解码失败）→ 节流重订阅（固定错误码已在此前落日志）
-        ch.onProtocolViolation = { v -> requestResync(v.code) }
+        ch.onProtocolViolation = { v ->
+            Diagnostics.record(DiagEventCode.RPC_VIOLATION, "code=${v.code}")
+            requestResync(v.code)
+        }
         // §11.3.3：入站队列溢出丢帧 = 失同步信号 → 节流重订阅（未 ack 的帧服务端可重放）
-        c.onInboundOverflow = { requestResync("inbound-queue-overflow") }
+        c.onInboundOverflow = {
+            Diagnostics.record(DiagEventCode.INBOUND_OVERFLOW, "dropped=${c.inboundDropped}")
+            requestResync("inbound-queue-overflow")
+        }
         val conv = ConversationChannel(ch)
         // §11.5.3：未知逻辑 fragment / 异常规模帧 → 显式失同步（不得静默停在旧状态）
-        conv.onDesync = { reason -> requestResync(reason) }
+        conv.onDesync = { reason ->
+            Diagnostics.record(DiagEventCode.CONV_DESYNC, "reason=$reason")
+            requestResync(reason)
+        }
         conv.onRowsUpdated = { sid, updatedRows ->
             host.hostScope.launch {
                 SessionCacheStore.saveRows(host.hostContext, sid, updatedRows)
@@ -190,6 +205,8 @@ class ConnectionCoordinator(
         RemoteConnectionManager.launchCollector {
             c.state.collect { st ->
                 host.hostRelayState = st
+                // §11.8 可观测性：只记状态名（不记 URL/SID）
+                Diagnostics.record(DiagEventCode.RELAY_STATE, "state=${st::class.simpleName}")
                 // Sprint 2 / A 组第 3 项：终态失败发常驻系统通知 —— 手机在兜里时不能
                 // 静默失去全部审批能力（KICKED/配对失效/协议升级用户都必须立刻知道）。
                 val terminal =
@@ -289,6 +306,16 @@ class ConnectionCoordinator(
             ch.bridge.collect { st ->
                 host.hostBridgeState = st
                 ZLog.i(TAG, "bridge=$st")
+                // §11.8：桥状态迁移只记状态类别（Ready 不带 sid；Closed 属正常复位，不记事件）
+                when (st) {
+                    is RpcChannel.BridgeState.Ready ->
+                        Diagnostics.record(DiagEventCode.BRIDGE_READY)
+                    is RpcChannel.BridgeState.Opening ->
+                        Diagnostics.record(DiagEventCode.BRIDGE_OPEN)
+                    is RpcChannel.BridgeState.Failed ->
+                        Diagnostics.record(DiagEventCode.BRIDGE_FAILED, "reason=${st.reason.take(40)}")
+                    RpcChannel.BridgeState.Closed -> Unit
+                }
                 if (st is RpcChannel.BridgeState.Ready) {
                     // 桥就绪：自动重开预算归零（下次失败可再走完整退避序列）
                     bridgeReopenCount = 0
@@ -342,11 +369,16 @@ class ConnectionCoordinator(
                 // fault.connection.handshakeRequired，Live 后才可用）
                 if (st is ConversationChannel.Status.Live) {
                     handshakeRetryCount = 0
+                    Diagnostics.record(DiagEventCode.CONV_SUBSCRIBE, "mode=${st.mode ?: "-"}")
                     host.hostActiveWorkspaceKey?.let { wcfg.subscribe(it, null) }
                 }
                 // A-2：握手瞬态失败（超时）→ 退避自动重订一次，避免永久停在「握手中…」
-                if (st is ConversationChannel.Status.Failed && st.retryable) {
-                    scheduleHandshakeRetry()
+                if (st is ConversationChannel.Status.Failed) {
+                    Diagnostics.record(
+                        DiagEventCode.CONV_SUBSCRIBE_FAILED,
+                        "retryable=${st.retryable}",
+                    )
+                    if (st.retryable) scheduleHandshakeRetry()
                 }
             }
         }
@@ -387,6 +419,7 @@ class ConnectionCoordinator(
         }
         handshakeRetryCount += 1
         val delayMs = if (handshakeRetryCount == 1) 1_000L else 2_000L
+        Diagnostics.record(DiagEventCode.CONV_HANDSHAKE_RETRY, "attempt=$handshakeRetryCount delay_ms=$delayMs")
         ZLog.i(TAG, "握手失败，${delayMs}ms 后自动重订（第 $handshakeRetryCount 次）")
         handshakeRetryJob?.cancel()
         // §11.4 阶段③：重试调度挂进程级作用域 —— VM 被清后自动重订仍要生效（连接韧性）。
@@ -416,6 +449,7 @@ class ConnectionCoordinator(
             return
         }
         bridgeReopenCount += 1
+        Diagnostics.record(DiagEventCode.BRIDGE_REOPEN, "attempt=$bridgeReopenCount delay_ms=$delayMs")
         bridgeReopenJob?.cancel()
         bridgeReopenJob =
             RemoteConnectionManager.scope.launch {

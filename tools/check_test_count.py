@@ -48,6 +48,11 @@ def declared_tests():
             for nxt in lines[i + 1:]:
                 if not nxt.strip():
                     continue
+                # 跳过 @Test 与 fun 之间的其他注解（@Suppress/@OptIn/@Ignore…）：
+                # 否则这类用例不会被计入「声明」，门禁对它就形同虚设
+                # （2026-10-12 beta35 实测：@Suppress 曾让一个用例从声明集合里消失）。
+                if nxt.lstrip().startswith("@"):
+                    continue
                 m = FUN.match(nxt)
                 if m:
                     names[m.group(1)] = os.path.basename(path)

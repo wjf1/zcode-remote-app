@@ -40,8 +40,9 @@ android {
         // （请求 key 绑 (桥代次, requestId)、入站身份校验、单/多分片统一 CRC+声明长度校验、
         //  decode-then-ack、在途分片与入站队列有界、出站超限本地拒绝）
         // versionCode 46：beta34 —— §11.8 协议帧回放网 + 资源预算模糊/压力测试 + CodeQL
-        versionCode = 46
-        versionName = "0.5.0-beta34"
+        // versionCode 47：beta35 —— §11.8 可观测性（本地脱敏诊断环形缓冲 + 用户主动导出）
+        versionCode = 47
+        versionName = "0.5.0-beta35"
         // 仪器化渲染回归网（src/androidTest）用 androidx.test 默认 runner。
         // 只在模拟器/真机上跑；CI runner 无设备，故 ci.yml 不接（见 HANDOVER §6.1 回归网）。
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"

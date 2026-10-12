@@ -382,7 +382,13 @@ fun SettingsTab(
                 }
             }
 
-            // 4. 版本更新与维护
+            // 4. 诊断日志（§11.8 可观测性：本地脱敏记录 + 用户主动导出）
+            item {
+                SectionHeader("诊断与排障")
+                DiagnosticsSection()
+            }
+
+            // 5. 版本更新与维护
             item {
                 SectionHeader("软件版本与更新")
                 Card(
