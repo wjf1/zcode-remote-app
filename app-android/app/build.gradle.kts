@@ -36,8 +36,11 @@ android {
         // 0.5.0-beta22 = beta21 + C-3（输入栏：Material 图标替换 emoji；
         // 键盘 inset 真机量测结论 = 现有链条正确、无需改动，详见 HANDOVER 坑 30）
         // versionCode 44：beta32 —— §11.8 阶段 6（CI 加固 + 静态分析 + SBOM/指纹/provenance 发布链）
-        versionCode = 44
-        versionName = "0.5.0-beta32"
+        // versionCode 45：beta33 —— §11.3.3 集中协议预算 + §11.5.2 RPC 代次键控/分片完整性
+        // （请求 key 绑 (桥代次, requestId)、入站身份校验、单/多分片统一 CRC+声明长度校验、
+        //  decode-then-ack、在途分片与入站队列有界、出站超限本地拒绝）
+        versionCode = 45
+        versionName = "0.5.0-beta33"
         // 仪器化渲染回归网（src/androidTest）用 androidx.test 默认 runner。
         // 只在模拟器/真机上跑；CI runner 无设备，故 ci.yml 不接（见 HANDOVER §6.1 回归网）。
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
