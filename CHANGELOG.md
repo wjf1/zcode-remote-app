@@ -2,6 +2,9 @@
 
 ## v0.5.0-beta33（2026-10-12）· §11.3.3 集中协议预算 + §11.5.2 RPC 代次键控与分片完整性
 
+### 修复（CI：仪器化回归网此前从未真正跑通）
+- **instrumentation job 补 KVM 组权限步骤**：beta32 引入的仪器化任务在 GitHub-hosted runner 上**每次必失败**（master 自 beta32 起 CI 连续红，均红在此 job；`test-and-build` 为绿）：action 探测到 runner 用户不在 `kvm` 组 → `disable-linux-hw-accel: auto` 判 true → 以 `-accel off`（纯软件模拟）启动 → adb 永远等不到设备。修法 = android-emulator-runner README 的官方前置步骤（udev 规则放开 `/dev/kvm` 权限后 reload+trigger）。证据：失败日志 `ProbeKVM: This user doesn't have permissions to use KVM (/dev/kvm)`。
+
 ### 修复（协议一致性——堵「连接正常却静默停在旧状态 / 串单」这一类故障的结构性口子）
 - **请求位点绑桥代次**（`relay/PendingRequests.kt`）：挂起请求 key 由 `requestId` 改为 **`(桥代次, requestId)`**；桥就绪/复位时代次递增，id 计数归零后**不可能**让旧连接/旧桥的迟到应答「恰好」完成新请求。请求 id 改由 `AtomicInteger` 生成并保持非负（线格式 uint32）。
 - **入站身份三元组校验**：帧身份与当前桥不一致（旧桥迟到帧）→ 丢弃且不回 ack（官方 `identityMismatch` 非终态语义）。**与官方的唯一偏差是宽容方向**：`bridgeGeneration`/`recoveryId` 在官方 schema 里可选，出现才比较、缺席不比较——官方严格三全等在「PC 端省略任一可选键」时会误拒**全部**入站帧（无真机可验时不可逆）；跨桥串帧仍由必带的 `bridgeSessionId` 与代次键控双保险（偏差有据，注释与单测均写明）。
