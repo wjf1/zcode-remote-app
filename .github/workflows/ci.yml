@@ -227,13 +227,11 @@ jobs:
           api-level: 35
           target: google_apis
           arch: x86_64
-          # suppressErrors 在模块 defaultConfig 里已设；此处用命令行属性再注入一次（双保险，
-          # 覆盖路径不同：defaultConfig → AGP 运行参数 / -P → AGP 属性读取）。
-          script: |
-            cd app-android
-            gradle :benchmark:connectedBenchmarkAndroidTest \
-              -Pandroid.testInstrumentationRunnerArguments.androidx.benchmark.suppressErrors=EMULATOR \
-              --console=plain
+          # ⚠️ script 必须写成单行 `cd x && cmd` 形式：多行块（含反斜杠续行）实测未被正确执行
+          # （2026-10-12 第二轮 CI：cd 未生效，gradle 在仓库根跑 → "Run gradle init to create a
+          # new Gradle build in this directory"）。suppressErrors 在模块 defaultConfig 已设，
+          # 此处用命令行属性再注入一次（覆盖读取路径不同，双保险）。
+          script: cd app-android && gradle :benchmark:connectedBenchmarkAndroidTest -Pandroid.testInstrumentationRunnerArguments.androidx.benchmark.suppressErrors=EMULATOR --console=plain
 
       # 结构性门禁（场景齐备 / 帧数非零——防空跑假绿）+ 基线比对（存在基线文件时生效，
       # 回退即红）；表格写入 Step Summary 供人工趋势比对。
