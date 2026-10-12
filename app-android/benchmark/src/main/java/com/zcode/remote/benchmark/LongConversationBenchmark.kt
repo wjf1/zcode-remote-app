@@ -53,7 +53,8 @@ class LongConversationBenchmark {
             compilationMode = CompilationMode.Full(),
             setupBlock = { pressHome() },
         ) {
-            startActivityAndWait(hostIntent(rows = LONG_ROWS))
+            requireHostInstalled()
+            startHostAndWait(hostIntent(rows = LONG_ROWS))
             device.waitForIdle()
             requireTitle("长会话（起始 $LONG_ROWS 行）")
         }
@@ -72,7 +73,8 @@ class LongConversationBenchmark {
             compilationMode = CompilationMode.Full(),
             setupBlock = {
                 pressHome()
-                startActivityAndWait(hostIntent(rows = LONG_ROWS))
+                requireHostInstalled()
+                startHostAndWait(hostIntent(rows = LONG_ROWS))
                 device.waitForIdle()
                 requireTitle("长会话（起始 $LONG_ROWS 行）")
             },
@@ -101,7 +103,8 @@ class LongConversationBenchmark {
             compilationMode = CompilationMode.Full(),
             setupBlock = {
                 pressHome()
-                startActivityAndWait(hostIntent(rows = STREAM_START_ROWS, appendIntervalMs = STREAM_INTERVAL_MS))
+                requireHostInstalled()
+                startHostAndWait(hostIntent(rows = STREAM_START_ROWS, appendIntervalMs = STREAM_INTERVAL_MS))
                 // 流式期 UI 不进入 idle，故不等 waitForIdle；标题断言同时证明两件事：
                 // 页面已就绪 + `am start` 的 extras 真的传进来了（否则会退化为静态 1200 行而「假绿」）。
                 requireTitle("流式会话（起始 $STREAM_START_ROWS 行）")
@@ -117,6 +120,52 @@ class LongConversationBenchmark {
     private fun MacrobenchmarkScope.requireTitle(text: String) {
         requireNotNull(device.wait(Until.findObject(By.textContains(text)), UI_TIMEOUT_MS)) {
             "宿主标题未出现「$text」——Activity 未就绪，或 am start 的 extras 未生效（场景会退化）"
+        }
+    }
+
+    /**
+     * 运行时取证之一：确认被测包安装的是含宿主 Activity 的 benchmark 变体。
+     * **必须在测试进程内执行**——AGP 跑完 connected 测试会卸载 APK，事后再 `pm dump` 必然误读为空
+     * （2026-10-12 实测：事后诊断 `ActivityCount=0` 是卸载假象）。
+     */
+    private fun MacrobenchmarkScope.requireHostInstalled() {
+        val out =
+            runCatching {
+                device.executeShellCommand("cmd package resolve-activity --brief $TARGET_PACKAGE/$HOST_ACTIVITY")
+            }.getOrElse { "resolve-activity 执行失败：$it" }
+        println("BENCH_DIAG resolve-activity: $out")
+        require(out.contains(HOST_ACTIVITY)) {
+            "被测包中不存在宿主 Activity（装的可能是非 benchmark 变体——须含 app/src/benchmark 源集）：$out"
+        }
+    }
+
+    /**
+     * 运行时取证之二：启动宿主并等待首帧；失败时把现场证据打到 logcat（`am start` 真实输出 +
+     * activity 栈），使库的 `Unable to confirm activity launch completion` 不再是无从下手的黑盒。
+     */
+    private fun MacrobenchmarkScope.startHostAndWait(intent: Intent) {
+        try {
+            startActivityAndWait(intent)
+        } catch (e: IllegalStateException) {
+            println("BENCH_DIAG am start 手动重放（看真实输出）：")
+            println(
+                runCatching {
+                    device.executeShellCommand("am start -W -n $TARGET_PACKAGE/$HOST_ACTIVITY")
+                }.getOrElse { "重放失败：$it" },
+            )
+            println("BENCH_DIAG activity 栈：")
+            println(
+                runCatching {
+                    device.executeShellCommand("dumpsys activity activities | head -40")
+                }.getOrElse { "dump 失败：$it" },
+            )
+            println("BENCH_DIAG gfxinfo framestats（库的轮询依据，原始输出）：")
+            println(
+                runCatching {
+                    device.executeShellCommand("dumpsys gfxinfo $TARGET_PACKAGE framestats | head -60")
+                }.getOrElse { "dump 失败：$it" },
+            )
+            throw e
         }
     }
 

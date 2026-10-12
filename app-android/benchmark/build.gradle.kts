@@ -68,6 +68,9 @@ android {
     }
 
     targetProjectPath = ":app"
+    // 被测变体由 AGP 的变体匹配决定（「与 test 模块同名 buildType」是默认行为；
+    // `targetVariant` 在本 AGP 版本已弃用——提示「all variants are now tested」——故不设置）。
+    // 测试已在运行时断言宿主 Activity 是否真的装上（LongConversationBenchmark.requireHostInstalled）。
     // 本模块自带测试 APK（不自 instrument 其它模块的测试源集）
     experimentalProperties["android.experimental.self-instrumenting"] = true
 }
