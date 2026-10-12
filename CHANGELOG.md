@@ -1,5 +1,21 @@
 # 变更记录 / Changelog
 
+## v0.5.0-beta36（2026-10-12）· §11.8 第二层门禁补完：KtLint 格式门禁 + 依赖变更审查
+
+### 新增（工程化；纯格式对齐 + CI 门禁，无用户可见行为变化）
+- **KtLint 接入并纳入门禁**：新增 `org.jlleitschuh.gradle.ktlint`（插件 13.1.0 + **ktlint 核心 1.5.0 显式钉版**——规则键与版本强耦合，隐式跟随插件默认版本会在升级时静默改变门禁口径）；`ci.yml` 新增 `KtLint 格式检查（0 违规门禁）` 步骤。此前插件与 `.editorconfig` 只在文档里登记、**从未真正执行过**（CHANGELOG beta32 自述「不入门禁」）。
+- **风格基线修正**：`.editorconfig` 里 `ktlint_function_naming_ignore_annotated` 是 ktlint 0.4x 旧键名（1.x 静默忽略 → 每个 `@Composable` 都会报命名违规），改为 `ktlint_function_naming_ignore_when_annotated_with`；并显式声明 `ktlint_code_style = ktlint_official`。**理由**：本项目既有风格本就属 official 系（处处尾随逗号、多行签名每参一行）；实测 `android_studio` 风格会**反向删除**尾随逗号、把多行签名压平（97 文件 +2517/−3346 的破坏性 churn），故不采用。
+- **存量格式专项完成**：迭代 `ktlintFormat` 至收敛后，61 个文件纯格式对齐、**全源集 0 违规**（chain-method-continuation / class-signature / indent / trailing-comma / argument-list-wrapping / condition-wrapping / import-ordering 等）；
+- **顺带清理（真实缺陷，非格式）**：① 3 处**悬空 KDoc**——同一函数上堆叠两/三段历史文档块（`ConversationChannel.resolve`、`uploadAttachment` 与一处重复单行注释），已合并为一段并挂回对应声明；② `HomeScreen` 的「新建会话弹窗」文档从孤儿位置迁到 `CreateSessionDialog` 声明上（此前文件里没有任何声明引它）；③ 命名与仓库常量惯例对齐：`NOOP_UPLOAD_HANDLE` → `noopUploadHandle`、`ZCodeDimens.BubbleWidthFraction` → `BUBBLE_WIDTH_FRACTION`。
+- **依赖变更审查**（`.github/workflows/dependency-review.yml`）：PR 触发的依赖审查（`fail-on-severity: high`，失败时把结论评论到 PR）；与既有 Dependabot（**升级可见**）互补，补齐「升级有把关」。
+
+### 验证
+- 单测 **260/260**（纯格式改动零语义变化）；KtLint **0 违规**；`lintDebug`/`lintRelease` 0 error；`detekt` 通过；`assembleDebug`/`assembleDebugAndroidTest`/`assembleRelease` 通过。
+- 落地过程自查（教训已记入 HANDOVER）：批量文本改写用非唯一锚点曾误删区域，靠**编译 + 全门禁**兜住并逐行审计被删内容后修复。
+
+### 遗留（登记，非遗漏）
+- §11.8 余项仅剩 Macrobenchmark（长会话基准，需 emulator 稳定跑）；真机灰度（beta33 协议改动 + beta35 诊断导出落盘）与 A-5/物理分片硬门不变。
+
 ## v0.5.0-beta35（2026-10-12）· §11.8 可观测性：本地脱敏诊断缓冲 + 用户主动导出
 
 ### 新增（本地可观测性；无自动上传、无行为变化）
