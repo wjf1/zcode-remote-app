@@ -27,7 +27,9 @@ import kotlin.random.Random
  *   （2026-10-07 修复：旧实现是「先 delay 退避再判可用性」，断网期开烧的 48s 退避在恢复后
  *   仍被烧完，实测恢复耗时 ~47s，与本节设计意图不符）。
  */
-class NetworkGate(private val cm: ConnectivityManager) {
+class NetworkGate(
+    private val cm: ConnectivityManager,
+) {
     /** 网络丢失回调（由 RelayClient 注入：清理 socket 并调度重连）。 */
     @Volatile
     var onLost: (() -> Unit)? = null

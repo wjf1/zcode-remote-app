@@ -152,8 +152,7 @@ fun ToolBody(
                 .fillMaxWidth()
                 .drawBehind {
                     drawRect(color = lineColor, size = Size(lineWidthPx, size.height))
-                }
-                .padding(start = startPad + 1.dp, top = ZCodeDimens.GapInline)
+                }.padding(start = startPad + 1.dp, top = ZCodeDimens.GapInline)
                 .let {
                     if (maxHeight != null) {
                         it.heightIn(max = maxHeight).verticalScroll(rememberScrollState())

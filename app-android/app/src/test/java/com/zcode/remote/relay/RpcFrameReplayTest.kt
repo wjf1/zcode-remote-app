@@ -10,7 +10,6 @@ import kotlinx.serialization.json.boolean
 import kotlinx.serialization.json.int
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
-import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertTrue
@@ -80,8 +79,7 @@ class RpcFrameReplayTest {
         return identity to cases
     }
 
-    private fun hexToBytes(hex: String): ByteArray =
-        ByteArray(hex.length / 2) { hex.substring(it * 2, it * 2 + 2).toInt(16).toByte() }
+    private fun hexToBytes(hex: String): ByteArray = ByteArray(hex.length / 2) { hex.substring(it * 2, it * 2 + 2).toInt(16).toByte() }
 
     private fun outcomeLabel(outcome: RpcFrameAssembler.Outcome): String =
         when (outcome) {
@@ -96,7 +94,10 @@ class RpcFrameReplayTest {
         assertTrue("fixture 用例数异常：${cases.size}", cases.size >= 15)
         val failed = mutableListOf<String>()
         for (c in cases) {
-            fun check(cond: Boolean, what: String) {
+            fun check(
+                cond: Boolean,
+                what: String,
+            ) {
                 if (!cond) failed += "${c.name}: $what"
             }
 
@@ -109,7 +110,10 @@ class RpcFrameReplayTest {
             )
 
             // ② base64 形状（官方 isCanonicalBase64 的第一道，纯逻辑）
-            val b64 = c.frames.first()["dataBase64"]!!.jsonPrimitive.content
+            val b64 =
+                c.frames
+                    .first()["dataBase64"]!!
+                    .jsonPrimitive.content
             check(isCanonicalBase64Shape(b64) == c.canonicalBase64, "base64 形状判定不符")
 
             // ③ 元数据校验（官方 zod 约束的同构实现）
@@ -181,8 +185,11 @@ class RpcFrameReplayTest {
         // 关键用例必须在场（防「fixture 被大改后测试静默变空」）
         val names = cases.map { it.name }.toSet()
         for (required in listOf(
-            "doc_example_single_fragment", "multi_max_fragments_64", "multi_checksum_mismatch_on_join",
-            "multi_conflicting_duplicate", "single_fragment_count_over_limit",
+            "doc_example_single_fragment",
+            "multi_max_fragments_64",
+            "multi_checksum_mismatch_on_join",
+            "multi_conflicting_duplicate",
+            "single_fragment_count_over_limit",
         )) {
             assertTrue("缺少关键用例 $required", required in names)
         }

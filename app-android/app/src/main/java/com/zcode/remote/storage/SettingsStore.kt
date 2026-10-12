@@ -10,7 +10,9 @@ import com.zcode.remote.util.ZLog
  * 线路（PROTOCOL.md §1）：auto=按配对二维码推断（默认）；main/backup=强制主线/备线；
  * custom=自建中继（填完整 wss:// URL，配合桌面端 ZCODE_WEB_REMOTE_CONTROL_RELAY_WS_URL）。
  */
-class SettingsStore(context: Context) {
+class SettingsStore(
+    context: Context,
+) {
     private val sp: SharedPreferences =
         context.getSharedPreferences("settings", Context.MODE_PRIVATE)
 

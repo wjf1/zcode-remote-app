@@ -362,11 +362,15 @@ private fun SessionItemCard(
         border =
             if (pending > 0) {
                 CardDefaults.outlinedCardBorder().copy(
-                    brush = androidx.compose.ui.graphics.SolidColor(statusPendingTone().copy(alpha = 0.6f)),
+                    brush =
+                        androidx.compose.ui.graphics
+                            .SolidColor(statusPendingTone().copy(alpha = 0.6f)),
                 )
             } else if (isActive) {
                 CardDefaults.outlinedCardBorder().copy(
-                    brush = androidx.compose.ui.graphics.SolidColor(MaterialTheme.colorScheme.primary.copy(alpha = 0.5f)),
+                    brush =
+                        androidx.compose.ui.graphics
+                            .SolidColor(MaterialTheme.colorScheme.primary.copy(alpha = 0.5f)),
                 )
             } else {
                 CardDefaults.outlinedCardBorder()
@@ -555,11 +559,6 @@ internal fun thoughtLabel(level: String): String =
         else -> level
     }
 
-/**
- * 新建会话弹窗
- * 支持输入首条任务指令、语音输入填充与可选的模型选择（数据源 = PC 端工作区模型目录）。
- */
-
 /** P0-B：执行模式全集（协议合法值见 tools/setmode.py 的 VALID）。 */
 private val EXEC_MODES = listOf("plan", "build", "yolo")
 
@@ -571,6 +570,10 @@ internal fun execModeLabel(m: String): String =
         else -> m
     }
 
+/**
+ * 新建会话弹窗
+ * 支持输入首条任务指令、语音输入填充与可选的模型选择（数据源 = PC 端工作区模型目录）。
+ */
 @Composable
 private fun CreateSessionDialog(
     modelState: com.zcode.remote.relay.WorkspaceConfigChannel.WorkspaceState?,

@@ -13,12 +13,17 @@ import javax.crypto.spec.GCMParameterSpec
  *   {"active":"<sid>","list":["<sid>\u0001<hash>\u0001<mid>\u0001<name>\u0001<url>", …]}
  * 旧版单条格式（iv/data）首次读取时自动迁移。
  */
-class MultiDeviceStore(context: Context) {
+class MultiDeviceStore(
+    context: Context,
+) {
     private val prefs = context.getSharedPreferences("zcode_credentials", Context.MODE_PRIVATE)
     private val keyAlias = "zcode_remote_master_key"
     private val crypto = CredentialCrypto()
 
-    data class Snapshot(val devices: List<PairedDevice>, val activeSid: String?)
+    data class Snapshot(
+        val devices: List<PairedDevice>,
+        val activeSid: String?,
+    )
 
     fun load(): Snapshot {
         readV2()?.let { return it }
@@ -57,7 +62,13 @@ class MultiDeviceStore(context: Context) {
         return snap
     }
 
-    fun clear() = prefs.edit().remove("devices_v2").remove("iv").remove("data").apply()
+    fun clear() =
+        prefs
+            .edit()
+            .remove("devices_v2")
+            .remove("iv")
+            .remove("data")
+            .apply()
 
     // ---------- 内部 ----------
 
@@ -95,7 +106,11 @@ class MultiDeviceStore(context: Context) {
                 }
             } ?: return
         save(Snapshot(listOf(legacy), legacy.deviceSid))
-        prefs.edit().remove("iv").remove("data").apply()
+        prefs
+            .edit()
+            .remove("iv")
+            .remove("data")
+            .apply()
     }
 
     private fun readEncrypted(key: String): String? {
@@ -109,7 +124,8 @@ class MultiDeviceStore(context: Context) {
         plain: String,
     ) {
         val (iv, data) = crypto.encrypt(plain)
-        prefs.edit()
+        prefs
+            .edit()
             .putString("${key}_iv", iv)
             .putString(key, data)
             .apply()
@@ -117,17 +133,22 @@ class MultiDeviceStore(context: Context) {
 }
 
 /** AES-256-GCM 加解密（密钥入 Android Keystore；与 v1 共用同一把主密钥）。 */
-class CredentialCrypto(private val keyAlias: String = "zcode_remote_master_key") {
+class CredentialCrypto(
+    private val keyAlias: String = "zcode_remote_master_key",
+) {
     private fun getOrCreateKey(): SecretKeyAlias {
-        val ks = java.security.KeyStore.getInstance("AndroidKeyStore").apply { load(null) }
+        val ks =
+            java.security.KeyStore
+                .getInstance("AndroidKeyStore")
+                .apply { load(null) }
         (ks.getKey(keyAlias, null) as? javax.crypto.SecretKey)?.let { return it }
         val kg = javax.crypto.KeyGenerator.getInstance("AES", "AndroidKeyStore")
         kg.init(
-            android.security.keystore.KeyGenParameterSpec.Builder(
-                keyAlias,
-                android.security.keystore.KeyProperties.PURPOSE_ENCRYPT or android.security.keystore.KeyProperties.PURPOSE_DECRYPT,
-            )
-                .setBlockModes(android.security.keystore.KeyProperties.BLOCK_MODE_GCM)
+            android.security.keystore.KeyGenParameterSpec
+                .Builder(
+                    keyAlias,
+                    android.security.keystore.KeyProperties.PURPOSE_ENCRYPT or android.security.keystore.KeyProperties.PURPOSE_DECRYPT,
+                ).setBlockModes(android.security.keystore.KeyProperties.BLOCK_MODE_GCM)
                 .setEncryptionPaddings(android.security.keystore.KeyProperties.ENCRYPTION_PADDING_NONE)
                 .setKeySize(256)
                 .build(),

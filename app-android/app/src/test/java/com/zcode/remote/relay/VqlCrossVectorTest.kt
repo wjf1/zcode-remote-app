@@ -24,11 +24,23 @@ import org.junit.Test
 class VqlCrossVectorTest {
     private val json = Json
 
-    private data class Fixture(val cases: List<Case>, val multi: List<Multi>)
+    private data class Fixture(
+        val cases: List<Case>,
+        val multi: List<Multi>,
+    )
 
-    private data class Case(val name: String, val kind: String, val value: JsonElement, val hex: String)
+    private data class Case(
+        val name: String,
+        val kind: String,
+        val value: JsonElement,
+        val hex: String,
+    )
 
-    private data class Multi(val name: String, val values: List<JsonElement>, val hex: String)
+    private data class Multi(
+        val name: String,
+        val values: List<JsonElement>,
+        val hex: String,
+    )
 
     private fun loadFixture(): Fixture {
         val stream =

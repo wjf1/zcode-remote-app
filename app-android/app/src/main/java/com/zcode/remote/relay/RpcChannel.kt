@@ -30,22 +30,33 @@ import java.util.concurrent.atomic.AtomicInteger
  * 校验（声明长度 + 整条消息 CRC32）、**完整解码成功后才 ack**、在途分片与队列有界、
  * 出站超限本地拒绝（物理分片待真实样本，见 ProtocolLimits / 任务书 §11.5.2）。
  */
-class RpcChannel(private val relay: RelayClient) {
+class RpcChannel(
+    private val relay: RelayClient,
+) {
     sealed interface BridgeState {
         data object Closed : BridgeState
 
         data object Opening : BridgeState
 
-        data class Ready(val bridgeSessionId: String) : BridgeState
+        data class Ready(
+            val bridgeSessionId: String,
+        ) : BridgeState
 
-        data class Failed(val reason: String) : BridgeState
+        data class Failed(
+            val reason: String,
+        ) : BridgeState
     }
 
     /** Promise 调用的结果：202/203 不再伪装成 null，便于调用方区分「失败」与「成功但无数据」。 */
     sealed interface RpcReply {
-        data class Ok(val data: JsonElement?) : RpcReply
+        data class Ok(
+            val data: JsonElement?,
+        ) : RpcReply
 
-        data class Err(val message: String, val raw: JsonElement?) : RpcReply
+        data class Err(
+            val message: String,
+            val raw: JsonElement?,
+        ) : RpcReply
     }
 
     /**
@@ -59,14 +70,19 @@ class RpcChannel(private val relay: RelayClient) {
         data object Noop : WatchdogDecision
 
         /** 未用尽：带上重开次数继续 `openBridge`。 */
-        data class Retry(val nextAttempt: Int) : WatchdogDecision
+        data class Retry(
+            val nextAttempt: Int,
+        ) : WatchdogDecision
 
         /** 重开次数用尽：置 `BridgeState.Failed`，把「静默卡死」变成「可见失败」。 */
         data object Fail : WatchdogDecision
     }
 
     /** 204 EventFire：带请求 id（事件监听的应答都挂在该监听的 id 上）。 */
-    data class RpcEvent(val id: Int?, val data: JsonElement)
+    data class RpcEvent(
+        val id: Int?,
+        val data: JsonElement,
+    )
 
     // A-4：SUSPEND + 单泵 —— 慢消费时由发射端（onRpcFrame，跑在入站单泵协程里）背压挂起，
     // 而非 DROP_OLDEST 丢帧：丢帧 = seq 缺口 = 会话静默停在旧状态。

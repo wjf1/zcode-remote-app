@@ -97,11 +97,12 @@ class MainActivity : ComponentActivity() {
                                 TextButton(onClick = {
                                     vm.pair(dev)
                                     pendingPair = null
-                                    android.widget.Toast.makeText(
-                                        this@MainActivity,
-                                        "已通过链接配对：${dev.deviceName ?: dev.deviceSid}",
-                                        android.widget.Toast.LENGTH_SHORT,
-                                    ).show()
+                                    android.widget.Toast
+                                        .makeText(
+                                            this@MainActivity,
+                                            "已通过链接配对：${dev.deviceName ?: dev.deviceSid}",
+                                            android.widget.Toast.LENGTH_SHORT,
+                                        ).show()
                                 }) { Text("配对") }
                             },
                             dismissButton = {
@@ -187,11 +188,12 @@ class MainActivity : ComponentActivity() {
                                                 vm.setSessionMode(m) { err ->
                                                     if (err != null) {
                                                         // C-2：exec mode 切换失败同样经错误映射，不直出裸英文
-                                                        android.widget.Toast.makeText(
-                                                            this@MainActivity,
-                                                            "切换失败：${com.zcode.remote.relay.UserFacingError.map(err)}",
-                                                            android.widget.Toast.LENGTH_SHORT,
-                                                        ).show()
+                                                        android.widget.Toast
+                                                            .makeText(
+                                                                this@MainActivity,
+                                                                "切换失败：${com.zcode.remote.relay.UserFacingError.map(err)}",
+                                                                android.widget.Toast.LENGTH_SHORT,
+                                                            ).show()
                                                     }
                                                 }
                                             },
@@ -319,11 +321,12 @@ class MainActivity : ComponentActivity() {
                                                         execMode = execMode,
                                                         onSuccess = { item -> opened = item },
                                                         onError = { err ->
-                                                            android.widget.Toast.makeText(
-                                                                this@MainActivity,
-                                                                err,
-                                                                android.widget.Toast.LENGTH_SHORT,
-                                                            ).show()
+                                                            android.widget.Toast
+                                                                .makeText(
+                                                                    this@MainActivity,
+                                                                    err,
+                                                                    android.widget.Toast.LENGTH_SHORT,
+                                                                ).show()
                                                         },
                                                     )
                                                 },
@@ -391,7 +394,9 @@ class MainActivity : ComponentActivity() {
             val text = intent.getStringExtra(Intent.EXTRA_TEXT) ?: ""
             if (text.isNotBlank()) {
                 vm.updatePromptDraft(text)
-                android.widget.Toast.makeText(this, "已填充分享文本到输入草稿", android.widget.Toast.LENGTH_SHORT).show()
+                android.widget.Toast
+                    .makeText(this, "已填充分享文本到输入草稿", android.widget.Toast.LENGTH_SHORT)
+                    .show()
             }
         } else {
             val uri =
@@ -404,7 +409,9 @@ class MainActivity : ComponentActivity() {
             if (uri != null) {
                 inspectAttachment(this, uri)?.let { (name, mime, size) ->
                     vm.addAttachment(uri, name, mime, size)
-                    android.widget.Toast.makeText(this, "已添加分享附件: $name", android.widget.Toast.LENGTH_SHORT).show()
+                    android.widget.Toast
+                        .makeText(this, "已添加分享附件: $name", android.widget.Toast.LENGTH_SHORT)
+                        .show()
                 }
             }
         }

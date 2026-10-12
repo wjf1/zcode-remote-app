@@ -43,7 +43,7 @@ import androidx.compose.ui.unit.sp
 import com.zcode.remote.ui.voice.VoiceInputButton
 import kotlinx.coroutines.delay
 
-/**
+/*
  * 会话页输入区（§11.7 结构性拆分：自 `ConversationScreen.kt` 原样搬出，只移动不改行为）。
  * 快捷指令胶囊栏 + 悬浮胶囊输入条（语音 / 文本 / 发送-停止变形按钮）。
  */

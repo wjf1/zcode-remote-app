@@ -1,14 +1,22 @@
 root = true
 
-# §11.8：KtLint 项目级风格基线。
+# §11.8：KtLint 项目级风格基线（beta36 接线：插件此前只在文档里登记、从未真正跑过）。
 # 与 Compose 官方惯例/项目既有惯例冲突的三条规则在此关闭（有依据，非遗漏）：
 # - function-naming：@Composable 函数为 PascalCase（Jetpack Compose 官方推荐），
-#   经 ignoreAnnotated 精确豁免，非 Compose 函数仍受小写驼峰约束；
+#   经 ignore_when_annotated_with 精确豁免，非 Compose 函数仍受小写驼峰约束；
 # - no-wildcard-imports：androidx.compose.material3.* 等通配 import 是 Compose 社区
 #   标准实践（全量枚举会让 import 区膨胀百行且无收益）；
 # - filename：Typography.kt / Dimens.kt 为项目历史命名（文件内含同名顶层对象）。
+#
+# ⚠️ 键名与 ktlint 版本强耦合：`ktlint_function_naming_ignore_annotated` 是 ktlint 0.4x 旧名，
+# ktlint 1.x 已改为 `ktlint_function_naming_ignore_when_annotated_with`（写成旧名会被静默忽略，
+# 于是每个 @Composable 函数都会报命名违规）。本轮同时把 ktlint 版本显式钉在 build.gradle.kts。
 [*.{kt,kts}]
-ktlint_function_naming_ignore_annotated = Composable
+# 代码风格：显式钉 ktlint_official（1.x 默认）。理由：本项目既有风格**本来就**是
+# official 系（处处尾随逗号、多行签名每参一行）——实测 android_studio 风格会反向删除
+# 尾随逗号、把多行签名压成单行（大面积破坏既有风格），故不采用。
+ktlint_code_style = ktlint_official
+ktlint_function_naming_ignore_when_annotated_with = Composable
 ktlint_standard_no-wildcard-imports = disabled
 ktlint_standard_filename = disabled
 max_line_length = 160

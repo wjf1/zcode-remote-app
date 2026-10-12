@@ -33,10 +33,15 @@ object RelayEndpointValidator {
 
     sealed interface Result {
         /** 通过校验；[url] 为规范化后的端点原文（去首尾空白）。 */
-        data class Ok(val url: String) : Result
+        data class Ok(
+            val url: String,
+        ) : Result
 
         /** 拒绝；[message] 为面向日志的安全文案（不含原始 URL，避免二次泄漏）。 */
-        data class Rejected(val reason: Reason, val message: String) : Result
+        data class Rejected(
+            val reason: Reason,
+            val message: String,
+        ) : Result
     }
 
     /**

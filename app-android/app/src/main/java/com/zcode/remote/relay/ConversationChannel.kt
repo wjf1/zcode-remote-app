@@ -24,7 +24,9 @@ import java.util.UUID
  *   4) 100 zcode-agent subscribeConversationV4        ({...ws, sessionId})  → ack
  * 第 2、3 步不可省：跳过会得到 fault.connection.handshakeRequired。
  */
-class ConversationChannel(private val rpc: RpcChannel) {
+class ConversationChannel(
+    private val rpc: RpcChannel,
+) {
     sealed interface Status {
         data object Idle : Status
 
@@ -32,13 +34,20 @@ class ConversationChannel(private val rpc: RpcChannel) {
 
         data object Initialized : Status
 
-        data class Live(val subscriptionId: String, val mode: String?, val logEpoch: String?) : Status
+        data class Live(
+            val subscriptionId: String,
+            val mode: String?,
+            val logEpoch: String?,
+        ) : Status
 
         /**
          * 失败态。`retryable` 标记「值得自动重订一次的瞬态失败」（目前仅握手超时），
          * 供 AppViewModel 决定是否退避重试；协议层硬性拒绝（如 handshakeRequired）不可重试。
          */
-        data class Failed(val reason: String, val retryable: Boolean = false) : Status
+        data class Failed(
+            val reason: String,
+            val retryable: Boolean = false,
+        ) : Status
     }
 
     private val _status = MutableStateFlow<Status>(Status.Idle)
@@ -588,9 +597,11 @@ class ConversationChannel(private val rpc: RpcChannel) {
                     val curEpoch = _meta.value.logEpoch
                     val rows: List<ConversationRow> =
                         result?.get("rows")?.let { r ->
-                            runCatching { r.jsonArray }.getOrNull()
+                            runCatching { r.jsonArray }
+                                .getOrNull()
                                 ?.mapNotNull { el ->
-                                    runCatching { el.jsonObject }.getOrNull()
+                                    runCatching { el.jsonObject }
+                                        .getOrNull()
                                         ?.let { ConversationRow.from(it) }
                                 }
                         } ?: emptyList()
@@ -618,7 +629,10 @@ class ConversationChannel(private val rpc: RpcChannel) {
     }
 
     /**
-     * 应答一次审批。
+     *
+     * 关键修正：必须优先使用 approval.sessionId（审批实际所属的会话），
+     * 绝不能盲目优先使用当前打开的 sessionId，避免在待办列表中跨会话应答时串台。
+     *
      *
      * 协议（host 源码与官方 web 双向印证）：
      *   `sendConversationCommandV4({workspacePath, workspaceIdentity?, envelope})`，
@@ -633,12 +647,6 @@ class ConversationChannel(private val rpc: RpcChannel) {
      *      重连后要靠 `queryConversationCommandsV4` 回查，本 App 选择让用户重新点。
      */
 
-    /**
-     * 应答一条审批请求（permission interaction，官方 web 同构）。
-     *
-     * 关键修正：必须优先使用 approval.sessionId（审批实际所属的会话），
-     * 绝不能盲目优先使用当前打开的 sessionId，避免在待办列表中跨会话应答时串台。
-     */
     fun resolve(
         approval: PendingApproval,
         option: ApprovalOption,
@@ -1131,7 +1139,10 @@ class ConversationChannel(private val rpc: RpcChannel) {
                             item["providerLabel"].asStr()
                                 ?: item["modelProviderName"].asStr(),
                         thoughtLevels =
-                            item["reasoning"].asObj()?.get("levels").asArray()
+                            item["reasoning"]
+                                .asObj()
+                                ?.get("levels")
+                                .asArray()
                                 ?.mapNotNull { it.asStr() },
                     ),
                 )
@@ -1159,19 +1170,21 @@ class ConversationChannel(private val rpc: RpcChannel) {
     // ---------- 附件上传（P1-3，协议实证见 PROTOCOL.md §6.6）----------
 
     /**
-     * 上传一个附件到该会话（官方 web `TTe` 同构的四步流程）：
-     *   attachmentBeginV4 → attachmentChunkV4 × N → attachmentCommitV4
-     * 失败时 fire-and-forget 打一发 attachmentAbortV4 回收服务端暂存。
-     *
-     * - chunk 大小 = [CHUNK_BYTES]（与官方客户端一致 384KiB；host 上限 512KiB）
-     * - checksum = `"sha256:" + sha256(data).hex`（小写）
-     * - 全程不需要 connectionId（host 从 workspace/session 上下文解析；实机验证）
+     * 上传句柄（A-1）：调用方（AppViewModel）在切会话 / 清空附件时据此终止在途上传，
+     * 避免上传完成后把文件回写进另一个会话的附件条。`abort()` 幂等，未开始的上传返回空实现。
      */
+    interface UploadHandle {
+        fun abort()
+    }
+
+    private val noopUploadHandle =
+        object : UploadHandle {
+            override fun abort() = Unit
+        }
 
     /**
-     * 上传一个附件（官方 web `TTe` 同构的四步流程）：
-     *   attachmentBeginV4 → attachmentChunkV4 × N → attachmentCommitV4
-     * 失败时 fire-and-forget 打一发 attachmentAbortV4 回收服务端暂存。
+     * 上传一个附件（四步流程 begin/chunk/commit，协议见 PROTOCOL.md §6.6）。
+     * 返回值用于终止在途上传（A-1）。
      *
      * - chunk 大小 = [CHUNK_BYTES]（与官方客户端一致 384KiB；host 上限 512KiB）
      * - checksum = `"sha256:" + sha256(bytes).hex`（小写）
@@ -1180,24 +1193,6 @@ class ConversationChannel(private val rpc: RpcChannel) {
      * P2-3 流式改造：内容经 [openStream] 分片读取（可重入，SAF uri 可重复开流），
      * 内存峰值 = 一倍分片 + 64KiB hash 缓冲，不再整文件读进内存。
      * 流程 = 第一遍流式算 sha256 → begin → 单次开流顺序读满分片逐片上传。
-     */
-
-    /**
-     * 上传句柄（A-1）：调用方（AppViewModel）在切会话 / 清空附件时据此终止在途上传，
-     * 避免上传完成后把文件回写进另一个会话的附件条。`abort()` 幂等，未开始的上传返回空实现。
-     */
-    interface UploadHandle {
-        fun abort()
-    }
-
-    private val NOOP_UPLOAD_HANDLE =
-        object : UploadHandle {
-            override fun abort() = Unit
-        }
-
-    /**
-     * 上传一个附件（四步流程 begin/chunk/commit，协议见 PROTOCOL.md §6.6）。
-     * 返回值用于终止在途上传（A-1）。
      */
     fun uploadAttachment(
         /** C-1：调用方持有并复用的上传 id。重试必须复用同一 id（服务端按 uploadId 幂等，
@@ -1214,20 +1209,20 @@ class ConversationChannel(private val rpc: RpcChannel) {
         val target = subTarget
         if (session == null || target == null) {
             onResult(Result.failure(IllegalStateException("未订阅会话，无法上传附件")))
-            return NOOP_UPLOAD_HANDLE
+            return noopUploadHandle
         }
         if (totalBytes <= 0L) {
             onResult(Result.failure(IllegalArgumentException("附件内容为空")))
-            return NOOP_UPLOAD_HANDLE
+            return noopUploadHandle
         }
         if (totalBytes > MAX_ATTACHMENT_BYTES) {
             onResult(Result.failure(IllegalArgumentException("附件超过 20MiB 上限")))
-            return NOOP_UPLOAD_HANDLE
+            return noopUploadHandle
         }
         val totalChunks = ((totalBytes + CHUNK_BYTES - 1) / CHUNK_BYTES).toInt()
         if (totalChunks > MAX_CHUNKS) {
             onResult(Result.failure(IllegalArgumentException("附件分片数超过上限")))
-            return NOOP_UPLOAD_HANDLE
+            return noopUploadHandle
         }
         val total = totalBytes
         val base = HashMap<String, Any>(target)
@@ -1286,7 +1281,11 @@ class ConversationChannel(private val rpc: RpcChannel) {
                 when (reply) {
                     is RpcChannel.RpcReply.Err -> fail("提交附件失败：${reply.message}")
                     is RpcChannel.RpcReply.Ok -> {
-                        val ref = reply.data.asObj()?.get("ref").asStr()
+                        val ref =
+                            reply.data
+                                .asObj()
+                                ?.get("ref")
+                                .asStr()
                         if (ref.isNullOrBlank()) {
                             fail("提交附件未返回 ref：${reply.data}")
                         } else {
@@ -1362,7 +1361,11 @@ class ConversationChannel(private val rpc: RpcChannel) {
                     when (reply) {
                         is RpcChannel.RpcReply.Err -> fail("分片 $sent 上传失败：${reply.message}")
                         is RpcChannel.RpcReply.Ok -> {
-                            val ack = reply.data.asObj()?.get("nextChunkIndex").asInt()
+                            val ack =
+                                reply.data
+                                    .asObj()
+                                    ?.get("nextChunkIndex")
+                                    .asInt()
                             if (ack != sent + 1) {
                                 fail("服务端分片进度异常（期望 ${sent + 1}，收到 $ack）")
                                 return@call
@@ -1518,9 +1521,15 @@ class ConversationChannel(private val rpc: RpcChannel) {
     /** 审批应答结果。 */
     sealed interface ResolveResult {
         /** status: accepted / duplicate / noop（后两枚说明已被桌面端或重复请求消解）。 */
-        data class Accepted(val status: String, val reasonCode: String?) : ResolveResult
+        data class Accepted(
+            val status: String,
+            val reasonCode: String?,
+        ) : ResolveResult
 
-        data class Failed(val code: String, val message: String) : ResolveResult
+        data class Failed(
+            val code: String,
+            val message: String,
+        ) : ResolveResult
     }
 
     companion object {
@@ -1562,20 +1571,13 @@ class ConversationChannel(private val rpc: RpcChannel) {
         private const val HANDSHAKE_INIT_TIMEOUT_MS = 4_000L
         private const val HANDSHAKE_SUBSCRIBE_TIMEOUT_MS = 5_000L
 
-        /** host 常量 attachmentMaxBytes = 20MiB、attachmentUploadMaxChunks = 64。 */
-
-        /** 与 host 常量 attachmentMaxBytes 一致（UI 选附件时同值校验）；预算收敛到 ProtocolLimits。 */
+        /** host 常量 attachmentMaxBytes = 20MiB、attachmentUploadMaxChunks = 64；预算已收敛到 ProtocolLimits。 */
         internal const val MAX_ATTACHMENT_BYTES = ProtocolLimits.MAX_UPLOAD_ATTACHMENT_BYTES
         private const val MAX_CHUNKS = ProtocolLimits.MAX_UPLOAD_CHUNKS
 
         /** 服务端命令 ack 中算成功三种状态（duplicate/noop 表示已被他处消解）。 */
         private val SUCCESS_STATUSES = setOf("accepted", "duplicate", "noop")
 
-        /**
-         * A-2：底层英文错误 → 用户可读中文。
-         * UI 直接展示该串，因此**不得**把 `timeout after 8000ms` / `bridge not ready`
-         * 这类裸英文原样透出（见任务书 §7 异常的 grep 断言）。
-         */
         internal fun handshakeFailureReason(
             stage: String,
             message: String,

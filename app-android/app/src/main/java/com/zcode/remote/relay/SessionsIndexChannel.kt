@@ -16,9 +16,14 @@ import kotlinx.serialization.json.jsonPrimitive
  * 双路更新。相比任务事件流推导的角标——这是服务端权威统计：覆盖全部会话、消解即清零、
  * 不怕事件流漏帧。协议实证见 PROTOCOL.md §6.7（tools/_e1_verify.py）。
  */
-class SessionsIndexChannel(private val rpc: RpcChannel) {
+class SessionsIndexChannel(
+    private val rpc: RpcChannel,
+) {
     /** 单个会话的待处理计数（服务端权威）。 */
-    data class PendingSummary(val permissionCount: Int, val userInputCount: Int) {
+    data class PendingSummary(
+        val permissionCount: Int,
+        val userInputCount: Int,
+    ) {
         val total: Int get() = permissionCount + userInputCount
     }
 

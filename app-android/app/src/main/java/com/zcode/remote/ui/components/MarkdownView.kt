@@ -184,7 +184,12 @@ private fun CodeBlockCard(
     val headerBg = if (dark) ZCodeTokens.CodeHeaderDark else ZCodeTokens.CodeHeaderLight
     val border = if (dark) ZCodeTokens.BorderSubtleDark else ZCodeTokens.BorderSubtleLight
     val shape = RoundedCornerShape(ZCodeDimens.RadiusXl)
-    val label = language?.trim()?.lowercase().orEmpty().ifEmpty { "text" }
+    val label =
+        language
+            ?.trim()
+            ?.lowercase()
+            .orEmpty()
+            .ifEmpty { "text" }
 
     var copied by remember { mutableStateOf(false) }
 
@@ -221,8 +226,7 @@ private fun CodeBlockCard(
                         .clickable {
                             copyToClipboard(context, code)
                             copied = true
-                        }
-                        .padding(horizontal = 6.dp, vertical = 2.dp),
+                        }.padding(horizontal = 6.dp, vertical = 2.dp),
             )
         }
 
@@ -256,7 +260,9 @@ private fun HighlightedCodeText(
         remember(code, language, dark) {
             val builder = Highlights.Builder().theme(SyntaxThemes.atom(dark))
             // 语言名来自模型输出，可能是不存在的别名，getByName 返回 null 时退化为无高亮
-            language?.trim()?.takeIf { it.isNotEmpty() }
+            language
+                ?.trim()
+                ?.takeIf { it.isNotEmpty() }
                 ?.let { SyntaxLanguage.getByName(it) }
                 ?.let { builder.language(it) }
             builder.code(code).build()

@@ -31,7 +31,11 @@ class AttachmentUploader(
     var attachUpload by mutableStateOf<AttachUpload?>(null)
         private set
 
-    data class AttachUpload(val name: String, val uploaded: Long, val total: Long) {
+    data class AttachUpload(
+        val name: String,
+        val uploaded: Long,
+        val total: Long,
+    ) {
         val percent: Int get() = if (total <= 0) 0 else ((uploaded * 100) / total).toInt()
     }
 
@@ -80,7 +84,10 @@ class AttachmentUploader(
      * 附件上传成/败信号（B-3）：tick 每次自增，UI 侧以 `LaunchedEffect(tick)` 消费一次触觉。
      * 上传完成是异步的（由本类驱动），Compose 侧拿不到点击上下文，故需要一条信号桥。
      */
-    data class AttachmentFeedback(val ok: Boolean, val tick: Long)
+    data class AttachmentFeedback(
+        val ok: Boolean,
+        val tick: Long,
+    )
 
     var attachmentFeedback by mutableStateOf<AttachmentFeedback?>(null)
         private set
@@ -146,7 +153,10 @@ class AttachmentUploader(
         attachUpload = AttachUpload(fileName, 0, size)
         attachUploadHandle =
             conv.uploadAttachment(
-                uploadId, fileName, mime, size,
+                uploadId,
+                fileName,
+                mime,
+                size,
                 openStream = {
                     context.contentResolver.openInputStream(uri)
                         ?: throw IllegalStateException("无法打开所选文件（可能已被移动或删除）")
@@ -221,8 +231,10 @@ class AttachmentUploader(
             size: Long,
             freshId: String,
         ): String =
-            if (previousFileName != null && previousUploadId != null &&
-                previousFileName == fileName && previousSize == size
+            if (previousFileName != null &&
+                previousUploadId != null &&
+                previousFileName == fileName &&
+                previousSize == size
             ) {
                 previousUploadId
             } else {

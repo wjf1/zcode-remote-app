@@ -16,7 +16,11 @@ import androidx.compose.ui.unit.dp
 @Composable
 fun KeepAliveGuideScreen(onBack: () -> Unit) {
     Column(
-        Modifier.fillMaxSize().statusBarsPadding().verticalScroll(rememberScrollState()).padding(16.dp),
+        Modifier
+            .fillMaxSize()
+            .statusBarsPadding()
+            .verticalScroll(rememberScrollState())
+            .padding(16.dp),
         verticalArrangement = Arrangement.spacedBy(10.dp),
     ) {
         Row {
@@ -71,4 +75,7 @@ fun KeepAliveGuideScreen(onBack: () -> Unit) {
     }
 }
 
-private data class Step(val title: String, val body: String)
+private data class Step(
+    val title: String,
+    val body: String,
+)

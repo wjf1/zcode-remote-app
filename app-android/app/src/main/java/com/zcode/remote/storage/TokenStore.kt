@@ -9,7 +9,9 @@ import android.content.Context
  * **禁止引入 EncryptedSharedPreferences**（任务书 §11.6 明令）。
  * 明文令牌不再落任何 SharedPreferences；旧明文由 SettingsStore 首次读取时迁移并删除。
  */
-class TokenStore(context: Context) {
+class TokenStore(
+    context: Context,
+) {
     private val prefs = context.getSharedPreferences("zcode_credentials", Context.MODE_PRIVATE)
     private val crypto = CredentialCrypto()
 
@@ -27,10 +29,19 @@ class TokenStore(context: Context) {
             return
         }
         val (iv, data) = crypto.encrypt(t)
-        prefs.edit().putString(KEY_IV, iv).putString(KEY, data).apply()
+        prefs
+            .edit()
+            .putString(KEY_IV, iv)
+            .putString(KEY, data)
+            .apply()
     }
 
-    fun clear() = prefs.edit().remove(KEY).remove(KEY_IV).apply()
+    fun clear() =
+        prefs
+            .edit()
+            .remove(KEY)
+            .remove(KEY_IV)
+            .apply()
 
     private companion object {
         const val KEY = "github_token_enc"

@@ -90,7 +90,13 @@ class MarkdownRenderTest {
     fun gfmTableAndInlineMarkupRender() {
         rule.setContent {
             ZCodeTheme(forceDark = true) {
-                Box(Modifier.fillMaxWidth().background(pageBg).padding(12.dp).testTag("mdroot")) {
+                Box(
+                    Modifier
+                        .fillMaxWidth()
+                        .background(pageBg)
+                        .padding(12.dp)
+                        .testTag("mdroot"),
+                ) {
                     MarkdownView(tableFixture)
                 }
             }
@@ -100,8 +106,16 @@ class MarkdownRenderTest {
 
         // 表格：表头与三行单元格都必须是独立节点（库内表格若退化，这些会整段丢失）
         listOf(
-            "分类", "占比", "系统工具", "34.3%", "消息",
-            "上下文容量", "inline code", "链接", "已完成项", "未完成项",
+            "分类",
+            "占比",
+            "系统工具",
+            "34.3%",
+            "消息",
+            "上下文容量",
+            "inline code",
+            "链接",
+            "已完成项",
+            "未完成项",
         ).forEach { assertTextRendered(it) }
 
         // 不只看语义节点：把这一屏抓成位图，要求真的画出文字（着墨像素）
@@ -166,7 +180,8 @@ class MarkdownRenderTest {
         text: String,
         substring: Boolean = true,
     ) {
-        rule.onAllNodesWithText(text, substring = substring, useUnmergedTree = true)
+        rule
+            .onAllNodesWithText(text, substring = substring, useUnmergedTree = true)
             .onFirst()
             .assertExists()
     }

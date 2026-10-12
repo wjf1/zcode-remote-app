@@ -1,12 +1,12 @@
 package com.zcode.remote.ui.screens
 
+import androidx.compose.ui.test.assertHasClickAction
+import androidx.compose.ui.test.assertIsDisplayed
+import androidx.compose.ui.test.assertIsEnabled
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
-import androidx.compose.ui.test.assertIsDisplayed
-import androidx.compose.ui.test.assertHasClickAction
-import androidx.compose.ui.test.assertIsEnabled
 import com.zcode.remote.ui.theme.ZCodeTheme
 import com.zcode.remote.util.diag.DiagEventCode
 import com.zcode.remote.util.diag.Diagnostics

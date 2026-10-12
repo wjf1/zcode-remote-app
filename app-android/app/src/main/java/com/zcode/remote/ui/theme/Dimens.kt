@@ -45,11 +45,11 @@ object ZCodeDimens {
     /** 桌面端 max-w-4xl，标注用。 */
     val BodyMaxWidth: Dp = 896.dp
 
-    /** 桌面端用户气泡 max-w-xl = 576px。手机屏宽不足，实际按屏宽取 [BubbleWidthFraction]。 */
+    /** 桌面端用户气泡 max-w-xl = 576px。手机屏宽不足，实际按屏宽取 [BUBBLE_WIDTH_FRACTION]。 */
     val BubbleMaxWidth: Dp = 576.dp
 
     /** 手机端用户气泡宽度上限约占屏宽（桌面按固定 576px，手机改按比例才不至于贴满整屏）。 */
-    const val BubbleWidthFraction: Float = 0.84f
+    const val BUBBLE_WIDTH_FRACTION: Float = 0.84f
 
     /** 桌面端 max-h-60 = 240px：折叠体展开后的限高。 */
     val CollapsedMaxHeight: Dp = 240.dp

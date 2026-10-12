@@ -14,7 +14,10 @@ object Diagnostics {
     val ring = DiagnosticsRing()
 
     /** 记录一条诊断事件（detail 只传码/计数/状态名/耗时，不传内容）。 */
-    fun record(code: DiagEventCode, detail: String = "") {
+    fun record(
+        code: DiagEventCode,
+        detail: String = "",
+    ) {
         ring.record(code, detail, atMs = android.os.SystemClock.elapsedRealtime())
     }
 

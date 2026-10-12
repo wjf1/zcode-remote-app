@@ -25,7 +25,9 @@ object RelayProtocol {
     const val ROLE_DEVICE = "device"
 
     // 中继错误码（PROTOCOL.md 第 4 节）
-    enum class RelayError(val code: String) {
+    enum class RelayError(
+        val code: String,
+    ) {
         KICKED("KICKED"),
         DEVICE_OFFLINE("DEVICE_OFFLINE"),
         AUTH_FAILED("AUTH_FAILED"),

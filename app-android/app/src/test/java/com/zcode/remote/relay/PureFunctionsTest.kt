@@ -228,8 +228,12 @@ class PureFunctionsTest {
                     archived = true,
                 ),
             )
-        val jsonStr = kotlinx.serialization.json.Json.encodeToString(original)
-        val decoded = kotlinx.serialization.json.Json.decodeFromString<List<SessionItem>>(jsonStr)
+        val jsonStr =
+            kotlinx.serialization.json.Json
+                .encodeToString(original)
+        val decoded =
+            kotlinx.serialization.json.Json
+                .decodeFromString<List<SessionItem>>(jsonStr)
         assertEquals(original, decoded)
         assertEquals(2, decoded.size)
         assertEquals("sess_001", decoded[0].taskId)
@@ -259,8 +263,12 @@ class PureFunctionsTest {
                     status = "success",
                 ),
             )
-        val jsonStr = kotlinx.serialization.json.Json.encodeToString(rows)
-        val decoded = kotlinx.serialization.json.Json.decodeFromString<List<ConversationRow>>(jsonStr)
+        val jsonStr =
+            kotlinx.serialization.json.Json
+                .encodeToString(rows)
+        val decoded =
+            kotlinx.serialization.json.Json
+                .decodeFromString<List<ConversationRow>>(jsonStr)
         assertEquals(rows, decoded)
         assertEquals(2, decoded.size)
         assertEquals("hello agent", decoded[0].text)
@@ -415,23 +423,25 @@ class PureFunctionsTest {
     fun parseControlReadsLastError() {
         // 形状见 research/CONVERSATION-PROTOCOL.md:159（健康会话 lastError:null）
         assertNull(
-            ConversationFrames.parseControl(
-                buildJsonObject {
-                    put("phase", "completedSuccess")
-                    put("canStop", false)
-                    put("stopState", "idle")
-                    put("lastError", JsonNull)
-                },
-            )?.lastError,
+            ConversationFrames
+                .parseControl(
+                    buildJsonObject {
+                        put("phase", "completedSuccess")
+                        put("canStop", false)
+                        put("stopState", "idle")
+                        put("lastError", JsonNull)
+                    },
+                )?.lastError,
         )
         assertEquals(
             "reason=rate_limited",
-            ConversationFrames.parseControl(
-                buildJsonObject {
-                    put("phase", "completedError")
-                    put("lastError", buildJsonObject { put("detail", "reason=rate_limited") })
-                },
-            )?.lastError,
+            ConversationFrames
+                .parseControl(
+                    buildJsonObject {
+                        put("phase", "completedError")
+                        put("lastError", buildJsonObject { put("detail", "reason=rate_limited") })
+                    },
+                )?.lastError,
         )
         // control 缺失 → 整体为 null
         assertNull(ConversationFrames.parseControl(null))
@@ -473,7 +483,8 @@ class PureFunctionsTest {
         )
         // 非超时类失败保留服务端原文，便于定位
         assertTrue(
-            ConversationChannel.handshakeFailureReason("订阅", "fault.connection.handshakeRequired")
+            ConversationChannel
+                .handshakeFailureReason("订阅", "fault.connection.handshakeRequired")
                 .contains("handshakeRequired"),
         )
     }

@@ -1,0 +1,45 @@
+# §11.8 第二层门禁：依赖变更审查（Dependabot/人工 PR 的依赖升级都过这道门）。
+#
+# 与既有护栏的分工：Dependabot 负责「升级可见」（周检 + 忽略 semver-major），本工作流负责
+# 「升级有把关」——对 PR 引入的依赖变更做漏洞 / 许可证 / 版本风险审查：
+#   - 新增或升级到已知漏洞版本 → 失败（fail-on-severity: high）
+#   - 引入不合规许可证 → 失败（默认拒绝清单 + 允许清单）
+#   - 需要人工回看时，把审查结论以评论形式贴到 PR
+#
+# 约定（与 ci.yml / codeql.yml 一致）：最小权限、action 固定 commit SHA、timeout-minutes、
+# concurrency 取消同 ref 的旧运行、persist-credentials=false。
+#
+# 前置：仓库需开启 Dependency Graph（公开仓库默认开启）。仅对 PR 生效——
+# 直接推 master 的依赖变更由 CI 的构建/测试 + Dependabot 覆盖。
+name: Dependency Review
+
+on:
+  pull_request:
+    branches: [master]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: dependency-review-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  review:
+    name: dependency review
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+      # 把审查结论评论到 PR（无该权限时 action 会跳过评论但仍会执行门禁）
+      pull-requests: write
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
+
+      - uses: actions/dependency-review-action@a1d282b36b6f3519aa1f3fc636f609c47dddb294 # v5.0.0
+        with:
+          fail-on-severity: high
+          comment-summary-in-pr: on-failure
+          # 未指定许可证策略时使用 action 默认（拒绝清单含 GPL-3.0/AGPL 等传染性许可）

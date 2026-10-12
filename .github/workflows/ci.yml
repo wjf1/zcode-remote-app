@@ -60,6 +60,12 @@ jobs:
         run: gradle detekt --console=plain
         working-directory: app-android
 
+      # §11.8 第二层门禁：KtLint 格式门禁（0 违规）。beta36 接线——插件与 .editorconfig
+      # 此前只在文档里登记、从未真正执行过；本轮完成存量格式化（收敛到 0）并把检查纳入门禁。
+      - name: KtLint 格式检查（0 违规门禁）
+        run: gradle ktlintCheck --console=plain
+        working-directory: app-android
+
       - name: Kover 覆盖率报告
         run: gradle koverHtmlReport koverLog --console=plain
         working-directory: app-android

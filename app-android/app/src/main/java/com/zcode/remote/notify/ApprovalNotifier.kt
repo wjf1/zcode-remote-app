@@ -50,7 +50,8 @@ class ApprovalReceiver : BroadcastReceiver() {
             // 连接不在（App 被杀/断线）：明确告知，避免用户以为已经批准了
             nm.notify(
                 ApprovalNotifier.notifId(interactionId) + 1,
-                Notification.Builder(context, ApprovalNotifier.CH_APPROVALS)
+                Notification
+                    .Builder(context, ApprovalNotifier.CH_APPROVALS)
                     .setSmallIcon(R.drawable.ic_launcher)
                     .setContentTitle("ZCode Remote 未连接")
                     .setContentText("这条审批没发出去，打开 App 重新处理")
@@ -127,7 +128,8 @@ object ApprovalNotifier {
             )
 
         val b =
-            Notification.Builder(context, CH_APPROVALS)
+            Notification
+                .Builder(context, CH_APPROVALS)
                 .setSmallIcon(R.drawable.ic_launcher)
                 .setContentTitle(title)
                 .setContentText(body)
@@ -149,11 +151,12 @@ object ApprovalNotifier {
         } else {
             opts.forEachIndexed { i, opt ->
                 b.addAction(
-                    Notification.Action.Builder(
-                        null,
-                        labelOf(opt),
-                        actionIntent(context, a, opt, i),
-                    ).build(),
+                    Notification.Action
+                        .Builder(
+                            null,
+                            labelOf(opt),
+                            actionIntent(context, a, opt, i),
+                        ).build(),
                 )
             }
         }

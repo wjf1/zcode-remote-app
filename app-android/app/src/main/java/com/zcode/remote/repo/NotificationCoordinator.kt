@@ -28,7 +28,6 @@ class NotificationCoordinator(
     private val subscribedSessionId: () -> String?,
     private val approvalsRepo: ApprovalRepository,
 ) {
-
     /**
      * 每个会话的待处理条数（taskId → 审批 + 表单）。来源＝任务事件流（覆盖所有会话，
      * 不限于当前订阅的那个），订阅中的会话以会话流数据优先（更实时）。
@@ -94,6 +93,7 @@ class NotificationCoordinator(
 
     companion object {
         private const val TAG = "NotifyCoord"
+
         /** 连接终态通知的短标题（Sprint 2 / A 组）。 */
         internal fun terminalTitle(reason: FailureReason): String =
             when (reason) {

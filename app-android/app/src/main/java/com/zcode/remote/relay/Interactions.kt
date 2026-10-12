@@ -74,7 +74,8 @@ data class PendingApproval(
 
             val payload = runCatching { o["payload"]?.jsonObject }.getOrNull()
             val options =
-                runCatching { payload?.get("options")?.jsonArray }.getOrNull()
+                runCatching { payload?.get("options")?.jsonArray }
+                    .getOrNull()
                     ?.mapNotNull { el ->
                         val ob = runCatching { el.jsonObject }.getOrNull() ?: return@mapNotNull null
                         val oid = ob["optionId"].asStr() ?: return@mapNotNull null
@@ -85,8 +86,7 @@ data class PendingApproval(
                             kind = ob["kind"].asStr(),
                             decision = response?.get("decision").asStr(),
                         )
-                    }
-                    ?.sortedBy { it.sortKey }
+                    }?.sortedBy { it.sortKey }
                     ?: emptyList()
 
             val detail =
@@ -108,7 +108,12 @@ data class PendingApproval(
                 anchorRowId = runCatching { o["anchorRowId"]?.jsonPrimitive?.content?.toIntOrNull() }.getOrNull(),
                 autoResolveAt =
                     runCatching {
-                        o["autoResolution"]?.jsonObject?.get("deadlineAt")?.jsonPrimitive?.content?.toLongOrNull()
+                        o["autoResolution"]
+                            ?.jsonObject
+                            ?.get("deadlineAt")
+                            ?.jsonPrimitive
+                            ?.content
+                            ?.toLongOrNull()
                     }.getOrNull(),
                 sessionId = sessionId,
             )
@@ -130,7 +135,8 @@ data class PendingApproval(
 
             val requestId = o["requestId"].asStr() ?: return null
             val options =
-                runCatching { o["options"]?.jsonArray }.getOrNull()
+                runCatching { o["options"]?.jsonArray }
+                    .getOrNull()
                     ?.mapNotNull { el ->
                         val ob = runCatching { el.jsonObject }.getOrNull() ?: return@mapNotNull null
                         val oid = ob["optionId"].asStr() ?: return@mapNotNull null
@@ -153,8 +159,14 @@ data class PendingApproval(
                 anchorRowId = null,
                 autoResolveAt =
                     runCatching {
-                        o["raw"]?.jsonObject?.get("autoResolution")?.jsonObject?.get("deadlineAt")
-                            ?.jsonPrimitive?.content?.toLongOrNull()
+                        o["raw"]
+                            ?.jsonObject
+                            ?.get("autoResolution")
+                            ?.jsonObject
+                            ?.get("deadlineAt")
+                            ?.jsonPrimitive
+                            ?.content
+                            ?.toLongOrNull()
                     }.getOrNull(),
                 sessionId = sessionId,
             )
@@ -229,11 +241,13 @@ data class PendingElicitation(
             val payload = runCatching { o["payload"]?.jsonObject }.getOrNull() ?: return null
 
             val questions =
-                runCatching { payload["questions"]?.jsonArray }.getOrNull()
+                runCatching { payload["questions"]?.jsonArray }
+                    .getOrNull()
                     ?.mapNotNull { el ->
                         val q = runCatching { el.jsonObject }.getOrNull() ?: return@mapNotNull null
                         val opts =
-                            runCatching { q["options"]?.jsonArray }.getOrNull()
+                            runCatching { q["options"]?.jsonArray }
+                                .getOrNull()
                                 ?.mapNotNull { oe ->
                                     val ob = runCatching { oe.jsonObject }.getOrNull() ?: return@mapNotNull null
                                     ElicitationOption(
@@ -265,7 +279,12 @@ data class PendingElicitation(
                 plan = plan,
                 autoResolveAt =
                     runCatching {
-                        o["autoResolution"]?.jsonObject?.get("deadlineAt")?.jsonPrimitive?.content?.toLongOrNull()
+                        o["autoResolution"]
+                            ?.jsonObject
+                            ?.get("deadlineAt")
+                            ?.jsonPrimitive
+                            ?.content
+                            ?.toLongOrNull()
                     }.getOrNull(),
                 sessionId = sessionId,
             )
@@ -284,11 +303,13 @@ data class PendingElicitation(
 
             val requestId = o["requestId"].asStr() ?: return null
             val questions =
-                runCatching { o["questions"]?.jsonArray }.getOrNull()
+                runCatching { o["questions"]?.jsonArray }
+                    .getOrNull()
                     ?.mapNotNull { el ->
                         val q = runCatching { el.jsonObject }.getOrNull() ?: return@mapNotNull null
                         val opts =
-                            runCatching { q["options"]?.jsonArray }.getOrNull()
+                            runCatching { q["options"]?.jsonArray }
+                                .getOrNull()
                                 ?.mapNotNull { oe ->
                                     val ob = runCatching { oe.jsonObject }.getOrNull() ?: return@mapNotNull null
                                     ElicitationOption(
@@ -309,7 +330,8 @@ data class PendingElicitation(
             val schema = runCatching { o["schema"]?.jsonObject }.getOrNull()
             val plan = schema?.get("plan").asStr()?.takeIf { it.isNotBlank() }
             val options =
-                runCatching { o["options"]?.jsonArray }.getOrNull()
+                runCatching { o["options"]?.jsonArray }
+                    .getOrNull()
                     ?.mapNotNull { oe ->
                         val ob = runCatching { oe.jsonObject }.getOrNull() ?: return@mapNotNull null
                         val v = ob["value"].asStr() ?: return@mapNotNull null

@@ -134,8 +134,10 @@ class ModelConfigRepository(
                 val levels =
                     runCatching {
                         objOf(cfg?.get("optionSpecs"))
-                            ?.get("reasoningLevel")?.jsonObject
-                            ?.get("values")?.jsonArray
+                            ?.get("reasoningLevel")
+                            ?.jsonObject
+                            ?.get("values")
+                            ?.jsonArray
                             ?.mapNotNull { it.jsonPrimitive.content }
                     }.getOrNull()
                 if (!levels.isNullOrEmpty()) out["$pid/$mid"] = levels
@@ -206,7 +208,11 @@ class ModelConfigRepository(
                         is RpcChannel.RpcReply.Ok -> {
                             val content =
                                 runCatching {
-                                    r2.data?.jsonObject?.get("content")?.jsonPrimitive?.content
+                                    r2.data
+                                        ?.jsonObject
+                                        ?.get("content")
+                                        ?.jsonPrimitive
+                                        ?.content
                                 }.getOrNull()
                             if (!content.isNullOrBlank()) {
                                 val parsed = parseProviderConfigModels(content)
@@ -228,7 +234,11 @@ class ModelConfigRepository(
                 is RpcChannel.RpcReply.Ok -> {
                     val homedir =
                         runCatching {
-                            rSys.data?.jsonObject?.get("homedir")?.jsonPrimitive?.content
+                            rSys.data
+                                ?.jsonObject
+                                ?.get("homedir")
+                                ?.jsonPrimitive
+                                ?.content
                         }.getOrNull()
                     if (!homedir.isNullOrBlank()) {
                         val fullPath = "${homedir.trimEnd('\\', '/')}/.zcode/v2/provider_config.json"
@@ -263,7 +273,11 @@ class ModelConfigRepository(
                         r1.data?.let {
                             runCatching { it.jsonPrimitive.content }.getOrNull()
                         } ?: runCatching {
-                            r1.data?.jsonObject?.get("path")?.jsonPrimitive?.content
+                            r1.data
+                                ?.jsonObject
+                                ?.get("path")
+                                ?.jsonPrimitive
+                                ?.content
                         }.getOrNull() ?: "~/.zcode/v2/provider_config.json"
                     onPath(realPath)
                 }
@@ -277,7 +291,12 @@ class ModelConfigRepository(
         runCatching {
             val root = Json.parseToJsonElement(jsonStr).jsonObject
             val config = root["config"]?.jsonObject
-            val rules = config?.get("providerConfigRules")?.jsonObject?.get("providerRules")?.jsonArray
+            val rules =
+                config
+                    ?.get("providerConfigRules")
+                    ?.jsonObject
+                    ?.get("providerRules")
+                    ?.jsonArray
             rules?.forEach { rEl ->
                 val r = rEl.jsonObject
                 val pid = r["providerId"]?.jsonPrimitive?.content ?: ""

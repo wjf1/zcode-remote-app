@@ -56,7 +56,6 @@ class ConnectionCoordinator(
     private val modelRepo: ModelConfigRepository,
     private val notifyCoordinator: NotificationCoordinator,
 ) {
-
     /** 宿主状态/能力视图（AppViewModel 实现）：connect 编排里仅有的对 VM 的触碰点。 */
     interface ConnectionHost {
         val hostContext: Context
@@ -211,7 +210,8 @@ class ConnectionCoordinator(
                 // 静默失去全部审批能力（KICKED/配对失效/协议升级用户都必须立刻知道）。
                 val terminal =
                     (st as? RelayState.Failed)?.takeIf {
-                        it.reason == FailureReason.KICKED || it.reason == FailureReason.AUTH_FAILED ||
+                        it.reason == FailureReason.KICKED ||
+                            it.reason == FailureReason.AUTH_FAILED ||
                             it.reason == FailureReason.PROTOCOL_MISMATCH ||
                             it.reason == FailureReason.INVALID_ENDPOINT
                     }
@@ -265,23 +265,27 @@ class ConnectionCoordinator(
                             // permission_request 建卡，permission_resolved 按 requestId 撤卡。
                             when (ev.type) {
                                 "permission_request" ->
-                                    com.zcode.remote.relay.PendingApproval.fromTaskEvent(
-                                        ev.raw,
-                                        ev.taskId,
-                                    )?.let { approvalRepo.ingestTaskApproval(it) }
+                                    com.zcode.remote.relay.PendingApproval
+                                        .fromTaskEvent(
+                                            ev.raw,
+                                            ev.taskId,
+                                        )?.let { approvalRepo.ingestTaskApproval(it) }
                                 "permission_resolved" ->
-                                    ev.raw["requestId"]?.let {
-                                        runCatching { it.jsonPrimitive.content }.getOrNull()
-                                    }?.let { approvalRepo.resolveTaskApproval(it) }
+                                    ev.raw["requestId"]
+                                        ?.let {
+                                            runCatching { it.jsonPrimitive.content }.getOrNull()
+                                        }?.let { approvalRepo.resolveTaskApproval(it) }
                                 "elicitation_request" ->
-                                    com.zcode.remote.relay.PendingElicitation.fromTaskEvent(
-                                        ev.raw,
-                                        ev.taskId,
-                                    )?.let { approvalRepo.ingestTaskElicitation(it) }
+                                    com.zcode.remote.relay.PendingElicitation
+                                        .fromTaskEvent(
+                                            ev.raw,
+                                            ev.taskId,
+                                        )?.let { approvalRepo.ingestTaskElicitation(it) }
                                 "elicitation_resolved" ->
-                                    ev.raw["requestId"]?.let {
-                                        runCatching { it.jsonPrimitive.content }.getOrNull()
-                                    }?.let { approvalRepo.resolveTaskElicitation(it) }
+                                    ev.raw["requestId"]
+                                        ?.let {
+                                            runCatching { it.jsonPrimitive.content }.getOrNull()
+                                        }?.let { approvalRepo.resolveTaskElicitation(it) }
                             }
                             // 列表状态实时化：任务事件是 host 推的实时流（PROTOCOL.md §6.2），而列表的
                             // displayStatus 只在 bootstrap 取过一次快照——不回写就会出现「会话页在跑、

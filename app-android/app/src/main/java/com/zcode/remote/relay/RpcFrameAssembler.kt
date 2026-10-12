@@ -24,10 +24,15 @@ internal class RpcFrameAssembler(
         data object Buffered : Outcome
 
         /** 收齐且校验通过：可直接解码组装结果。 */
-        data class Complete(val messageSeq: Int, val bytes: ByteArray) : Outcome
+        data class Complete(
+            val messageSeq: Int,
+            val bytes: ByteArray,
+        ) : Outcome
 
         /** 拒绝（固定错误码）：调用方不得 ack，应进入重同步。 */
-        data class Rejected(val violation: ProtocolViolation) : Outcome
+        data class Rejected(
+            val violation: ProtocolViolation,
+        ) : Outcome
     }
 
     private class Pending(

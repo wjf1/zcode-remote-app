@@ -69,7 +69,9 @@ object ProtocolLimits {
  * 固定脱敏错误码。命名与官方 fault code 同名（`research/FRAME-CODEC.md` §5），
  * 便于与 PC 端日志/`bridge-degraded.reason` 对齐排查；日志**只出现码与计数**。
  */
-enum class ProtocolViolation(val code: String) {
+enum class ProtocolViolation(
+    val code: String,
+) {
     /** 帧身份三元组与当前桥不符（旧桥/旧连接迟到帧）——官方非终态，丢弃不回 ack。 */
     IDENTITY_MISMATCH("remote.rpcFrame.identityMismatch"),
 
@@ -153,8 +155,7 @@ internal fun validateRpcFrameMetadata(
     }
 
 /** 整条消息 CRC-32（标准反射多项式，与官方 `crc32WireBytes` 等价），小写 8 位 hex。 */
-internal fun crc32Hex(bytes: ByteArray): String =
-    String.format(java.util.Locale.ROOT, "%08x", CRC32().apply { update(bytes) }.value)
+internal fun crc32Hex(bytes: ByteArray): String = String.format(java.util.Locale.ROOT, "%08x", CRC32().apply { update(bytes) }.value)
 
 /**
  * 帧身份三元组（`bridgeSessionId` / `bridgeGeneration` / `recoveryId`）。
@@ -255,8 +256,7 @@ internal fun identityMismatch(
 
 /** 从 rpc-frame 负载取元数据；形状不符（缺键/类型不对）返回 null。 */
 internal fun rpcFrameMetadataOf(payload: JsonObject): RpcFrameMetadata? {
-    fun int(key: String): Int? =
-        payload[key]?.let { runCatching { it.jsonPrimitive.content.toIntOrNull() }.getOrNull() }
+    fun int(key: String): Int? = payload[key]?.let { runCatching { it.jsonPrimitive.content.toIntOrNull() }.getOrNull() }
     val seq = int("seq") ?: return null
     val messageSeq = int("messageSeq") ?: return null
     val fragmentIndex = int("fragmentIndex") ?: return null

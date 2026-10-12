@@ -125,7 +125,8 @@ data class SessionItem(
 fun parseBootstrapSessions(payload: JsonObject): List<SessionItem> {
     val result = payload["result"]?.let { runCatching { it.jsonObject }.getOrNull() } ?: return emptyList()
     val tasks = result["tasks"]?.let { runCatching { it.jsonArray }.getOrNull() } ?: return emptyList()
-    return tasks.mapNotNull { el -> runCatching { SessionItem.from(el.jsonObject) }.getOrNull() }
+    return tasks
+        .mapNotNull { el -> runCatching { SessionItem.from(el.jsonObject) }.getOrNull() }
         .filter { !it.archived }
 }
 
@@ -168,10 +169,17 @@ data class TaskEvent(
     companion object {
         val TYPES =
             setOf(
-                "created", "prompt_sent", "resumed", "streaming",
-                "permission_request", "permission_resolved",
-                "elicitation_request", "elicitation_resolved",
-                "updated", "completed", "error",
+                "created",
+                "prompt_sent",
+                "resumed",
+                "streaming",
+                "permission_request",
+                "permission_resolved",
+                "elicitation_request",
+                "elicitation_resolved",
+                "updated",
+                "completed",
+                "error",
             )
 
         fun from(payload: JsonObject): TaskEvent? {

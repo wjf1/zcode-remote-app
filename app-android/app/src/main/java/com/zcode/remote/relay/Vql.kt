@@ -128,7 +128,9 @@ object Vql {
 
     // ---------- decode ----------
 
-    private class Reader(val buf: ByteArray) {
+    private class Reader(
+        val buf: ByteArray,
+    ) {
         var pos = 0
 
         fun byte(): Int = buf[pos++].toInt() and 0xFF
@@ -162,7 +164,10 @@ object Vql {
         return Decoded(v, r.pos)
     }
 
-    data class Decoded(val value: Any?, val nextOffset: Int)
+    data class Decoded(
+        val value: Any?,
+        val nextOffset: Int,
+    )
 
     private fun read(r: Reader): Any? =
         when (val tag = r.byte()) {

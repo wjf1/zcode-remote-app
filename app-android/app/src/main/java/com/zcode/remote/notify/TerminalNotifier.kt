@@ -39,7 +39,8 @@ object TerminalNotifier {
                 )
             nm.notify(
                 NOTIFY_ID,
-                Notification.Builder(context, CHANNEL_ID)
+                Notification
+                    .Builder(context, CHANNEL_ID)
                     .setSmallIcon(R.drawable.ic_launcher)
                     .setContentTitle(title)
                     .setContentText(message ?: "连接已终止，打开 App 重新连接")

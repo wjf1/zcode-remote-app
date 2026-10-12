@@ -87,7 +87,7 @@ import com.zcode.remote.util.Format
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonElement
 
-/**
+/*
  * 会话时间线的行渲染器群（§11.7 结构性拆分：自 `ConversationScreen.kt` 原样搬出，
  * 只移动、不改行为）。桌面端也是一套渲染器按行类型分流，这里保持同名同序。
  */
@@ -134,7 +134,7 @@ private fun UserBubble(row: ConversationRow) {
     val dark = LocalZCodeDark.current
     val bubbleBg = if (dark) ZCodeTokens.OverlaySurfaceHoverDark else ZCodeTokens.OverlaySurfaceHoverLight
     val bubbleBorder = if (dark) ZCodeTokens.BorderSubtleDark else ZCodeTokens.BorderSubtleLight
-    val maxWidth = (LocalConfiguration.current.screenWidthDp * ZCodeDimens.BubbleWidthFraction).dp
+    val maxWidth = (LocalConfiguration.current.screenWidthDp * ZCodeDimens.BUBBLE_WIDTH_FRACTION).dp
 
     Column(
         modifier = Modifier.fillMaxWidth(),
@@ -211,7 +211,7 @@ internal fun PendingUserBubble(p: ConversationRepository.PendingUserMessage) {
     val dark = LocalZCodeDark.current
     val bubbleBg = if (dark) ZCodeTokens.OverlaySurfaceHoverDark else ZCodeTokens.OverlaySurfaceHoverLight
     val bubbleBorder = if (dark) ZCodeTokens.BorderSubtleDark else ZCodeTokens.BorderSubtleLight
-    val maxWidth = (LocalConfiguration.current.screenWidthDp * ZCodeDimens.BubbleWidthFraction).dp
+    val maxWidth = (LocalConfiguration.current.screenWidthDp * ZCodeDimens.BUBBLE_WIDTH_FRACTION).dp
 
     Column(
         modifier = Modifier.fillMaxWidth(),
@@ -448,7 +448,10 @@ private fun ToolCallRow(
     // Sprint 3：写类工具（Edit/Write/MultiEdit）从 inputText 解析红绿 diff —— 纯客户端，零 RPC
     val toolDiff =
         remember(row.rowId, input) {
-            runCatching { com.zcode.remote.ui.components.ToolDiffParser.parse(row.toolName, input) }.getOrNull()
+            runCatching {
+                com.zcode.remote.ui.components.ToolDiffParser
+                    .parse(row.toolName, input)
+            }.getOrNull()
         }
 
     CollapsibleRow(
@@ -503,7 +506,10 @@ private fun ToolCallRow(
         chevronColor = tone,
     ) {
         ToolBody {
-            toolDiff?.let { com.zcode.remote.ui.components.DiffBlock(it) }
+            toolDiff?.let {
+                com.zcode.remote.ui.components
+                    .DiffBlock(it)
+            }
             ToolBodySection(title = "Parameters", content = prettyJson(input))
             if (errorText.isNotEmpty()) {
                 ToolBodySection(
@@ -595,7 +601,8 @@ private fun TurnHeaderRow(row: ConversationRow) {
 
     Column(
         modifier =
-            Modifier.fillMaxWidth()
+            Modifier
+                .fillMaxWidth()
                 .padding(top = ZCodeDimens.GapTurn, bottom = ZCodeDimens.GapInline),
     ) {
         HorizontalDivider(
@@ -682,7 +689,8 @@ private fun TimelineMarkerRow(row: ConversationRow) {
     val dark = LocalZCodeDark.current
     val line = if (dark) ZCodeTokens.BorderSubtleDark else ZCodeTokens.BorderSubtleLight
     val label =
-        Format.singleLine(row.summaryText ?: row.text, limit = 60)
+        Format
+            .singleLine(row.summaryText ?: row.text, limit = 60)
             ?.takeIf { it.isNotEmpty() }
             ?: return
     Row(
@@ -710,7 +718,11 @@ private fun HookInvocationRow(
     onToggleExpand: () -> Unit,
 ) {
     val hook = row.toolName?.trim().takeIf { !it.isNullOrEmpty() } ?: "钩子"
-    val detail = row.outputText?.trim().orEmpty().ifEmpty { row.inputText?.trim().orEmpty() }
+    val detail =
+        row.outputText
+            ?.trim()
+            .orEmpty()
+            .ifEmpty { row.inputText?.trim().orEmpty() }
     val failed =
         row.status?.lowercase()?.contains("error") == true ||
             row.status?.lowercase()?.contains("fail") == true

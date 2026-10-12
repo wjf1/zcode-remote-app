@@ -29,7 +29,8 @@ class CodeHighlightTest {
         """.trimIndent()
 
     private fun highlight(language: String?) =
-        Highlights.Builder()
+        Highlights
+            .Builder()
             .theme(SyntaxThemes.atom(true))
             .also { builder -> language?.let { SyntaxLanguage.getByName(it)?.let(builder::language) } }
             .code(code)

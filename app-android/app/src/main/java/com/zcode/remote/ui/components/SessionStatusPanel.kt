@@ -161,7 +161,9 @@ fun SessionStatusPanel(
 
 /** 面板里真正会渲染出内容的条件，与 [SessionStatusPanel] 内部各分区判断保持一致。 */
 private fun hasAnyRenderedSection(state: ConversationFrames.SessionState): Boolean =
-    state.usage != null || state.goal != null || state.plan != null ||
+    state.usage != null ||
+        state.goal != null ||
+        state.plan != null ||
         (state.backgroundWorks?.bashRunningCount ?: 0) > 0 ||
         state.subagents?.let { it.runningCount > 0 || (it.endedTotal ?: 0L) > 0L } == true ||
         (state.queue?.itemCount ?: 0) > 0

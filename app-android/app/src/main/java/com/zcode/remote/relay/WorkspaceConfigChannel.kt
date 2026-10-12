@@ -19,7 +19,9 @@ import kotlinx.serialization.json.jsonPrimitive
  * 选项 value 形如 "providerId/modelId"（与移动端 pf() 解析一致）；
  * createSession 的 config 需要拆成 {provider, model} 两段。
  */
-class WorkspaceConfigChannel(private val rpc: RpcChannel) {
+class WorkspaceConfigChannel(
+    private val rpc: RpcChannel,
+) {
     /** 模型目录条目（与 ConversationChannel.ModelConfig 同构，避免跨层依赖）。 */
     data class ModelOption(
         val value: String,

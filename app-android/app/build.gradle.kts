@@ -15,6 +15,22 @@ plugins {
     id("io.gitlab.arturbosch.detekt")
     id("org.jetbrains.kotlinx.kover")
     id("org.cyclonedx.bom")
+    id("org.jlleitschuh.gradle.ktlint")
+}
+
+// §11.8 第二层门禁：KtLint（格式）。版本显式钉住——规则键（.editorconfig 的 ktlint_standard_*）
+// 与 ktlint 版本强耦合，隐式跟随插件默认版本会在升级插件时静默改变门禁口径。
+ktlint {
+    version.set("1.5.0")
+    android.set(true)
+    ignoreFailures.set(false)
+    reporters {
+        reporter(org.jlleitschuh.gradle.ktlint.reporter.ReporterType.PLAIN)
+    }
+    filter {
+        exclude("**/generated/**")
+        exclude("**/build/**")
+    }
 }
 
 // §11.8：Detekt——默认规则集 + baseline（存量告警登记于 detekt-baseline.xml，新增违规即红）
@@ -41,8 +57,9 @@ android {
         //  decode-then-ack、在途分片与入站队列有界、出站超限本地拒绝）
         // versionCode 46：beta34 —— §11.8 协议帧回放网 + 资源预算模糊/压力测试 + CodeQL
         // versionCode 47：beta35 —— §11.8 可观测性（本地脱敏诊断环形缓冲 + 用户主动导出）
-        versionCode = 47
-        versionName = "0.5.0-beta35"
+        // versionCode 48：beta36 —— §11.8 第二层门禁补完（KtLint 存量格式专项接线 + 依赖变更审查）
+        versionCode = 48
+        versionName = "0.5.0-beta36"
         // 仪器化渲染回归网（src/androidTest）用 androidx.test 默认 runner。
         // 只在模拟器/真机上跑；CI runner 无设备，故 ci.yml 不接（见 HANDOVER §6.1 回归网）。
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"

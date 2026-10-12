@@ -57,7 +57,9 @@ internal fun ElicitationCard(
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
         border =
             CardDefaults.outlinedCardBorder().copy(
-                brush = androidx.compose.ui.graphics.SolidColor(MaterialTheme.colorScheme.tertiary.copy(alpha = 0.5f)),
+                brush =
+                    androidx.compose.ui.graphics
+                        .SolidColor(MaterialTheme.colorScheme.tertiary.copy(alpha = 0.5f)),
             ),
         modifier = Modifier.fillMaxWidth(),
     ) {
@@ -166,7 +168,9 @@ internal fun ApprovalCard(
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
         border =
             CardDefaults.outlinedCardBorder().copy(
-                brush = androidx.compose.ui.graphics.SolidColor(statusPendingTone().copy(alpha = 0.6f)),
+                brush =
+                    androidx.compose.ui.graphics
+                        .SolidColor(statusPendingTone().copy(alpha = 0.6f)),
             ),
         modifier = Modifier.fillMaxWidth(),
     ) {
@@ -206,7 +210,9 @@ internal fun ApprovalCard(
                             onResolve(a, opt)
                         },
                         modifier = Modifier.weight(1f).height(34.dp),
-                        contentPadding = androidx.compose.foundation.layout.PaddingValues(0.dp),
+                        contentPadding =
+                            androidx.compose.foundation.layout
+                                .PaddingValues(0.dp),
                         colors =
                             ButtonDefaults.buttonColors(
                                 containerColor = if (opt.isAllow) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.error,

@@ -90,8 +90,7 @@ internal fun SessionFilesPanel(
                                         .clickable {
                                             selected = f.path
                                             onPreview(f.path)
-                                        }
-                                        .padding(vertical = 8.dp, horizontal = 4.dp),
+                                        }.padding(vertical = 8.dp, horizontal = 4.dp),
                             ) {
                                 Column(Modifier.weight(1f)) {
                                     Text(

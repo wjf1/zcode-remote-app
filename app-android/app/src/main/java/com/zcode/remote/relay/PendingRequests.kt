@@ -50,7 +50,9 @@ internal class PendingRequests<T> {
  * 为什么需要：每次重订阅都会复位 A-2 的握手重订预算（`resetHandshakeRetry`），
  * 若违例（如持续 CRC 错帧）高频出现，不节流会把「帧错误」放大成「订阅风暴」。
  */
-internal class ResyncThrottle(private val minIntervalMs: Long = ProtocolLimits.RESYNC_MIN_INTERVAL_MS) {
+internal class ResyncThrottle(
+    private val minIntervalMs: Long = ProtocolLimits.RESYNC_MIN_INTERVAL_MS,
+) {
     private var lastTriggeredAtMs: Long? = null
 
     /** 因节流被抑制的次数（观测用，只记计数不记 payload）。 */

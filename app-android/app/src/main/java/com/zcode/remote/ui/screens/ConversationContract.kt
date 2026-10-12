@@ -11,7 +11,7 @@ import com.zcode.remote.relay.WorkspaceConfigChannel
 import com.zcode.remote.repo.AttachmentUploader
 import com.zcode.remote.repo.ConversationRepository
 
-/**
+/*
  * 会话页状态/动作契约（§11.7 结构性拆分）：以 [ConversationUiState] + [ConversationAction]
  * 替代原 `ConversationScreen` 的 46 个散落参数与 callback，Route 层（Activity）单向装配。
  * 字段与原参数一一对应，仅移动不改行为。
@@ -30,7 +30,8 @@ data class ConversationUiState(
     val earlier: ConversationChannel.EarlierState = ConversationChannel.EarlierState(),
     /** C3：会话级状态（上下文用量 / 目标 / 待办 / 后台任务 / 子智能体 / 排队输入）。 */
     val sessionState: com.zcode.remote.relay.ConversationFrames.SessionState =
-        com.zcode.remote.relay.ConversationFrames.SessionState(),
+        com.zcode.remote.relay.ConversationFrames
+            .SessionState(),
     val prompt: String = "",
     val sending: Boolean = false,
     val canStop: Boolean = false,

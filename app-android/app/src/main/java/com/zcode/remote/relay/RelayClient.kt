@@ -42,7 +42,10 @@ sealed interface RelayState {
 
     data object Paired : RelayState // pair_status=matched
 
-    data class Failed(val reason: FailureReason, val message: String?) : RelayState
+    data class Failed(
+        val reason: FailureReason,
+        val message: String?,
+    ) : RelayState
 }
 
 enum class FailureReason { KICKED, AUTH_FAILED, DEVICE_OFFLINE, NETWORK, INTERNAL, PROTOCOL_MISMATCH, INVALID_ENDPOINT }
@@ -63,7 +66,8 @@ class RelayClient(
     private val relayWsUrlOverride: String? = null,
 ) {
     private val client =
-        OkHttpClient.Builder()
+        OkHttpClient
+            .Builder()
             .pingInterval(20, TimeUnit.SECONDS)
             .connectTimeout(10, TimeUnit.SECONDS)
             .build()
@@ -216,7 +220,8 @@ class RelayClient(
         val host = wsUrl.substringAfter("//").substringBefore('/')
         val origin = if (secure) "https://$host" else "http://$host"
         val request =
-            Request.Builder()
+            Request
+                .Builder()
                 .url(url)
                 .header("Origin", origin)
                 .build()
@@ -259,7 +264,10 @@ class RelayClient(
      * 用于 [RpcChannel] 在发送前拒绝超 1 MiB 的帧（物理分片未实现，见任务书 §11.5.2）。
      */
     fun envelopeBytes(payload: JsonObject): Int =
-        RelayProtocol.json.encodeToString(JsonObject.serializer(), wrap(payload)).toByteArray(Charsets.UTF_8).size
+        RelayProtocol.json
+            .encodeToString(JsonObject.serializer(), wrap(payload))
+            .toByteArray(Charsets.UTF_8)
+            .size
 
     /** 每次连接独立 listener：回调首行校验代次，旧 socket 的迟到回调一律丢弃。 */
     private fun makeListener(gen: Int): WebSocketListener =
@@ -393,8 +401,10 @@ class RelayClient(
         stopHeartbeat()
         // 终态失败不参与自动重连：重连会与占位的另一 terminal（官方 Web/桌面端面板内嵌页）
         // 形成 3s 级互踢死循环（2026-09-30 真机实测）。用户按横幅指引「断开→重新连接」恢复。
-        if (reason == FailureReason.KICKED || reason == FailureReason.AUTH_FAILED ||
-            reason == FailureReason.PROTOCOL_MISMATCH || reason == FailureReason.INVALID_ENDPOINT
+        if (reason == FailureReason.KICKED ||
+            reason == FailureReason.AUTH_FAILED ||
+            reason == FailureReason.PROTOCOL_MISMATCH ||
+            reason == FailureReason.INVALID_ENDPOINT
         ) {
             terminalFailed = true
             reconnectAttempt = 0

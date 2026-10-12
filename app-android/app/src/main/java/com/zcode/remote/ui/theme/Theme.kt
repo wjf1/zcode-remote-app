@@ -9,7 +9,7 @@ import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.graphics.Color
 
-/**
+/*
  * 对齐官方 ZCode (zai-dark / zai-light) 设计系统的色彩体系。
  * 遵循官方 calm, dense, operational 的高信息密度与低视觉疲劳规范。
  */

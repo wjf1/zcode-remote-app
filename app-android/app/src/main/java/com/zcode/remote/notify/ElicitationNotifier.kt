@@ -65,7 +65,8 @@ class ElicitationReceiver : BroadcastReceiver() {
         if (!ok) {
             nm.notify(
                 ElicitationNotifier.notifId(interactionId) + 1,
-                Notification.Builder(context, ElicitationNotifier.CH_ELICITATIONS)
+                Notification
+                    .Builder(context, ElicitationNotifier.CH_ELICITATIONS)
                     .setSmallIcon(R.drawable.ic_launcher)
                     .setContentTitle("ZCode Remote 未连接")
                     .setContentText("回复未发出去，打开 App 重新处理")
@@ -134,7 +135,10 @@ object ElicitationNotifier {
         val body =
             listOfNotNull(
                 el.prompt?.take(120),
-                el.questions.firstOrNull()?.question?.take(140),
+                el.questions
+                    .firstOrNull()
+                    ?.question
+                    ?.take(140),
                 el.plan?.take(120),
             ).joinToString("\n").ifBlank { "桌面端在等你的输入" }
 
@@ -147,7 +151,8 @@ object ElicitationNotifier {
             )
 
         val b =
-            Notification.Builder(context, CH_ELICITATIONS)
+            Notification
+                .Builder(context, CH_ELICITATIONS)
                 .setSmallIcon(R.drawable.ic_launcher)
                 .setContentTitle(title)
                 .setContentText(body)
@@ -167,7 +172,8 @@ object ElicitationNotifier {
         // 自由文本 / 开放式提问支持通知栏 RemoteInput 直接内联回复（Sprint 4）
         if (el.freeText || el.questions.isEmpty()) {
             val remoteInput =
-                android.app.RemoteInput.Builder(ElicitationReceiver.KEY_TEXT_REPLY)
+                android.app.RemoteInput
+                    .Builder(ElicitationReceiver.KEY_TEXT_REPLY)
                     .setLabel("输入回复内容…")
                     .build()
             val replyIntent =
@@ -182,11 +188,13 @@ object ElicitationNotifier {
                     PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_MUTABLE,
                 )
             val replyAction =
-                Notification.Action.Builder(
-                    null,
-                    "直接回复",
-                    replyPendingIntent,
-                ).addRemoteInput(remoteInput).build()
+                Notification.Action
+                    .Builder(
+                        null,
+                        "直接回复",
+                        replyPendingIntent,
+                    ).addRemoteInput(remoteInput)
+                    .build()
             b.addAction(replyAction)
         }
 
@@ -198,11 +206,12 @@ object ElicitationNotifier {
         } else {
             quick.forEachIndexed { i, (label, answerJson) ->
                 b.addAction(
-                    Notification.Action.Builder(
-                        null,
-                        label,
-                        actionIntent(context, el, answerJson, i),
-                    ).build(),
+                    Notification.Action
+                        .Builder(
+                            null,
+                            label,
+                            actionIntent(context, el, answerJson, i),
+                        ).build(),
                 )
             }
         }

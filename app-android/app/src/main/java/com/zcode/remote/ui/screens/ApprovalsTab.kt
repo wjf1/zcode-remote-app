@@ -82,7 +82,9 @@ fun ApprovalsTab(
                     shape = RoundedCornerShape(12.dp),
                     border =
                         ButtonDefaults.outlinedButtonBorder.copy(
-                            brush = androidx.compose.ui.graphics.SolidColor(statusPendingTone().copy(alpha = 0.4f)),
+                            brush =
+                                androidx.compose.ui.graphics
+                                    .SolidColor(statusPendingTone().copy(alpha = 0.4f)),
                         ),
                 ) {
                     Text(

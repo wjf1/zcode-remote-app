@@ -200,7 +200,13 @@ object ToolKindLabels {
      * success→completed、error→failed、cancelled→stopped；wire 侧再叠一层连字符写法。
      */
     fun normalizeStatus(raw: String?): ToolStatus {
-        val key = raw?.trim()?.lowercase()?.replace("-", "")?.replace("_", "").orEmpty()
+        val key =
+            raw
+                ?.trim()
+                ?.lowercase()
+                ?.replace("-", "")
+                ?.replace("_", "")
+                .orEmpty()
         return when (key) {
             "inputstreaming", "pending", "pendingapproval", "waiting", "queued" -> ToolStatus.Pending
             "running", "inprogress", "inputavailable", "streaming", "started" -> ToolStatus.Running

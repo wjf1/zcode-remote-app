@@ -17,7 +17,12 @@ data class TurnDiffSummary(
     /** 触发此轮总结的最后一个写工具 rowId（用于在会话列表中定位并挂载卡片）。 */
     val lastRowId: Int,
 ) {
-    val fileCount: Int get() = diffs.mapNotNull { it.filePath }.distinct().size.coerceAtLeast(1)
+    val fileCount: Int get() =
+        diffs
+            .mapNotNull { it.filePath }
+            .distinct()
+            .size
+            .coerceAtLeast(1)
     val totalAdded: Int get() = diffs.sumOf { it.added }
     val totalRemoved: Int get() = diffs.sumOf { it.removed }
 }
@@ -56,8 +61,10 @@ object TurnChanges {
             val textHash = text?.hashCode() ?: 0
             val textLen = text?.length ?: -1
             byRowId[row.rowId]?.let { hit ->
-                if (hit.nameHash == nameHash && hit.nameLen == nameLen &&
-                    hit.textHash == textHash && hit.textLen == textLen
+                if (hit.nameHash == nameHash &&
+                    hit.nameLen == nameLen &&
+                    hit.textHash == textHash &&
+                    hit.textLen == textLen
                 ) {
                     return hit.diff
                 }

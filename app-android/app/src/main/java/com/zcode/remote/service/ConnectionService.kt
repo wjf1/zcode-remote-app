@@ -70,7 +70,8 @@ class ConnectionService : Service() {
     }
 
     private fun buildNotification(): Notification =
-        Notification.Builder(this, CHANNEL_ID)
+        Notification
+            .Builder(this, CHANNEL_ID)
             .setContentTitle("ZCode Remote")
             .setContentText("保持与 PC 的连接")
             .setSmallIcon(com.zcode.remote.R.drawable.ic_launcher)

@@ -54,9 +54,17 @@ import kotlinx.serialization.json.jsonPrimitive
 
 enum class DiffType { ADD, DEL, CONTEXT }
 
-data class DiffLine(val type: DiffType, val text: String, val oldNo: Int? = null, val newNo: Int? = null)
+data class DiffLine(
+    val type: DiffType,
+    val text: String,
+    val oldNo: Int? = null,
+    val newNo: Int? = null,
+)
 
-class ToolDiff(val filePath: String?, val lines: List<DiffLine>) {
+class ToolDiff(
+    val filePath: String?,
+    val lines: List<DiffLine>,
+) {
     val added: Int get() = lines.count { it.type == DiffType.ADD }
     val removed: Int get() = lines.count { it.type == DiffType.DEL }
 
@@ -243,7 +251,11 @@ fun DiffBlock(
     var forceExpanded by remember { mutableStateOf(false) }
 
     // 折叠长段未变更行：连续 CONTEXT > 10 行时中间折叠，留头尾各 3 行
-    data class Slice(val from: Int, val to: Int, val collapsedRun: Int? = null)
+    data class Slice(
+        val from: Int,
+        val to: Int,
+        val collapsedRun: Int? = null,
+    )
 
     val slices =
         remember(diff.lines, forceExpanded) {
@@ -300,7 +312,9 @@ fun DiffBlock(
                         haptic.performHapticFeedback(HapticFeedbackType.LongPress)
                         clipboard.setText(AnnotatedString(diff.toUnifiedText()))
                     },
-                    contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 6.dp),
+                    contentPadding =
+                        androidx.compose.foundation.layout
+                            .PaddingValues(horizontal = 6.dp),
                     modifier = Modifier.height(24.dp),
                 ) {
                     // material-icons-core 无 ContentCopy，用字形替代（避免引入 icons-extended 增包体）

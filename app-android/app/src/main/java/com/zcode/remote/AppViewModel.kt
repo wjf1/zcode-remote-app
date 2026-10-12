@@ -56,7 +56,10 @@ import kotlinx.serialization.json.put
  * 应用状态中枢：配对 → 中继连接 → bootstrap（会话列表）→ 开桥 → RPC 会话流。
  * 协议见 PROTOCOL.md 与 research/FRAME-CODEC.md。
  */
-class AppViewModel(app: Application) : AndroidViewModel(app), ConnectionCoordinator.ConnectionHost {
+class AppViewModel(
+    app: Application,
+) : AndroidViewModel(app),
+    ConnectionCoordinator.ConnectionHost {
     private val multiStore = MultiDeviceStore(app)
     private val settings = SettingsStore(app)
 
@@ -351,9 +354,15 @@ class AppViewModel(app: Application) : AndroidViewModel(app), ConnectionCoordina
     sealed interface FilePreview {
         data object Loading : FilePreview
 
-        data class Loaded(val path: String, val content: String) : FilePreview
+        data class Loaded(
+            val path: String,
+            val content: String,
+        ) : FilePreview
 
-        data class Failed(val path: String, val message: String) : FilePreview
+        data class Failed(
+            val path: String,
+            val message: String,
+        ) : FilePreview
     }
 
     var filePreview by mutableStateOf<FilePreview?>(null)
@@ -396,7 +405,11 @@ class AppViewModel(app: Application) : AndroidViewModel(app), ConnectionCoordina
                         is RpcChannel.RpcReply.Ok -> {
                             val content =
                                 runCatching {
-                                    r.data?.jsonObject?.get("content")?.jsonPrimitive?.content
+                                    r.data
+                                        ?.jsonObject
+                                        ?.get("content")
+                                        ?.jsonPrimitive
+                                        ?.content
                                 }.getOrNull()
                             if (content != null) {
                                 onResult(Result.success(content))
@@ -415,7 +428,13 @@ class AppViewModel(app: Application) : AndroidViewModel(app), ConnectionCoordina
                         when (r1) {
                             is RpcChannel.RpcReply.Ok ->
                                 runCatching { r1.data?.jsonPrimitive?.content }.getOrNull()
-                                    ?: runCatching { r1.data?.jsonObject?.get("path")?.jsonPrimitive?.content }.getOrNull()
+                                    ?: runCatching {
+                                        r1.data
+                                            ?.jsonObject
+                                            ?.get("path")
+                                            ?.jsonPrimitive
+                                            ?.content
+                                    }.getOrNull()
                                     ?: path
                             else -> path
                         }

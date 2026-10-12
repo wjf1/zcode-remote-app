@@ -164,12 +164,20 @@ class ProtocolFuzzTest {
             // 形状通过的串必须可被标准解码器解码（形状校验不得放过解码器无法处理的串）
             val decoded =
                 try {
-                    java.util.Base64.getDecoder().decode(s)
+                    java.util.Base64
+                        .getDecoder()
+                        .decode(s)
                 } catch (t: IllegalArgumentException) {
                     throw AssertionError("形状校验放过了解码器无法处理的串：'$s'", t)
                 }
             // 且往返重编码全等（真规范）
-            assertEquals("往返不等价：'$s'", s, java.util.Base64.getEncoder().encodeToString(decoded))
+            assertEquals(
+                "往返不等价：'$s'",
+                s,
+                java.util.Base64
+                    .getEncoder()
+                    .encodeToString(decoded),
+            )
         }
         assertTrue("形状校验通过率异常（accepted=$accepted）", accepted > 0)
     }
@@ -206,7 +214,11 @@ class ProtocolFuzzTest {
         println("[fuzz] admission：$admission 消费调用=$consumed")
     }
 
-    private fun randomString(rnd: Random, min: Int, max: Int): String {
+    private fun randomString(
+        rnd: Random,
+        min: Int,
+        max: Int,
+    ): String {
         val len = if (min == max) min else min + rnd.nextInt(max - min + 1)
         val alphabet = "ABCabc012+/=-_ 中文\u0000"
         return (0 until len).map { alphabet[rnd.nextInt(alphabet.length)] }.joinToString("")

@@ -52,7 +52,6 @@ class ApprovalRepository(
         private const val TAG = "ApprovalRepo"
     }
 
-
     /** 任务事件流 permission_request 建卡（collector 落地入口）。 */
     fun ingestTaskApproval(a: PendingApproval) {
         taskApprovals[a.interactionId] = a
@@ -326,7 +325,9 @@ class ApprovalRepository(
         val el = elicitations.firstOrNull { it.interactionId == interactionId } ?: return false
         val answer =
             runCatching {
-                kotlinx.serialization.json.Json.parseToJsonElement(answerJson).jsonObject
+                kotlinx.serialization.json.Json
+                    .parseToJsonElement(answerJson)
+                    .jsonObject
             }.getOrNull() ?: return false
         conv.resolveElicitation(el, answer) { r -> flashResolve(r, "已提交") }
         return true

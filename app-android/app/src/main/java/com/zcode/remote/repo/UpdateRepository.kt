@@ -34,9 +34,13 @@ class UpdateRepository(
 
         data object Checking : UpdateState
 
-        data class Success(val info: UpdateInfo) : UpdateState
+        data class Success(
+            val info: UpdateInfo,
+        ) : UpdateState
 
-        data class Error(val message: String) : UpdateState
+        data class Error(
+            val message: String,
+        ) : UpdateState
     }
 
     var updateState by androidx.compose.runtime.mutableStateOf<UpdateState>(UpdateState.Idle)
@@ -55,12 +59,14 @@ class UpdateRepository(
         scope.launch(Dispatchers.IO) {
             runCatching {
                 val client =
-                    okhttp3.OkHttpClient.Builder()
+                    okhttp3.OkHttpClient
+                        .Builder()
                         .connectTimeout(10, java.util.concurrent.TimeUnit.SECONDS)
                         .readTimeout(15, java.util.concurrent.TimeUnit.SECONDS)
                         .build()
                 val reqBuilder =
-                    okhttp3.Request.Builder()
+                    okhttp3.Request
+                        .Builder()
                         .url("https://api.github.com/repos/wjf1/zcode-remote-app/releases/latest")
                         .header("Accept", "application/vnd.github+json")
                         .header("User-Agent", "ZCodeRemote-Android")

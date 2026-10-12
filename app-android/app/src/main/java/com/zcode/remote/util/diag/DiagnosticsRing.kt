@@ -6,7 +6,9 @@ package com.zcode.remote.util.diag
  * **只允许码 + 计数 + 耗时 + 状态名**：绝不记录会话正文、凭据、SID/hash、完整 URL 或 RPC payload。
  * 每个码在 [Diagnostics.record] 入口还要过一遍 [sanitizeDetail]（长度截断 + 长串掩码）作为兜底。
  */
-enum class DiagEventCode(val code: String) {
+enum class DiagEventCode(
+    val code: String,
+) {
     APP_START("app.start"),
     RELAY_STATE("relay.state"),
     RELAY_RECONNECT("relay.reconnect"),
@@ -95,11 +97,12 @@ class DiagnosticsRing(
         fun sanitizeDetail(raw: String): String {
             if (raw.isEmpty()) return ""
             val truncated = raw.take(MAX_DETAIL_CHARS)
-            val masked = CANDIDATE_RUN.replace(truncated) { m ->
-                val s = m.value
-                val suspicious = s.length >= 32 || (s.any { it.isDigit() } && s.any { it.isLetter() })
-                if (suspicious) "<masked>" else s
-            }
+            val masked =
+                CANDIDATE_RUN.replace(truncated) { m ->
+                    val s = m.value
+                    val suspicious = s.length >= 32 || (s.any { it.isDigit() } && s.any { it.isLetter() })
+                    if (suspicious) "<masked>" else s
+                }
             return if (masked.length > MAX_DETAIL_CHARS) masked.take(MAX_DETAIL_CHARS) else masked
         }
 

@@ -15,7 +15,11 @@ object SessionFiles {
 
     private val json = Json
 
-    data class Entry(val path: String, val toolName: String, val rowId: Int)
+    data class Entry(
+        val path: String,
+        val toolName: String,
+        val rowId: Int,
+    )
 
     /**
      * C-5④：按行缓存的路径抽取（增量解析）。
@@ -28,7 +32,11 @@ object SessionFiles {
      * 生命周期由调用方（会话页 `remember`）持有，随会话页销毁——切会话即重置。
      */
     class PathCache {
-        private class Cached(val textHash: Int, val textLen: Int, val path: String?)
+        private class Cached(
+            val textHash: Int,
+            val textLen: Int,
+            val path: String?,
+        )
 
         private val byRowId = HashMap<Int, Cached>()
 
@@ -74,7 +82,6 @@ object SessionFiles {
         return listOf("file_path", "filePath", "path", "notebook_path")
             .firstNotNullOfOrNull { k ->
                 obj[k]?.let { runCatching { it.jsonPrimitive.content }.getOrNull() }
-            }
-            ?.takeIf { it.isNotBlank() && it.length <= 500 }
+            }?.takeIf { it.isNotBlank() && it.length <= 500 }
     }
 }

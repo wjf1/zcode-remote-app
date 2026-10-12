@@ -37,7 +37,6 @@ class ConversationRepository(
     private val onNewSubscription: () -> Unit,
     private val clearAttachments: () -> Unit,
 ) {
-
     /** 当前会话的行（已按 rowId 排序，UI 直接渲染）。 */
     val rows = mutableStateListOf<ConversationRow>()
     internal val rowStore = RowStore(rows)
@@ -84,7 +83,11 @@ class ConversationRepository(
      * 移除时机：服务端回显同文本的 userInput 行（ConversationChannel.onUserInputEcho）→ 移除；
      * 发送失败 → 立即撤回（错误横幅已说明原因）；切会话 / 断开连接 → 清空（气泡与会话绑定）。
      */
-    data class PendingUserMessage(val id: Long, val text: String, val attachmentNames: List<String>)
+    data class PendingUserMessage(
+        val id: Long,
+        val text: String,
+        val attachmentNames: List<String>,
+    )
 
     internal var pendingUserMessages by mutableStateOf<List<PendingUserMessage>>(emptyList())
     private var pendingSeq = 0L
@@ -184,6 +187,7 @@ class ConversationRepository(
 
     companion object {
         private const val TAG = "ConvRepo"
+
         /**
          * 服务端回显到达时的 pending 匹配移除（C-6 纯函数）：按文本 trim 相等匹配，
          * 只移除最先插入的一条；不匹配 / 空文本时原样返回

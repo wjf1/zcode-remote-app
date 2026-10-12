@@ -131,7 +131,8 @@ object ConversationFrames {
             canStop = o.bool("canStop"),
             stopState = o.str("stopState"),
             foregroundExecutionId =
-                o["activeWorks"]?.let { runCatching { it.jsonArray }.getOrNull() }
+                o["activeWorks"]
+                    ?.let { runCatching { it.jsonArray }.getOrNull() }
                     ?.firstNotNullOfOrNull { el ->
                         runCatching { el.jsonObject["foregroundExecutionId"]?.jsonPrimitive?.content }.getOrNull()
                     },
@@ -154,7 +155,10 @@ object ConversationFrames {
     // ------------------------------------------------------------------
 
     /** 上下文来源明细（`usage.contextWindow.breakdown[]`）。 */
-    data class ContextSource(val source: String, val chars: Long)
+    data class ContextSource(
+        val source: String,
+        val chars: Long,
+    )
 
     /**
      * 上下文容量。`cache.hitRate` 缺失时为 null —— 桌面端只在命中率 ≥78% 时渲染该行
@@ -203,7 +207,8 @@ object ConversationFrames {
                                 c["hitRate"]?.let { runCatching { it.jsonPrimitive.content.toDoubleOrNull() }.getOrNull() }
                             },
                         breakdown =
-                            o["breakdown"]?.let { runCatching { it.jsonArray }.getOrNull() }
+                            o["breakdown"]
+                                ?.let { runCatching { it.jsonArray }.getOrNull() }
                                 ?.mapNotNull { el ->
                                     runCatching { el.jsonObject }.getOrNull()?.let { b ->
                                         val src = b.str("source")
@@ -219,7 +224,10 @@ object ConversationFrames {
     }
 
     /** 一条来源占比（面板直接渲染，避免 UI 层再算一次）。 */
-    data class ContextBreakdownSlice(val source: ContextSource, val ratio: Double)
+    data class ContextBreakdownSlice(
+        val source: ContextSource,
+        val ratio: Double,
+    )
 
     /** 来源排序兜底：chars 相同时按桌面端固定序（`AI`），未知来源排最后。 */
     private val SOURCE_RANK =
@@ -239,7 +247,10 @@ object ConversationFrames {
     const val CACHE_HIT_RATE_THRESHOLD = 0.78
 
     /** 排队中的后续输入（`queue`）。只读展示「待发送 N 条」。 */
-    data class QueueState(val itemCount: Int, val autoDrain: Boolean?) {
+    data class QueueState(
+        val itemCount: Int,
+        val autoDrain: Boolean?,
+    ) {
         companion object {
             fun from(o: JsonObject?): QueueState? {
                 if (o == null) return null
@@ -259,7 +270,9 @@ object ConversationFrames {
         val isRunning: Boolean get() = status == "running"
     }
 
-    data class BackgroundWorksState(val works: List<BackgroundWork>) {
+    data class BackgroundWorksState(
+        val works: List<BackgroundWork>,
+    ) {
         /** 桌面端统计口径：只算 status=="running"（`DBe`）。 */
         val running: List<BackgroundWork> get() = works.filter { it.isRunning }
         val bashRunningCount: Int get() = running.count { it.kind == "bash" }
@@ -300,7 +313,8 @@ object ConversationFrames {
                 return SubagentsState(
                     // running[] 的元素是对象（取 childSessionId）；顺带容错收字符串形态
                     runningChildSessionIds =
-                        o["running"]?.let { runCatching { it.jsonArray }.getOrNull() }
+                        o["running"]
+                            ?.let { runCatching { it.jsonArray }.getOrNull() }
                             ?.mapNotNull { el ->
                                 runCatching { el.jsonObject }.getOrNull()?.str("childSessionId")
                                     ?: runCatching { el.jsonPrimitive.content }.getOrNull()
@@ -369,7 +383,11 @@ object ConversationFrames {
      * 所以这里按对象解析；同时容忍服务端下发裸字符串 —— 字符串项按「无状态」处理，
      * 这样的项既不算完成也不会被折叠丢弃。
      */
-    data class PlanTodo(val id: String?, val content: String, val status: String?) {
+    data class PlanTodo(
+        val id: String?,
+        val content: String,
+        val status: String?,
+    ) {
         val isCompleted: Boolean get() = status == COMPLETED_STATUS
 
         companion object {
@@ -395,7 +413,10 @@ object ConversationFrames {
      * （桌面包实证 `transport.plans({sessionId})`），本 App 没有订阅它、也不新增查询命令，
      * 故面板不提供该分区 —— 不为了凑版式去开一条新 RPC。
      */
-    data class PlanState(val items: List<PlanTodo>, val updatedAt: Long?) {
+    data class PlanState(
+        val items: List<PlanTodo>,
+        val updatedAt: Long?,
+    ) {
         val totalCount: Int get() = items.size
         val completedCount: Int get() = items.count { it.isCompleted }
         val allCompleted: Boolean get() = items.isNotEmpty() && completedCount == totalCount
@@ -429,7 +450,8 @@ object ConversationFrames {
             fun from(o: JsonObject?): PlanState? {
                 if (o == null) return null
                 val todos =
-                    o["items"]?.let { runCatching { it.jsonArray }.getOrNull() }
+                    o["items"]
+                        ?.let { runCatching { it.jsonArray }.getOrNull() }
                         ?.mapNotNull { PlanTodo.from(it) } ?: emptyList()
                 // 没有待办的「计划」不占分区位置
                 return PlanState(items = todos, updatedAt = o.long("updatedAt")).takeIf { todos.isNotEmpty() }
@@ -458,8 +480,12 @@ object ConversationFrames {
         /** 是否有可展示内容 —— 面板与顶栏入口的显示条件（全空时不出现）。 */
         val hasContent: Boolean
             get() =
-                usage != null || (queue?.itemCount ?: 0) > 0 ||
-                    backgroundWorks?.works?.isNotEmpty() == true || subagents != null || goal != null || plan != null
+                usage != null ||
+                    (queue?.itemCount ?: 0) > 0 ||
+                    backgroundWorks?.works?.isNotEmpty() == true ||
+                    subagents != null ||
+                    goal != null ||
+                    plan != null
 
         /**
          * 增量合并：**patch 里出现的键整块替换，未出现的键原样保留**
@@ -506,7 +532,8 @@ object ConversationFrames {
             phase = control?.phase,
             rows =
                 rowsObj?.get("window")?.let { w ->
-                    runCatching { w.jsonArray }.getOrNull()
+                    runCatching { w.jsonArray }
+                        .getOrNull()
                         ?.mapNotNull { el -> runCatching { ConversationRow.from(el.jsonObject) }.getOrNull() }
                 } ?: emptyList(),
             totalCount = rowsObj?.int("totalCount"),
@@ -526,16 +553,28 @@ object ConversationFrames {
 
     /** 增量操作。 */
     sealed interface Delta {
-        data class Upsert(val row: ConversationRow) : Delta
+        data class Upsert(
+            val row: ConversationRow,
+        ) : Delta
 
-        data class RemoveFrom(val fromRowId: Int) : Delta
+        data class RemoveFrom(
+            val fromRowId: Int,
+        ) : Delta
 
-        data class AppendText(val rowId: Int, val path: String, val append: String) : Delta
+        data class AppendText(
+            val rowId: Int,
+            val path: String,
+            val append: String,
+        ) : Delta
 
         /** 会话状态补丁；`patch.pendingInteractions` 是**整组替换**（审批请求/消解都走这里）。 */
-        data class StateUpdated(val patch: JsonObject?) : Delta
+        data class StateUpdated(
+            val patch: JsonObject?,
+        ) : Delta
 
-        data class Unknown(val op: String) : Delta
+        data class Unknown(
+            val op: String,
+        ) : Delta
     }
 
     fun parseDeltas(payload: JsonObject): List<Delta> {
@@ -694,7 +733,9 @@ data class ConversationRow(
  *
  * [out] 传 `mutableStateListOf<ConversationRow>()` 即可让 UI 自动刷新。
  */
-class RowStore(private val out: MutableList<ConversationRow>) {
+class RowStore(
+    private val out: MutableList<ConversationRow>,
+) {
     private val index = HashMap<Int, Int>() // rowId -> 在 out 中的下标
 
     fun clear() {

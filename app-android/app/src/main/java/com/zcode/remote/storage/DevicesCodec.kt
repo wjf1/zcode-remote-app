@@ -71,8 +71,12 @@ internal object DevicesCodec {
             val devices =
                 listPart.split("\",\"").mapNotNull { chunk ->
                     val line =
-                        chunk.trim().removePrefix("\"").removeSuffix("\"")
-                            .replace("\\\"", "\"").replace("\\\\", "\\")
+                        chunk
+                            .trim()
+                            .removePrefix("\"")
+                            .removeSuffix("\"")
+                            .replace("\\\"", "\"")
+                            .replace("\\\\", "\\")
                     if (line.isBlank()) return@mapNotNull null
                     val p = line.split("\u0001")
                     if (p.size < 5) return@mapNotNull null

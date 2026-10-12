@@ -96,17 +96,18 @@ fun ScanScreen(onPaired: (PairedDevice) -> Unit) {
 
                             // 优先选用 1280x720 分辨率，保证长字符高密度二维码的清晰度
                             val resolutionSelector =
-                                ResolutionSelector.Builder()
+                                ResolutionSelector
+                                    .Builder()
                                     .setResolutionStrategy(
                                         ResolutionStrategy(
                                             Size(1280, 720),
                                             ResolutionStrategy.FALLBACK_RULE_CLOSEST_HIGHER_THEN_LOWER,
                                         ),
-                                    )
-                                    .build()
+                                    ).build()
 
                             val analysis =
-                                ImageAnalysis.Builder()
+                                ImageAnalysis
+                                    .Builder()
                                     .setResolutionSelector(resolutionSelector)
                                     .setBackpressureStrategy(ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST)
                                     .build()
@@ -150,7 +151,8 @@ fun ScanScreen(onPaired: (PairedDevice) -> Unit) {
                                         val factory = previewView.meteringPointFactory
                                         val point = factory.createPoint(event.x, event.y)
                                         val action =
-                                            FocusMeteringAction.Builder(point, FocusMeteringAction.FLAG_AF)
+                                            FocusMeteringAction
+                                                .Builder(point, FocusMeteringAction.FLAG_AF)
                                                 .setAutoCancelDuration(3, TimeUnit.SECONDS)
                                                 .build()
                                         camera.cameraControl.startFocusAndMetering(action)
@@ -201,8 +203,8 @@ fun ScanScreen(onPaired: (PairedDevice) -> Unit) {
 private fun decodeQr(
     reader: MultiFormatReader,
     proxy: ImageProxy,
-): String? {
-    return try {
+): String? =
+    try {
         val plane = proxy.planes[0]
         val w = proxy.width
         val h = proxy.height
@@ -251,7 +253,6 @@ private fun decodeQr(
     } finally {
         reader.reset()
     }
-}
 
 /**
  * 灰度 Y 平面旋转：
@@ -263,8 +264,8 @@ private fun rotateY(
     w: Int,
     h: Int,
     rotation: Int,
-): Pair<ByteArray, Pair<Int, Int>> {
-    return when (rotation) {
+): Pair<ByteArray, Pair<Int, Int>> =
+    when (rotation) {
         90 -> {
             val dst = ByteArray(w * h)
             var i = 0
@@ -295,4 +296,3 @@ private fun rotateY(
         }
         else -> src to (w to h)
     }
-}

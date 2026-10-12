@@ -24,14 +24,15 @@ import java.util.Random
  * （准入 4,533 万 / 丢弃 1,942 万）；堆 起点 62 MiB → 裸堆 148 MiB → GC 后驻留 16 MiB。
  */
 class ProtocolStressTest {
-    private fun stressSeconds(): Int =
-        System.getenv("ZCODE_STRESS_SECONDS")?.toIntOrNull()?.takeIf { it > 0 } ?: 0
+    private fun stressSeconds(): Int = System.getenv("ZCODE_STRESS_SECONDS")?.toIntOrNull()?.takeIf { it > 0 } ?: 0
 
     /**
      * 混合流量流：正常多分片为主，按比例掺入篡改片 / 重复片 / 跳号片，并周期性触发超时淘汰。
      * 状态机独立成类，使测试主体保持无分支（detekt 复杂度门禁）。
      */
-    private class TrafficStream(private val rnd: Random) {
+    private class TrafficStream(
+        private val rnd: Random,
+    ) {
         private val assembler = RpcFrameAssembler()
         private val admission = InboundAdmission()
         private val counts = mutableMapOf<String, Long>()
