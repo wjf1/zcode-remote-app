@@ -143,6 +143,9 @@ class RelayClient(
     /** 入站队列溢出回调（掉帧 = 失同步信号，必须可见）。 */
     var onInboundOverflow: (() -> Unit)? = null
 
+    /** 入站队列记账（§11.3.3：容量/峰值/准入/丢弃；纯逻辑类，压测与单测直接驱动）。 */
+    internal val inboundAdmission = InboundAdmission()
+
     /** 累计因队列溢出丢弃的帧数（观测用，只记计数）。 */
     @Volatile
     var inboundDropped: Int = 0
@@ -156,7 +159,11 @@ class RelayClient(
         if (pumpJob?.isActive == true) return
         pumpJob =
             io.launch {
-                for (payload in frameQueue) _inbound.emit(payload)
+                for (payload in frameQueue) {
+                    // 消费一帧再投递：入站深度记账与 Channel 容量同侧（见 InboundAdmission）
+                    inboundAdmission.onConsumed()
+                    _inbound.emit(payload)
+                }
             }
     }
 
@@ -320,11 +327,15 @@ class RelayClient(
                                 runCatching { it.jsonObject }.getOrNull()
                             } ?: return
                         // §11.3.3：有界队列 + 溢出可见（掉帧不再静默；未 ack 的帧服务端可重放）
-                        if (!frameQueue.trySend(payload).isSuccess) {
-                            inboundDropped += 1
+                        if (frameQueue.trySend(payload).isSuccess) {
+                            inboundAdmission.onAdmitted()
+                        } else {
+                            inboundAdmission.onDropped()
+                            inboundDropped = inboundAdmission.dropped
                             ZLog.w(
                                 TAG,
-                                "inbound queue overflow dropped=${inboundDropped} cap=${ProtocolLimits.INBOUND_QUEUE_CAPACITY}",
+                                "inbound queue overflow dropped=$inboundDropped " +
+                                    "cap=${ProtocolLimits.INBOUND_QUEUE_CAPACITY} peak=${inboundAdmission.peakDepth}",
                             )
                             onInboundOverflow?.invoke()
                         }

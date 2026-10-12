@@ -159,6 +159,31 @@ class ProtocolLimitsTest {
         assertNull(validateIdentityLengths(FrameIdentity("bridge-1", "1", null)))
     }
 
+    // ---------- base64 规范性（官方 isCanonicalBase64 的等价静态判定） ----------
+
+    @Test
+    fun base64CanonicalityRejectsTrailingBitSlack() {
+        // 能解码但重编码不等价 → 官方拒绝（2026-10-12 fuzz 实测抓到过形状校验曾放过这类串）
+        assertTrue(isCanonicalBase64Shape("aWRlbnRpdHktY2FzZQ==")) // "identity-case"
+        assertFalse(isCanonicalBase64Shape("aWRlbnRpdHktY2FzZB==")) // 末字符低 4 位非零
+        assertFalse(isCanonicalBase64Shape("+C/="))
+        assertTrue(isCanonicalBase64Shape("+C8=")) // 同一字节的规范形态
+    }
+
+    @Test
+    fun base64CanonicalityShapeRules() {
+        assertFalse(isCanonicalBase64Shape(""))
+        assertFalse(isCanonicalBase64Shape("AAA")) // 长度非 4 倍数
+        assertFalse(isCanonicalBase64Shape("AA=A")) // '=' 出现在中部
+        assertFalse(isCanonicalBase64Shape("A AA=")) // 非法字符（空格）
+        assertFalse(isCanonicalBase64Shape("AAA===")) // 填充超过 2
+        assertTrue(isCanonicalBase64Shape("QUJD")) // "ABC"（无填充）
+        assertTrue(isCanonicalBase64Shape("QQ==")) // "A"
+        assertTrue(isCanonicalBase64Shape("QUI=")) // "AB"
+    }
+
+    // ---------- 身份字段长度护栏 ----------
+
     @Test
     fun frameIdentityParsesFromPayload() {
         val payload =

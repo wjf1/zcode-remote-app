@@ -189,6 +189,42 @@ internal fun validateIdentityLengths(
     }
 
 /**
+ * base64 **规范性**校验（纯函数，单测与回放 fixture 共用）：标准字母表、`=` 只在尾部、长度 4 的
+ * 倍数、**尾部悬空位为零**。
+ *
+ * 官方 `isCanonicalBase64` = 「解码成功 + 重编码与原串全等」（`$u(n)===t`）；本函数是它的等价
+ * 静态判定——最后一段未使用的比特必须为零（1 个 `=` → 末字符低 2 位为零；2 个 `=` → 低 4 位为零），
+ * 否则 `+C/=` 这类「能解码但重编码不等价」的串会被放过（2026-10-12 fuzz 测试实测抓到）。
+ * [RpcChannel] 仍保留平台解码器的往返校验作为纵深防御，但纯逻辑层已是完整判定。
+ */
+internal fun isCanonicalBase64Shape(raw: String): Boolean {
+    if (raw.isEmpty() || raw.length % 4 != 0) return false
+    val padding = raw.count { it == '=' }
+    if (padding > 2) return false
+    if (padding > 0 && !raw.endsWith("=".repeat(padding))) return false
+    val body = raw.dropLast(padding)
+    if (body.isEmpty() || body.contains('=')) return false
+    if (!body.all { it in BASE64_ALPHABET }) return false
+    return when (padding) {
+        1 -> base64Value(body.last()) and 0b11 == 0
+        2 -> base64Value(body.last()) and 0b1111 == 0
+        else -> true
+    }
+}
+
+private const val BASE64_ALPHABET = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/"
+
+/** 标准 base64 字符 → 6 位值（调用前须已确认字符合法）。 */
+private fun base64Value(c: Char): Int =
+    when (c) {
+        in 'A'..'Z' -> c - 'A'
+        in 'a'..'z' -> c - 'a' + 26
+        in '0'..'9' -> c - '0' + 52
+        '+' -> 62
+        else -> 63
+    }
+
+/**
  * 帧身份与当前桥的一致性（纯函数，单测覆盖）。
  *
  * 官方规则（`PROTOCOL.md` §5、`research/CONVERSATION-PROTOCOL.md` §8）：身份三元组全等校验，

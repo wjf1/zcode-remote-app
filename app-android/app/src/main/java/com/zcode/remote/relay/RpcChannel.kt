@@ -459,11 +459,15 @@ class RpcChannel(private val relay: RelayClient) {
         if (b64.length > ProtocolLimits.MAX_PHYSICAL_FRAME_BYTES) {
             return reject(ProtocolViolation.FRAME_BYTES, null, "b64Chars=${b64.length}")
         }
+        // 官方 isCanonicalBase64 的第一道：形状（廉价，纯逻辑）非法即拒，不进解码器
+        if (!isCanonicalBase64Shape(b64)) {
+            return reject(ProtocolViolation.INVALID_BASE64, null, "non-canonical base64 shape")
+        }
         val slice = runCatching { Base64.decode(b64, Base64.NO_WRAP) }.getOrNull()
         if (slice == null || slice.isEmpty()) return reject(ProtocolViolation.INVALID_BASE64, null, "decode failed")
-        // 官方 isCanonicalBase64：必须能原样往返（非规范编码一律拒）
+        // 第二道：解码-重编码往返全等（官方 $u(n)===t 的同构判定）
         if (Base64.encodeToString(slice, Base64.NO_WRAP) != b64) {
-            return reject(ProtocolViolation.INVALID_BASE64, null, "non-canonical base64")
+            return reject(ProtocolViolation.INVALID_BASE64, null, "non-canonical base64 roundtrip")
         }
         val metadata =
             rpcFrameMetadataOf(payload)

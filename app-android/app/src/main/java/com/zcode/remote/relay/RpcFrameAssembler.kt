@@ -50,6 +50,9 @@ internal class RpcFrameAssembler(
     /** 当前在途分片总字节（测试与观测用）。 */
     val inFlightBytes: Int get() = pending.values.sumOf { it.stagedBytes }
 
+    /** 当前在途未完成消息条数（观测/压测断言用：永不超过 [maxInFlightMessages]）。 */
+    val pendingCount: Int get() = pending.size
+
     fun clear() {
         pending.clear()
     }

@@ -1,0 +1,1880 @@
+{
+  "note": "由 tools/gen_rpc_frame_fixtures.py 生成（独立 Python 实现官方切分算法；算法依据 research/FRAME-CODEC.md §3.6/§6）。Kotlin 侧 RpcFrameReplayTest 回放断言；outcomes 取值：buffered|complete|rejected:<官方 fault code>。",
+  "identity": {
+    "sessionId": "bridge-1",
+    "generation": "1",
+    "recoveryId": "rec-1"
+  },
+  "cases": [
+    {
+      "name": "doc_example_single_fragment",
+      "frames": [
+        {
+          "zcode_type": "rpc-frame",
+          "seq": 1,
+          "messageSeq": 1,
+          "fragmentIndex": 0,
+          "fragmentCount": 1,
+          "messageBytes": 88,
+          "checksum": {
+            "algorithm": "crc32",
+            "value": "c117de4b"
+          },
+          "dataBase64": "BAQGZAYAAQt6Y29kZS1hZ2VudAEXc3Vic2NyaWJlQ29udmVyc2F0aW9uVjQEAQUoeyJ3b3Jrc3BhY2VQYXRoIjoiL3ciLCJzZXNzaW9uSWQiOiJhYmMifQ==",
+          "bridgeSessionId": "bridge-1",
+          "bridgeGeneration": "1",
+          "recoveryId": "rec-1"
+        }
+      ],
+      "outcomes": [
+        "complete"
+      ],
+      "identityVerdict": "match",
+      "canonicalBase64": true,
+      "metadataViolation": null,
+      "completedTimes": 1,
+      "note": "官方 §4.4 逐字节手算示例的等价报文（VQL 两段拼接）；Kotlin 侧 bill 对 Vql 编码字节。",
+      "messageHex": "040406640600010b7a636f64652d6167656e740117737562736372696265436f6e766572736174696f6e5634040105287b22776f726b737061636550617468223a222f77222c2273657373696f6e4964223a22616263227d",
+      "completedSeq": 1,
+      "head": [
+        100,
+        0,
+        "zcode-agent",
+        "subscribeConversationV4"
+      ],
+      "args": [
+        {
+          "workspacePath": "/w",
+          "sessionId": "abc"
+        }
+      ]
+    },
+    {
+      "name": "identity_keys_absent",
+      "frames": [
+        {
+          "zcode_type": "rpc-frame",
+          "seq": 1,
+          "messageSeq": 1,
+          "fragmentIndex": 0,
+          "fragmentCount": 1,
+          "messageBytes": 13,
+          "checksum": {
+            "algorithm": "crc32",
+            "value": "7517e32f"
+          },
+          "dataBase64": "aWRlbnRpdHktY2FzZQ=="
+        }
+      ],
+      "outcomes": [
+        "complete"
+      ],
+      "identityVerdict": "absent",
+      "canonicalBase64": true,
+      "metadataViolation": null,
+      "completedTimes": 1,
+      "note": "三个身份键都不出现：不做全等判定（官方 schema 会话键必带，此为兜底）。",
+      "messageHex": "6964656e746974792d63617365",
+      "completedSeq": 1
+    },
+    {
+      "name": "identity_partial_optional_missing",
+      "frames": [
+        {
+          "zcode_type": "rpc-frame",
+          "seq": 1,
+          "messageSeq": 1,
+          "fragmentIndex": 0,
+          "fragmentCount": 1,
+          "messageBytes": 13,
+          "checksum": {
+            "algorithm": "crc32",
+            "value": "7517e32f"
+          },
+          "dataBase64": "aWRlbnRpdHktY2FzZQ==",
+          "bridgeSessionId": "bridge-1",
+          "bridgeGeneration": "1"
+        }
+      ],
+      "outcomes": [
+        "complete"
+      ],
+      "identityVerdict": "partial",
+      "canonicalBase64": true,
+      "metadataViolation": null,
+      "completedTimes": 1,
+      "note": "可选键 recoveryId 缺席：宽容方向（出现才比较），不误拒正常帧。",
+      "messageHex": "6964656e746974792d63617365",
+      "completedSeq": 1
+    },
+    {
+      "name": "identity_session_mismatch",
+      "frames": [
+        {
+          "zcode_type": "rpc-frame",
+          "seq": 1,
+          "messageSeq": 1,
+          "fragmentIndex": 0,
+          "fragmentCount": 1,
+          "messageBytes": 13,
+          "checksum": {
+            "algorithm": "crc32",
+            "value": "7517e32f"
+          },
+          "dataBase64": "aWRlbnRpdHktY2FzZQ==",
+          "bridgeSessionId": "bridge-other",
+          "bridgeGeneration": "1",
+          "recoveryId": "rec-1"
+        }
+      ],
+      "outcomes": [
+        "complete"
+      ],
+      "identityVerdict": "mismatch",
+      "canonicalBase64": true,
+      "metadataViolation": null,
+      "completedTimes": 1,
+      "note": "旧桥迟到帧：sessionId 是桥的唯一强区分符，出现即必须全等（判定在上层，不 ack）。",
+      "messageHex": "6964656e746974792d63617365",
+      "completedSeq": 1
+    },
+    {
+      "name": "single_crc_mismatch",
+      "frames": [
+        {
+          "zcode_type": "rpc-frame",
+          "seq": 1,
+          "messageSeq": 1,
+          "fragmentIndex": 0,
+          "fragmentCount": 1,
+          "messageBytes": 13,
+          "checksum": {
+            "algorithm": "crc32",
+            "value": "deadbeef"
+          },
+          "dataBase64": "aWRlbnRpdHktY2FzZQ==",
+          "bridgeSessionId": "bridge-1",
+          "bridgeGeneration": "1",
+          "recoveryId": "rec-1"
+        }
+      ],
+      "outcomes": [
+        "rejected:remote.rpcFrame.checksumMismatch"
+      ],
+      "identityVerdict": "match",
+      "canonicalBase64": true,
+      "metadataViolation": null,
+      "completedTimes": 0,
+      "note": "旧实现单分片完全不校验 CRC，是 beta33 修复点。",
+      "messageHex": "6964656e746974792d63617365"
+    },
+    {
+      "name": "single_declared_bytes_mismatch",
+      "frames": [
+        {
+          "zcode_type": "rpc-frame",
+          "seq": 1,
+          "messageSeq": 1,
+          "fragmentIndex": 0,
+          "fragmentCount": 1,
+          "messageBytes": 14,
+          "checksum": {
+            "algorithm": "crc32",
+            "value": "7517e32f"
+          },
+          "dataBase64": "aWRlbnRpdHktY2FzZQ==",
+          "bridgeSessionId": "bridge-1",
+          "bridgeGeneration": "1",
+          "recoveryId": "rec-1"
+        }
+      ],
+      "outcomes": [
+        "rejected:remote.rpcFrame.lengthMismatch"
+      ],
+      "identityVerdict": "match",
+      "canonicalBase64": true,
+      "metadataViolation": null,
+      "completedTimes": 0,
+      "note": "",
+      "messageHex": "6964656e746974792d63617365"
+    },
+    {
+      "name": "single_message_too_large",
+      "frames": [
+        {
+          "zcode_type": "rpc-frame",
+          "seq": 1,
+          "messageSeq": 1,
+          "fragmentIndex": 0,
+          "fragmentCount": 1,
+          "messageBytes": 16777217,
+          "checksum": {
+            "algorithm": "crc32",
+            "value": "7517e32f"
+          },
+          "dataBase64": "aWRlbnRpdHktY2FzZQ==",
+          "bridgeSessionId": "bridge-1",
+          "bridgeGeneration": "1",
+          "recoveryId": "rec-1"
+        }
+      ],
+      "outcomes": [
+        "rejected:remote.rpcFrame.messageTooLarge"
+      ],
+      "identityVerdict": "match",
+      "canonicalBase64": true,
+      "metadataViolation": "remote.rpcFrame.messageTooLarge",
+      "completedTimes": 0,
+      "note": "声明超 16 MiB：元数据校验（预算）在前，不分配任何大缓冲。",
+      "messageHex": "6964656e746974792d63617365"
+    },
+    {
+      "name": "single_fragment_count_over_limit",
+      "frames": [
+        {
+          "zcode_type": "rpc-frame",
+          "seq": 1,
+          "messageSeq": 1,
+          "fragmentIndex": 0,
+          "fragmentCount": 65,
+          "messageBytes": 13,
+          "checksum": {
+            "algorithm": "crc32",
+            "value": "7517e32f"
+          },
+          "dataBase64": "aWRlbnRpdHktY2FzZQ==",
+          "bridgeSessionId": "bridge-1",
+          "bridgeGeneration": "1",
+          "recoveryId": "rec-1"
+        }
+      ],
+      "outcomes": [
+        "rejected:remote.rpcFrame.fragmentLimitExceeded"
+      ],
+      "identityVerdict": "match",
+      "canonicalBase64": true,
+      "metadataViolation": "remote.rpcFrame.fragmentLimitExceeded",
+      "completedTimes": 0,
+      "note": "官方 maxFragments=64：65 即拒。",
+      "messageHex": "6964656e746974792d63617365"
+    },
+    {
+      "name": "single_negative_index",
+      "frames": [
+        {
+          "zcode_type": "rpc-frame",
+          "seq": 1,
+          "messageSeq": 1,
+          "fragmentIndex": -1,
+          "fragmentCount": 2,
+          "messageBytes": 13,
+          "checksum": {
+            "algorithm": "crc32",
+            "value": "7517e32f"
+          },
+          "dataBase64": "aWRlbnRpdHktY2FzZQ==",
+          "bridgeSessionId": "bridge-1",
+          "bridgeGeneration": "1",
+          "recoveryId": "rec-1"
+        }
+      ],
+      "outcomes": [
+        "rejected:remote.rpcFrame.invalidMetadata"
+      ],
+      "identityVerdict": "match",
+      "canonicalBase64": true,
+      "metadataViolation": "remote.rpcFrame.invalidMetadata",
+      "completedTimes": 0,
+      "note": "",
+      "messageHex": "6964656e746974792d63617365"
+    },
+    {
+      "name": "single_non_canonical_base64",
+      "frames": [
+        {
+          "zcode_type": "rpc-frame",
+          "seq": 1,
+          "messageSeq": 1,
+          "fragmentIndex": 0,
+          "fragmentCount": 1,
+          "messageBytes": 13,
+          "checksum": {
+            "algorithm": "crc32",
+            "value": "7517e32f"
+          },
+          "dataBase64": "aWRlbnRpdHktY2FzZQ===",
+          "bridgeSessionId": "bridge-1",
+          "bridgeGeneration": "1",
+          "recoveryId": "rec-1"
+        }
+      ],
+      "outcomes": [],
+      "identityVerdict": "match",
+      "canonicalBase64": false,
+      "metadataViolation": null,
+      "completedTimes": 0,
+      "note": "填充位多余（长度 %4 != 0）：base64 规范性校验即拒（上层还会做解码-重编码往返校验），故不进入组装阶段（outcomes 为空）。",
+      "messageHex": "6964656e746974792d63617365"
+    },
+    {
+      "name": "single_non_canonical_trailing_bits",
+      "frames": [
+        {
+          "zcode_type": "rpc-frame",
+          "seq": 1,
+          "messageSeq": 1,
+          "fragmentIndex": 0,
+          "fragmentCount": 1,
+          "messageBytes": 13,
+          "checksum": {
+            "algorithm": "crc32",
+            "value": "7517e32f"
+          },
+          "dataBase64": "aWRlbnRpdHktY2FzZB==",
+          "bridgeSessionId": "bridge-1",
+          "bridgeGeneration": "1",
+          "recoveryId": "rec-1"
+        }
+      ],
+      "outcomes": [],
+      "identityVerdict": "match",
+      "canonicalBase64": false,
+      "metadataViolation": null,
+      "completedTimes": 0,
+      "note": "末字符低 4 位非零（悬空位未清零）：规范 base64 要求未使用比特为零。",
+      "messageHex": "6964656e746974792d63617365"
+    },
+    {
+      "name": "multi_three_equal_fragments",
+      "frames": [
+        {
+          "zcode_type": "rpc-frame",
+          "seq": 1,
+          "messageSeq": 1,
+          "fragmentIndex": 0,
+          "fragmentCount": 3,
+          "messageBytes": 300,
+          "checksum": {
+            "algorithm": "crc32",
+            "value": "de0e57ce"
+          },
+          "dataBase64": "AwoRGB8mLTQ7QklQV15lbHN6gYiPlp2kq7K5wMfO1dzj6vH4/wYNFBsiKTA3PkVMU1phaG92fYSLkpmgp661vMPK0djf5u30+wIJEBceJSwzOkFIT1ZdZGtyeYCHjpWco6qxuA==",
+          "bridgeSessionId": "bridge-1",
+          "bridgeGeneration": "1",
+          "recoveryId": "rec-1"
+        },
+        {
+          "zcode_type": "rpc-frame",
+          "seq": 2,
+          "messageSeq": 1,
+          "fragmentIndex": 1,
+          "fragmentCount": 3,
+          "messageBytes": 300,
+          "checksum": {
+            "algorithm": "crc32",
+            "value": "de0e57ce"
+          },
+          "dataBase64": "v8bN1Nvi6fD3/gUMExohKC82PURLUllgZ251fIOKkZifpq20u8LJ0Nfe5ezz+gEIDxYdJCsyOUBHTlVcY2pxeH+GjZSboqmwt77FzNPa4ejv9v0ECxIZICcuNTxDSlFYX2ZtdA==",
+          "bridgeSessionId": "bridge-1",
+          "bridgeGeneration": "1",
+          "recoveryId": "rec-1"
+        },
+        {
+          "zcode_type": "rpc-frame",
+          "seq": 3,
+          "messageSeq": 1,
+          "fragmentIndex": 2,
+          "fragmentCount": 3,
+          "messageBytes": 300,
+          "checksum": {
+            "algorithm": "crc32",
+            "value": "de0e57ce"
+          },
+          "dataBase64": "e4KJkJeepayzusHIz9bd5Ovy+QAHDhUcIyoxOD9GTVRbYmlwd36FjJOaoaivtr3Ey9LZ4Ofu9fwDChEYHyYtNDtCSVBXXmVsc3qBiI+WnaSrsrnAx87V3OPq8fj/Bg0UGyIpMA==",
+          "bridgeSessionId": "bridge-1",
+          "bridgeGeneration": "1",
+          "recoveryId": "rec-1"
+        }
+      ],
+      "outcomes": [
+        "buffered",
+        "buffered",
+        "complete"
+      ],
+      "identityVerdict": "match",
+      "canonicalBase64": true,
+      "metadataViolation": null,
+      "completedTimes": 1,
+      "note": "官方等长切分（每片 100B），整条 CRC 只算一次。",
+      "messageHex": "030a11181f262d343b424950575e656c737a81888f969da4abb2b9c0c7ced5dce3eaf1f8ff060d141b222930373e454c535a61686f767d848b9299a0a7aeb5bcc3cad1d8dfe6edf4fb020910171e252c333a41484f565d646b727980878e959ca3aab1b8bfc6cdd4dbe2e9f0f7fe050c131a21282f363d444b525960676e757c838a91989fa6adb4bbc2c9d0d7dee5ecf3fa01080f161d242b323940474e555c636a71787f868d949ba2a9b0b7bec5ccd3dae1e8eff6fd040b121920272e353c434a51585f666d747b828990979ea5acb3bac1c8cfd6dde4ebf2f900070e151c232a31383f464d545b626970777e858c939aa1a8afb6bdc4cbd2d9e0e7eef5fc030a11181f262d343b424950575e656c737a81888f969da4abb2b9c0c7ced5dce3eaf1f8ff060d141b222930",
+      "completedSeq": 1
+    },
+    {
+      "name": "multi_uneven_last_fragment",
+      "frames": [
+        {
+          "zcode_type": "rpc-frame",
+          "seq": 1,
+          "messageSeq": 1,
+          "fragmentIndex": 0,
+          "fragmentCount": 2,
+          "messageBytes": 200,
+          "checksum": {
+            "algorithm": "crc32",
+            "value": "e6a94aa3"
+          },
+          "dataBase64": "BRAbJjE8R1JdaHN+iZSfqrXAy9bh7PcCDRgjLjlET1plcHuGkZynsr3I097p9P8KFSArNkFMV2JteIOOmaSvusXQ2+bx/AcSHSgzPklUX2p1gIuWoay3ws3Y4+75BA8aJTA7RlFcZ3J9iJOeqbS/ytXg6/YBDBciLThDTllkb3o=",
+          "bridgeSessionId": "bridge-1",
+          "bridgeGeneration": "1",
+          "recoveryId": "rec-1"
+        },
+        {
+          "zcode_type": "rpc-frame",
+          "seq": 2,
+          "messageSeq": 1,
+          "fragmentIndex": 1,
+          "fragmentCount": 2,
+          "messageBytes": 200,
+          "checksum": {
+            "algorithm": "crc32",
+            "value": "e6a94aa3"
+          },
+          "dataBase64": "hZCbprG8x9Ld6PP+CRQfKjVAS1ZhbHeCjZijrrnEz9rl8PsGERwnMj1IU15pdH+KlaCrtsHM1+Lt+AMOGSQvOkVQW2ZxfIeS",
+          "bridgeSessionId": "bridge-1",
+          "bridgeGeneration": "1",
+          "recoveryId": "rec-1"
+        }
+      ],
+      "outcomes": [
+        "buffered",
+        "complete"
+      ],
+      "identityVerdict": "match",
+      "canonicalBase64": true,
+      "metadataViolation": null,
+      "completedTimes": 1,
+      "note": "最后一片更短（128 + 72）：官方允许。",
+      "messageHex": "05101b26313c47525d68737e89949faab5c0cbd6e1ecf7020d18232e39444f5a65707b86919ca7b2bdc8d3dee9f4ff0a15202b36414c57626d78838e99a4afbac5d0dbe6f1fc07121d28333e49545f6a75808b96a1acb7c2cdd8e3eef9040f1a25303b46515c67727d88939ea9b4bfcad5e0ebf6010c17222d38434e59646f7a85909ba6b1bcc7d2dde8f3fe09141f2a35404b56616c77828d98a3aeb9c4cfdae5f0fb06111c27323d48535e69747f8a95a0abb6c1ccd7e2edf8030e19242f3a45505b66717c8792",
+      "completedSeq": 1
+    },
+    {
+      "name": "multi_max_fragments_64",
+      "frames": [
+        {
+          "zcode_type": "rpc-frame",
+          "seq": 1,
+          "messageSeq": 1,
+          "fragmentIndex": 0,
+          "fragmentCount": 64,
+          "messageBytes": 640,
+          "checksum": {
+            "algorithm": "crc32",
+            "value": "e292f8c7"
+          },
+          "dataBase64": "AQ4bKDVCT1xpdg==",
+          "bridgeSessionId": "bridge-1",
+          "bridgeGeneration": "1",
+          "recoveryId": "rec-1"
+        },
+        {
+          "zcode_type": "rpc-frame",
+          "seq": 2,
+          "messageSeq": 1,
+          "fragmentIndex": 1,
+          "fragmentCount": 64,
+          "messageBytes": 640,
+          "checksum": {
+            "algorithm": "crc32",
+            "value": "e292f8c7"
+          },
+          "dataBase64": "g5CdqrfE0d7r+A==",
+          "bridgeSessionId": "bridge-1",
+          "bridgeGeneration": "1",
+          "recoveryId": "rec-1"
+        },
+        {
+          "zcode_type": "rpc-frame",
+          "seq": 3,
+          "messageSeq": 1,
+          "fragmentIndex": 2,
+          "fragmentCount": 64,
+          "messageBytes": 640,
+          "checksum": {
+            "algorithm": "crc32",
+            "value": "e292f8c7"
+          },
+          "dataBase64": "BRIfLDlGU2Bteg==",
+          "bridgeSessionId": "bridge-1",
+          "bridgeGeneration": "1",
+          "recoveryId": "rec-1"
+        },
+        {
+          "zcode_type": "rpc-frame",
+          "seq": 4,
+          "messageSeq": 1,
+          "fragmentIndex": 3,
+          "fragmentCount": 64,
+          "messageBytes": 640,
+          "checksum": {
+            "algorithm": "crc32",
+            "value": "e292f8c7"
+          },
+          "dataBase64": "h5ShrrvI1eLv/A==",
+          "bridgeSessionId": "bridge-1",
+          "bridgeGeneration": "1",
+          "recoveryId": "rec-1"
+        },
+        {
+          "zcode_type": "rpc-frame",
+          "seq": 5,
+          "messageSeq": 1,
+          "fragmentIndex": 4,
+          "fragmentCount": 64,
+          "messageBytes": 640,
+          "checksum": {
+            "algorithm": "crc32",
+            "value": "e292f8c7"
+          },
+          "dataBase64": "CRYjMD1KV2Rxfg==",
+          "bridgeSessionId": "bridge-1",
+          "bridgeGeneration": "1",
+          "recoveryId": "rec-1"
+        },
+        {
+          "zcode_type": "rpc-frame",
+          "seq": 6,
+          "messageSeq": 1,
+          "fragmentIndex": 5,
+          "fragmentCount": 64,
+          "messageBytes": 640,
+          "checksum": {
+            "algorithm": "crc32",
+            "value": "e292f8c7"
+          },
+          "dataBase64": "i5ilsr/M2ebzAA==",
+          "bridgeSessionId": "bridge-1",
+          "bridgeGeneration": "1",
+          "recoveryId": "rec-1"
+        },
+        {
+          "zcode_type": "rpc-frame",
+          "seq": 7,
+          "messageSeq": 1,
+          "fragmentIndex": 6,
+          "fragmentCount": 64,
+          "messageBytes": 640,
+          "checksum": {
+            "algorithm": "crc32",
+            "value": "e292f8c7"
+          },
+          "dataBase64": "DRonNEFOW2h1gg==",
+          "bridgeSessionId": "bridge-1",
+          "bridgeGeneration": "1",
+          "recoveryId": "rec-1"
+        },
+        {
+          "zcode_type": "rpc-frame",
+          "seq": 8,
+          "messageSeq": 1,
+          "fragmentIndex": 7,
+          "fragmentCount": 64,
+          "messageBytes": 640,
+          "checksum": {
+            "algorithm": "crc32",
+            "value": "e292f8c7"
+          },
+          "dataBase64": "j5yptsPQ3er3BA==",
+          "bridgeSessionId": "bridge-1",
+          "bridgeGeneration": "1",
+          "recoveryId": "rec-1"
+        },
+        {
+          "zcode_type": "rpc-frame",
+          "seq": 9,
+          "messageSeq": 1,
+          "fragmentIndex": 8,
+          "fragmentCount": 64,
+          "messageBytes": 640,
+          "checksum": {
+            "algorithm": "crc32",
+            "value": "e292f8c7"
+          },
+          "dataBase64": "ER4rOEVSX2x5hg==",
+          "bridgeSessionId": "bridge-1",
+          "bridgeGeneration": "1",
+          "recoveryId": "rec-1"
+        },
+        {
+          "zcode_type": "rpc-frame",
+          "seq": 10,
+          "messageSeq": 1,
+          "fragmentIndex": 9,
+          "fragmentCount": 64,
+          "messageBytes": 640,
+          "checksum": {
+            "algorithm": "crc32",
+            "value": "e292f8c7"
+          },
+          "dataBase64": "k6CtusfU4e77CA==",
+          "bridgeSessionId": "bridge-1",
+          "bridgeGeneration": "1",
+          "recoveryId": "rec-1"
+        },
+        {
+          "zcode_type": "rpc-frame",
+          "seq": 11,
+          "messageSeq": 1,
+          "fragmentIndex": 10,
+          "fragmentCount": 64,
+          "messageBytes": 640,
+          "checksum": {
+            "algorithm": "crc32",
+            "value": "e292f8c7"
+          },
+          "dataBase64": "FSIvPElWY3B9ig==",
+          "bridgeSessionId": "bridge-1",
+          "bridgeGeneration": "1",
+          "recoveryId": "rec-1"
+        },
+        {
+          "zcode_type": "rpc-frame",
+          "seq": 12,
+          "messageSeq": 1,
+          "fragmentIndex": 11,
+          "fragmentCount": 64,
+          "messageBytes": 640,
+          "checksum": {
+            "algorithm": "crc32",
+            "value": "e292f8c7"
+          },
+          "dataBase64": "l6SxvsvY5fL/DA==",
+          "bridgeSessionId": "bridge-1",
+          "bridgeGeneration": "1",
+          "recoveryId": "rec-1"
+        },
+        {
+          "zcode_type": "rpc-frame",
+          "seq": 13,
+          "messageSeq": 1,
+          "fragmentIndex": 12,
+          "fragmentCount": 64,
+          "messageBytes": 640,
+          "checksum": {
+            "algorithm": "crc32",
+            "value": "e292f8c7"
+          },
+          "dataBase64": "GSYzQE1aZ3SBjg==",
+          "bridgeSessionId": "bridge-1",
+          "bridgeGeneration": "1",
+          "recoveryId": "rec-1"
+        },
+        {
+          "zcode_type": "rpc-frame",
+          "seq": 14,
+          "messageSeq": 1,
+          "fragmentIndex": 13,
+          "fragmentCount": 64,
+          "messageBytes": 640,
+          "checksum": {
+            "algorithm": "crc32",
+            "value": "e292f8c7"
+          },
+          "dataBase64": "m6i1ws/c6fYDEA==",
+          "bridgeSessionId": "bridge-1",
+          "bridgeGeneration": "1",
+          "recoveryId": "rec-1"
+        },
+        {
+          "zcode_type": "rpc-frame",
+          "seq": 15,
+          "messageSeq": 1,
+          "fragmentIndex": 14,
+          "fragmentCount": 64,
+          "messageBytes": 640,
+          "checksum": {
+            "algorithm": "crc32",
+            "value": "e292f8c7"
+          },
+          "dataBase64": "HSo3RFFea3iFkg==",
+          "bridgeSessionId": "bridge-1",
+          "bridgeGeneration": "1",
+          "recoveryId": "rec-1"
+        },
+        {
+          "zcode_type": "rpc-frame",
+          "seq": 16,
+          "messageSeq": 1,
+          "fragmentIndex": 15,
+          "fragmentCount": 64,
+          "messageBytes": 640,
+          "checksum": {
+            "algorithm": "crc32",
+            "value": "e292f8c7"
+          },
+          "dataBase64": "n6y5xtPg7foHFA==",
+          "bridgeSessionId": "bridge-1",
+          "bridgeGeneration": "1",
+          "recoveryId": "rec-1"
+        },
+        {
+          "zcode_type": "rpc-frame",
+          "seq": 17,
+          "messageSeq": 1,
+          "fragmentIndex": 16,
+          "fragmentCount": 64,
+          "messageBytes": 640,
+          "checksum": {
+            "algorithm": "crc32",
+            "value": "e292f8c7"
+          },
+          "dataBase64": "IS47SFVib3yJlg==",
+          "bridgeSessionId": "bridge-1",
+          "bridgeGeneration": "1",
+          "recoveryId": "rec-1"
+        },
+        {
+          "zcode_type": "rpc-frame",
+          "seq": 18,
+          "messageSeq": 1,
+          "fragmentIndex": 17,
+          "fragmentCount": 64,
+          "messageBytes": 640,
+          "checksum": {
+            "algorithm": "crc32",
+            "value": "e292f8c7"
+          },
+          "dataBase64": "o7C9ytfk8f4LGA==",
+          "bridgeSessionId": "bridge-1",
+          "bridgeGeneration": "1",
+          "recoveryId": "rec-1"
+        },
+        {
+          "zcode_type": "rpc-frame",
+          "seq": 19,
+          "messageSeq": 1,
+          "fragmentIndex": 18,
+          "fragmentCount": 64,
+          "messageBytes": 640,
+          "checksum": {
+            "algorithm": "crc32",
+            "value": "e292f8c7"
+          },
+          "dataBase64": "JTI/TFlmc4CNmg==",
+          "bridgeSessionId": "bridge-1",
+          "bridgeGeneration": "1",
+          "recoveryId": "rec-1"
+        },
+        {
+          "zcode_type": "rpc-frame",
+          "seq": 20,
+          "messageSeq": 1,
+          "fragmentIndex": 19,
+          "fragmentCount": 64,
+          "messageBytes": 640,
+          "checksum": {
+            "algorithm": "crc32",
+            "value": "e292f8c7"
+          },
+          "dataBase64": "p7TBztvo9QIPHA==",
+          "bridgeSessionId": "bridge-1",
+          "bridgeGeneration": "1",
+          "recoveryId": "rec-1"
+        },
+        {
+          "zcode_type": "rpc-frame",
+          "seq": 21,
+          "messageSeq": 1,
+          "fragmentIndex": 20,
+          "fragmentCount": 64,
+          "messageBytes": 640,
+          "checksum": {
+            "algorithm": "crc32",
+            "value": "e292f8c7"
+          },
+          "dataBase64": "KTZDUF1qd4SRng==",
+          "bridgeSessionId": "bridge-1",
+          "bridgeGeneration": "1",
+          "recoveryId": "rec-1"
+        },
+        {
+          "zcode_type": "rpc-frame",
+          "seq": 22,
+          "messageSeq": 1,
+          "fragmentIndex": 21,
+          "fragmentCount": 64,
+          "messageBytes": 640,
+          "checksum": {
+            "algorithm": "crc32",
+            "value": "e292f8c7"
+          },
+          "dataBase64": "q7jF0t/s+QYTIA==",
+          "bridgeSessionId": "bridge-1",
+          "bridgeGeneration": "1",
+          "recoveryId": "rec-1"
+        },
+        {
+          "zcode_type": "rpc-frame",
+          "seq": 23,
+          "messageSeq": 1,
+          "fragmentIndex": 22,
+          "fragmentCount": 64,
+          "messageBytes": 640,
+          "checksum": {
+            "algorithm": "crc32",
+            "value": "e292f8c7"
+          },
+          "dataBase64": "LTpHVGFue4iVog==",
+          "bridgeSessionId": "bridge-1",
+          "bridgeGeneration": "1",
+          "recoveryId": "rec-1"
+        },
+        {
+          "zcode_type": "rpc-frame",
+          "seq": 24,
+          "messageSeq": 1,
+          "fragmentIndex": 23,
+          "fragmentCount": 64,
+          "messageBytes": 640,
+          "checksum": {
+            "algorithm": "crc32",
+            "value": "e292f8c7"
+          },
+          "dataBase64": "r7zJ1uPw/QoXJA==",
+          "bridgeSessionId": "bridge-1",
+          "bridgeGeneration": "1",
+          "recoveryId": "rec-1"
+        },
+        {
+          "zcode_type": "rpc-frame",
+          "seq": 25,
+          "messageSeq": 1,
+          "fragmentIndex": 24,
+          "fragmentCount": 64,
+          "messageBytes": 640,
+          "checksum": {
+            "algorithm": "crc32",
+            "value": "e292f8c7"
+          },
+          "dataBase64": "MT5LWGVyf4yZpg==",
+          "bridgeSessionId": "bridge-1",
+          "bridgeGeneration": "1",
+          "recoveryId": "rec-1"
+        },
+        {
+          "zcode_type": "rpc-frame",
+          "seq": 26,
+          "messageSeq": 1,
+          "fragmentIndex": 25,
+          "fragmentCount": 64,
+          "messageBytes": 640,
+          "checksum": {
+            "algorithm": "crc32",
+            "value": "e292f8c7"
+          },
+          "dataBase64": "s8DN2uf0AQ4bKA==",
+          "bridgeSessionId": "bridge-1",
+          "bridgeGeneration": "1",
+          "recoveryId": "rec-1"
+        },
+        {
+          "zcode_type": "rpc-frame",
+          "seq": 27,
+          "messageSeq": 1,
+          "fragmentIndex": 26,
+          "fragmentCount": 64,
+          "messageBytes": 640,
+          "checksum": {
+            "algorithm": "crc32",
+            "value": "e292f8c7"
+          },
+          "dataBase64": "NUJPXGl2g5Cdqg==",
+          "bridgeSessionId": "bridge-1",
+          "bridgeGeneration": "1",
+          "recoveryId": "rec-1"
+        },
+        {
+          "zcode_type": "rpc-frame",
+          "seq": 28,
+          "messageSeq": 1,
+          "fragmentIndex": 27,
+          "fragmentCount": 64,
+          "messageBytes": 640,
+          "checksum": {
+            "algorithm": "crc32",
+            "value": "e292f8c7"
+          },
+          "dataBase64": "t8TR3uv4BRIfLA==",
+          "bridgeSessionId": "bridge-1",
+          "bridgeGeneration": "1",
+          "recoveryId": "rec-1"
+        },
+        {
+          "zcode_type": "rpc-frame",
+          "seq": 29,
+          "messageSeq": 1,
+          "fragmentIndex": 28,
+          "fragmentCount": 64,
+          "messageBytes": 640,
+          "checksum": {
+            "algorithm": "crc32",
+            "value": "e292f8c7"
+          },
+          "dataBase64": "OUZTYG16h5Shrg==",
+          "bridgeSessionId": "bridge-1",
+          "bridgeGeneration": "1",
+          "recoveryId": "rec-1"
+        },
+        {
+          "zcode_type": "rpc-frame",
+          "seq": 30,
+          "messageSeq": 1,
+          "fragmentIndex": 29,
+          "fragmentCount": 64,
+          "messageBytes": 640,
+          "checksum": {
+            "algorithm": "crc32",
+            "value": "e292f8c7"
+          },
+          "dataBase64": "u8jV4u/8CRYjMA==",
+          "bridgeSessionId": "bridge-1",
+          "bridgeGeneration": "1",
+          "recoveryId": "rec-1"
+        },
+        {
+          "zcode_type": "rpc-frame",
+          "seq": 31,
+          "messageSeq": 1,
+          "fragmentIndex": 30,
+          "fragmentCount": 64,
+          "messageBytes": 640,
+          "checksum": {
+            "algorithm": "crc32",
+            "value": "e292f8c7"
+          },
+          "dataBase64": "PUpXZHF+i5ilsg==",
+          "bridgeSessionId": "bridge-1",
+          "bridgeGeneration": "1",
+          "recoveryId": "rec-1"
+        },
+        {
+          "zcode_type": "rpc-frame",
+          "seq": 32,
+          "messageSeq": 1,
+          "fragmentIndex": 31,
+          "fragmentCount": 64,
+          "messageBytes": 640,
+          "checksum": {
+            "algorithm": "crc32",
+            "value": "e292f8c7"
+          },
+          "dataBase64": "v8zZ5vMADRonNA==",
+          "bridgeSessionId": "bridge-1",
+          "bridgeGeneration": "1",
+          "recoveryId": "rec-1"
+        },
+        {
+          "zcode_type": "rpc-frame",
+          "seq": 33,
+          "messageSeq": 1,
+          "fragmentIndex": 32,
+          "fragmentCount": 64,
+          "messageBytes": 640,
+          "checksum": {
+            "algorithm": "crc32",
+            "value": "e292f8c7"
+          },
+          "dataBase64": "QU5baHWCj5yptg==",
+          "bridgeSessionId": "bridge-1",
+          "bridgeGeneration": "1",
+          "recoveryId": "rec-1"
+        },
+        {
+          "zcode_type": "rpc-frame",
+          "seq": 34,
+          "messageSeq": 1,
+          "fragmentIndex": 33,
+          "fragmentCount": 64,
+          "messageBytes": 640,
+          "checksum": {
+            "algorithm": "crc32",
+            "value": "e292f8c7"
+          },
+          "dataBase64": "w9Dd6vcEER4rOA==",
+          "bridgeSessionId": "bridge-1",
+          "bridgeGeneration": "1",
+          "recoveryId": "rec-1"
+        },
+        {
+          "zcode_type": "rpc-frame",
+          "seq": 35,
+          "messageSeq": 1,
+          "fragmentIndex": 34,
+          "fragmentCount": 64,
+          "messageBytes": 640,
+          "checksum": {
+            "algorithm": "crc32",
+            "value": "e292f8c7"
+          },
+          "dataBase64": "RVJfbHmGk6Ctug==",
+          "bridgeSessionId": "bridge-1",
+          "bridgeGeneration": "1",
+          "recoveryId": "rec-1"
+        },
+        {
+          "zcode_type": "rpc-frame",
+          "seq": 36,
+          "messageSeq": 1,
+          "fragmentIndex": 35,
+          "fragmentCount": 64,
+          "messageBytes": 640,
+          "checksum": {
+            "algorithm": "crc32",
+            "value": "e292f8c7"
+          },
+          "dataBase64": "x9Th7vsIFSIvPA==",
+          "bridgeSessionId": "bridge-1",
+          "bridgeGeneration": "1",
+          "recoveryId": "rec-1"
+        },
+        {
+          "zcode_type": "rpc-frame",
+          "seq": 37,
+          "messageSeq": 1,
+          "fragmentIndex": 36,
+          "fragmentCount": 64,
+          "messageBytes": 640,
+          "checksum": {
+            "algorithm": "crc32",
+            "value": "e292f8c7"
+          },
+          "dataBase64": "SVZjcH2Kl6Sxvg==",
+          "bridgeSessionId": "bridge-1",
+          "bridgeGeneration": "1",
+          "recoveryId": "rec-1"
+        },
+        {
+          "zcode_type": "rpc-frame",
+          "seq": 38,
+          "messageSeq": 1,
+          "fragmentIndex": 37,
+          "fragmentCount": 64,
+          "messageBytes": 640,
+          "checksum": {
+            "algorithm": "crc32",
+            "value": "e292f8c7"
+          },
+          "dataBase64": "y9jl8v8MGSYzQA==",
+          "bridgeSessionId": "bridge-1",
+          "bridgeGeneration": "1",
+          "recoveryId": "rec-1"
+        },
+        {
+          "zcode_type": "rpc-frame",
+          "seq": 39,
+          "messageSeq": 1,
+          "fragmentIndex": 38,
+          "fragmentCount": 64,
+          "messageBytes": 640,
+          "checksum": {
+            "algorithm": "crc32",
+            "value": "e292f8c7"
+          },
+          "dataBase64": "TVpndIGOm6i1wg==",
+          "bridgeSessionId": "bridge-1",
+          "bridgeGeneration": "1",
+          "recoveryId": "rec-1"
+        },
+        {
+          "zcode_type": "rpc-frame",
+          "seq": 40,
+          "messageSeq": 1,
+          "fragmentIndex": 39,
+          "fragmentCount": 64,
+          "messageBytes": 640,
+          "checksum": {
+            "algorithm": "crc32",
+            "value": "e292f8c7"
+          },
+          "dataBase64": "z9zp9gMQHSo3RA==",
+          "bridgeSessionId": "bridge-1",
+          "bridgeGeneration": "1",
+          "recoveryId": "rec-1"
+        },
+        {
+          "zcode_type": "rpc-frame",
+          "seq": 41,
+          "messageSeq": 1,
+          "fragmentIndex": 40,
+          "fragmentCount": 64,
+          "messageBytes": 640,
+          "checksum": {
+            "algorithm": "crc32",
+            "value": "e292f8c7"
+          },
+          "dataBase64": "UV5reIWSn6y5xg==",
+          "bridgeSessionId": "bridge-1",
+          "bridgeGeneration": "1",
+          "recoveryId": "rec-1"
+        },
+        {
+          "zcode_type": "rpc-frame",
+          "seq": 42,
+          "messageSeq": 1,
+          "fragmentIndex": 41,
+          "fragmentCount": 64,
+          "messageBytes": 640,
+          "checksum": {
+            "algorithm": "crc32",
+            "value": "e292f8c7"
+          },
+          "dataBase64": "0+Dt+gcUIS47SA==",
+          "bridgeSessionId": "bridge-1",
+          "bridgeGeneration": "1",
+          "recoveryId": "rec-1"
+        },
+        {
+          "zcode_type": "rpc-frame",
+          "seq": 43,
+          "messageSeq": 1,
+          "fragmentIndex": 42,
+          "fragmentCount": 64,
+          "messageBytes": 640,
+          "checksum": {
+            "algorithm": "crc32",
+            "value": "e292f8c7"
+          },
+          "dataBase64": "VWJvfImWo7C9yg==",
+          "bridgeSessionId": "bridge-1",
+          "bridgeGeneration": "1",
+          "recoveryId": "rec-1"
+        },
+        {
+          "zcode_type": "rpc-frame",
+          "seq": 44,
+          "messageSeq": 1,
+          "fragmentIndex": 43,
+          "fragmentCount": 64,
+          "messageBytes": 640,
+          "checksum": {
+            "algorithm": "crc32",
+            "value": "e292f8c7"
+          },
+          "dataBase64": "1+Tx/gsYJTI/TA==",
+          "bridgeSessionId": "bridge-1",
+          "bridgeGeneration": "1",
+          "recoveryId": "rec-1"
+        },
+        {
+          "zcode_type": "rpc-frame",
+          "seq": 45,
+          "messageSeq": 1,
+          "fragmentIndex": 44,
+          "fragmentCount": 64,
+          "messageBytes": 640,
+          "checksum": {
+            "algorithm": "crc32",
+            "value": "e292f8c7"
+          },
+          "dataBase64": "WWZzgI2ap7TBzg==",
+          "bridgeSessionId": "bridge-1",
+          "bridgeGeneration": "1",
+          "recoveryId": "rec-1"
+        },
+        {
+          "zcode_type": "rpc-frame",
+          "seq": 46,
+          "messageSeq": 1,
+          "fragmentIndex": 45,
+          "fragmentCount": 64,
+          "messageBytes": 640,
+          "checksum": {
+            "algorithm": "crc32",
+            "value": "e292f8c7"
+          },
+          "dataBase64": "2+j1Ag8cKTZDUA==",
+          "bridgeSessionId": "bridge-1",
+          "bridgeGeneration": "1",
+          "recoveryId": "rec-1"
+        },
+        {
+          "zcode_type": "rpc-frame",
+          "seq": 47,
+          "messageSeq": 1,
+          "fragmentIndex": 46,
+          "fragmentCount": 64,
+          "messageBytes": 640,
+          "checksum": {
+            "algorithm": "crc32",
+            "value": "e292f8c7"
+          },
+          "dataBase64": "XWp3hJGeq7jF0g==",
+          "bridgeSessionId": "bridge-1",
+          "bridgeGeneration": "1",
+          "recoveryId": "rec-1"
+        },
+        {
+          "zcode_type": "rpc-frame",
+          "seq": 48,
+          "messageSeq": 1,
+          "fragmentIndex": 47,
+          "fragmentCount": 64,
+          "messageBytes": 640,
+          "checksum": {
+            "algorithm": "crc32",
+            "value": "e292f8c7"
+          },
+          "dataBase64": "3+z5BhMgLTpHVA==",
+          "bridgeSessionId": "bridge-1",
+          "bridgeGeneration": "1",
+          "recoveryId": "rec-1"
+        },
+        {
+          "zcode_type": "rpc-frame",
+          "seq": 49,
+          "messageSeq": 1,
+          "fragmentIndex": 48,
+          "fragmentCount": 64,
+          "messageBytes": 640,
+          "checksum": {
+            "algorithm": "crc32",
+            "value": "e292f8c7"
+          },
+          "dataBase64": "YW57iJWir7zJ1g==",
+          "bridgeSessionId": "bridge-1",
+          "bridgeGeneration": "1",
+          "recoveryId": "rec-1"
+        },
+        {
+          "zcode_type": "rpc-frame",
+          "seq": 50,
+          "messageSeq": 1,
+          "fragmentIndex": 49,
+          "fragmentCount": 64,
+          "messageBytes": 640,
+          "checksum": {
+            "algorithm": "crc32",
+            "value": "e292f8c7"
+          },
+          "dataBase64": "4/D9ChckMT5LWA==",
+          "bridgeSessionId": "bridge-1",
+          "bridgeGeneration": "1",
+          "recoveryId": "rec-1"
+        },
+        {
+          "zcode_type": "rpc-frame",
+          "seq": 51,
+          "messageSeq": 1,
+          "fragmentIndex": 50,
+          "fragmentCount": 64,
+          "messageBytes": 640,
+          "checksum": {
+            "algorithm": "crc32",
+            "value": "e292f8c7"
+          },
+          "dataBase64": "ZXJ/jJmms8DN2g==",
+          "bridgeSessionId": "bridge-1",
+          "bridgeGeneration": "1",
+          "recoveryId": "rec-1"
+        },
+        {
+          "zcode_type": "rpc-frame",
+          "seq": 52,
+          "messageSeq": 1,
+          "fragmentIndex": 51,
+          "fragmentCount": 64,
+          "messageBytes": 640,
+          "checksum": {
+            "algorithm": "crc32",
+            "value": "e292f8c7"
+          },
+          "dataBase64": "5/QBDhsoNUJPXA==",
+          "bridgeSessionId": "bridge-1",
+          "bridgeGeneration": "1",
+          "recoveryId": "rec-1"
+        },
+        {
+          "zcode_type": "rpc-frame",
+          "seq": 53,
+          "messageSeq": 1,
+          "fragmentIndex": 52,
+          "fragmentCount": 64,
+          "messageBytes": 640,
+          "checksum": {
+            "algorithm": "crc32",
+            "value": "e292f8c7"
+          },
+          "dataBase64": "aXaDkJ2qt8TR3g==",
+          "bridgeSessionId": "bridge-1",
+          "bridgeGeneration": "1",
+          "recoveryId": "rec-1"
+        },
+        {
+          "zcode_type": "rpc-frame",
+          "seq": 54,
+          "messageSeq": 1,
+          "fragmentIndex": 53,
+          "fragmentCount": 64,
+          "messageBytes": 640,
+          "checksum": {
+            "algorithm": "crc32",
+            "value": "e292f8c7"
+          },
+          "dataBase64": "6/gFEh8sOUZTYA==",
+          "bridgeSessionId": "bridge-1",
+          "bridgeGeneration": "1",
+          "recoveryId": "rec-1"
+        },
+        {
+          "zcode_type": "rpc-frame",
+          "seq": 55,
+          "messageSeq": 1,
+          "fragmentIndex": 54,
+          "fragmentCount": 64,
+          "messageBytes": 640,
+          "checksum": {
+            "algorithm": "crc32",
+            "value": "e292f8c7"
+          },
+          "dataBase64": "bXqHlKGuu8jV4g==",
+          "bridgeSessionId": "bridge-1",
+          "bridgeGeneration": "1",
+          "recoveryId": "rec-1"
+        },
+        {
+          "zcode_type": "rpc-frame",
+          "seq": 56,
+          "messageSeq": 1,
+          "fragmentIndex": 55,
+          "fragmentCount": 64,
+          "messageBytes": 640,
+          "checksum": {
+            "algorithm": "crc32",
+            "value": "e292f8c7"
+          },
+          "dataBase64": "7/wJFiMwPUpXZA==",
+          "bridgeSessionId": "bridge-1",
+          "bridgeGeneration": "1",
+          "recoveryId": "rec-1"
+        },
+        {
+          "zcode_type": "rpc-frame",
+          "seq": 57,
+          "messageSeq": 1,
+          "fragmentIndex": 56,
+          "fragmentCount": 64,
+          "messageBytes": 640,
+          "checksum": {
+            "algorithm": "crc32",
+            "value": "e292f8c7"
+          },
+          "dataBase64": "cX6LmKWyv8zZ5g==",
+          "bridgeSessionId": "bridge-1",
+          "bridgeGeneration": "1",
+          "recoveryId": "rec-1"
+        },
+        {
+          "zcode_type": "rpc-frame",
+          "seq": 58,
+          "messageSeq": 1,
+          "fragmentIndex": 57,
+          "fragmentCount": 64,
+          "messageBytes": 640,
+          "checksum": {
+            "algorithm": "crc32",
+            "value": "e292f8c7"
+          },
+          "dataBase64": "8wANGic0QU5baA==",
+          "bridgeSessionId": "bridge-1",
+          "bridgeGeneration": "1",
+          "recoveryId": "rec-1"
+        },
+        {
+          "zcode_type": "rpc-frame",
+          "seq": 59,
+          "messageSeq": 1,
+          "fragmentIndex": 58,
+          "fragmentCount": 64,
+          "messageBytes": 640,
+          "checksum": {
+            "algorithm": "crc32",
+            "value": "e292f8c7"
+          },
+          "dataBase64": "dYKPnKm2w9Dd6g==",
+          "bridgeSessionId": "bridge-1",
+          "bridgeGeneration": "1",
+          "recoveryId": "rec-1"
+        },
+        {
+          "zcode_type": "rpc-frame",
+          "seq": 60,
+          "messageSeq": 1,
+          "fragmentIndex": 59,
+          "fragmentCount": 64,
+          "messageBytes": 640,
+          "checksum": {
+            "algorithm": "crc32",
+            "value": "e292f8c7"
+          },
+          "dataBase64": "9wQRHis4RVJfbA==",
+          "bridgeSessionId": "bridge-1",
+          "bridgeGeneration": "1",
+          "recoveryId": "rec-1"
+        },
+        {
+          "zcode_type": "rpc-frame",
+          "seq": 61,
+          "messageSeq": 1,
+          "fragmentIndex": 60,
+          "fragmentCount": 64,
+          "messageBytes": 640,
+          "checksum": {
+            "algorithm": "crc32",
+            "value": "e292f8c7"
+          },
+          "dataBase64": "eYaToK26x9Th7g==",
+          "bridgeSessionId": "bridge-1",
+          "bridgeGeneration": "1",
+          "recoveryId": "rec-1"
+        },
+        {
+          "zcode_type": "rpc-frame",
+          "seq": 62,
+          "messageSeq": 1,
+          "fragmentIndex": 61,
+          "fragmentCount": 64,
+          "messageBytes": 640,
+          "checksum": {
+            "algorithm": "crc32",
+            "value": "e292f8c7"
+          },
+          "dataBase64": "+wgVIi88SVZjcA==",
+          "bridgeSessionId": "bridge-1",
+          "bridgeGeneration": "1",
+          "recoveryId": "rec-1"
+        },
+        {
+          "zcode_type": "rpc-frame",
+          "seq": 63,
+          "messageSeq": 1,
+          "fragmentIndex": 62,
+          "fragmentCount": 64,
+          "messageBytes": 640,
+          "checksum": {
+            "algorithm": "crc32",
+            "value": "e292f8c7"
+          },
+          "dataBase64": "fYqXpLG+y9jl8g==",
+          "bridgeSessionId": "bridge-1",
+          "bridgeGeneration": "1",
+          "recoveryId": "rec-1"
+        },
+        {
+          "zcode_type": "rpc-frame",
+          "seq": 64,
+          "messageSeq": 1,
+          "fragmentIndex": 63,
+          "fragmentCount": 64,
+          "messageBytes": 640,
+          "checksum": {
+            "algorithm": "crc32",
+            "value": "e292f8c7"
+          },
+          "dataBase64": "/wwZJjNATVpndA==",
+          "bridgeSessionId": "bridge-1",
+          "bridgeGeneration": "1",
+          "recoveryId": "rec-1"
+        }
+      ],
+      "outcomes": [
+        "buffered",
+        "buffered",
+        "buffered",
+        "buffered",
+        "buffered",
+        "buffered",
+        "buffered",
+        "buffered",
+        "buffered",
+        "buffered",
+        "buffered",
+        "buffered",
+        "buffered",
+        "buffered",
+        "buffered",
+        "buffered",
+        "buffered",
+        "buffered",
+        "buffered",
+        "buffered",
+        "buffered",
+        "buffered",
+        "buffered",
+        "buffered",
+        "buffered",
+        "buffered",
+        "buffered",
+        "buffered",
+        "buffered",
+        "buffered",
+        "buffered",
+        "buffered",
+        "buffered",
+        "buffered",
+        "buffered",
+        "buffered",
+        "buffered",
+        "buffered",
+        "buffered",
+        "buffered",
+        "buffered",
+        "buffered",
+        "buffered",
+        "buffered",
+        "buffered",
+        "buffered",
+        "buffered",
+        "buffered",
+        "buffered",
+        "buffered",
+        "buffered",
+        "buffered",
+        "buffered",
+        "buffered",
+        "buffered",
+        "buffered",
+        "buffered",
+        "buffered",
+        "buffered",
+        "buffered",
+        "buffered",
+        "buffered",
+        "buffered",
+        "complete"
+      ],
+      "identityVerdict": "match",
+      "canonicalBase64": true,
+      "metadataViolation": null,
+      "completedTimes": 1,
+      "note": "fragmentCount 上界 64：完全合法且必须组装成功。",
+      "messageHex": "010e1b2835424f5c697683909daab7c4d1deebf805121f2c394653606d7a8794a1aebbc8d5e2effc091623303d4a5764717e8b98a5b2bfccd9e6f3000d1a2734414e5b6875828f9ca9b6c3d0ddeaf704111e2b3845525f6c798693a0adbac7d4e1eefb0815222f3c495663707d8a97a4b1becbd8e5f2ff0c192633404d5a6774818e9ba8b5c2cfdce9f603101d2a3744515e6b7885929facb9c6d3e0edfa0714212e3b4855626f7c8996a3b0bdcad7e4f1fe0b1825323f4c596673808d9aa7b4c1cedbe8f5020f1c293643505d6a7784919eabb8c5d2dfecf90613202d3a4754616e7b8895a2afbcc9d6e3f0fd0a1724313e4b5865727f8c99a6b3c0cddae7f4010e1b2835424f5c697683909daab7c4d1deebf805121f2c394653606d7a8794a1aebbc8d5e2effc091623303d4a5764717e8b98a5b2bfccd9e6f3000d1a2734414e5b6875828f9ca9b6c3d0ddeaf704111e2b3845525f6c798693a0adbac7d4e1eefb0815222f3c495663707d8a97a4b1becbd8e5f2ff0c192633404d5a6774818e9ba8b5c2cfdce9f603101d2a3744515e6b7885929facb9c6d3e0edfa0714212e3b4855626f7c8996a3b0bdcad7e4f1fe0b1825323f4c596673808d9aa7b4c1cedbe8f5020f1c293643505d6a7784919eabb8c5d2dfecf90613202d3a4754616e7b8895a2afbcc9d6e3f0fd0a1724313e4b5865727f8c99a6b3c0cddae7f4010e1b2835424f5c697683909daab7c4d1deebf805121f2c394653606d7a8794a1aebbc8d5e2effc091623303d4a5764717e8b98a5b2bfccd9e6f3000d1a2734414e5b6875828f9ca9b6c3d0ddeaf704111e2b3845525f6c798693a0adbac7d4e1eefb0815222f3c495663707d8a97a4b1becbd8e5f2ff0c192633404d5a6774",
+      "completedSeq": 1
+    },
+    {
+      "name": "multi_fragment_gap",
+      "frames": [
+        {
+          "zcode_type": "rpc-frame",
+          "seq": 1,
+          "messageSeq": 1,
+          "fragmentIndex": 0,
+          "fragmentCount": 3,
+          "messageBytes": 300,
+          "checksum": {
+            "algorithm": "crc32",
+            "value": "de0e57ce"
+          },
+          "dataBase64": "AwoRGB8mLTQ7QklQV15lbHN6gYiPlp2kq7K5wMfO1dzj6vH4/wYNFBsiKTA3PkVMU1phaG92fYSLkpmgp661vMPK0djf5u30+wIJEBceJSwzOkFIT1ZdZGtyeYCHjpWco6qxuA==",
+          "bridgeSessionId": "bridge-1",
+          "bridgeGeneration": "1",
+          "recoveryId": "rec-1"
+        },
+        {
+          "zcode_type": "rpc-frame",
+          "seq": 3,
+          "messageSeq": 1,
+          "fragmentIndex": 2,
+          "fragmentCount": 3,
+          "messageBytes": 300,
+          "checksum": {
+            "algorithm": "crc32",
+            "value": "de0e57ce"
+          },
+          "dataBase64": "e4KJkJeepayzusHIz9bd5Ovy+QAHDhUcIyoxOD9GTVRbYmlwd36FjJOaoaivtr3Ey9LZ4Ofu9fwDChEYHyYtNDtCSVBXXmVsc3qBiI+WnaSrsrnAx87V3OPq8fj/Bg0UGyIpMA==",
+          "bridgeSessionId": "bridge-1",
+          "bridgeGeneration": "1",
+          "recoveryId": "rec-1"
+        }
+      ],
+      "outcomes": [
+        "buffered",
+        "rejected:remote.rpcFrame.fragmentGap"
+      ],
+      "identityVerdict": "match",
+      "canonicalBase64": true,
+      "metadataViolation": null,
+      "completedTimes": 0,
+      "note": "缺中间片：官方严格顺序语义，拒绝且不 ack（上层重同步）。",
+      "messageHex": "030a11181f262d343b424950575e656c737a81888f969da4abb2b9c0c7ced5dce3eaf1f8ff060d141b222930373e454c535a61686f767d848b9299a0a7aeb5bcc3cad1d8dfe6edf4fb020910171e252c333a41484f565d646b727980878e959ca3aab1b8bfc6cdd4dbe2e9f0f7fe050c131a21282f363d444b525960676e757c838a91989fa6adb4bbc2c9d0d7dee5ecf3fa01080f161d242b323940474e555c636a71787f868d949ba2a9b0b7bec5ccd3dae1e8eff6fd040b121920272e353c434a51585f666d747b828990979ea5acb3bac1c8cfd6dde4ebf2f900070e151c232a31383f464d545b626970777e858c939aa1a8afb6bdc4cbd2d9e0e7eef5fc030a11181f262d343b424950575e656c737a81888f969da4abb2b9c0c7ced5dce3eaf1f8ff060d141b222930"
+    },
+    {
+      "name": "multi_first_fragment_missing",
+      "frames": [
+        {
+          "zcode_type": "rpc-frame",
+          "seq": 2,
+          "messageSeq": 1,
+          "fragmentIndex": 1,
+          "fragmentCount": 3,
+          "messageBytes": 300,
+          "checksum": {
+            "algorithm": "crc32",
+            "value": "de0e57ce"
+          },
+          "dataBase64": "v8bN1Nvi6fD3/gUMExohKC82PURLUllgZ251fIOKkZifpq20u8LJ0Nfe5ezz+gEIDxYdJCsyOUBHTlVcY2pxeH+GjZSboqmwt77FzNPa4ejv9v0ECxIZICcuNTxDSlFYX2ZtdA==",
+          "bridgeSessionId": "bridge-1",
+          "bridgeGeneration": "1",
+          "recoveryId": "rec-1"
+        }
+      ],
+      "outcomes": [
+        "rejected:remote.rpcFrame.fragmentGap"
+      ],
+      "identityVerdict": "match",
+      "canonicalBase64": true,
+      "metadataViolation": null,
+      "completedTimes": 0,
+      "note": "首片缺失：无法补齐，直接拒绝。",
+      "messageHex": "030a11181f262d343b424950575e656c737a81888f969da4abb2b9c0c7ced5dce3eaf1f8ff060d141b222930373e454c535a61686f767d848b9299a0a7aeb5bcc3cad1d8dfe6edf4fb020910171e252c333a41484f565d646b727980878e959ca3aab1b8bfc6cdd4dbe2e9f0f7fe050c131a21282f363d444b525960676e757c838a91989fa6adb4bbc2c9d0d7dee5ecf3fa01080f161d242b323940474e555c636a71787f868d949ba2a9b0b7bec5ccd3dae1e8eff6fd040b121920272e353c434a51585f666d747b828990979ea5acb3bac1c8cfd6dde4ebf2f900070e151c232a31383f464d545b626970777e858c939aa1a8afb6bdc4cbd2d9e0e7eef5fc030a11181f262d343b424950575e656c737a81888f969da4abb2b9c0c7ced5dce3eaf1f8ff060d141b222930"
+    },
+    {
+      "name": "multi_checksum_mismatch_on_join",
+      "frames": [
+        {
+          "zcode_type": "rpc-frame",
+          "seq": 1,
+          "messageSeq": 1,
+          "fragmentIndex": 0,
+          "fragmentCount": 3,
+          "messageBytes": 300,
+          "checksum": {
+            "algorithm": "crc32",
+            "value": "de0e57ce"
+          },
+          "dataBase64": "AwoRGB8mLTQ7QklQV15lbHN6gYiPlp2kq7K5wMfO1dzj6vH4/wYNFBsiKTA3PkVMU1phaG92fYSLkpmgp661vMPK0djf5u30+wIJEBceJSwzOkFIT1ZdZGtyeYCHjpWco6qxuA==",
+          "bridgeSessionId": "bridge-1",
+          "bridgeGeneration": "1",
+          "recoveryId": "rec-1"
+        },
+        {
+          "zcode_type": "rpc-frame",
+          "seq": 2,
+          "messageSeq": 1,
+          "fragmentIndex": 1,
+          "fragmentCount": 3,
+          "messageBytes": 300,
+          "checksum": {
+            "algorithm": "crc32",
+            "value": "de0e57ce"
+          },
+          "dataBase64": "v8bN1Nvi6fD3/gUMExohKC82PURLUllgZ251fIOKkZifpq20u8LJ0Nfe5ezz+gEIDxYdJCsyOUBHTlVcY2pxeH+GjZSboqmwt77FzNPa4ejv9v0ECxIZICcuNTxDSlFYX2ZtdA==",
+          "bridgeSessionId": "bridge-1",
+          "bridgeGeneration": "1",
+          "recoveryId": "rec-1"
+        },
+        {
+          "zcode_type": "rpc-frame",
+          "seq": 3,
+          "messageSeq": 1,
+          "fragmentIndex": 2,
+          "fragmentCount": 3,
+          "messageBytes": 300,
+          "checksum": {
+            "algorithm": "crc32",
+            "value": "de0e57ce"
+          },
+          "dataBase64": "e4KJkJeepayzusHIz9bd5Ovy+QAHDhUcIyoxOD9GTVRbYmlwd36FjJOaoaivtr3Ey9LZ4Ofu9fwDChEYHyYtNDtCSVBXXmVsc3qBiI+WnaSrsrnAx87V3OPq8fj/Bg0UGyIpMQ==",
+          "bridgeSessionId": "bridge-1",
+          "bridgeGeneration": "1",
+          "recoveryId": "rec-1"
+        }
+      ],
+      "outcomes": [
+        "buffered",
+        "buffered",
+        "rejected:remote.rpcFrame.checksumMismatch"
+      ],
+      "identityVerdict": "match",
+      "canonicalBase64": true,
+      "metadataViolation": null,
+      "completedTimes": 0,
+      "note": "末片内容被篡改（长度不变）：拼装后整条 CRC 不符。",
+      "messageHex": "030a11181f262d343b424950575e656c737a81888f969da4abb2b9c0c7ced5dce3eaf1f8ff060d141b222930373e454c535a61686f767d848b9299a0a7aeb5bcc3cad1d8dfe6edf4fb020910171e252c333a41484f565d646b727980878e959ca3aab1b8bfc6cdd4dbe2e9f0f7fe050c131a21282f363d444b525960676e757c838a91989fa6adb4bbc2c9d0d7dee5ecf3fa01080f161d242b323940474e555c636a71787f868d949ba2a9b0b7bec5ccd3dae1e8eff6fd040b121920272e353c434a51585f666d747b828990979ea5acb3bac1c8cfd6dde4ebf2f900070e151c232a31383f464d545b626970777e858c939aa1a8afb6bdc4cbd2d9e0e7eef5fc030a11181f262d343b424950575e656c737a81888f969da4abb2b9c0c7ced5dce3eaf1f8ff060d141b222930"
+    },
+    {
+      "name": "multi_duplicate_identical_fragment",
+      "frames": [
+        {
+          "zcode_type": "rpc-frame",
+          "seq": 1,
+          "messageSeq": 1,
+          "fragmentIndex": 0,
+          "fragmentCount": 3,
+          "messageBytes": 300,
+          "checksum": {
+            "algorithm": "crc32",
+            "value": "de0e57ce"
+          },
+          "dataBase64": "AwoRGB8mLTQ7QklQV15lbHN6gYiPlp2kq7K5wMfO1dzj6vH4/wYNFBsiKTA3PkVMU1phaG92fYSLkpmgp661vMPK0djf5u30+wIJEBceJSwzOkFIT1ZdZGtyeYCHjpWco6qxuA==",
+          "bridgeSessionId": "bridge-1",
+          "bridgeGeneration": "1",
+          "recoveryId": "rec-1"
+        },
+        {
+          "zcode_type": "rpc-frame",
+          "seq": 1,
+          "messageSeq": 1,
+          "fragmentIndex": 0,
+          "fragmentCount": 3,
+          "messageBytes": 300,
+          "checksum": {
+            "algorithm": "crc32",
+            "value": "de0e57ce"
+          },
+          "dataBase64": "AwoRGB8mLTQ7QklQV15lbHN6gYiPlp2kq7K5wMfO1dzj6vH4/wYNFBsiKTA3PkVMU1phaG92fYSLkpmgp661vMPK0djf5u30+wIJEBceJSwzOkFIT1ZdZGtyeYCHjpWco6qxuA==",
+          "bridgeSessionId": "bridge-1",
+          "bridgeGeneration": "1",
+          "recoveryId": "rec-1"
+        },
+        {
+          "zcode_type": "rpc-frame",
+          "seq": 2,
+          "messageSeq": 1,
+          "fragmentIndex": 1,
+          "fragmentCount": 3,
+          "messageBytes": 300,
+          "checksum": {
+            "algorithm": "crc32",
+            "value": "de0e57ce"
+          },
+          "dataBase64": "v8bN1Nvi6fD3/gUMExohKC82PURLUllgZ251fIOKkZifpq20u8LJ0Nfe5ezz+gEIDxYdJCsyOUBHTlVcY2pxeH+GjZSboqmwt77FzNPa4ejv9v0ECxIZICcuNTxDSlFYX2ZtdA==",
+          "bridgeSessionId": "bridge-1",
+          "bridgeGeneration": "1",
+          "recoveryId": "rec-1"
+        },
+        {
+          "zcode_type": "rpc-frame",
+          "seq": 3,
+          "messageSeq": 1,
+          "fragmentIndex": 2,
+          "fragmentCount": 3,
+          "messageBytes": 300,
+          "checksum": {
+            "algorithm": "crc32",
+            "value": "de0e57ce"
+          },
+          "dataBase64": "e4KJkJeepayzusHIz9bd5Ovy+QAHDhUcIyoxOD9GTVRbYmlwd36FjJOaoaivtr3Ey9LZ4Ofu9fwDChEYHyYtNDtCSVBXXmVsc3qBiI+WnaSrsrnAx87V3OPq8fj/Bg0UGyIpMA==",
+          "bridgeSessionId": "bridge-1",
+          "bridgeGeneration": "1",
+          "recoveryId": "rec-1"
+        }
+      ],
+      "outcomes": [
+        "buffered",
+        "buffered",
+        "buffered",
+        "complete"
+      ],
+      "identityVerdict": "match",
+      "canonicalBase64": true,
+      "metadataViolation": null,
+      "completedTimes": 1,
+      "note": "同指纹重复分片（服务端重传）：幂等忽略，不改变状态。",
+      "messageHex": "030a11181f262d343b424950575e656c737a81888f969da4abb2b9c0c7ced5dce3eaf1f8ff060d141b222930373e454c535a61686f767d848b9299a0a7aeb5bcc3cad1d8dfe6edf4fb020910171e252c333a41484f565d646b727980878e959ca3aab1b8bfc6cdd4dbe2e9f0f7fe050c131a21282f363d444b525960676e757c838a91989fa6adb4bbc2c9d0d7dee5ecf3fa01080f161d242b323940474e555c636a71787f868d949ba2a9b0b7bec5ccd3dae1e8eff6fd040b121920272e353c434a51585f666d747b828990979ea5acb3bac1c8cfd6dde4ebf2f900070e151c232a31383f464d545b626970777e858c939aa1a8afb6bdc4cbd2d9e0e7eef5fc030a11181f262d343b424950575e656c737a81888f969da4abb2b9c0c7ced5dce3eaf1f8ff060d141b222930",
+      "completedSeq": 1
+    },
+    {
+      "name": "multi_conflicting_duplicate",
+      "frames": [
+        {
+          "zcode_type": "rpc-frame",
+          "seq": 1,
+          "messageSeq": 1,
+          "fragmentIndex": 0,
+          "fragmentCount": 3,
+          "messageBytes": 300,
+          "checksum": {
+            "algorithm": "crc32",
+            "value": "de0e57ce"
+          },
+          "dataBase64": "AwoRGB8mLTQ7QklQV15lbHN6gYiPlp2kq7K5wMfO1dzj6vH4/wYNFBsiKTA3PkVMU1phaG92fYSLkpmgp661vMPK0djf5u30+wIJEBceJSwzOkFIT1ZdZGtyeYCHjpWco6qxuA==",
+          "bridgeSessionId": "bridge-1",
+          "bridgeGeneration": "1",
+          "recoveryId": "rec-1"
+        },
+        {
+          "zcode_type": "rpc-frame",
+          "seq": 1,
+          "messageSeq": 1,
+          "fragmentIndex": 0,
+          "fragmentCount": 3,
+          "messageBytes": 300,
+          "checksum": {
+            "algorithm": "crc32",
+            "value": "de0e57ce"
+          },
+          "dataBase64": "AwoRGB8mLTQ7QklQV15lbHN6gYiPlp2kq7K5wMfO1dzj6vH4/wYNFBsiKTA3PkVMU1phaG92fYSLkpmgp661vMPK0djf5u30+wIJEBceJSwzOkFIT1ZdZGtyeYCHjpWco6qxuQ==",
+          "bridgeSessionId": "bridge-1",
+          "bridgeGeneration": "1",
+          "recoveryId": "rec-1"
+        }
+      ],
+      "outcomes": [
+        "buffered",
+        "rejected:remote.rpcFrame.conflictingDuplicate"
+      ],
+      "identityVerdict": "match",
+      "canonicalBase64": true,
+      "metadataViolation": null,
+      "completedTimes": 0,
+      "note": "同一位点不同内容：官方 conflictingDuplicate，拒绝并丢弃该消息缓冲。",
+      "messageHex": "030a11181f262d343b424950575e656c737a81888f969da4abb2b9c0c7ced5dce3eaf1f8ff060d141b222930373e454c535a61686f767d848b9299a0a7aeb5bcc3cad1d8dfe6edf4fb020910171e252c333a41484f565d646b727980878e959ca3aab1b8bfc6cdd4dbe2e9f0f7fe050c131a21282f363d444b525960676e757c838a91989fa6adb4bbc2c9d0d7dee5ecf3fa01080f161d242b323940474e555c636a71787f868d949ba2a9b0b7bec5ccd3dae1e8eff6fd040b121920272e353c434a51585f666d747b828990979ea5acb3bac1c8cfd6dde4ebf2f900070e151c232a31383f464d545b626970777e858c939aa1a8afb6bdc4cbd2d9e0e7eef5fc030a11181f262d343b424950575e656c737a81888f969da4abb2b9c0c7ced5dce3eaf1f8ff060d141b222930"
+    },
+    {
+      "name": "multi_metadata_drift_mid_message",
+      "frames": [
+        {
+          "zcode_type": "rpc-frame",
+          "seq": 1,
+          "messageSeq": 1,
+          "fragmentIndex": 0,
+          "fragmentCount": 3,
+          "messageBytes": 300,
+          "checksum": {
+            "algorithm": "crc32",
+            "value": "de0e57ce"
+          },
+          "dataBase64": "AwoRGB8mLTQ7QklQV15lbHN6gYiPlp2kq7K5wMfO1dzj6vH4/wYNFBsiKTA3PkVMU1phaG92fYSLkpmgp661vMPK0djf5u30+wIJEBceJSwzOkFIT1ZdZGtyeYCHjpWco6qxuA==",
+          "bridgeSessionId": "bridge-1",
+          "bridgeGeneration": "1",
+          "recoveryId": "rec-1"
+        },
+        {
+          "zcode_type": "rpc-frame",
+          "seq": 2,
+          "messageSeq": 1,
+          "fragmentIndex": 1,
+          "fragmentCount": 4,
+          "messageBytes": 300,
+          "checksum": {
+            "algorithm": "crc32",
+            "value": "de0e57ce"
+          },
+          "dataBase64": "v8bN1Nvi6fD3/gUMExohKC82PURLUllgZ251fIOKkZifpq20u8LJ0Nfe5ezz+gEIDxYdJCsyOUBHTlVcY2pxeH+GjZSboqmwt77FzNPa4ejv9v0ECxIZICcuNTxDSlFYX2ZtdA==",
+          "bridgeSessionId": "bridge-1",
+          "bridgeGeneration": "1",
+          "recoveryId": "rec-1"
+        }
+      ],
+      "outcomes": [
+        "buffered",
+        "rejected:remote.rpcFrame.invalidMetadata"
+      ],
+      "identityVerdict": "match",
+      "canonicalBase64": true,
+      "metadataViolation": null,
+      "completedTimes": 0,
+      "note": "同一条消息中途 fragmentCount 变化：官方 metadataMismatch 语义。",
+      "messageHex": "030a11181f262d343b424950575e656c737a81888f969da4abb2b9c0c7ced5dce3eaf1f8ff060d141b222930373e454c535a61686f767d848b9299a0a7aeb5bcc3cad1d8dfe6edf4fb020910171e252c333a41484f565d646b727980878e959ca3aab1b8bfc6cdd4dbe2e9f0f7fe050c131a21282f363d444b525960676e757c838a91989fa6adb4bbc2c9d0d7dee5ecf3fa01080f161d242b323940474e555c636a71787f868d949ba2a9b0b7bec5ccd3dae1e8eff6fd040b121920272e353c434a51585f666d747b828990979ea5acb3bac1c8cfd6dde4ebf2f900070e151c232a31383f464d545b626970777e858c939aa1a8afb6bdc4cbd2d9e0e7eef5fc030a11181f262d343b424950575e656c737a81888f969da4abb2b9c0c7ced5dce3eaf1f8ff060d141b222930"
+    }
+  ]
+}

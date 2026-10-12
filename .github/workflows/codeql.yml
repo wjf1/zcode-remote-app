@@ -1,0 +1,62 @@
+# §11.8 第二层门禁：CodeQL 代码扫描（公开仓库免费；补上「静态分析只看 Detekt 风格/复杂度、
+# 不看数据流安全缺陷」的空洞：污点传播、路径遍历、注入、敏感信息落日志等）。
+#
+# 约定（与 ci.yml 一致）：最小权限、action 固定 commit SHA、job 级 timeout-minutes、
+# concurrency 取消同 ref 的旧运行、persist-credentials=false。
+name: CodeQL
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+    branches: [master]
+  schedule:
+    # 每周一 03:17 UTC（避开整点高峰；周检可覆盖「依赖/规则集更新后才暴露」的存量问题）
+    - cron: "17 3 * * 1"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: codeql-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  analyze:
+    name: analyze (java-kotlin)
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    permissions:
+      # 上传 SARIF 结果到 code scanning 必需；其余一律只读
+      security-events: write
+      contents: read
+      actions: read
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-java@c5195efecf7bdfc987ee8bae7a71cb8b11521c00 # v4.7.1
+        with:
+          distribution: temurin
+          java-version: 17
+
+      # Kotlin 需要真实编译才能提取（纯文本扫描覆盖不到 Kotlin 语义）；
+      # 只编译 debug 变体即可覆盖 main/debug 源集，release 由 R8 同源，无需重复扫描。
+      - uses: github/codeql-action/init@24c54180a607b1449ed407dd24f251e4e9147c8d # v4.38.3
+        with:
+          languages: java-kotlin
+          build-mode: manual
+          queries: security-and-quality
+
+      - uses: gradle/actions/setup-gradle@8379f6a1328ee0e06e2bb424dadb7b159856a326 # v4.4.0
+        with:
+          gradle-version: "8.7"
+
+      - name: 编译（CodeQL 依赖构建提取 Kotlin/Java AST）
+        run: gradle assembleDebug --console=plain
+        working-directory: app-android
+
+      - uses: github/codeql-action/analyze@24c54180a607b1449ed407dd24f251e4e9147c8d # v4.38.3
+        with:
+          category: "/language:java-kotlin"
