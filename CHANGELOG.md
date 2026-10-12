@@ -7,7 +7,7 @@
 - **风格基线修正**：`.editorconfig` 里 `ktlint_function_naming_ignore_annotated` 是 ktlint 0.4x 旧键名（1.x 静默忽略 → 每个 `@Composable` 都会报命名违规），改为 `ktlint_function_naming_ignore_when_annotated_with`；并显式声明 `ktlint_code_style = ktlint_official`。**理由**：本项目既有风格本就属 official 系（处处尾随逗号、多行签名每参一行）；实测 `android_studio` 风格会**反向删除**尾随逗号、把多行签名压平（97 文件 +2517/−3346 的破坏性 churn），故不采用。
 - **存量格式专项完成**：迭代 `ktlintFormat` 至收敛后，61 个文件纯格式对齐、**全源集 0 违规**（chain-method-continuation / class-signature / indent / trailing-comma / argument-list-wrapping / condition-wrapping / import-ordering 等）；
 - **顺带清理（真实缺陷，非格式）**：① 3 处**悬空 KDoc**——同一函数上堆叠两/三段历史文档块（`ConversationChannel.resolve`、`uploadAttachment` 与一处重复单行注释），已合并为一段并挂回对应声明；② `HomeScreen` 的「新建会话弹窗」文档从孤儿位置迁到 `CreateSessionDialog` 声明上（此前文件里没有任何声明引它）；③ 命名与仓库常量惯例对齐：`NOOP_UPLOAD_HANDLE` → `noopUploadHandle`、`ZCodeDimens.BubbleWidthFraction` → `BUBBLE_WIDTH_FRACTION`。
-- **依赖变更审查**（`.github/workflows/dependency-review.yml`）：PR 触发的依赖审查（`fail-on-severity: high`，失败时把结论评论到 PR）；与既有 Dependabot（**升级可见**）互补，补齐「升级有把关」。
+- **依赖变更审查**（`.github/workflows/dependency-review.yml`）：PR 触发的依赖审查（`fail-on-severity: high`，失败时把结论评论到 PR）；与既有 Dependabot（**升级可见**）互补，补齐「升级有把关」。**首跑即抓出真实前置缺失**：仓库 **Dependency Graph 未开启**，action 直接报 `Dependency review is not supported on this repository`——已通过 API 开启 Dependabot 告警（连带启用依赖图），并在真实 Dependabot PR 上复验通过（`Dependency Review` 9s success）。验证方式：临时关闭/重开一个机器人 PR 触发 `pull_request` 事件（可逆，PR 内容未动）。
 
 ### 验证
 - 单测 **260/260**（纯格式改动零语义变化）；KtLint **0 违规**；`lintDebug`/`lintRelease` 0 error；`detekt` 通过；`assembleDebug`/`assembleDebugAndroidTest`/`assembleRelease` 通过。
