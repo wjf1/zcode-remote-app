@@ -58,8 +58,9 @@ android {
         // versionCode 46：beta34 —— §11.8 协议帧回放网 + 资源预算模糊/压力测试 + CodeQL
         // versionCode 47：beta35 —— §11.8 可观测性（本地脱敏诊断环形缓冲 + 用户主动导出）
         // versionCode 48：beta36 —— §11.8 第二层门禁补完（KtLint 存量格式专项接线 + 依赖变更审查）
-        versionCode = 48
-        versionName = "0.5.0-beta36"
+        // versionCode 49：beta37 —— §11.8 第二层门禁收尾（长会话 Macrobenchmark + 基线回退探测）
+        versionCode = 49
+        versionName = "0.5.0-beta37"
         // 仪器化渲染回归网（src/androidTest）用 androidx.test 默认 runner。
         // 只在模拟器/真机上跑；CI runner 无设备，故 ci.yml 不接（见 HANDOVER §6.1 回归网）。
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
@@ -98,6 +99,16 @@ android {
                 signingConfig = signingConfigs.getByName("release")
             }
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
+        }
+        // Macrobenchmark 被测变体（§11.8 长会话基准）：与 release 同优化等级（R8 + 资源裁剪，
+        // 量的是真实发布形态的性能），但用 debug 签名——CI/本机没有 release keystore 也要能
+        // 构建安装。isDebuggable=false 是 macrobenchmark 的硬要求（debuggable 包会被拒绝测量）。
+        // 宿主 Activity 与 fixture 在 src/benchmark/（只进本变体，不进 debug/release 包）。
+        create("benchmark") {
+            initWith(getByName("release"))
+            isDebuggable = false
+            signingConfig = signingConfigs.getByName("debug")
+            matchingFallbacks += listOf("release")
         }
     }
     compileOptions {

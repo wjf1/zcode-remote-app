@@ -62,6 +62,7 @@ import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalHapticFeedback
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -805,7 +806,10 @@ internal fun ConversationTimelineArea(
     Box(modifier = modifier.fillMaxWidth()) {
         LazyColumn(
             state = listState,
-            modifier = Modifier.fillMaxSize(),
+            // testTag：Macrobenchmark 的滚动/流式场景经宿主 Activity 的 testTagsAsResourceId
+            // 暴露给 UiAutomator 定位消息流（:benchmark 模块 LongConversationBenchmark 使用的
+            // resource-id 字符串需与这里保持一致）。生产包不开启 testTagsAsResourceId，该 tag 不可见。
+            modifier = Modifier.fillMaxSize().testTag("conv-timeline-list"),
             verticalArrangement = Arrangement.spacedBy(8.dp),
         ) {
             item(key = "earlier-head") {

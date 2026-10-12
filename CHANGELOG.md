@@ -1,5 +1,25 @@
 # 变更记录 / Changelog
 
+## v0.5.0-beta37（2026-10-12）· §11.8 第二层门禁收尾：长会话 Macrobenchmark + 基线回退探测
+
+### 新增（工程化/性能基线；无用户可见行为变化）
+- **`:benchmark` 模块（Macrobenchmark）**：`com.android.test` 模块，针对 `:app` 的 `benchmark` 变体（`initWith(release)` 的 R8 产物 + **debug 签名**（CI/本机无 release keystore 也可构建）+ **`isDebuggable=false`**（macrobenchmark 硬要求））；`app/src/benchmark/AndroidManifest.xml` 声明 `<profileable android:shell="true">`。
+- **宿主 Activity + 确定性 fixture**（`app/src/benchmark/java/com/zcode/remote/bench/`，**只进 benchmark 变体，不进 debug/release 包**）：`BenchmarkConversationActivity` 用 1200 行 fixture 渲染**真实 `ConversationScreen`**（行构成贴近真机会话：每 10 行 2 用户 + 4 助手 + 2 思考 + 2 工具，助手行含标题/列表/围栏代码块/GFM 表格等真实 Markdown），无中继、无配对、无网络即可量测；参数经 `am start -W "<intent-uri>"` 传入（rows / appendIntervalMs），`testTagsAsResourceId` 把 testTag 暴露给 UiAutomator（仅 benchmark 变体开启）。
+- **三场景基准**（`benchmark/src/main/java/com/zcode/remote/benchmark/LongConversationBenchmark.kt`）：① **打开长会话**（1200 行冷启动，`StartupTimingMetric` + `FrameTimingMetric`）；② **上下来回滚动**（启动放 `setupBlock` 不计入测量，fling 上/下各一次）；③ **流式追加**（初始 600 行 + 每 33ms 追加一行、2s 采样窗口）。janky 口径 = `frameOverrunMs > 0`，与真机实测「1336 帧 0 janky」同源；`CompilationMode.None` 每轮重置编译状态保证可重复（未 AOT 的最坏情况，**绝对值不与真机已编译包直接比较**）。
+- **`tools/bench_check.py`（结果解析 + 门禁）**：解析 `*BenchmarkData.json`（启动中位数 / 帧数 / `frameDurationCpuMs` 与 `frameOverrunMs` 的 P50·P90·P99 / janky 帧比例）→ 打印表格（可写 `$GITHUB_STEP_SUMMARY`）；**结构性硬门禁**：三场景齐备、帧数非零（防「空跑假绿」）、数值有限；**基线比对**：与 `--baseline` 文件按倍数阈值（默认 2.5×）比对，超限即失败；`--record` 生成基线。正/负向自测均通过（正常 0、缺场景 1、超基线 1、空目录 1）。
+- **CI 新增 `benchmark` job**（`ci.yml`）：ubuntu runner + KVM 权限步骤 + android-emulator-runner，跑 `:benchmark:connectedBenchmarkAndroidTest`（`benchmark` 变体与 `com.android.test` 模块同名变体匹配；组装产物在 runner 上先完成），随后跑 `bench_check.py`（`--baseline tools/bench_baseline_emulator.json --factor 3.0`，`if: always()` 保证结果解析失败也可见）。
+- **生产代码最小接线**：`ConversationTimeline` 的消息流 `LazyColumn` 增加 `testTag("conv-timeline-list")`（供基准用 UiAutomator 定位；生产包不开启 `testTagsAsResourceId`，该 tag 不可见，无行为影响）。
+
+### 验证
+- 单测 **260/260**（无 JVM 用例变化；`check_test_count.py` 核对声明 = 实际执行）；`ktlintCheck` 0 违规（含新增 benchmark 源集与 `:benchmark` 模块）；`detekt` 通过（`:benchmark` 模块不挂 baseline——新代码零告警）；`lintDebug`/`lintRelease`/`lintBenchmark` 0 error；`assembleDebug`/`assembleDebugAndroidTest`/`assembleRelease`/`assembleBenchmark` 通过；`:benchmark:assembleBenchmark`（测试 APK）通过。
+- 产物核验：`app-benchmark.apk` 合并 Manifest 含 `<profileable>` 与宿主 Activity、无 `debuggable=true`。
+- 门禁脚本正/负向自测通过（见上）；测试结果解析在 CI 上以真实产出复核（本轮新增 job 首跑）。
+- **本轮为无真机批次**：真机灰度（beta33 协议改动 + beta35 诊断导出落盘）仍为下一轮第一件事；基准真机口径 = 人工在真机跑同一 gradle 任务后用同一脚本解析。
+
+### 遗留（登记，非遗漏）
+- CI 模拟器首跑后需据实况回填基线文件 `tools/bench_baseline_emulator.json`（首跑先只记录、不比对）；模拟器帧时序噪声大，真实性能验收以真机人工跑为准（README/HANDOVER 已写明判读口径）。
+- 真机灰度（beta33 协议路径 / beta35 诊断导出落盘 / beta36 格式化后界面回归）与 A-5 逻辑 fragment、出站物理分片硬门不变；§11.10 `1.0.0` 发布门依赖上述项。
+
 ## v0.5.0-beta36（2026-10-12）· §11.8 第二层门禁补完：KtLint 格式门禁 + 依赖变更审查
 
 ### 新增（工程化；纯格式对齐 + CI 门禁，无用户可见行为变化）
