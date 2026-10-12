@@ -23,10 +23,16 @@ import org.junit.runner.RunWith
  * 三个场景分别覆盖「打开长会话」「长列表滚动」「流式追加」三类真实负载。
  *
  * 口径说明（防误读）：
- * - [CompilationMode.None]：不预编译、每轮重置编译状态——数值是「未 AOT 编译」的最坏情况，
- *   **绝对值不可与真机已编译包直接比较**，只用于同一口径下的趋势比对（性能回退探测）。
- * - 模拟器（CI）帧时序与真机不同源，数值仅作量级回归信号；真机口径以人工跑 [MacrobenchmarkRule]
+ * - [CompilationMode.Full]：每轮测量前对被测包做完整 AOT 编译（`cmd package compile -f -m speed`）。
+ *   理由：库用 `dumpsys gfxinfo` 轮询确认启动完成，窗口硬编码约 10s（100×100ms）；模拟器上
+ *   **未 AOT 编译**的 Compose 首帧可能超出该窗口，直接判失败（2026-10-12 实测：None 模式三场景
+ *   全部报 `Unable to confirm activity launch completion []`）。完整编译后启动处于「已编译」
+ *   状态、窗口内可确认，且每轮状态一致、可重复。**数值口径 = 已编译启动（偏乐观），
+ *   绝对值不与真机「部分编译 + JIT」的日常状态直接比较**，只用于同一口径下的趋势比对。
+ *   （官方正路是给 App 加 baseline profile 后用 [CompilationMode.Partial]——登记为后续待办。）
+ * - 模拟器帧时序与真机不同源，数值仅作量级回归信号；真机口径以人工跑 [MacrobenchmarkRule]
  *   并把结果交给 `tools/bench_check.py` 比对为准（见 README/HANDOVER 的运行说明）。
+ * - janky 帧口径 = `frameOverrunMs > 0`（错过帧期限），与真机「1336 帧 0 janky」同源。
  */
 @RunWith(AndroidJUnit4::class)
 class LongConversationBenchmark {
@@ -44,7 +50,7 @@ class LongConversationBenchmark {
             metrics = listOf(StartupTimingMetric(), FrameTimingMetric()),
             iterations = ITERATIONS,
             startupMode = StartupMode.COLD,
-            compilationMode = CompilationMode.None(),
+            compilationMode = CompilationMode.Full(),
             setupBlock = { pressHome() },
         ) {
             startActivityAndWait(hostIntent(rows = LONG_ROWS))
@@ -63,7 +69,7 @@ class LongConversationBenchmark {
             metrics = listOf(FrameTimingMetric()),
             iterations = ITERATIONS,
             startupMode = StartupMode.WARM,
-            compilationMode = CompilationMode.None(),
+            compilationMode = CompilationMode.Full(),
             setupBlock = {
                 pressHome()
                 startActivityAndWait(hostIntent(rows = LONG_ROWS))
@@ -92,7 +98,7 @@ class LongConversationBenchmark {
             metrics = listOf(FrameTimingMetric()),
             iterations = ITERATIONS,
             startupMode = StartupMode.WARM,
-            compilationMode = CompilationMode.None(),
+            compilationMode = CompilationMode.Full(),
             setupBlock = {
                 pressHome()
                 startActivityAndWait(hostIntent(rows = STREAM_START_ROWS, appendIntervalMs = STREAM_INTERVAL_MS))

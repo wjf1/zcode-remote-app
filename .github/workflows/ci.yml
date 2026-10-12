@@ -231,7 +231,9 @@ jobs:
           # （2026-10-12 第二轮 CI：cd 未生效，gradle 在仓库根跑 → "Run gradle init to create a
           # new Gradle build in this directory"）。suppressErrors 在模块 defaultConfig 已设，
           # 此处用命令行属性再注入一次（覆盖读取路径不同，双保险）。
-          script: cd app-android && gradle :benchmark:connectedBenchmarkAndroidTest -Pandroid.testInstrumentationRunnerArguments.androidx.benchmark.suppressErrors=EMULATOR --console=plain
+          # 测试结束后无条件输出诊断（被测包/宿主 Activity 是否在、crash buffer、
+          # ActivityTaskManager 的 am start 记录）——基准失败时当轮日志即可定位根因。
+          script: cd app-android && (gradle :benchmark:connectedBenchmarkAndroidTest -Pandroid.testInstrumentationRunnerArguments.androidx.benchmark.suppressErrors=EMULATOR --console=plain; E=$?; echo "== benchmark 诊断 =="; adb shell pm list packages | grep zcode; echo "ActivityCount=$(adb shell dumpsys package com.zcode.remote | grep -c BenchmarkConversationActivity)"; adb logcat -d -b crash | tail -30; adb logcat -d -s ActivityTaskManager:I AndroidRuntime:E | tail -60; exit $E)
 
       # 结构性门禁（场景齐备 / 帧数非零——防空跑假绿）+ 基线比对（存在基线文件时生效，
       # 回退即红）；表格写入 Step Summary 供人工趋势比对。

@@ -125,7 +125,8 @@ app/src/main/java/com/zcode/remote/
 `benchmark/`（`com.android.test` 模块）+ `app/src/benchmark/`（宿主 Activity 与确定性 fixture，
 只进 `benchmark` 构建变体、不进 debug/release 包）在**无中继、无配对、无网络**下用 1200 行
 fixture 渲染真实 `ConversationScreen`，量测「打开长会话 / 滚动 / 流式追加」三场景帧时
-（janky 口径 = `frameOverrunMs > 0`；`CompilationMode.None`，绝对值不与真机直接比较）。
+（janky 口径 = `frameOverrunMs > 0`；`CompilationMode.Full`（每轮完整 AOT 编译后测量），
+绝对值不与真机「部分编译 + JIT」的日常状态直接比较）。
 
 ```bash
 # 设备/模拟器上跑（需要 adb 设备；本机兆芯 CPU 无虚拟化，实跑在 CI 或真机）
