@@ -7,6 +7,15 @@ val keystoreProps =
         if (f.exists()) f.inputStream().use { load(it) }
     }
 
+// 真机基准取证开关（默认关闭 → CI/无 keystore 环境行为不变）：开启且本机有 keystore.properties 时，
+// benchmark 变体改用 release 签名——与已装 release 包同签名可直接覆盖安装，免卸载、保配对凭据。
+// 用法：gradle :app:assembleBenchmark -PbenchmarkUseReleaseSigning=true（见 HANDOVER §3）。
+val benchmarkUseReleaseSigning =
+    providers
+        .gradleProperty("benchmarkUseReleaseSigning")
+        .map { it.toBoolean() }
+        .getOrElse(false)
+
 plugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.android")
@@ -59,8 +68,10 @@ android {
         // versionCode 47：beta35 —— §11.8 可观测性（本地脱敏诊断环形缓冲 + 用户主动导出）
         // versionCode 48：beta36 —— §11.8 第二层门禁补完（KtLint 存量格式专项接线 + 依赖变更审查）
         // versionCode 49：beta37 —— §11.8 第二层门禁收尾（长会话 Macrobenchmark + 基线回退探测）
-        versionCode = 49
-        versionName = "0.5.0-beta37"
+        // versionCode 50：beta38 —— 真机验收轮：协议灰度/诊断导出/界面回归通过 +
+        //                           benchmark 库 1.3.4→1.5.0 真机兼容修复（pgrep 截断）
+        versionCode = 50
+        versionName = "0.5.0-beta38"
         // 仪器化渲染回归网（src/androidTest）用 androidx.test 默认 runner。
         // 只在模拟器/真机上跑；CI runner 无设备，故 ci.yml 不接（见 HANDOVER §6.1 回归网）。
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
@@ -107,7 +118,14 @@ android {
         create("benchmark") {
             initWith(getByName("release"))
             isDebuggable = false
-            signingConfig = signingConfigs.getByName("debug")
+            // 默认 debug 签名（CI/无 keystore 可构建）；-PbenchmarkUseReleaseSigning=true 时切
+            // release 签名供真机取证覆盖安装（见文件头开关注释）。
+            signingConfig =
+                if (benchmarkUseReleaseSigning && keystoreProps.isNotEmpty()) {
+                    signingConfigs.getByName("release")
+                } else {
+                    signingConfigs.getByName("debug")
+                }
             matchingFallbacks += listOf("release")
         }
     }

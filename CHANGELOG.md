@@ -1,5 +1,27 @@
 # 变更记录 / Changelog
 
+## v0.5.0-beta38（2026-10-13）· 真机验收轮：四项走查全通过 + benchmark 库真机兼容修复
+
+### 真机验收（小米 15 Pro / Android 17 / HyperOS；release 装机、覆盖升级完整保留配对凭据）
+
+- **协议灰度（beta33）✅ 通过**：运行中会话实时流式渲染（dump 实测 533 → 587 行持续增长，消息流内容与 PC 端操作实时同步）；**诊断导出 19 条事件零 `remote.rpcFrame.*` 违例**（无重同步/无入站溢出/无协议违例）；**切线路不串单**——切「官方备线」（端点不可达，属服务端事实）触发重连状态机逐级正确推进（Connecting×2 → Authenticating → Paired → bridge.open → ready），切回「自动判定」**5 秒恢复就绪**，恢复后**自动重订阅**、会话流式立即正常（无旧连接残留串帧）。
+- **诊断导出（beta35）✅ 通过**：系统 SAF 保存对话框两轮真实落盘（`zcode-diagnostics-*.txt`，551B，时间戳命名规范）；`diag.export_written bytes=551` 埋点与文件精确对应；**内容脱敏达标**（仅事件码/状态名/耗时，无会话标题/正文/SID/凭据）；事件链完整（app.start → relay 状态机 → bridge → subscribe → export）。
+- **界面回归（beta36）✅ 通过**：首页（设备 `就绪` + 84 会话）、会话页（标题/状态行/模式与模型胶囊/工具行与思考行渲染正常）、设置页（版本显示 `v0.5.0-beta37 (Build 49)`）、待办页（空态文案）全部正常。
+- **长会话基准真机取证（beta37）✅ 通过**：`gradle :benchmark:connectedBenchmarkAndroidTest` 三场景 **3/3 全过（7m20s，CompilationMode.Full 口径）**——scroll 1407 帧 **0.36% janky**、streaming 11493 帧 **1.78% janky**、open 启动首帧 median **177.7ms**（与真机历史口径「1336 帧 0 janky」同量级）；**模拟器（Android 15）回归 3/3 保持通过**（升级无口径回归）。
+
+### 修复（真机取证轮暴露，均已修）
+
+- **Macrobenchmark 库升级 `1.3.4 → 1.5.0`：修复 Android 16+ 真机恒报 `Unable to confirm activity launch completion []`**。根因（三层证据链定位）：库 1.3.4 用 `pgrep -l -f <pkg>` 枚举被测进程并按「空格 split 位置解构」解析进程名；**Android 16+（SDK≥36）起 toybox 将 >15 字符进程名截断**——本包名 `com.zcode.remote` 恰 **16 字符**，实测被截为 `om.zcode.remote`（丢失首字符）→ 名称过滤全灭 → 进程列表恒空 → 库对空列表轮询 10s 后抛错。**证据**：① 真机 `od -c` 对比 `pgrep -l`（截断）与 `pgrep -l -a`（完整）；② 上游修复 aosp/3507001（SDK≥36 时追加 `-a`）；③ Python 逐字复刻 `FrameStatsResult.parse` 对真机样本全部解析成功 → 排除解析层、锁定进程枚举层。1.5.0 字节码确认含修复（`SDK_INT >= 36 → "-a"`）。**该缺陷与 App/benchmark 工程配置无关**（宿主渲染、fixture、签名均正常）；模拟器（Android 15）不受影响——精确解释「CI 全绿、真机必挂」。
+- **benchmark 变体新增真机取证签名开关 `-PbenchmarkUseReleaseSigning=true`**（`app/build.gradle.kts`）：开启且本机有 keystore 时 benchmark 变体改用 release 签名 → 可直接**覆盖安装已装正式包（免卸载、保配对凭据）**；默认仍 debug 签名，**CI/无 keystore 环境行为不变**。
+
+### 验证
+- 单测 **260/260**（`check_test_count.py` 核对）；`ktlintCheck` 0 违规；`detekt` 通过；`lintDebug`/`lintRelease` 0 error；`assembleDebug`/`assembleRelease`/`:benchmark:assembleBenchmark` 通过。
+- 真机与模拟器双双 3/3 实跑通过（见上）；baseline 比对沿用 10× 阈值（CI 噪声口径）。
+
+### 遗留（登记，非遗漏）
+- **真机走查清单四项已全部闭环**（协议灰度/诊断导出/界面回归/基准取证，见上）。剩余硬门不变：A-5 逻辑 fragment 与出站物理分片（无真实帧样本不实现）；§11.10 `1.0.0` 发布门（依赖连续两个 Beta 周期无严重回归）。
+- 真机基准数（8 核 / Android 17）与模拟器基线（`bench_baseline_emulator.json`）分属不同口径，暂不并入同一比对基线文件（回退探测按同环境历史比对）。
+
 ## v0.5.0-beta37（2026-10-12）· §11.8 第二层门禁收尾：长会话 Macrobenchmark + 基线回退探测
 
 ### 新增（工程化/性能基线；无用户可见行为变化）

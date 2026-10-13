@@ -88,5 +88,10 @@ androidComponents {
 dependencies {
     implementation("androidx.test.ext:junit:1.2.1")
     implementation("androidx.test.uiautomator:uiautomator:2.3.0")
-    implementation("androidx.benchmark:benchmark-macro-junit4:1.3.4")
+    // 1.3.4 → 1.5.0：修复「Android 16+（SDK>=36）上 toybox pgrep -l 将 >15 字符进程名
+    // 截断，而库的进程枚举未加 -a 导致被测包（com.zcode.remote 恰 16 字符）匹配失败、
+    // getRunningProcessesForPackage 返回空 → 恒报 Unable to confirm activity launch
+    // completion []」的兼容性缺陷（上游 aosp/3507001 以 SDK>=36 时追加 -a 修复，
+    // 1.3.4 未包含）。2026-10-13 小米 15 Pro（Android 17）真机实测定位。
+    implementation("androidx.benchmark:benchmark-macro-junit4:1.5.0")
 }
