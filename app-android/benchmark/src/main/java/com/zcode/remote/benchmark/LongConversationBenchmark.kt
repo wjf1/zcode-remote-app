@@ -127,6 +127,10 @@ class LongConversationBenchmark {
      * 运行时取证之一：确认被测包安装的是含宿主 Activity 的 benchmark 变体。
      * **必须在测试进程内执行**——AGP 跑完 connected 测试会卸载 APK，事后再 `pm dump` 必然误读为空
      * （2026-10-12 实测：事后诊断 `ActivityCount=0` 是卸载假象）。
+     *
+     * ⚠️ `cmd package resolve-activity --brief` 的输出是两行：「priority=… match=0x…」字段行 +
+     * 组件**短名**行（与包名重复的前缀被压缩为 `/.`，即 `com.zcode.remote/.bench.BenchmarkConversationActivity`）。
+     * 首版用全点分全限定名做 contains 断言 → 恒 false，把「可解析」误报成「不存在」（2026-10-13 修）。
      */
     private fun MacrobenchmarkScope.requireHostInstalled() {
         val out =
@@ -134,7 +138,7 @@ class LongConversationBenchmark {
                 device.executeShellCommand("cmd package resolve-activity --brief $TARGET_PACKAGE/$HOST_ACTIVITY")
             }.getOrElse { "resolve-activity 执行失败：$it" }
         println("BENCH_DIAG resolve-activity: $out")
-        require(out.contains(HOST_ACTIVITY)) {
+        require(out.contains("BenchmarkConversationActivity")) {
             "被测包中不存在宿主 Activity（装的可能是非 benchmark 变体——须含 app/src/benchmark 源集）：$out"
         }
     }

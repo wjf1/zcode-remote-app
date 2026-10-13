@@ -1,0 +1,55 @@
+{
+  "benchmarks": {
+    "openLongConversation": {
+      "frameCount": 11,
+      "frameDurationCpuMs": {
+        "P50": 83.075,
+        "P90": 816.815,
+        "P99": 938.247
+      },
+      "frameOverrunMs": {
+        "P50": 92.857,
+        "P90": 886.802,
+        "P99": 931.288
+      },
+      "jankyRatio": 0.81818,
+      "timeToInitialDisplayMs": {
+        "median": 1466.61
+      }
+    },
+    "scrollLongConversation": {
+      "frameCount": 616,
+      "frameDurationCpuMs": {
+        "P50": 32.284,
+        "P90": 36.049,
+        "P99": 45.789
+      },
+      "frameOverrunMs": {
+        "P50": 28.806,
+        "P90": 31.539,
+        "P99": 47.998
+      },
+      "jankyRatio": 0.97727
+    },
+    "streamingAppendLongConversation": {
+      "frameCount": 381,
+      "frameDurationCpuMs": {
+        "P50": 31.721,
+        "P90": 34.166,
+        "P99": 43.949
+      },
+      "frameOverrunMs": {
+        "P50": 28.626,
+        "P90": 30.834,
+        "P99": 32.972
+      },
+      "jankyRatio": 1.0
+    }
+  },
+  "context": {
+    "compilationMode": "run-from-apk",
+    "cpuCoreCount": 4,
+    "model": "Android SDK built for x86_64",
+    "sdk": 35
+  }
+}

@@ -52,11 +52,17 @@ internal object BenchmarkLongConversation {
             Triple("read_file", "app-android/app/src/main/java/com/zcode/remote/relay/ProtocolLimits.kt", TOOL_OUTPUT_READ),
         )
 
+    /**
+     * ⚠️ 本段是 `String.format` 的模板（见 [rowAt] 的 `.format(i)`）——**字面百分号必须写成 `%%`**。
+     * 曾有一版写「1.8%，」直接触发 `UnknownFormatConversionException: Conversion = '，'`：
+     * 宿主首帧渲染崩溃 → macrobenchmark 报 `Unable to confirm activity launch completion []`
+     * （2026-10-12 CI 多轮红；2026-10-13 本地模拟器复现定位）。改动本段文案时先自查 `%`。
+     */
     private val ASSISTANT_PARAGRAPH =
         """
         已完成第 %d 轮检查。结论先说：**没有发现功能性缺陷**，但有两处可以改进——
 
-        1. 构建产物体积比上一轮增加 1.8%，来自新增的图标资源；
+        1. 构建产物体积比上一轮增加 1.8%%，来自新增的图标资源；
         2. lint 报告中 `UnusedResources` 新增 3 条，均为历史遗留，不阻塞发布。
 
         详细数据见下方表格与代码块。
