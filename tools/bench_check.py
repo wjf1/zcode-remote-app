@@ -28,7 +28,6 @@
 from __future__ import annotations
 
 import argparse
-import glob
 import json
 import math
 import os
@@ -59,7 +58,16 @@ def fail(msg: str) -> None:
 def find_result_files(path: str) -> list[str]:
     if os.path.isfile(path):
         return [path]
-    hits = sorted(glob.glob(os.path.join(path, "**", "*BenchmarkData.json"), recursive=True))
+    # 大小写不敏感匹配 `*benchmarkData.json`：宏基准官方产出文件名为小写 b
+    # （`*-benchmarkData.json`），首版用 `*BenchmarkData.json` 的 glob——Windows 本地
+    # 不区分大小写可过，Linux/CI 严格区分 → 「找不到结果文件」直接红（2026-10-13 CI 实测）。
+    # 改 os.walk + lower 后缀过滤，跨平台一致。
+    hits = sorted(
+        os.path.join(root, name)
+        for root, _dirs, files in os.walk(path)
+        for name in files
+        if name.lower().endswith("benchmarkdata.json")
+    )
     return hits
 
 
