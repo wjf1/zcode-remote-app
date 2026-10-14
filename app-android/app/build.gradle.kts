@@ -178,7 +178,7 @@ dependencies {
     implementation("com.google.zxing:core:3.5.3")
 
     // 显式钉住 16 KB 对齐修复版，覆盖 compose BOM 传递的旧版 graphics-path
-    implementation("androidx.graphics:graphics-path:1.0.1")
+    implementation("androidx.graphics:graphics-path:1.1.0")
 
     // 会话页 Markdown 渲染：对齐桌面端的 GFM 表格/任务列表/代码块语法高亮。
     // 版本上限说明：本项目 Kotlin 插件为 2.0.20，而 Kotlin 元数据不向后兼容——
