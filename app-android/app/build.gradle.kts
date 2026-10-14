@@ -187,6 +187,6 @@ dependencies {
     // 该库 0.30.0 起已改用 Kotlin 2.1+ 编译，2.0.20 编译器读不了其元数据（硬报错）。
     // 0.27.0 是最后一个 Kotlin 2.0.x 编译的版本，故锁死在此；升级 Kotlin 插件前不得上调。
     // code 模块自带 dev.snipme:highlights 1.x（纯 JVM，无原生 .so）。
-    implementation("com.mikepenz:multiplatform-markdown-renderer-m3:0.27.0")
-    implementation("com.mikepenz:multiplatform-markdown-renderer-code:0.27.0")
+    implementation("com.mikepenz:multiplatform-markdown-renderer-m3:0.45.0")
+    implementation("com.mikepenz:multiplatform-markdown-renderer-code:0.45.0")
 }
