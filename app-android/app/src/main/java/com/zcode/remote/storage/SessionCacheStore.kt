@@ -25,6 +25,17 @@ object SessionCacheStore {
     private const val TAG = "SessionCache"
     private const val CACHE_FILE = "sessions_cache.json"
 
+    /**
+     * §11.6：缓存正文加密器（AES-256-GCM + Android Keystore，独立密钥别名）。
+     * **懒加载**：Keystore 在部分环境（单元测试 / 极少数设备）不可用，构造失败时保持 null，
+     * 加密写入与解密读取都安全降级（不写明文、读为空），绝不崩溃。
+     */
+    private val cipher: CacheCipher? by lazy {
+        runCatching { KeystoreCacheCipher() }
+            .onFailure { ZLog.w(TAG, "缓存加密器不可用，离线缓存将不落盘（不降级为明文）") }
+            .getOrNull()
+    }
+
     /** §11.6：写串行化 —— 流式期同一会话的保存可能并发，Mutex 保证「tmp 写 + rename」序列不交错。 */
     private val writeMutex = Mutex()
 
@@ -43,6 +54,21 @@ object SessionCacheStore {
             encodeDefaults = true
         }
 
+    /**
+     * §11.6：读文件 → 明文（新旧双读）。加密信封走解密，旧明文原样返回；
+     * 解密失败（密钥不可用/篡改/损坏）返回 null，由调用方按空缓存处理——**绝不回退明文**。
+     */
+    private fun readDecoded(file: File): String? {
+        val raw = file.readText()
+        val c = cipher
+        if (!CacheEnvelope.isWrapped(raw)) return raw // 旧明文（迁移期）
+        if (c == null) return null // 无加密器 → 无法解密的加密文件，安全失败
+        return c.decrypt(raw)
+    }
+
+    /** §11.6：明文 → 加密信封文本；加密器不可用返回 null（调用方跳过落盘，不写明文）。 */
+    private fun encodeEncrypted(plain: String): String? = cipher?.encrypt(plain)
+
     /** 读取缓存的会话列表。 */
     fun load(context: Context): List<SessionItem> {
         val file = File(context.filesDir, CACHE_FILE)
@@ -53,14 +79,14 @@ object SessionCacheStore {
             return emptyList()
         }
         return runCatching {
-            val raw = file.readText()
-            json.decodeFromString<List<SessionItem>>(raw)
+            val plain = readDecoded(file) ?: return emptyList()
+            json.decodeFromString<List<SessionItem>>(plain)
         }.onFailure {
             ZLog.w(TAG, "解析本地会话缓存失败: ${it.message}")
         }.getOrDefault(emptyList())
     }
 
-    /** 异步持久化保存会话列表（原子写）。 */
+    /** 异步持久化保存会话列表（原子写 + 加密）。 */
     suspend fun save(
         context: Context,
         sessions: List<SessionItem>,
@@ -68,12 +94,17 @@ object SessionCacheStore {
         if (sessions.isEmpty()) return@withContext
         writeMutex.withLock {
             runCatching {
-                val raw = json.encodeToString(sessions)
+                val raw = encodeEncrypted(json.encodeToString(sessions))
+                if (raw == null) {
+                    // 加密器不可用：不落明文（§11.6 安全门要求数据目录不可检索正文）
+                    ZLog.w(TAG, "缓存加密器不可用，跳过会话列表落盘")
+                    return@withLock
+                }
                 val target = File(context.filesDir, CACHE_FILE)
                 val tmp = File(context.filesDir, "$CACHE_FILE.tmp")
                 tmp.writeText(raw)
                 if (tmp.renameTo(target) || (target.delete() && tmp.renameTo(target))) {
-                    ZLog.d(TAG, "成功持久化 ${sessions.size} 条会话缓存")
+                    ZLog.d(TAG, "成功持久化 ${sessions.size} 条会话缓存（加密）")
                 }
             }.onFailure {
                 ZLog.w(TAG, "保存会话缓存失败: ${it.message}")
@@ -96,15 +127,15 @@ object SessionCacheStore {
             return emptyList()
         }
         return runCatching {
-            val raw = file.readText()
+            val plain = readDecoded(file) ?: return emptyList()
             // §11.6：读侧行数上限 —— 与写侧对齐，防旧文件/异常文件超限
-            json.decodeFromString<List<ConversationRow>>(raw).takeLast(MAX_ROWS_PER_FILE)
+            json.decodeFromString<List<ConversationRow>>(plain).takeLast(MAX_ROWS_PER_FILE)
         }.onFailure {
             ZLog.w(TAG, "解析会话行缓存失败 ($sessionId): ${it.message}")
         }.getOrDefault(emptyList())
     }
 
-    /** 异步保存单个会话的消息行（保留最近 200 行，防止体积膨胀）。 */
+    /** 异步保存单个会话的消息行（保留最近 200 行，防体积膨胀；加密落盘）。 */
     suspend fun saveRows(
         context: Context,
         sessionId: String,
@@ -114,18 +145,23 @@ object SessionCacheStore {
         val safeId = sessionId.replace(Regex("[^a-zA-Z0-9_-]"), "_")
         writeMutex.withLock {
             runCatching {
-                // §11.6：写侧行数上限 + 字节上限（200 行长正文仍可能到数 MB）
+                // §11.6：写侧行数上限 + 字节上限（200 行长正文仍可能到数 MB）。
+                // 字节预算按**明文**口径判定（加密后体积会因 base64 膨胀 ~1/3，故预算按明文算更保守）。
                 val slice =
                     trimRowsToBytes(
                         if (rows.size > MAX_ROWS_PER_FILE) rows.takeLast(MAX_ROWS_PER_FILE) else rows,
                         MAX_ROW_FILE_BYTES,
                     )
-                val raw = json.encodeToString(slice)
+                val raw = encodeEncrypted(json.encodeToString(slice))
+                if (raw == null) {
+                    ZLog.w(TAG, "缓存加密器不可用，跳过会话行落盘 ($sessionId)")
+                    return@withLock
+                }
                 val target = File(context.filesDir, "rows_$safeId.json")
                 val tmp = File(context.filesDir, "rows_$safeId.json.tmp")
                 tmp.writeText(raw)
                 if (tmp.renameTo(target) || (target.delete() && tmp.renameTo(target))) {
-                    ZLog.d(TAG, "成功持久化会话 $sessionId 的 ${slice.size} 行缓存")
+                    ZLog.d(TAG, "成功持久化会话 $sessionId 的 ${slice.size} 行缓存（加密）")
                     // C-7：写入后顺手裁剪目录（LRU），保证文件数收敛到上限
                     pruneRowsCache(context)
                 }

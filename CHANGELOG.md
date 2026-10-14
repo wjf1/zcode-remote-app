@@ -1,5 +1,33 @@
 # 变更记录 / Changelog
 
+## v0.5.0-beta44（2026-10-14）· 会话正文离线缓存加密（§11.6 安全门）
+
+### 安全加固
+
+- **会话正文缓存由明文改为 AES-256-GCM 加密落盘**：此前配对凭据、GitHub Token 都已用
+  Android Keystore 加密，唯独占比最大、最敏感的**会话正文**（每个会话最近 200 行消息与
+  会话列表标题）以**明文 JSON** 写入 `filesDir/rows_<sid>.json` 与 `sessions_cache.json` ——
+  设备被 root / 备份提取 / 同沙箱读取即可明文检索。本轮补齐（任务书 §11.6「敏感缓存与
+  存储治理」的 P1 安全门）：
+  - **复用既有 Keystore 能力**（遵循 §11.6 「禁止引入 EncryptedSharedPreferences」，沿用
+    `CredentialCrypto` 的 AES-256-GCM 实现），但使用**独立密钥别名** `zcode_remote_cache_key`
+    ——与配对凭据的主密钥隔离，二者互不牵连；
+  - **版本化信封 + 新旧双读**：文件以 `ZCE1:<ivB64>:<dataB64>` 前缀标识加密格式，
+    读侧据前缀分流——旧明文缓存**照常可读**（迁移期不丢用户离线数据），新写入一律加密；
+  - **安全失败**：加密器不可用（极少数设备 Keystore 异常）时**跳过落盘、绝不回退明文**；
+    密文损坏/篡改/密钥不可用 → 读侧返回空缓存（不崩溃、不落明文）。
+  - 字节预算仍按**明文**口径判定（加密后因 base64 膨胀约 1/3，按明文算更保守），行数/TTL/LRU 策略不变。
+
+### 验证
+
+- JVM 单测 **287/287**（+8：`CacheCryptoTest` 覆盖信封往返、旧明文不误判、畸形信封安全失败、
+  双读编排、加解密失败返回 null）。
+- 新增仪器化 `CacheEncryptionInstrumentedTest`（真实 Keystore，随 CI `instrumentation` job）：
+  写入含 canary 正文的缓存后，断言**落盘文件字节里搜不到 canary 明文**且以加密信封前缀开头，
+  同时读回能正确还原——直接对应 §11.6 的验收「应用数据目录不能搜索到 canary 正文」。
+- `assembleDebug` / `assembleRelease` 通过；`lintDebug` + `lintRelease` 0 error；`detekt` 通过；
+  `ktlintCheck` 0 违规。
+
 ## v0.5.0-beta43（2026-10-14）· 交互修复轮：会话草稿隔离与审批倒计时实时化
 
 ### 修复

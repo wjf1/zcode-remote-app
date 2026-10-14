@@ -17,7 +17,7 @@
   （Kotlin + Jetpack Compose）。逆向复用官方中继与配对协议，提供更强的通知、锁屏审批、
   流式会话与移动端操控体验。
 - **仓库**：<https://github.com/wjf1/zcode-remote-app>（owner：wjf1）
-- **当前版本**：`0.5.0-beta43`（versionCode 55）；上一个发布 tag `v0.5.0-beta42`。
+- **当前版本**：`0.5.0-beta44`（versionCode 56）；上一个发布 tag `v0.5.0-beta43`。
 - **许可**：[MIT](LICENSE)；安全披露见 [SECURITY.md](SECURITY.md)。
 - **部署形态**：侧滑安装的签名 Release APK（无 Play 分发）；自用 + 受控灰度。
 - **主分支**：`master`。
@@ -82,8 +82,17 @@ app-android/app/src/main/java/com/zcode/remote/
 ## 4. 最近一轮变更与交付成果
 
 > 完整逐轮记录见 [CHANGELOG.md](CHANGELOG.md) 与 [HANDOVER.md](HANDOVER.md) 文首覆盖层。
-> 最近两轮均为用户体验缺陷修复：**v0.5.0-beta43（草稿隔离 + 倒计时实时化）**、
-> **v0.5.0-beta42（通知权限 / 网络回调 / 旋转状态）**。
+> 最近三轮均为质量修复：**v0.5.0-beta44（会话正文缓存加密）**、
+> **v0.5.0-beta43（草稿隔离 + 倒计时实时化）**、**v0.5.0-beta42（通知权限 / 网络回调 / 旋转状态）**。
+
+### v0.5.0-beta44：会话正文离线缓存加密（§11.6 安全门）
+
+| 项 | 问题 | 修法 |
+|---|---|---|
+| **会话正文明文落盘** | 凭据/Token 已加密，唯独最敏感的**会话正文**（行缓存 + 列表标题）以明文 JSON 写入 `filesDir` | 复用 `CredentialCrypto`（AES-256-GCM + Keystore）但用**独立密钥别名**；文件加 `ZCE1:` 版本化信封，**新旧双读**（旧明文照读、新写必加密）；加密器不可用则跳过落盘、**绝不回退明文**；损坏/篡改 → 读为空 |
+
+**验证**：JVM 单测 **287/287**（+8 `CacheCryptoTest`）；仪器化 `CacheEncryptionInstrumentedTest`
+断言落盘文件**搜不到 canary 明文**（直接对应 §11.6 验收）；lint 双变体 0 error、detekt、ktlint 0 违规。
 
 ### v0.5.0-beta43：交互修复轮
 
