@@ -26,6 +26,7 @@ import com.zcode.remote.relay.ApprovalOption
 import com.zcode.remote.relay.PendingApproval
 import com.zcode.remote.relay.PendingElicitation
 import com.zcode.remote.relay.SessionItem
+import com.zcode.remote.ui.components.AutoResolveCountdown
 import com.zcode.remote.ui.theme.ZCodeTokens
 import com.zcode.remote.ui.theme.statusPendingTone
 import com.zcode.remote.ui.theme.toolCallTrajectoryTone
@@ -303,13 +304,8 @@ private fun ApprovalInboxCard(
                     )
                 }
                 Spacer(Modifier.weight(1f))
-                a.autoResolveAt?.let {
-                    val remainingSec = ((it - System.currentTimeMillis()).coerceAtLeast(0) / 1000).toInt()
-                    Text(
-                        text = "${remainingSec}s 后自动决议",
-                        style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
+                a.autoResolveAt?.let { deadline ->
+                    AutoResolveCountdown(deadlineAt = deadline)
                 }
             }
 

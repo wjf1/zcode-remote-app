@@ -1,5 +1,45 @@
 # 变更记录 / Changelog
 
+## v0.5.0-beta43（2026-10-14）· 交互修复轮：会话草稿隔离与审批倒计时实时化
+
+### 修复
+
+- **会话草稿按 taskId 隔离（防串会话错发）**：`promptDraft` 原是 `AppViewModel` 的**单一全局
+  字段**，切会话时不清空——在会话 A 打了半句话切到 B，输入框仍是那句话，此时点发送会把半句
+  **错发到 B 会话**（附件与会话绑定、草稿却没有，两者不一致）。现在草稿存储移入
+  `ConversationRepository` 并按 `taskId` 保存/恢复（切走时存回旧会话键、切到时恢复目标会话
+  草稿），上限 LRU 20 个会话防无界增长；断开/忘记设备时全部清空。`AppViewModel.promptDraft`
+  改为转发，UI 调用签名不变。切换时序抽成纯函数 `switchDraft`（存旧必须在改
+  `subscribedSessionId` **之前**，杜绝写错键）。
+- **审批自动决议倒计时逐秒刷新**：此前两处审批卡（待办 Tab / 会话内联卡）在**组合期**用
+  `System.currentTimeMillis()` 算一个静态秒数并渲染——数字只在别处触发重组时才跳变，
+  用户盯着看往往是一个**不动的秒数**。新增 `ui/components/AutoResolveCountdown`（`LaunchedEffect`
+  每秒推进，到点停止）替换两处；文案规则抽成纯函数 `countdownLabel`（剩余不足 1s 向上取整为
+  「1s」、到点显示「即将自动决议」，不出现「0s 后自动决议」这类像出错的文案）。
+
+### 工程
+
+- **debug 变体可选 release 签名开关**：新增 `-PdebugUseReleaseSigning=true`（默认关闭，与既有
+  `benchmarkUseReleaseSigning` 同一模式）——开启且本机有 `keystore.properties` 时 debug 变体改用
+  release 签名，可**同签名覆盖安装**已装 release 包（免卸载、保配对凭据），从而在真机上跑
+  `connectedDebugAndroidTest`/手动 instrument。已验证默认关闭时 debug 仍为 debug 签名、CI 行为不变。
+
+### 验证
+
+- JVM 单测 **279/279**（+15：`DraftStoreTest` 10 项含 5 项切换时序、`CountdownLabelTest` 5 项）。
+- 新增仪器化测试两类（`ConversationDraftInstrumentedTest`、`AutoResolveCountdownTest`），
+  随 CI `instrumentation` job（API 35 emulator）运行。
+- `assembleDebug` / `assembleRelease` 通过；`lintDebug` + `lintRelease` 0 error；`detekt` 通过；
+  `ktlintCheck` 0 违规。
+- **真机走查（小米 15 Pro / Android 17 / HyperOS）**：草稿隔离仪器化测试 **3/3 通过**——用真实
+  `ConversationRepository` 实例验证「A 存草稿 → 切 B 为空 → 切回 A 恢复」与「清当前会话草稿
+  不影响其它会话」，补上 ADB 无法向 Compose 输入框注入文本的端到端缺口（`input text` /
+  `keyevent` 对该设备的中文候选输入法均不生效，属 UI 自动化已知限制）。
+- **环境说明（既有，非本轮引入）**：设备为 **API 37（Android 17）**，其上 Espresso/Compose
+  测试库的 `InputManagerEventInjectionStrategy` 因 `InputManager.getInstance()` 被移除而失败——
+  既有的 `MarkdownRenderTest` 在同一设备**同样失败**，确证为测试库与 Android 17 的兼容问题，
+  与业务代码无关；CI 的 API 35 emulator 不受影响。
+
 ## v0.5.0-beta42（2026-10-14）· 用户体验与生命周期修复轮：通知权限、网络回调与旋转状态
 
 ### 修复

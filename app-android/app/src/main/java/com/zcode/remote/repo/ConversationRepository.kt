@@ -73,6 +73,48 @@ class ConversationRepository(
 
     internal var subscribedSessionId by mutableStateOf<String?>(null)
 
+    /**
+     * 各会话的输入草稿（按 taskId 隔离）。
+     *
+     * 缺陷背景：草稿原为 `AppViewModel` 的**单一全局字段**，切会话时不清空——在会话 A 打了
+     * 半句话切到 B，输入框仍是那句话，此时点发送会把半句**错发到 B 会话**。附件与会话绑定
+     * （`clearAttachments`）但草稿没有，两者不一致。
+     *
+     * 现在按 taskId 保存/恢复：切走时把当前草稿存回旧会话的键，切到时恢复目标会话的草稿。
+     * 只保留最近 [MAX_DRAFT_SESSIONS] 个会话的草稿（LRU），避免长时间使用后无界增长。
+     */
+    private val draftsBySession = linkedMapOf<String, String>()
+
+    /** 当前会话草稿（对外读写入口，与 `AppViewModel.promptDraft` 语义一致）。 */
+    internal var promptDraft by mutableStateOf("")
+        private set
+
+    fun updatePromptDraft(v: String) {
+        promptDraft = v
+        subscribedSessionId?.let { putDraft(draftsBySession, it, v, MAX_DRAFT_SESSIONS) }
+    }
+
+    /** 发送成功 / 删除会话 / 断开时清空当前草稿（同时清其在 map 中的记录）。 */
+    fun clearPromptDraft() {
+        promptDraft = ""
+        subscribedSessionId?.let { draftsBySession.remove(it) }
+    }
+
+    /**
+     * 切换到 [newSessionId] 的草稿：先把当前草稿存回旧会话键，再恢复目标会话的草稿。
+     * 订阅/切会话时调用（原子一步，避免「存旧」与「读新」之间被 UI 读到中间态）。
+     * 时序逻辑抽成纯函数 [switchDraft]（存旧必须在改 subscribedSessionId 之前，否则会写错键）。
+     */
+    internal fun switchDraftTo(newSessionId: String?) {
+        promptDraft = switchDraft(draftsBySession, subscribedSessionId, newSessionId, promptDraft)
+    }
+
+    /** 断开连接：清空全部草稿（凭据/会话上下文都不在了）。 */
+    fun clearAllDrafts() {
+        draftsBySession.clear()
+        promptDraft = ""
+    }
+
     /** 最近一次订阅的会话条目（A-2 自动重订需要原始 workspacePath/sessionId）。 */
     internal var subscribedSession: SessionItem? = null
 
@@ -127,6 +169,9 @@ class ConversationRepository(
     internal fun subscribeConversation(s: SessionItem) {
         val conv = conversation() ?: return
         val ws = s.workspacePath ?: activeWorkspaceKey() ?: return
+        // 草稿按会话隔离：先把当前草稿存回旧会话键，再恢复目标会话的草稿（须在改
+        // subscribedSessionId 之前调，否则「存旧」会存到新会话键上）
+        switchDraftTo(s.taskId)
         subscribedSession = s
         subscribedSessionId = s.taskId
         // A-2：新会话订阅重置自动重订预算
@@ -187,6 +232,53 @@ class ConversationRepository(
 
     companion object {
         private const val TAG = "ConvRepo"
+
+        /** 草稿按会话保留的上限（LRU）：超出后淘汰最久未更新的会话草稿。 */
+        internal const val MAX_DRAFT_SESSIONS = 20
+
+        /**
+         * 写入某会话的草稿（纯函数，参数化以便单测驱动 LRU 语义）。
+         *
+         * 语义：空串代表「该会话无草稿」——按删除处理（否则 map 会被大量空串撑满）；
+         * 写入会使该键变为「最近使用」（`LinkedHashMap` 重插到尾部）；
+         * 超出 [max] 时淘汰最旧（头部）键。
+         */
+        internal fun putDraft(
+            map: LinkedHashMap<String, String>,
+            sessionId: String,
+            text: String,
+            max: Int = MAX_DRAFT_SESSIONS,
+        ) {
+            map.remove(sessionId) // 先删再插：保证 LRU 顺序（重插到尾部）
+            if (text.isEmpty()) return
+            map[sessionId] = text
+            while (map.size > max) {
+                val oldest = map.keys.firstOrNull() ?: break
+                map.remove(oldest)
+            }
+        }
+
+        /**
+         * 切换会话草稿（纯函数，单测钉住时序）：把 [currentDraft] 存回 [oldSessionId]，
+         * 返回 [newSessionId] 的草稿。
+         *
+         * 关键时序：必须**先存旧会话**再读新会话——调用方在 `subscribeConversation` 里
+         * 于**改 `subscribedSessionId` 之前**调用本函数，故此处显式接收 old/new 而非读成员，
+         * 杜绝「存到新会话键上」这类错键缺陷。
+         * 空草稿不入 map（`putDraft` 内部按删除处理），故「切走时清空」也能被记住。
+         */
+        internal fun switchDraft(
+            map: LinkedHashMap<String, String>,
+            oldSessionId: String?,
+            newSessionId: String?,
+            currentDraft: String,
+            max: Int = MAX_DRAFT_SESSIONS,
+        ): String {
+            if (oldSessionId != null && oldSessionId != newSessionId) {
+                putDraft(map, oldSessionId, currentDraft, max)
+            }
+            return newSessionId?.let { map[it] } ?: ""
+        }
 
         /**
          * 服务端回显到达时的 pending 匹配移除（C-6 纯函数）：按文本 trim 相等匹配，
