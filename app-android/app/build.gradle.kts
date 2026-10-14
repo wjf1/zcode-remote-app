@@ -75,8 +75,10 @@ android {
         // versionCode 52：beta40 —— 依赖治理轮（第二批）：专项库升级（test:runner /
         //                           uiautomator / detekt）+ markdown 渲染库与 gradle-wrapper 漂移拒绝
         // versionCode 53：beta41 —— 依赖治理轮（第三批）：zxing / cyclonedx 升级 + AGP 跳跃拒绝
-        versionCode = 53
-        versionName = "0.5.0-beta41"
+        // versionCode 54：beta42 —— 用户体验与生命周期修复轮：通知权限运行时申请 +
+        //                           网络回调注销 + 旋转状态保持 + 自适应图标/启动屏 + 死参数清理
+        versionCode = 54
+        versionName = "0.5.0-beta42"
         // 仪器化渲染回归网（src/androidTest）用 androidx.test 默认 runner。
         // 只在模拟器/真机上跑；CI runner 无设备，故 ci.yml 不接（见 HANDOVER §6.1 回归网）。
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"

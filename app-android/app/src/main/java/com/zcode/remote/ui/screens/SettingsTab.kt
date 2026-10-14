@@ -25,6 +25,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.zcode.remote.BuildConfig
+import com.zcode.remote.notify.NotificationPermission
 import com.zcode.remote.relay.RelayState
 import com.zcode.remote.relay.RpcChannel
 import com.zcode.remote.repo.UpdateRepository
@@ -356,6 +357,12 @@ fun SettingsTab(
 
                         HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
 
+                        // 通知权限状态与申请（Android 13+ 运行时权限）。
+                        // 若不在此申请，装机后审批通知会被系统静默丢弃（招牌功能直接失效）。
+                        NotificationPermissionRow()
+
+                        HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+
                         // 保活指引入口
                         Row(
                             modifier = Modifier.fillMaxWidth(),
@@ -622,6 +629,84 @@ private fun SectionHeader(title: String) {
         color = MaterialTheme.colorScheme.primary,
         modifier = Modifier.padding(bottom = 6.dp),
     )
+}
+
+/**
+ * 通知权限状态行（Android 13+ POST_NOTIFICATIONS）。
+ *
+ * 未授予时展示醒目提示与「去开启」按钮：先尝试运行时申请（首次），
+ * 若已被永久拒绝（`shouldShowRequestPermissionRationale` 为 false 且再次申请无效）
+ * 则直接跳系统通知设置页——两条路径都不打断用户当前操作，只补上缺失的能力。
+ *
+ * 状态在 `ON_RESUME` 时刷新：用户从系统设置页返回后本行即时更新，无需手动刷新。
+ */
+@Composable
+private fun NotificationPermissionRow() {
+    val context = LocalContext.current
+    var granted by remember { mutableStateOf(NotificationPermission.isGranted(context)) }
+    val lifecycleOwner = androidx.lifecycle.compose.LocalLifecycleOwner.current
+
+    val launcher =
+        androidx.activity.compose.rememberLauncherForActivityResult(
+            androidx.activity.result.contract.ActivityResultContracts
+                .RequestPermission(),
+        ) { result ->
+            granted = result
+            if (!result) {
+                // 用户刚拒绝（或此前已永久拒绝）：引导去系统设置手动开启
+                runCatching { context.startActivity(NotificationPermission.settingsIntent(context)) }
+            }
+        }
+
+    // 从系统设置返回 / 首次进入时刷新状态（不申请，只读）
+    DisposableEffect(lifecycleOwner) {
+        val observer =
+            androidx.lifecycle.LifecycleEventObserver { _, event ->
+                if (event == androidx.lifecycle.Lifecycle.Event.ON_RESUME) {
+                    granted = NotificationPermission.isGranted(context)
+                }
+            }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
+    }
+
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.SpaceBetween,
+    ) {
+        Column(modifier = Modifier.weight(1f)) {
+            Text("系统通知权限", style = MaterialTheme.typography.labelLarge)
+            Text(
+                text =
+                    if (granted) {
+                        "已开启，锁屏可收到审批推送"
+                    } else {
+                        "未开启——审批通知无法送达，请在系统设置中允许通知"
+                    },
+                style = MaterialTheme.typography.bodySmall,
+                color = if (granted) MaterialTheme.colorScheme.onSurfaceVariant else MaterialTheme.colorScheme.error,
+            )
+        }
+        if (!granted) {
+            OutlinedButton(
+                onClick = {
+                    if (NotificationPermission.isRuntimeRequestRequired(android.os.Build.VERSION.SDK_INT)) {
+                        // Android 13+：走运行时申请。首次弹系统框；已被永久拒绝时会立刻
+                        // 回调 false，由 launcher 回调转去系统设置页（见上方）。
+                        launcher.launch(NotificationPermission.PERMISSION)
+                    } else {
+                        // 低版本无该运行时权限：只能是系统通知总开关被关，直接跳设置。
+                        runCatching { context.startActivity(NotificationPermission.settingsIntent(context)) }
+                    }
+                },
+                contentPadding = PaddingValues(horizontal = 10.dp, vertical = 0.dp),
+                modifier = Modifier.height(32.dp),
+            ) {
+                Text("去开启", style = MaterialTheme.typography.labelSmall)
+            }
+        }
+    }
 }
 
 @Composable

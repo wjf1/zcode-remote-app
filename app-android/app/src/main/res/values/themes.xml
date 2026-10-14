@@ -1,7 +1,20 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
+    <!--
+      应用主题 + 冷启动启动屏。
+
+      启动屏用 Android 12+ 原生 SplashScreen 属性（minSdk 31，全设备可用），
+      **不引入 androidx.core:core-splashscreen 依赖**——与本仓库「依赖治理从严」的
+      既定策略一致（依赖升级一律经 Dependabot + 人工审查，不新增传递依赖）。
+
+      原先只有 windowBackground=#161616：冷启动是纯黑块再直接闪出界面，无品牌图标。
+      现在系统会在冷启动时先展示深色底 + 应用图标，首帧就绪后平滑过渡到真实界面。
+    -->
     <style name="Theme.ZCodeRemote" parent="android:Theme.Material.NoActionBar">
         <item name="android:statusBarColor">#161616</item>
-        <item name="android:windowBackground">#161616</item>
+        <item name="android:windowBackground">@color/splash_background</item>
+        <!-- 原生启动屏（API 31+）：深色底 + 按官方 288dp 比例绘制的图标 -->
+        <item name="android:windowSplashScreenBackground">@color/splash_background</item>
+        <item name="android:windowSplashScreenAnimatedIcon">@drawable/ic_splash</item>
     </style>
 </resources>

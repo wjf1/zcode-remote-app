@@ -38,6 +38,7 @@ import com.zcode.remote.repo.UpdateRepository
 import com.zcode.remote.service.ConnectionCoordinator
 import com.zcode.remote.service.ConnectionScope
 import com.zcode.remote.service.ConnectionService
+import com.zcode.remote.service.RemoteConnectionManager
 import com.zcode.remote.storage.MultiDeviceStore
 import com.zcode.remote.storage.PairedDevice
 import com.zcode.remote.storage.SessionCacheStore
@@ -855,6 +856,8 @@ class AppViewModel(
         conversation?.reset()
         sessionsIndex?.reset()
         workspaceConfig?.reset()
+        // 注销网络回调：断开后不再需要感知网络变化，且下次 connect() 会新建闸门（防累积）
+        RemoteConnectionManager.releaseGate()
         client = null
         channel = null
         conversation = null

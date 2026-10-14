@@ -1,9 +1,13 @@
-# ZCode Remote（v0.5.0-beta6 · M1-M3/Sprint 0–3/Sprint 6 全部完成并在小米 15 Pro 真机实测通过）
+# ZCode Remote（模块构建说明）
 
-小米 15 Pro（HyperOS 2 / Android 15+）上的 ZCode 官方远程控制原生增强客户端。
+> 本文件是 **app-android 模块的构建与真机验证说明**；项目功能总览、双语 README 与最新
+> 版本状态以仓库根目录的 [../README.md](../README.md) 为准（本文件的历史章节停留在早期
+> 里程碑，不再作为版本状态的单一事实来源）。
+
+小米 15 Pro（HyperOS / Android 15+）上的 ZCode 官方远程控制原生增强客户端。
 方案见 [../ZCode远程控制安卓APP方案.md](./ZCode远程控制安卓APP方案.md)，协议见 [../PROTOCOL.md](./PROTOCOL.md)，交接计划见 [../HANDOVER.md](../HANDOVER.md)。
 
-## 真机实测验证状态（Sprint 0–3/6 全部通过，2026-10-05 小米 15 Pro 实测）
+## 真机实测验证状态（历史里程碑记录；最新验收状态见根目录 README / HANDOVER）
 
 在真机（小米 15 Pro，Serial: `9f6241b4`）完成全链路闭环验证：
 

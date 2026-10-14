@@ -24,7 +24,7 @@
 
     <application
         android:label="ZCode Remote"
-        android:icon="@drawable/ic_launcher"
+        android:icon="@mipmap/ic_launcher"
         android:theme="@style/Theme.ZCodeRemote"
         android:allowBackup="false"
         android:usesCleartextTraffic="false">
