@@ -179,7 +179,7 @@ dependencies {
     implementation("androidx.camera:camera-camera2:1.4.2")
     implementation("androidx.camera:camera-lifecycle:1.4.2")
     implementation("androidx.camera:camera-view:1.4.2")
-    implementation("com.google.zxing:core:3.5.3")
+    implementation("com.google.zxing:core:3.5.4")
 
     // 显式钉住 16 KB 对齐修复版，覆盖 compose BOM 传递的旧版 graphics-path
     implementation("androidx.graphics:graphics-path:1.1.0")
