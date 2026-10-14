@@ -13,7 +13,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.List
+import androidx.compose.material.icons.automirrored.filled.List
 import androidx.compose.material.icons.filled.Notifications
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.*
@@ -257,7 +257,7 @@ class MainActivity : ComponentActivity() {
                                         NavigationBarItem(
                                             selected = selectedTab == 0,
                                             onClick = { selectedTab = 0 },
-                                            icon = { Icon(Icons.Default.List, contentDescription = "会话") },
+                                            icon = { Icon(Icons.AutoMirrored.Filled.List, contentDescription = "会话") },
                                             label = {
                                                 Text(
                                                     "会话",

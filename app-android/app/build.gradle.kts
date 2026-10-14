@@ -90,8 +90,10 @@ android {
         //                           独立 Keystore 密钥 + 版本化信封 + 新旧双读，落盘不可检索明文）
         // versionCode 57：beta45 —— 工程清债轮：关键界面 @Preview（debug 源集，release 零影响）
         //                           + tools/ 脚本索引 + 文档硬编码本机路径可移植化
-        versionCode = 57
-        versionName = "0.5.0-beta45"
+        // versionCode 58：beta46 —— 弃用 API 清理轮：Icons.AutoMirrored 迁移 + 通知死代码 +
+        //                           描边规范化，编译期 deprecation 警告归零
+        versionCode = 58
+        versionName = "0.5.0-beta46"
         // 仪器化渲染回归网（src/androidTest）用 androidx.test 默认 runner。
         // 只在模拟器/真机上跑；CI runner 无设备，故 ci.yml 不接（见 HANDOVER §6.1 回归网）。
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"

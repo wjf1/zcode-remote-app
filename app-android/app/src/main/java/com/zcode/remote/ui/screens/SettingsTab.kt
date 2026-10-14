@@ -282,7 +282,8 @@ fun SettingsTab(
                                 Surface(
                                     color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
                                     shape = RoundedCornerShape(10.dp),
-                                    border = ButtonDefaults.outlinedButtonBorder,
+                                    // 与本页其它卡片统一的描边（原借 ButtonDefaults.outlinedButtonBorder，已弃用）
+                                    border = CardDefaults.outlinedCardBorder(),
                                     modifier = Modifier.fillMaxWidth(),
                                 ) {
                                     Row(

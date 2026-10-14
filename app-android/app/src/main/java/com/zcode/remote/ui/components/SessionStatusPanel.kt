@@ -15,12 +15,12 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.List
+import androidx.compose.material.icons.automirrored.filled.Send
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Info
-import androidx.compose.material.icons.filled.List
 import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.PlayArrow
-import androidx.compose.material.icons.filled.Send
 import androidx.compose.material.icons.filled.Star
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
@@ -351,7 +351,7 @@ private fun PlanSection(plan: ConversationFrames.PlanState) {
     var showAll by rememberSaveable { mutableStateOf(false) }
     SessionStatusSection(
         title = "进程",
-        icon = Icons.Default.List,
+        icon = Icons.AutoMirrored.Filled.List,
         summary = StatusPanelLabels.planCounterLabel(plan),
         expanded = expanded,
         onToggle = { expanded = !expanded },
@@ -485,7 +485,7 @@ private fun QueueSection(queue: ConversationFrames.QueueState) {
     var expanded by rememberSaveable { mutableStateOf(true) }
     SessionStatusSection(
         title = "排队输入",
-        icon = Icons.Default.Send,
+        icon = Icons.AutoMirrored.Filled.Send,
         summary = "${queue.itemCount} 条",
         expanded = expanded,
         onToggle = { expanded = !expanded },

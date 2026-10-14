@@ -17,7 +17,7 @@
   （Kotlin + Jetpack Compose）。逆向复用官方中继与配对协议，提供更强的通知、锁屏审批、
   流式会话与移动端操控体验。
 - **仓库**：<https://github.com/wjf1/zcode-remote-app>（owner：wjf1）
-- **当前版本**：`0.5.0-beta45`（versionCode 57）；上一个发布 tag `v0.5.0-beta44`。
+- **当前版本**：`0.5.0-beta46`（versionCode 58）；上一个发布 tag `v0.5.0-beta45`。
 - **许可**：[MIT](LICENSE)；安全披露见 [SECURITY.md](SECURITY.md)。
 - **部署形态**：侧滑安装的签名 Release APK（无 Play 分发）；自用 + 受控灰度。
 - **主分支**：`master`。
@@ -82,9 +82,21 @@ app-android/app/src/main/java/com/zcode/remote/
 ## 4. 最近一轮变更与交付成果
 
 > 完整逐轮记录见 [CHANGELOG.md](CHANGELOG.md) 与 [HANDOVER.md](HANDOVER.md) 文首覆盖层。
-> 最近四轮均为质量修复：**v0.5.0-beta45（工程清债：@Preview / 脚本索引 / 文档可移植化）**、
+> 最近五轮均为质量修复：**v0.5.0-beta46（弃用 API 清理，编译警告归零）**、
+> **v0.5.0-beta45（工程清债：@Preview / 脚本索引 / 文档可移植化）**、
 > **v0.5.0-beta44（会话正文缓存加密）**、**v0.5.0-beta43（草稿隔离 + 倒计时实时化）**、
 > **v0.5.0-beta42（通知权限 / 网络回调 / 旋转状态）**。
+
+### v0.5.0-beta46：弃用 API 清理轮
+
+| 项 | 做法 |
+|---|---|
+| **图标 RTL 迁移** | `Icons.Filled.Send/List/KeyboardArrowRight`（8 处）→ `Icons.AutoMirrored.Filled.*`（RTL 语言下正确镜像） |
+| **通知死代码** | 移除 `setPriority(PRIORITY_HIGH)`（4 处）——Android 8+ 由通知渠道决定优先级，渠道已 `IMPORTANCE_HIGH`，行为不变 |
+| **描边规范化** | 两处装饰性 `Surface` 误用 `ButtonDefaults.outlinedButtonBorder`（已弃用）→ 显式 `BorderStroke` / `CardDefaults.outlinedCardBorder()` |
+
+**验证**：**编译期 deprecation 警告 14 → 0**；单测 287/287；debug/androidTest/release 装配通过；
+lint 双变体 0 error、detekt、ktlint 0 违规；release 体积零增长（5065543 字节）。
 
 ### v0.5.0-beta45：工程清债轮
 

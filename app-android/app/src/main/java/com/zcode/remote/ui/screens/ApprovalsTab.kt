@@ -1,5 +1,6 @@
 package com.zcode.remote.ui.screens
 
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.*
@@ -81,12 +82,9 @@ fun ApprovalsTab(
                 Surface(
                     color = statusPendingTone().copy(alpha = 0.2f),
                     shape = RoundedCornerShape(12.dp),
-                    border =
-                        ButtonDefaults.outlinedButtonBorder.copy(
-                            brush =
-                                androidx.compose.ui.graphics
-                                    .SolidColor(statusPendingTone().copy(alpha = 0.4f)),
-                        ),
+                    // 直接给 1dp 描边：原借 ButtonDefaults.outlinedButtonBorder（已弃用且语义不符，
+                    // 这是装饰性 Surface 而非按钮）
+                    border = BorderStroke(1.dp, statusPendingTone().copy(alpha = 0.4f)),
                 ) {
                     Text(
                         text = "$totalCurrentPending 项待处理",

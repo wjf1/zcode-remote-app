@@ -29,6 +29,7 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.List
 import androidx.compose.material.icons.filled.AttachFile
 import androidx.compose.material.icons.filled.Build
 import androidx.compose.material.icons.filled.Edit
@@ -37,7 +38,6 @@ import androidx.compose.material.icons.filled.Face
 import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.KeyboardArrowDown
-import androidx.compose.material.icons.filled.List
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.Place
@@ -542,7 +542,7 @@ private fun ToolFamilyIcon(
             ToolFamily.FileWrite -> Icons.Default.Edit
             ToolFamily.Shell -> Icons.Default.PlayArrow
             ToolFamily.Search -> Icons.Default.Search
-            ToolFamily.Todo -> Icons.Default.List
+            ToolFamily.Todo -> Icons.AutoMirrored.Filled.List
             ToolFamily.Goal -> Icons.Default.Star
             ToolFamily.Explore -> Icons.Default.Place
             ToolFamily.SessionContext -> Icons.Default.Refresh

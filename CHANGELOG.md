@@ -1,5 +1,28 @@
 # 变更记录 / Changelog
 
+## v0.5.0-beta46（2026-10-14）· 弃用 API 清理轮：编译警告归零
+
+### 工程改进（无用户可见行为变化）
+
+- **图标迁移到 `Icons.AutoMirrored`（8 处）**：`Icons.Filled.Send` / `List` / `KeyboardArrowRight`
+  在 RTL（从右到左）语言下应镜像显示，Material 已将其标记弃用并迁移到
+  `Icons.AutoMirrored.Filled.*`。本项目界面为中文（LTR）当前不受影响，但迁移后 RTL 语言
+  将正确镜像，且清掉了编译警告。涉及会话页导航、输入栏发送/停止、状态面板、折叠行箭头、
+  工具家族「待办」图标。
+- **通知 `setPriority` / `PRIORITY_HIGH` 死代码移除（4 处）**：自 Android 8 起通知优先级由
+  **通知渠道**决定，`setPriority` 已失效——本项目 minSdk 31，且审批/表单两个渠道均为
+  `IMPORTANCE_HIGH`，故这两行是纯死代码（高优先级由渠道保证，行为不变），移除以免误导。
+- **描边规范化（2 处）**：`ButtonDefaults.outlinedButtonBorder`（已弃用，且语义不符——那是给
+  按钮用的）被两处**装饰性 `Surface`** 误用；改为显式 `BorderStroke(1.dp, …)` 与本页统一的
+  `CardDefaults.outlinedCardBorder()`，语义更清晰。
+
+### 验证
+
+- **编译期 deprecation 警告归零**（14 → 0，`compileDebugKotlin --rerun-tasks` 实测）。
+- JVM 单测 **287/287**；`assembleDebug` / `assembleDebugAndroidTest` / `assembleRelease` 通过；
+  `lintDebug` + `lintRelease` 0 error；`detekt` 通过；`ktlintCheck` 0 违规。
+- **release 体积零增长**：5065543 字节（纯 API 迁移，无新增资源）。
+
 ## v0.5.0-beta45（2026-10-14）· 工程清债轮：界面预览、脚本索引与文档可移植化
 
 ### 工程改进（无用户可见行为变化）

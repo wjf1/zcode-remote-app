@@ -157,7 +157,8 @@ object ElicitationNotifier {
                 .setContentTitle(title)
                 .setContentText(body)
                 .setStyle(Notification.BigTextStyle().bigText(body))
-                .setPriority(Notification.PRIORITY_HIGH)
+                // setPriority/PRIORITY_HIGH 自 Android 8 起由通知渠道取代（本渠道为 IMPORTANCE_HIGH），
+                // minSdk 31 下已是死代码；高优先级由渠道保证，移除以免误导。
                 .setCategory(Notification.CATEGORY_SOCIAL)
                 .setContentIntent(contentIntent)
                 .setAutoCancel(false)
