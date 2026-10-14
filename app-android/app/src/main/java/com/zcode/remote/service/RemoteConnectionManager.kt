@@ -1,6 +1,7 @@
 package com.zcode.remote.service
 
 import com.zcode.remote.relay.ConversationChannel
+import com.zcode.remote.relay.NetworkGate
 import com.zcode.remote.relay.RelayClient
 import com.zcode.remote.relay.RpcChannel
 import com.zcode.remote.relay.SessionsIndexChannel
@@ -39,6 +40,25 @@ object RemoteConnectionManager {
     var sessionsIndex: SessionsIndexChannel? = null
     var workspaceConfig: WorkspaceConfigChannel? = null
 
+    /**
+     * 当前连接栈的网络闸门。每次 connect() 会新建并注册系统网络回调，
+     * **必须在重建/断开时经 [releaseGate] 注销**——否则回调随每次重连累积（旧回调闭包
+     * 持有已关闭的 RelayClient），见 NetworkGate.stopWatch 的说明。
+     */
+    var networkGate: NetworkGate? = null
+        private set
+
+    fun installGate(gate: NetworkGate) {
+        releaseGate()
+        networkGate = gate
+    }
+
+    /** 注销并丢弃当前网络闸门（幂等；重建连接栈与 shutdown 前调用）。 */
+    fun releaseGate() {
+        runCatching { networkGate?.stopWatch() }
+        networkGate = null
+    }
+
     /** 用户主动断开（首页「断开」/移除设备/忘记配对）：此后服务重启不得自动重连。 */
     @Volatile
     var manuallyDisconnected: Boolean = false
@@ -68,6 +88,7 @@ object RemoteConnectionManager {
     fun shutdown() {
         runCatching { client?.close() }
         runCatching { channel?.reset() }
+        releaseGate()
         client = null
         channel = null
         conversation = null

@@ -1,5 +1,60 @@
 # 变更记录 / Changelog
 
+## v0.5.0-beta42（2026-10-14）· 用户体验与生命周期修复轮：通知权限、网络回调与旋转状态
+
+### 修复
+
+- **通知权限运行时申请（P0）**：Android 13 起 `POST_NOTIFICATIONS` 为运行时权限且**默认拒绝**，
+  而此前 Manifest 虽已声明却**全工程没有一处申请它**——装机后锁屏审批通知被系统静默丢弃，
+  招牌功能直接失效且界面无任何提示。本轮新增 `notify/NotificationPermission`（纯判定：
+  运行时权限 + 系统通知总开关双判），并在两处补齐：① **配对成功后申请一次**
+  （仅尝试一次，不重复弹框、不打断既有操作流）；② **设置页新增「系统通知权限」状态行**，
+  未授予时以错误色提示并给出「去开启」按钮（Android 13+ 走运行时申请，低版本直接跳系统
+  通知设置页），状态在 `ON_RESUME` 刷新（从系统设置返回即更新）。新增 `NotificationPermissionTest`
+  4 项纯逻辑单测（API 边界、低版本恒不申请、权限常量与 Manifest 一致）。
+- **网络回调泄漏（P1）**：`NetworkGate` 每次 `connect()` 都 `registerDefaultNetworkCallback`
+  却**从不注销**——切线路/换设备/重连会持续累积系统回调，旧回调闭包还持有已 `close()` 的
+  旧 `RelayClient`。本轮新增 `NetworkGate.stopWatch()`（注销回调 + 清挂起等待者 + 置空回调，
+  幂等且注销后不可再 `startWatch`），并由 `RemoteConnectionManager` 统一登记/释放闸门：
+  连接栈重建前与 `disconnect()`/`shutdown()` 时均释放。
+- **旋转 / 进程重建丢失会话页（P1）**：`MainActivity` 的 `opened`（当前打开的会话）用
+  `remember` 保存，横竖屏切换或进程回收重建后被清空——用户从会话页被踢回列表，正在看的
+  流式会话卸载。改为存 `openedTaskId`（`rememberSaveable`）+ 条目缓存，重建后按 taskId
+  从会话列表回查元数据，旋转后仍停留在原会话。
+
+### 改进
+
+- **自适应图标与冷启动启动屏（观感）**：此前仅有一张 48dp drawable 充当应用图标，Android 8+
+  下会以遗留形态被塞进圆形/方形蒙版（四周留白、观感偏旧）。本轮新增 `mipmap-anydpi-v26`
+  自适应图标（前景/背景矢量 + 主题化 monochrome）与 Android 12+ **原生启动屏**
+  （深色底 + 品牌图标），冷启动由「纯黑块直接闪出界面」变为「深色底 + 图标平滑过渡」。
+  **零新增依赖**（用平台原生 `windowSplashScreen*` 属性，符合本项目依赖治理从严的既有策略）。
+- **清理 `HomeScreen` 7 个死参数**：`bridgeState`/`rpcEvents`/`devices`/`activeSid`/`events`/
+  `onDisconnect`/`onRescan` 在 `HomeScreen` 中从未被使用，而 `MainActivity` 每次重组仍为其
+  执行 `vm.events.toList()`、`vm.rpcEvents.toList()` 等整表拷贝。已删除参数与对应实参/import。
+
+### 治理
+
+- 新增 **`LICENSE`（MIT）**：此前仓库无许可证，默认保留全部权利——他人无法合法 fork/使用/贡献，
+  且 `dependency-review` 无法对本仓库做依赖合规判断。
+- 新增 **`SECURITY.md`**：明确划分「客户端自身缺陷（负责修）」「上游协议固有性质（只做兜底）」
+  「需向官方报告」三类，给出私下报告渠道与支持范围。
+- **README 免责声明**：显式声明本项目为非官方第三方客户端、与 ZCode 官方无隶属/授权/背书关系、
+  逆向复用协议的 ToS 风险与协议变更风险由使用者自负；同步修正测试数漂移（153 → 264 项）。
+- **`HANDOFF.md` 由一句话指针升级为六大模块接力文档**（项目概况/技术栈基线/架构拓扑/最近变更/
+  待办指引/避坑约束），作为新会话接手的第一入口；详尽历史证据仍以 `HANDOVER.md` 为准。
+- **`app-android/README.md`** 版本标题由 `v0.5.0-beta6` 更正为「模块构建说明 + 指向根 README」，
+  消除版本漂移。
+
+### 验证
+
+- JVM 单测 **264/264**（+4 新增 `NotificationPermissionTest`；`check_test_count.py` 核对声明的
+  `@Test` 全部执行）。
+- `assembleDebug` / `assembleRelease` 通过；`lintDebug` + `lintRelease` 0 error；`detekt` 通过；
+  `ktlintCheck` 0 违规。
+- **未经真机走查**（本轮无设备）：通知权限弹框与设置页引导、旋转状态保持、自适应图标与启动屏
+  观感四项待真机验收（清单见 `HANDOFF.md` §5）。
+
 ## v0.5.0-beta41（2026-10-14）· 依赖治理轮（第三批）：二维码与 SBOM 工具升级 + AGP 跳跃拒绝
 
 ### 修复（Dependabot 第三批 3 个 PR，2 合并 / 1 拒绝）

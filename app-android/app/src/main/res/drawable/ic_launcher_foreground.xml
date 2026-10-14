@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 自适应图标前景：沿用原 48x48 矢量 Logo（对话气泡 + 文本行），
+     经 group 缩放 1.5x 并居中到 108x108 画布的 72x72 安全区内。
+     安全区外留白可防圆形/方形蒙版裁切到图形本体。 -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <group
+        android:scaleX="1.5"
+        android:scaleY="1.5"
+        android:translateX="18"
+        android:translateY="18">
+        <path
+            android:fillColor="#7C9EFF"
+            android:pathData="M10,8h28a4,4 0 0 1 4,4v20a4,4 0 0 1 -4,4h-10l4,6h-16l4,-6h-10a4,4 0 0 1 -4,-4v-20a4,4 0 0 1 4,-4z" />
+        <path
+            android:fillColor="#161616"
+            android:pathData="M12,13h24v2h-24z M12,18h18v2h-18z M12,23h22v2h-22z" />
+    </group>
+</vector>

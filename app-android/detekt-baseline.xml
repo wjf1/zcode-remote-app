@@ -24,7 +24,7 @@
     <ID>CyclomaticComplexMethod:DiffView.kt$@Composable fun DiffBlock( diff: ToolDiff, modifier: Modifier = Modifier, )</ID>
     <ID>CyclomaticComplexMethod:DiffView.kt$ToolDiffParser$fun diffLines( old: List&lt;String>, new: List&lt;String>, ): List&lt;DiffLine></ID>
     <ID>CyclomaticComplexMethod:DiffView.kt$ToolDiffParser$fun parse( toolName: String?, inputText: String?, ): ToolDiff?</ID>
-    <ID>CyclomaticComplexMethod:HomeScreen.kt$@Composable fun HomeScreen( deviceName: String, state: RelayState, sessions: List&lt;SessionItem>, events: List&lt;TaskEvent> = emptyList(), bridgeState: RpcChannel.BridgeState, rpcEvents: List&lt;String> = emptyList(), devices: List&lt;PairedDevice> = emptyList(), activeSid: String? = null, sessionPending: Map&lt;String, Int> = emptyMap(), query: String = "", onQueryChange: (String) -> Unit = {}, subscribedSessionId: String? = null, desktopActiveTaskId: String? = null, onSessionClick: (SessionItem) -> Unit, onDisconnect: () -> Unit = {}, onRescan: () -> Unit = {}, onNavigateToSettings: () -> Unit = {}, /** 工作区模型目录（新建会话弹窗的模型选择数据源，可为空=加载中/不可用）。 */ modelState: com.zcode.remote.relay.WorkspaceConfigChannel.WorkspaceState? = null, modelsLoading: Boolean = false, onLoadModels: () -> Unit = {}, /** PC 端当前会话快照里的模型（弹窗展示与 provider 继承用，可为空）。 */ currentModel: String? = null, currentProvider: String? = null, availableModels: List&lt;com.zcode.remote.relay.WorkspaceConfigChannel.ModelOption> = emptyList(), /** 各模型合法思考档位：key = "providerId/modelId"。 */ modelReasoningLevels: Map&lt;String, List&lt;String>> = emptyMap(), /** 长按会话卡片触发删除（closeSession + deleteTask）。 */ onSessionDelete: (SessionItem) -> Unit = {}, onCreateSession: ( prompt: String, modelConfig: com.zcode.remote.relay.WorkspaceConfigChannel.ModelOption?, execMode: String, ) -> Unit = { _, _, _ -> }, )</ID>
+    <ID>CyclomaticComplexMethod:HomeScreen.kt$@Composable fun HomeScreen( deviceName: String, state: RelayState, sessions: List&lt;SessionItem>, sessionPending: Map&lt;String, Int> = emptyMap(), query: String = "", onQueryChange: (String) -> Unit = {}, subscribedSessionId: String? = null, desktopActiveTaskId: String? = null, onSessionClick: (SessionItem) -> Unit, onNavigateToSettings: () -> Unit = {}, /** 工作区模型目录（新建会话弹窗的模型选择数据源，可为空=加载中/不可用）。 */ modelState: com.zcode.remote.relay.WorkspaceConfigChannel.WorkspaceState? = null, modelsLoading: Boolean = false, onLoadModels: () -> Unit = {}, /** PC 端当前会话快照里的模型（弹窗展示与 provider 继承用，可为空）。 */ currentModel: String? = null, currentProvider: String? = null, availableModels: List&lt;com.zcode.remote.relay.WorkspaceConfigChannel.ModelOption> = emptyList(), /** 各模型合法思考档位：key = "providerId/modelId"。 */ modelReasoningLevels: Map&lt;String, List&lt;String>> = emptyMap(), /** 长按会话卡片触发删除（closeSession + deleteTask）。 */ onSessionDelete: (SessionItem) -> Unit = {}, onCreateSession: ( prompt: String, modelConfig: com.zcode.remote.relay.WorkspaceConfigChannel.ModelOption?, execMode: String, ) -> Unit = { _, _, _ -> }, )</ID>
     <ID>CyclomaticComplexMethod:HomeScreen.kt$@Composable private fun CreateSessionDialog( modelState: com.zcode.remote.relay.WorkspaceConfigChannel.WorkspaceState?, availableModels: List&lt;com.zcode.remote.relay.WorkspaceConfigChannel.ModelOption> = emptyList(), modelsLoading: Boolean, onLoadModels: () -> Unit, currentModel: String?, currentProvider: String?, /** 各模型合法思考档位：key = "providerId/modelId"。 */ modelReasoningLevels: Map&lt;String, List&lt;String>> = emptyMap(), onDismiss: () -> Unit, onConfirm: (prompt: String, modelConfig: com.zcode.remote.relay.WorkspaceConfigChannel.ModelOption?, execMode: String) -> Unit, )</ID>
     <ID>CyclomaticComplexMethod:HomeScreen.kt$@OptIn(androidx.compose.foundation.ExperimentalFoundationApi::class) @Composable private fun SessionItemCard( s: SessionItem, pending: Int, isActive: Boolean, desktopActive: Boolean, onClick: () -> Unit, onDelete: () -> Unit = {}, )</ID>
     <ID>CyclomaticComplexMethod:Interactions.kt$PendingElicitation.Companion$fun from( o: JsonObject, sessionId: String? = null, ): PendingElicitation?</ID>
@@ -32,7 +32,6 @@
     <ID>CyclomaticComplexMethod:MainActivity.kt$MainActivity$override fun onCreate(savedInstanceState: Bundle?)</ID>
     <ID>CyclomaticComplexMethod:ModelConfigRepository.kt$ModelConfigRepository$private fun parseReasoningLevels(data: kotlinx.serialization.json.JsonElement?): Map&lt;String, List&lt;String>></ID>
     <ID>CyclomaticComplexMethod:NotificationCoordinator.kt$NotificationCoordinator$fun recomputeSessionPending()</ID>
-    <ID>CyclomaticComplexMethod:RpcChannel.kt$RpcChannel$private suspend fun handleMessage(bytes: ByteArray)</ID>
     <ID>CyclomaticComplexMethod:RpcChannel.kt$RpcChannel$suspend fun onRpcFrame(payload: JsonObject)</ID>
     <ID>CyclomaticComplexMethod:SessionsIndexChannel.kt$SessionsIndexChannel$fun onEvent(event: RpcChannel.RpcEvent)</ID>
     <ID>CyclomaticComplexMethod:SettingsTab.kt$@OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class) @Composable fun SettingsTab( deviceName: String, state: RelayState, bridgeState: RpcChannel.BridgeState, devices: List&lt;PairedDevice>, activeSid: String?, endpointMode: String, customRelayUrl: String, themeMode: String, updateState: UpdateRepository.UpdateState, githubToken: String, onSwitchDevice: (String) -> Unit, onRemoveDevice: (String) -> Unit, onDisconnect: () -> Unit, onRescan: () -> Unit, onEndpointChange: (String, String?) -> Unit, onThemeChange: (String) -> Unit, onShowGuide: () -> Unit, onSetGithubToken: (String) -> Unit, onCheckUpdate: () -> Unit, )</ID>
@@ -43,8 +42,6 @@
     <ID>ImplicitDefaultLocale:CodeHighlightTest.kt$CodeHighlightTest$String.format("#%06X", it)</ID>
     <ID>ImplicitDefaultLocale:CodeHighlightTest.kt$CodeHighlightTest$String.format("#%06X", opaqueHighlightArgb(cyan) and 0xFFFFFF)</ID>
     <ID>ImplicitDefaultLocale:CodeHighlightTest.kt$CodeHighlightTest$String.format("#%06X", opaqueHighlightArgb(magenta) and 0xFFFFFF)</ID>
-    <ID>ImplicitDefaultLocale:RpcChannel.kt$RpcChannel$String.format("%08x", CRC32().apply { update(joined) }.value)</ID>
-    <ID>ImplicitDefaultLocale:RpcChannel.kt$RpcChannel$String.format("%08x", crc)</ID>
     <ID>LargeClass:AppViewModel.kt$AppViewModel : AndroidViewModelConnectionHost</ID>
     <ID>LargeClass:ConversationChannel.kt$ConversationChannel</ID>
     <ID>LoopWithTooManyJumpStatements:ModelConfigRepository.kt$ModelConfigRepository$for</ID>
@@ -63,13 +60,6 @@
     <ID>UnusedParameter:ConversationAttachmentTray.kt$onPick: () -> Unit</ID>
     <ID>UnusedParameter:ConversationChannel.kt$ConversationChannel$store: RowStore</ID>
     <ID>UnusedParameter:ConversationPendingCards.kt$onFreeText: (String) -> Unit</ID>
-    <ID>UnusedParameter:HomeScreen.kt$activeSid: String? = null</ID>
-    <ID>UnusedParameter:HomeScreen.kt$bridgeState: RpcChannel.BridgeState</ID>
-    <ID>UnusedParameter:HomeScreen.kt$devices: List&lt;PairedDevice> = emptyList()</ID>
-    <ID>UnusedParameter:HomeScreen.kt$events: List&lt;TaskEvent> = emptyList()</ID>
-    <ID>UnusedParameter:HomeScreen.kt$onDisconnect: () -> Unit = {}</ID>
-    <ID>UnusedParameter:HomeScreen.kt$onRescan: () -> Unit = {}</ID>
-    <ID>UnusedParameter:HomeScreen.kt$rpcEvents: List&lt;String> = emptyList()</ID>
     <ID>UnusedParameter:RelayProtocol.kt$RelayProtocol$appVersion: String</ID>
     <ID>UnusedPrivateMember:AppViewModel.kt$AppViewModel$private fun activeWorkspaceKeyOf(payload: JsonObject): String?</ID>
     <ID>UnusedPrivateProperty:BridgeFrames.kt$ApprovalClassifier$private val allowAlways = setOf("always allow", "allow always", "approve always")</ID>
@@ -77,11 +67,6 @@
     <ID>UnusedPrivateProperty:BridgeFrames.kt$ApprovalClassifier$private val rejectAlways = setOf("always deny", "deny always", "always reject", "always reject")</ID>
     <ID>UnusedPrivateProperty:BridgeFrames.kt$ApprovalClassifier$private val rejectOnce = setOf("deny", "deny once", "reject", "reject once")</ID>
     <ID>UseCheckOrError:AttachmentUploader.kt$AttachmentUploader$throw IllegalStateException("无法打开所选文件（可能已被移动或删除）")</ID>
-    <ID>VariableNaming:ApprovalRepository.kt$ApprovalRepository$private const val TAG = "ApprovalRepo"</ID>
-    <ID>VariableNaming:ConnectionCoordinator.kt$ConnectionCoordinator$private const val TAG = "ConnCoord"</ID>
-    <ID>VariableNaming:ConversationChannel.kt$ConversationChannel$private val NOOP_UPLOAD_HANDLE = object : UploadHandle { override fun abort() = Unit }</ID>
-    <ID>VariableNaming:ConversationRepository.kt$ConversationRepository$private const val TAG = "ConvRepo"</ID>
-    <ID>VariableNaming:NotificationCoordinator.kt$NotificationCoordinator$private const val TAG = "NotifyCoord"</ID>
     <ID>WildcardImport:ApprovalsTab.kt$import androidx.compose.foundation.layout.*</ID>
     <ID>WildcardImport:ApprovalsTab.kt$import androidx.compose.material3.*</ID>
     <ID>WildcardImport:ApprovalsTab.kt$import androidx.compose.runtime.*</ID>

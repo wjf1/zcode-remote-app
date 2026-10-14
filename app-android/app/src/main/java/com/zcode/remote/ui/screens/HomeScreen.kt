@@ -29,10 +29,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.zcode.remote.relay.FailureReason
 import com.zcode.remote.relay.RelayState
-import com.zcode.remote.relay.RpcChannel
 import com.zcode.remote.relay.SessionItem
-import com.zcode.remote.relay.TaskEvent
-import com.zcode.remote.storage.PairedDevice
 import com.zcode.remote.ui.theme.ZCodeTokens
 import com.zcode.remote.ui.theme.statusPendingTone
 import com.zcode.remote.ui.theme.toolCallTrajectoryTone
@@ -47,19 +44,12 @@ fun HomeScreen(
     deviceName: String,
     state: RelayState,
     sessions: List<SessionItem>,
-    events: List<TaskEvent> = emptyList(),
-    bridgeState: RpcChannel.BridgeState,
-    rpcEvents: List<String> = emptyList(),
-    devices: List<PairedDevice> = emptyList(),
-    activeSid: String? = null,
     sessionPending: Map<String, Int> = emptyMap(),
     query: String = "",
     onQueryChange: (String) -> Unit = {},
     subscribedSessionId: String? = null,
     desktopActiveTaskId: String? = null,
     onSessionClick: (SessionItem) -> Unit,
-    onDisconnect: () -> Unit = {},
-    onRescan: () -> Unit = {},
     onNavigateToSettings: () -> Unit = {},
     /** 工作区模型目录（新建会话弹窗的模型选择数据源，可为空=加载中/不可用）。 */
     modelState: com.zcode.remote.relay.WorkspaceConfigChannel.WorkspaceState? = null,

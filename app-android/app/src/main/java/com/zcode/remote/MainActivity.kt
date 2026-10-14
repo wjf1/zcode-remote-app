@@ -23,6 +23,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
+import com.zcode.remote.notify.NotificationPermission
 import com.zcode.remote.relay.ApprovalOption
 import com.zcode.remote.relay.PendingApproval
 import com.zcode.remote.relay.SessionItem
@@ -69,14 +70,46 @@ class MainActivity : ComponentActivity() {
             ) {
                 Surface(Modifier.fillMaxSize()) {
                     var scanning by rememberSaveable { mutableStateOf(false) }
-                    var opened by remember { mutableStateOf<SessionItem?>(null) }
+                    // 当前打开的会话：**存 taskId（可 saveable）** 而非整条 SessionItem ——
+                    // 否则旋转屏/进程回收重建 Activity 时 opened 丢失，用户被从会话页踢回列表。
+                    // 完整条目由 [openedItem] 缓存（新建会话回调早于列表刷新时仍需标题等元数据），
+                    // 旋转重建后 openedItem 为空，则由 sessions 按 taskId 回查（离线缓存已秒开列表）。
+                    var openedTaskId by rememberSaveable { mutableStateOf<String?>(null) }
+                    var openedItem by remember { mutableStateOf<SessionItem?>(null) }
                     var showGuide by rememberSaveable { mutableStateOf(false) }
                     var selectedTab by rememberSaveable { mutableIntStateOf(0) }
 
+                    fun openSession(target: SessionItem) {
+                        openedItem = target
+                        openedTaskId = target.taskId
+                    }
+
+                    fun closeSession() {
+                        openedItem = null
+                        openedTaskId = null
+                    }
+
+                    // 配对后主动申请一次通知权限（Android 13+ 运行时权限，默认拒绝）。
+                    // 审批通知是本 App 的招牌能力；不在运行时申请，装机后锁屏审批全部静默失效。
+                    // 仅尝试一次（rememberSaveable 跨重建保持），被拒绝后由设置页的状态行兜底引导——
+                    // 不重复弹框、不打断用户既有操作流。
+                    var notifPermRequested by rememberSaveable { mutableStateOf(false) }
+                    val notifPermLauncher =
+                        androidx.activity.compose.rememberLauncherForActivityResult(
+                            androidx.activity.result.contract.ActivityResultContracts
+                                .RequestPermission(),
+                        ) { /* 结果由设置页状态行在 ON_RESUME 时读取，这里不额外处理 */ }
+                    LaunchedEffect(vm.device, notifPermRequested) {
+                        if (vm.device != null && shouldRequestNotificationPermission() && !notifPermRequested) {
+                            notifPermRequested = true
+                            notifPermLauncher.launch(NotificationPermission.PERMISSION)
+                        }
+                    }
+
                     // 全局物理返回键拦截（防止直接退出应用）
-                    BackHandler(enabled = opened != null || showGuide || scanning) {
+                    BackHandler(enabled = openedTaskId != null || showGuide || scanning) {
                         when {
-                            opened != null -> opened = null
+                            openedTaskId != null -> closeSession()
                             showGuide -> showGuide = false
                             scanning && vm.device != null -> scanning = false
                         }
@@ -111,7 +144,10 @@ class MainActivity : ComponentActivity() {
                         )
                     }
 
-                    val target = opened
+                    // 旋转/进程重建后 openedItem 为空：按 taskId 从列表回查（拿标题等元数据）
+                    val target =
+                        openedItem
+                            ?: openedTaskId?.let { id -> vm.sessions.firstOrNull { it.taskId == id } }
                     when {
                         // 1. 保活指引全屏页
                         showGuide -> KeepAliveGuideScreen(onBack = { showGuide = false })
@@ -166,7 +202,7 @@ class MainActivity : ComponentActivity() {
                                         ),
                                     actions =
                                         ConversationAction(
-                                            onBack = { opened = null },
+                                            onBack = { closeSession() },
                                             onCancelUpload = { vm.cancelAttachmentUpload() },
                                             onRetryUpload = { vm.retryAttachmentUpload() },
                                             onDismissUploadFailure = { vm.dismissAttachFailure() },
@@ -285,11 +321,6 @@ class MainActivity : ComponentActivity() {
                                                 deviceName = vm.device?.deviceName ?: "",
                                                 state = vm.relayState,
                                                 sessions = vm.sessions.toList(),
-                                                events = vm.events.toList(),
-                                                bridgeState = vm.bridgeState,
-                                                rpcEvents = vm.rpcEvents.toList(),
-                                                devices = vm.devices,
-                                                activeSid = vm.device?.deviceSid,
                                                 sessionPending = vm.sessionPending,
                                                 query = vm.sessionQuery,
                                                 onQueryChange = { vm.updateSessionQuery(it) },
@@ -297,12 +328,7 @@ class MainActivity : ComponentActivity() {
                                                 desktopActiveTaskId = vm.desktopActiveTaskId,
                                                 onSessionClick = { s ->
                                                     vm.openSession(s)
-                                                    opened = s
-                                                },
-                                                onDisconnect = { vm.disconnect() },
-                                                onRescan = {
-                                                    opened = null
-                                                    scanning = true
+                                                    openSession(s)
                                                 },
                                                 onNavigateToSettings = { selectedTab = 2 },
                                                 modelState = vm.workspaceModelState,
@@ -319,7 +345,7 @@ class MainActivity : ComponentActivity() {
                                                         attachments = emptyList(),
                                                         modelOption = modelOption,
                                                         execMode = execMode,
-                                                        onSuccess = { item -> opened = item },
+                                                        onSuccess = { item -> openSession(item) },
                                                         onError = { err ->
                                                             android.widget.Toast
                                                                 .makeText(
@@ -347,7 +373,7 @@ class MainActivity : ComponentActivity() {
                                                 onFreeTextElicitation = { el, text -> vm.answerElicitationFreeText(el, text) },
                                                 onOpenSession = { s ->
                                                     vm.openSession(s)
-                                                    opened = s
+                                                    openSession(s)
                                                 },
                                             )
 
@@ -367,7 +393,7 @@ class MainActivity : ComponentActivity() {
                                                 onRemoveDevice = { vm.removeDevice(it) },
                                                 onDisconnect = { vm.disconnect() },
                                                 onRescan = {
-                                                    opened = null
+                                                    closeSession()
                                                     scanning = true
                                                 },
                                                 onEndpointChange = { m, u -> vm.setEndpoint(m, u) },
@@ -385,6 +411,14 @@ class MainActivity : ComponentActivity() {
             }
         }
     }
+
+    /**
+     * 是否应主动申请通知权限：仅 Android 13+ 且当前确实未授予时。
+     * 抽成方法以便 Compose 条件保持简单（detekt 条件复杂度门禁），并集中判定口径。
+     */
+    private fun shouldRequestNotificationPermission(): Boolean =
+        NotificationPermission.isRuntimeRequestRequired(android.os.Build.VERSION.SDK_INT) &&
+            NotificationPermission.shouldPrompt(this)
 
     private fun handleShareIntent(intent: Intent?) {
         if (intent == null || intent.action != Intent.ACTION_SEND) return

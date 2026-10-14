@@ -8,6 +8,8 @@
 
 ZCode 官方远程控制（`zcode.z.ai/remote`）的**原生安卓增强客户端**——Kotlin + Jetpack Compose 实现，深度对标 [zai-org/ZCode](https://github.com/zai-org/ZCode) 工业级设计规范与现代移动端交互架构（GitHub Mobile / Claude Mobile），复用官方中继与配对协议（逆向实证，见 [PROTOCOL.md](PROTOCOL.md)），提供比官方 Web 版更强的通知、审批、流式会话与移动端操控体验。
 
+> ⚠️ **免责声明（务必先读）**：本项目是**非官方第三方客户端**，与 ZCode 官方及其开发方**无任何隶属、授权或背书关系**。它通过逆向工程复用官方中继与配对协议，使用可能违反相关服务的服务条款；官方协议亦可能随时变更导致功能失效。请自行评估风险后使用，因使用产生的任何后果由使用者自负。安全问题报告方式见 [SECURITY.md](SECURITY.md)，许可为 [MIT](LICENSE)。
+
 ### 核心架构与功能一览
 
 ```
@@ -72,7 +74,7 @@ ZCode 官方远程控制（`zcode.z.ai/remote`）的**原生安卓增强客户�
 - **强韧断网感知重连（Sprint 1）**：`NetworkGate` 常驻监听系统网络，断网立即重置并挂起，网络恢复即刻重连（事件链全程 <9s）。
 - **会话流附件 chip**：发送带附件的消息后，附件以 chip（图标 + 文件名 + 体积）显示在消息气泡上方，与官方客户端一致；附件字段随行缓存持久化，冷启动秒开时同样可见。
 - **会话异常原因可见**：出错会话在会话页显示完整错误原因（可一键复制），列表对已打开过的会话补齐原因——与桌面端信息对齐。
-- **完整回归测试保护网（Sprint 6 起持续扩充）**：VQL 二进制编解码金标准双向对拍测试（Python↔Kotlin 共享 fixture）、**153 项**纯函数与状态判定单测全绿（含主题对比度静态断言；本地与云端两条工作线合并后总数）、GitHub Actions CI 持续集成（含「UI 层不得出现裸英文错误串」与「`ZLog.e` 只写元信息」断言）。
+- **完整回归测试保护网（Sprint 6 起持续扩充）**：VQL 二进制编解码金标准双向对拍测试（Python↔Kotlin 共享 fixture）、**264 项**纯函数与状态判定单测全绿（含主题对比度静态断言），GitHub Actions CI 持续集成（含「UI 层不得出现裸英文错误串」与「`ZLog.e` 只写元信息」断言）。
 - **桌面 Widget**：主屏卡片实时显示待处理总数（审批 + 表单交互），点按直达 App；连接断开时明示「未连接」。
 - **可靠连接**：完整官方握手（HMAC proof）、心跳、指数退避重连、断线出站缓冲，单端在线互踢提示。
 
@@ -242,7 +244,7 @@ A **native Android client** for the official ZCode Remote Control relay (`zcode.
 - **Foreground Service Keep-Alive & Terminal Notifications (Sprint 1–2 / P0-A)**: `ConnectionService` promoted to a real `specialUse` Foreground Service with process-level `ConnectionScope` singleton to keep connections alive across lock-screen and task killing; persistent system notifications for KICKED / AUTH_FAILED / PROTOCOL_MISMATCH.
 - **Resilient Network-Aware Reconnection (Sprint 1)**: `NetworkGate` actively monitors network connectivity via `ConnectivityManager`, instantly resetting on connection loss and reconnecting in <9s upon network availability.
 - **Attachment Chips in the Conversation Stream**: messages sent with attachments render a chip (icon + file name + size) above the message bubble, matching the official client; the attachment field rides along in the row cache so chips also show on instant-open cold starts.
-- **Regression Safety Net (since Sprint 6, continuously extended)**: Bi-directional VQL binary codec golden fixture tests (Python↔Kotlin shared vectors), **153** pure-function & state-decision unit tests (combined local + cloud lines) (including static theme-contrast assertions), and GitHub Actions CI automation (with "no raw English error strings in the UI layer" and "`ZLog.e` carries metadata only" assertions).
+- **Regression Safety Net (since Sprint 6, continuously extended)**: Bi-directional VQL binary codec golden fixture tests (Python↔Kotlin shared vectors), **264** pure-function & state-decision unit tests (including static theme-contrast assertions), and GitHub Actions CI automation (with "no raw English error strings in the UI layer" and "`ZLog.e` carries metadata only" assertions).
 - **Home-Screen Widget**: Live card showing total pending items, tap to jump into the app.
 - **Reliable Connectivity**: HMAC handshake proof, 30s heartbeat, exponential backoff, and offline outbound queue.
 

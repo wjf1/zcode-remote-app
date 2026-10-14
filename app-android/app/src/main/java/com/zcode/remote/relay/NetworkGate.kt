@@ -84,6 +84,26 @@ class NetworkGate(
         if (r.isFailure) ZLog.w(TAG, "gate: registerDefaultNetworkCallback 失败，退回纯退避语义")
     }
 
+    /**
+     * 停止常驻监控并注销系统回调（幂等）。
+     *
+     * **连接栈重建/断开时必须调用**：每次 connect() 都会 new 一个 NetworkGate 并注册回调，
+     * 而系统回调不会随对象被 GC 自动注销——不注销就会随「切线路/换设备/重新配对」持续累积，
+     * 旧回调闭包还持有已 close() 的旧 RelayClient。注销后本实例作废，不可再 startWatch。
+     */
+    fun stopWatch() {
+        if (!watcherRegistered) return
+        watcherRegistered = false
+        runCatching { cm.unregisterNetworkCallback(watcher) }
+            .onFailure { ZLog.w(TAG, "gate: unregisterNetworkCallback 失败（忽略）", it) }
+        // 清掉挂起等待者：其宿主协程随连接栈一并取消，此处仅避免旧实例残留引用
+        synchronized(waiterLock) { waiter = null }
+        // 回调置空：即使有极晚到达的系统回调排进了 mainHandler，也不再驱动旧连接
+        onLost = null
+        onAvailable = null
+        ZLog.i(TAG, "gate: 已注销网络回调")
+    }
+
     /** RelayClient.networkWait 注入点：无网则挂起等恢复，有网则正常退避后重连。 */
     suspend fun waitBeforeReconnect(delayMs: Long) {
         // 无网时退避毫无意义（对端根本没到不了）：直接挂起等恢复，省掉整段退避

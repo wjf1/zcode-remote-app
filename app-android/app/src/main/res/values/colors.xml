@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- 启动屏底色：与 App 深色主题 background（#161616）一致，
+         避免冷启动时先白屏再闪出深色界面。 -->
+    <color name="splash_background">#161616</color>
+</resources>

@@ -129,6 +129,9 @@ class ConnectionCoordinator(
         ConnectionScope.client?.close()
         ConnectionScope.channel?.reset()
         ConnectionScope.conversation?.reset()
+        // 注销上一轮的网络回调：否则每次重连都会累积一个系统 NetworkCallback
+        // （旧回调闭包持有已 close 的旧 RelayClient），见 NetworkGate.stopWatch。
+        RemoteConnectionManager.releaseGate()
         val c =
             RelayClient(
                 dev,
@@ -145,6 +148,8 @@ class ConnectionCoordinator(
         gate.onAvailable = c::onNetworkAvailable
         c.networkWait = gate::waitBeforeReconnect
         gate.startWatch()
+        // 登记到进程级管理器：下次连接重建或服务 shutdown 时经 releaseGate 注销系统回调
+        RemoteConnectionManager.installGate(gate)
         val ch = RpcChannel(c)
         // A-4：事件流 seq 缺口 → 会话重订阅（缺口帧已 ack、服务端不重发，重取权威快照是唯一自愈路径）。
         ch.onSequenceGap = { host.hostRetrySubscribe() }
