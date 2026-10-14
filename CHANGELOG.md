@@ -1,5 +1,21 @@
 # 变更记录 / Changelog
 
+## v0.5.0-beta41（2026-10-14）· 依赖治理轮（第三批）：二维码与 SBOM 工具升级 + AGP 跳跃拒绝
+
+### 修复（Dependabot 第三批 3 个 PR，2 合并 / 1 拒绝）
+
+**合并（本地门禁实测通过，6m1s）**：
+- `com.google.zxing:core 3.5.3→3.5.4`（二维码解析，配对扫码路径）、`org.cyclonedx.bom 2.2.0→2.4.1`（发布链 SBOM 生成）——验证含 `cyclonedxBom` 实际产出。
+
+**拒绝**：
+- **`com.android.application (AGP) 8.5.2→8.13.2`（PR#21）**：跨 8 个 minor 的 AGP 大跳跃，且**AGP 与 Gradle 版本强耦合**——本项目 Gradle 钉 8.7（CI 五处 + `toolchain/gradle-8.7`），AGP 8.13 需更高 Gradle；单独升 AGP 会波及全部构建配置、发布链、lint/detekt/ktlint 门禁行为与 benchmark 模块。须作为专项协调升级（AGP + Gradle + wrapper 同步 + 通读 breaking changes + 全量回归）。
+
+### 规则固化（追加）
+- `.github/dependabot.yml` 再增三条 ignore：`com.android.application` / `com.android.library` / `com.android.tools.build:gradle`（AGP 系与 Gradle 强耦合，禁止单独升级）。
+
+### 验证
+- 单测 **260/260**（`check_test_count.py` 核对）；`assembleDebug`/`assembleRelease`/`cyclonedxBom` 通过。
+
 ## v0.5.0-beta40（2026-10-14）· 依赖治理轮（第二批）：专项库升级与漂移拒绝
 
 ### 修复（Dependabot 新一批 5 个 PR，3 合并 / 2 拒绝）

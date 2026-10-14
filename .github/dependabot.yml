@@ -35,6 +35,14 @@ updates:
       # vs 实际执行 8.7」的死配置漂移（2026-10-14 PR#18 已拒绝）。Gradle 升级须与
       # toolchain/ + CI 的 gradle-version 同步改，并做 AGP 兼容评估。
       - dependency-name: "gradle-wrapper"
+      # Android Gradle Plugin（AGP）与 Gradle 版本强耦合，不能单独升：AGP 8.13 需要更新的
+      # Gradle，而本项目 Gradle 钉 8.7（CI 5 处 + toolchain/）；单独升 AGP 会波及全部构建
+      # 配置、发布链、静态分析门禁行为与 benchmark 模块（2026-10-14 PR#21 8.5.2→8.13.2 已拒绝）。
+      # 升级须作为专项：AGP + Gradle（toolchain 与 CI）+ wrapper 同步改 + 通读 breaking changes
+      # + 全量回归。
+      - dependency-name: "com.android.application"
+      - dependency-name: "com.android.library"
+      - dependency-name: "com.android.tools.build:gradle"
   - package-ecosystem: github-actions
     directory: /
     schedule:

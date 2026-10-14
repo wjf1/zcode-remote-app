@@ -74,8 +74,9 @@ android {
         //                           + Kotlin 生态升级冻结规则固化
         // versionCode 52：beta40 —— 依赖治理轮（第二批）：专项库升级（test:runner /
         //                           uiautomator / detekt）+ markdown 渲染库与 gradle-wrapper 漂移拒绝
-        versionCode = 52
-        versionName = "0.5.0-beta40"
+        // versionCode 53：beta41 —— 依赖治理轮（第三批）：zxing / cyclonedx 升级 + AGP 跳跃拒绝
+        versionCode = 53
+        versionName = "0.5.0-beta41"
         // 仪器化渲染回归网（src/androidTest）用 androidx.test 默认 runner。
         // 只在模拟器/真机上跑；CI runner 无设备，故 ci.yml 不接（见 HANDOVER §6.1 回归网）。
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
