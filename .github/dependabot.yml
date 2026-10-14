@@ -26,6 +26,15 @@ updates:
       # 需要升级时单独立项——同步全部 Kotlin 插件 + 评估 markdown 渲染库替代 + 全量回归。
       - dependency-name: "org.jetbrains.kotlin*"
       - dependency-name: "org.jetbrains.kotlinx*"
+      # markdown 渲染库同样是「Kotlin 版本绑定」依赖：0.27.0 是最后一个 Kotlin 2.0.x 编译版，
+      # 而 0.27.0 → 0.45.0 在 semver 上属 **minor**（0.x 语义），会绕过上面的 semver-major
+      # 过滤——2026-10-14 Dependabot 定时任务正是据此开出了 PR#17（已拒绝）。
+      - dependency-name: "com.mikepenz:multiplatform-markdown-renderer*"
+      # Gradle wrapper 未被本项目使用（CI 5 处显式 `gradle-version: "8.7"`、本地用
+      # `toolchain/gradle-8.7`，无人调 `./gradlew`）——只升 wrapper 文件会造成「仓库声明 8.14.6
+      # vs 实际执行 8.7」的死配置漂移（2026-10-14 PR#18 已拒绝）。Gradle 升级须与
+      # toolchain/ + CI 的 gradle-version 同步改，并做 AGP 兼容评估。
+      - dependency-name: "gradle-wrapper"
   - package-ecosystem: github-actions
     directory: /
     schedule:

@@ -1,5 +1,22 @@
 # 变更记录 / Changelog
 
+## v0.5.0-beta40（2026-10-14）· 依赖治理轮（第二批）：专项库升级与漂移拒绝
+
+### 修复（Dependabot 新一批 5 个 PR，3 合并 / 2 拒绝）
+
+**合并（均经本地门禁实测后合入）**：
+- `androidx.test:runner 1.6.2→1.7.0`（仪器化 runner）、`androidx.test.uiautomator:uiautomator 2.3.0→2.4.0`（基准测试 UI 定位）、`io.gitlab.arturbosch.detekt 1.23.7→1.23.8`（静态分析）——验证：`detekt` + `testDebugUnitTest` + `assembleDebugAndroidTest` + `:benchmark:assembleBenchmark` 全通过（3m29s）。
+
+**拒绝（附机理/证据）**：
+- **`com.mikepenz:multiplatform-markdown-renderer 0.27.0→0.45.0`（PR#17）**：同 HANDOVER 坑 14 硬约束——0.30.0+ 起用 Kotlin 2.1+ 编译，本项目 Kotlin 2.0.20 读不了其元数据；`0.27.0→0.45.0` 在 semver 上属 minor（0.x 语义）绕过 major 过滤。
+- **`gradle-wrapper 8.7→8.14.6`（PR#18）**：**本项目的 Gradle wrapper 未被使用**——CI 五处显式 `gradle-version: "8.7"`、本地用 `toolchain/gradle-8.7`，无人调 `./gradlew`；只升 wrapper 文件会造成「仓库声明 8.14.6 vs 实际执行 8.7」的死配置漂移（且 Gradle 8.14 需 AGP 兼容评估，当前 AGP 8.5.2）。如需升级须与 toolchain/ + CI 的版本同步改。
+
+### 规则固化（追加）
+- `.github/dependabot.yml` 再增两条 ignore：`com.mikepenz:multiplatform-markdown-renderer*`（Kotlin 版本绑定）与 `gradle-wrapper`（未使用的死配置）——覆盖本轮实测的两类「会被 minor 语义放过」的升级。
+
+### 验证
+- 单测 **260/260**（`check_test_count.py` 核对）；`detekt` 通过；`assembleDebugAndroidTest`/`:benchmark:assembleBenchmark` 通过。
+
 ## v0.5.0-beta39（2026-10-13）· 依赖治理轮：Dependabot 积压处置 + Kotlin 生态升级冻结规则固化
 
 ### 新增（工程化；无用户可见行为变化）
