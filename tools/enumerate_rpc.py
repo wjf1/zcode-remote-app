@@ -114,7 +114,7 @@ def main():
 
     print("== 问题 2：目录列举方法探测 ==")
     for m_name in ("readdir", "readDirectory", "listDir", "listFiles", "stat"):
-        ok, msg = try_call(p, "file", m_name, [{"path": ws_key or "F:/AI/Zcode"}])
+        ok, msg = try_call(p, "file", m_name, [{"path": ws_key or "/tmp"}])
         head = msg[:100]
         print(f"  file.{m_name} ok={ok} -> {head}\n")
 
@@ -126,10 +126,10 @@ def main():
             print(f"  file.{m_name} ok={ok} -> {msg[:100]}\n")
 
     print("== 问题 4：写能力探测（期望全部不存在）==")
-    for m_name, args in (("writeTextFile", [{"path": ws_key or "F:/AI/Zcode/x.txt", "content": "probe"}]),
-                         ("write", [{"path": ws_key or "F:/AI/Zcode/x.txt", "content": "probe"}]),
-                         ("createFile", [{"path": ws_key or "F:/AI/Zcode/x.txt"}]),
-                         ("deleteFile", [{"path": ws_key or "F:/AI/Zcode/x.txt"}])):
+    for m_name, args in (("writeTextFile", [{"path": ws_key or "/tmp/x.txt", "content": "probe"}]),
+                         ("write", [{"path": ws_key or "/tmp/x.txt", "content": "probe"}]),
+                         ("createFile", [{"path": ws_key or "/tmp/x.txt"}]),
+                         ("deleteFile", [{"path": ws_key or "/tmp/x.txt"}])):
         ok, msg = try_call(p, "file", m_name, args)
         print(f"  file.{m_name} ok={ok} -> {msg[:90]}\n")
 
@@ -141,7 +141,7 @@ def main():
 
     print("== 补充：file 通道其余静态方法可达性 ==")
     for m_name in ("readBinaryPreview", "readMediaPreview"):
-        ok, msg = try_call(p, "file", m_name, [{"path": ws_key or "F:/AI/Zcode"}], wait=2)
+        ok, msg = try_call(p, "file", m_name, [{"path": ws_key or "/tmp"}], wait=2)
         print(f"  file.{m_name} ok={ok} -> {msg[:80]}\n")
 
     print("[done] 结论整理见 PROTOCOL.md 新章节")

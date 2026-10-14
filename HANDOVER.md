@@ -300,7 +300,7 @@ Compose UI / MainActivity
 
 **Macrobenchmark 运行（§11.8，beta37；真机取证口径 2026-10-13 实测）**：
 ```bash
-cd app-android && JAVA_HOME="F:/AI/Zcode/zcode-remote-app/toolchain/jdk-17.0.20.1+1" \
+cd app-android && JAVA_HOME="$(cd .. && pwd)/toolchain/jdk-17.0.20.1+1" \
   ../toolchain/gradle-8.7/bin/gradle.bat :benchmark:connectedBenchmarkAndroidTest --console=plain   # 模拟器/设备
 python tools/bench_check.py --dir app-android/benchmark/build/outputs                               # 解析 + 结构性门禁
 python tools/bench_check.py --dir <目录> --baseline tools/bench_baseline_emulator.json --factor 3.0 # 基线比对（回退即红）
@@ -328,7 +328,7 @@ python tools/bench_check.py --dir <目录> --baseline tools/bench_baseline_emula
 ./build.sh log        # 抓 App 中继日志（tag: RelayClient/RpcChannel/ConvChannel/AppViewModel）
 
 # 当前构建基线（SDK 路径由 app-android/local.properties 提供；2026-10-13 实测口径）
-cd app-android && JAVA_HOME="F:/AI/Zcode/zcode-remote-app/toolchain/jdk-17.0.20.1+1" \
+cd app-android && JAVA_HOME="$(cd .. && pwd)/toolchain/jdk-17.0.20.1+1" \
   ../toolchain/gradle-8.7/bin/gradle.bat testDebugUnitTest assembleDebug assembleRelease --console=plain
 
 # 模拟器/设备：先预检实际 SDK、AVD、硬件加速与 adb 设备状态。
@@ -429,7 +429,7 @@ ADB -s <serial> shell am broadcast -n com.zcode.remote/.debug.DebugApprovalRecei
 28. **「桌面端已连接、手机显示异常」是两层状态（2026-10-10 真机故障）**：中继层 `paired`（device↔terminal 配对）与会话桥层（RPC 通道）**相互独立**——前者正常不代表后者正常。本次故障链：App 主线程处理停摆（长会话 1100+ 行 × 高频入站帧 → 停止回 ack）→ 服务端重放未确认帧 → 判 `rpc-transport-fault` 下发 `bridge-degraded` → 手机「异常」而桌面端日志仍 `paired`。**App 侧自愈已补**：`AppViewModel.scheduleBridgeReopen`（退避 1/2/4s × 3 次，就绪归零）。诊断要点：`adb logcat -s RelayClient AppViewModel ConvChannel`——**logcat 缓冲会被会话帧大量冲掉，长观察必须先 `logcat -c` 并把输出落盘**；判「App 是否真的在处理帧」看 `RpcChannel` 解码日志与 `ConvChannel: 状态块更新` 是否与 `RelayClient: ws recv` 同步出现（只有 ws recv 在涨 = 处理停摆）。
 29. **本机构建用仓库 `toolchain/` 的 gradle 直调（`build.sh` 会静默失败，2026-10-10 实测；2026-10-13 复核更新）**：~~`toolchain/` 里已无 jdk/gradle~~（该记录已作废——toolchain 现含完整 jdk-17.0.20.1+1 / gradle-8.7 / android-sdk），`build.sh` 的 fallback `GRADLE="$(command -v gradle.bat || command -v gradle)"` 在两个 `command -v` 都失败时命令替换返回非零 → `set -e` 在任何输出前**静默退出**（stdout 0 字节、退出码 1；若外面套了 `| tail` 连退出码也被掩盖成 0，表现为「像是构建了但任务没跑」，本次据此白跑一轮）。正确命令（SDK 走 `local.properties` 的 `sdk.dir`，无需 ANDROID_HOME）：
    ```
-   cd app-android && JAVA_HOME="F:/AI/Zcode/zcode-remote-app/toolchain/jdk-17.0.20.1+1" \
+   cd app-android && JAVA_HOME="$(cd .. && pwd)/toolchain/jdk-17.0.20.1+1" \
      ../toolchain/gradle-8.7/bin/gradle.bat assembleDebug :app:testDebugUnitTest --console=plain
    ```
    排查抓手：输出为空 + `_tmp/build.log` 时间戳没变 = build.sh 没真正启动生成任务。
@@ -821,7 +821,7 @@ FCM/小米推送主通道（IM Bot 通道兜底另议）、追功能广度（多
 1. **先读**文首权威状态、§2.1 文档索引、§5 坑清单和任务书 §11；协议假设再用 `tools/probe.py` 或录制 fixture 与官方 bundle 互校，然后写 Kotlin。
 2. **构建**：先预检仓库 `toolchain/`（jdk/gradle/android-sdk；2026-10-13 起为标准口径，旧 `F:/AndroidTools` 已不存在）与 `app-android/local.properties`，再显式执行：
    ```bash
-   cd app-android && JAVA_HOME="F:/AI/Zcode/zcode-remote-app/toolchain/jdk-17.0.20.1+1" \
+   cd app-android && JAVA_HOME="$(cd .. && pwd)/toolchain/jdk-17.0.20.1+1" \
      ../toolchain/gradle-8.7/bin/gradle.bat testDebugUnitTest assembleDebug assembleRelease --console=plain
    ```
    必须看到 `BUILD SUCCESSFUL`；空输出不是成功。`build.sh` 只有在确认其找到实际 Gradle 后才可作为封装使用。

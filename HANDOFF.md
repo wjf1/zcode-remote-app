@@ -17,7 +17,7 @@
   （Kotlin + Jetpack Compose）。逆向复用官方中继与配对协议，提供更强的通知、锁屏审批、
   流式会话与移动端操控体验。
 - **仓库**：<https://github.com/wjf1/zcode-remote-app>（owner：wjf1）
-- **当前版本**：`0.5.0-beta44`（versionCode 56）；上一个发布 tag `v0.5.0-beta43`。
+- **当前版本**：`0.5.0-beta45`（versionCode 57）；上一个发布 tag `v0.5.0-beta44`。
 - **许可**：[MIT](LICENSE)；安全披露见 [SECURITY.md](SECURITY.md)。
 - **部署形态**：侧滑安装的签名 Release APK（无 Play 分发）；自用 + 受控灰度。
 - **主分支**：`master`。
@@ -82,8 +82,19 @@ app-android/app/src/main/java/com/zcode/remote/
 ## 4. 最近一轮变更与交付成果
 
 > 完整逐轮记录见 [CHANGELOG.md](CHANGELOG.md) 与 [HANDOVER.md](HANDOVER.md) 文首覆盖层。
-> 最近三轮均为质量修复：**v0.5.0-beta44（会话正文缓存加密）**、
-> **v0.5.0-beta43（草稿隔离 + 倒计时实时化）**、**v0.5.0-beta42（通知权限 / 网络回调 / 旋转状态）**。
+> 最近四轮均为质量修复：**v0.5.0-beta45（工程清债：@Preview / 脚本索引 / 文档可移植化）**、
+> **v0.5.0-beta44（会话正文缓存加密）**、**v0.5.0-beta43（草稿隔离 + 倒计时实时化）**、
+> **v0.5.0-beta42（通知权限 / 网络回调 / 旋转状态）**。
+
+### v0.5.0-beta45：工程清债轮
+
+| 项 | 做法 |
+|---|---|
+| **界面预览** | 新增 `src/debug/.../ui/preview/`（时间线全行类型 / 折叠展开态 / 深浅色 / 审批卡 / 输入栏 / 倒计时）+ `debugImplementation("ui-tooling")`；**release 零增长**（预览在 debug 源集） |
+| **脚本索引** | 新增 `tools/README.md`：按「当前使用 / 历史一次性（`_` 前缀）」分类，全部 26 个脚本已登记（不物理移动，保 CHANGELOG 引用链） |
+| **文档可移植化** | `HANDOVER.md` 4 处构建命令的 `F:/AI/Zcode/…` 绝对路径 → `$(cd .. && pwd)/toolchain/…`；`tools/enumerate_rpc.py` 探针回退路径去本机化 |
+
+**验证**：单测 287/287；debug/androidTest/release 装配通过；lint 双变体 0 error、detekt、ktlint（含 debug 源集）0 违规；**release 体积 5065543 字节零增长**。
 
 ### v0.5.0-beta44：会话正文离线缓存加密（§11.6 安全门）
 

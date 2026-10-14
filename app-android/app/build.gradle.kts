@@ -88,8 +88,10 @@ android {
         //                           审批自动决议倒计时逐秒刷新 + debug 变体可选 release 签名开关
         // versionCode 56：beta44 —— 会话正文离线缓存加密（§11.6 安全门：AES-256-GCM +
         //                           独立 Keystore 密钥 + 版本化信封 + 新旧双读，落盘不可检索明文）
-        versionCode = 56
-        versionName = "0.5.0-beta44"
+        // versionCode 57：beta45 —— 工程清债轮：关键界面 @Preview（debug 源集，release 零影响）
+        //                           + tools/ 脚本索引 + 文档硬编码本机路径可移植化
+        versionCode = 57
+        versionName = "0.5.0-beta45"
         // 仪器化渲染回归网（src/androidTest）用 androidx.test 默认 runner。
         // 只在模拟器/真机上跑；CI runner 无设备，故 ci.yml 不接（见 HANDOVER §6.1 回归网）。
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
@@ -196,6 +198,9 @@ dependencies {
     androidTestImplementation("androidx.test.ext:junit:1.3.0")
     androidTestImplementation("androidx.test:runner:1.7.0")
     debugImplementation("androidx.compose.ui:ui-test-manifest")
+    // 布局预览（@Preview）：只在 debug 变体需要（Android Studio 预览面板渲染器的实现）。
+    // ui-tooling-preview（注解）已在 implementation 中；此处补渲染器本体，release 不打包。
+    debugImplementation("androidx.compose.ui:ui-tooling")
 
     // 扫码配对：CameraX 预览 + ZXing 解码（无 Google 服务依赖，国内可用）
     // CameraX 1.4.x 起原生库按 16 KB 页对齐编译（Android 15 兼容性要求）
