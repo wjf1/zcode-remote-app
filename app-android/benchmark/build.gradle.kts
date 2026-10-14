@@ -87,7 +87,7 @@ androidComponents {
 
 dependencies {
     implementation("androidx.test.ext:junit:1.3.0")
-    implementation("androidx.test.uiautomator:uiautomator:2.3.0")
+    implementation("androidx.test.uiautomator:uiautomator:2.4.0")
     // 1.3.4 → 1.5.0：修复「Android 16+（SDK>=36）上 toybox pgrep -l 将 >15 字符进程名
     // 截断，而库的进程枚举未加 -a 导致被测包（com.zcode.remote 恰 16 字符）匹配失败、
     // getRunningProcessesForPackage 返回空 → 恒报 Unable to confirm activity launch
