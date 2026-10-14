@@ -86,8 +86,10 @@ android {
         //                           网络回调注销 + 旋转状态保持 + 自适应图标/启动屏 + 死参数清理
         // versionCode 55：beta43 —— 交互修复轮：会话草稿按 taskId 隔离（防串会话错发）+
         //                           审批自动决议倒计时逐秒刷新 + debug 变体可选 release 签名开关
-        versionCode = 55
-        versionName = "0.5.0-beta43"
+        // versionCode 56：beta44 —— 会话正文离线缓存加密（§11.6 安全门：AES-256-GCM +
+        //                           独立 Keystore 密钥 + 版本化信封 + 新旧双读，落盘不可检索明文）
+        versionCode = 56
+        versionName = "0.5.0-beta44"
         // 仪器化渲染回归网（src/androidTest）用 androidx.test 默认 runner。
         // 只在模拟器/真机上跑；CI runner 无设备，故 ci.yml 不接（见 HANDOVER §6.1 回归网）。
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
