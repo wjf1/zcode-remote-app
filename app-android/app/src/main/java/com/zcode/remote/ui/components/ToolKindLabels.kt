@@ -1,5 +1,8 @@
 package com.zcode.remote.ui.components
 
+import com.zcode.remote.R
+import com.zcode.remote.util.UiText
+import com.zcode.remote.util.UiText.Companion.res
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonObject
@@ -130,23 +133,23 @@ object ToolKindLabels {
     fun label(
         family: ToolFamily,
         toolName: String? = null,
-    ): String =
+    ): UiText =
         when (family) {
-            ToolFamily.FileRead -> "读取"
+            ToolFamily.FileRead -> res(R.string.tool_label_read)
             ToolFamily.FileWrite -> fileWriteLabel(toolName)
-            ToolFamily.Shell -> "终端"
-            ToolFamily.Search -> "搜索"
-            ToolFamily.Todo -> "待办"
-            ToolFamily.Goal -> "目标"
-            ToolFamily.Explore -> "查阅"
-            ToolFamily.SessionContext -> "上下文"
-            ToolFamily.AskUserQuestion -> "询问"
-            ToolFamily.Message -> "消息"
-            ToolFamily.TaskControl -> "任务"
-            ToolFamily.NodeRepl -> "Node.js"
-            ToolFamily.Agent -> "子智能体"
-            ToolFamily.Skill -> "技能"
-            ToolFamily.Unknown -> "工具"
+            ToolFamily.Shell -> res(R.string.tool_label_shell)
+            ToolFamily.Search -> res(R.string.tool_label_search)
+            ToolFamily.Todo -> res(R.string.tool_label_todo)
+            ToolFamily.Goal -> res(R.string.tool_label_goal)
+            ToolFamily.Explore -> res(R.string.tool_label_explore)
+            ToolFamily.SessionContext -> res(R.string.tool_label_session_context)
+            ToolFamily.AskUserQuestion -> res(R.string.tool_label_ask_user)
+            ToolFamily.Message -> res(R.string.tool_label_message)
+            ToolFamily.TaskControl -> res(R.string.tool_label_task)
+            ToolFamily.NodeRepl -> res(R.string.tool_label_node_repl)
+            ToolFamily.Agent -> res(R.string.tool_label_agent)
+            ToolFamily.Skill -> res(R.string.tool_label_skill)
+            ToolFamily.Unknown -> res(R.string.tool_label_unknown)
         }
 
     /**
@@ -156,21 +159,21 @@ object ToolKindLabels {
     fun runningLabel(
         family: ToolFamily,
         toolName: String? = null,
-    ): String =
+    ): UiText =
         when (family) {
-            ToolFamily.FileRead -> "正在读取"
+            ToolFamily.FileRead -> res(R.string.tool_running_read)
             ToolFamily.FileWrite ->
                 when (fileWriteVerb(toolName)) {
-                    FileWriteVerb.Write -> "正在写入"
-                    FileWriteVerb.Edit -> "正在编辑"
-                    FileWriteVerb.Delete -> "正在删除"
+                    FileWriteVerb.Write -> res(R.string.tool_running_write)
+                    FileWriteVerb.Edit -> res(R.string.tool_running_edit)
+                    FileWriteVerb.Delete -> res(R.string.tool_running_delete)
                 }
-            ToolFamily.Shell -> "正在执行"
-            ToolFamily.Search -> "正在搜索"
-            ToolFamily.Todo -> "正在更新待办"
-            ToolFamily.SessionContext -> "正在读取上下文"
-            ToolFamily.AskUserQuestion -> "正在询问"
-            ToolFamily.Skill -> "正在运行技能"
+            ToolFamily.Shell -> res(R.string.tool_running_shell)
+            ToolFamily.Search -> res(R.string.tool_running_search)
+            ToolFamily.Todo -> res(R.string.tool_running_todo)
+            ToolFamily.SessionContext -> res(R.string.tool_running_session_context)
+            ToolFamily.AskUserQuestion -> res(R.string.tool_running_ask_user)
+            ToolFamily.Skill -> res(R.string.tool_running_skill)
             else -> label(family, toolName)
         }
 
@@ -187,11 +190,11 @@ object ToolKindLabels {
         }
     }
 
-    private fun fileWriteLabel(toolName: String?): String =
+    private fun fileWriteLabel(toolName: String?): UiText =
         when (fileWriteVerb(toolName)) {
-            FileWriteVerb.Write -> "写入"
-            FileWriteVerb.Edit -> "编辑"
-            FileWriteVerb.Delete -> "删除"
+            FileWriteVerb.Write -> res(R.string.tool_label_write)
+            FileWriteVerb.Edit -> res(R.string.tool_label_edit)
+            FileWriteVerb.Delete -> res(R.string.tool_label_delete)
         }
 
     /**
@@ -219,19 +222,19 @@ object ToolKindLabels {
     }
 
     /** 状态中文文案。`Unknown` 返回 null，表示不渲染状态字。 */
-    fun statusLabel(status: ToolStatus): String? =
+    fun statusLabel(status: ToolStatus): UiText? =
         when (status) {
-            ToolStatus.Pending -> "等待中"
-            ToolStatus.Running -> "执行中"
-            ToolStatus.Completed -> "已执行"
-            ToolStatus.Failed -> "执行失败"
-            ToolStatus.Denied -> "已拒绝"
-            ToolStatus.Stopped -> "已停止"
+            ToolStatus.Pending -> res(R.string.tool_status_pending)
+            ToolStatus.Running -> res(R.string.tool_status_running)
+            ToolStatus.Completed -> res(R.string.tool_status_completed)
+            ToolStatus.Failed -> res(R.string.tool_status_failed)
+            ToolStatus.Denied -> res(R.string.tool_status_denied)
+            ToolStatus.Stopped -> res(R.string.tool_status_stopped)
             ToolStatus.Unknown -> null
         }
 
     /** 便捷组合：从原始字符串直达中文状态文案。 */
-    fun statusLabel(raw: String?): String? = statusLabel(normalizeStatus(raw))
+    fun statusLabel(raw: String?): UiText? = statusLabel(normalizeStatus(raw))
 
     /**
      * 主文案，对齐桌面端 `S8e` 的计算规则。
@@ -243,37 +246,47 @@ object ToolKindLabels {
         kind: String? = null,
         title: String? = null,
         inputJson: String? = null,
-    ): String? {
+    ): UiText? {
         val family = familyFor(toolName, kind)
         val input = parseObject(inputJson)
         val cleanTitle = title?.trim()?.takeIf { it.isNotEmpty() }
 
         return when (family) {
             ToolFamily.FileRead -> {
-                val path =
-                    firstString(input, "file_path", "filePath", "path")
-                        ?: cleanTitle
-                path?.let { basename(it) }
+                val path = firstString(input, "file_path", "filePath", "path") ?: cleanTitle
+                path?.let { UiText.Raw(basename(it)) }
             }
 
-            ToolFamily.Search -> {
-                val query = firstString(input, "query", "pattern", "search_query", "q")
-                val cwd = firstString(input, "cwd", "path", "dir", "directory")
-                when {
-                    !query.isNullOrBlank() -> "查找 $query"
-                    !cwd.isNullOrBlank() -> "列出 $cwd"
-                    else -> cleanTitle
-                }
-            }
+            ToolFamily.Search -> searchPrimaryText(input, cleanTitle)
 
-            ToolFamily.Shell -> shellCommand(input) ?: cleanTitle
+            ToolFamily.Shell -> rawOrNull(shellCommand(input) ?: cleanTitle)
 
             else ->
-                cleanTitle
-                    ?: toolName?.trim()?.takeIf { it.isNotEmpty() }
-                    ?: kind?.trim()?.takeIf { it.isNotEmpty() }
+                rawOrNull(
+                    cleanTitle
+                        ?: toolName?.trim()?.takeIf { it.isNotEmpty() }
+                        ?: kind?.trim()?.takeIf { it.isNotEmpty() },
+                )
         }
     }
+
+    /** 搜索类主文案（`查找 X` / `列出 X`），无查询/路径时回落到 title。 */
+    private fun searchPrimaryText(
+        input: JsonObject?,
+        cleanTitle: String?,
+    ): UiText? {
+        val query = firstString(input, "query", "pattern", "search_query", "q")
+        val cwd = firstString(input, "cwd", "path", "dir", "directory")
+        return when {
+            !query.isNullOrBlank() -> res(R.string.tool_primary_search_query, query)
+            !cwd.isNullOrBlank() -> res(R.string.tool_primary_search_list, cwd)
+            // 无查询/路径时回落到 title（服务端下发的原文，不参与本地化）
+            else -> rawOrNull(cleanTitle)
+        }
+    }
+
+    /** 包装运行期文本为 [UiText.Raw]（null 保持 null）——避免调用点多处重复 `?.let { }`。 */
+    private fun rawOrNull(value: String?): UiText? = value?.let { UiText.Raw(it) }
 
     /** 桌面端 `QW`：shell 命令提取（数组取 `-lc` 之后一项，否则空格拼接）。 */
     private fun shellCommand(input: JsonObject?): String? {

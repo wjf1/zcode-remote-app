@@ -1,0 +1,79 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  用户可见文案（国际化地基）。
+
+  约定：
+  - 默认语言 = 中文（本文件即中文内容），因此本次资源化**不改变任何可见文案**；
+    后续若需英文，只需新增 res/values-en/strings.xml 填入同 key 的英文值。
+  - key 采用「功能域_用途」语义命名（如 conversation_composer_placeholder），不用拼音、不用编号。
+  - 含运行期参数的文案用位置占位符 %1$s / %1$d（对应 Kotlin 侧的格式化参数）。
+  - **不含**日志文案、协议常量、诊断事件码——那些原样保留在代码里（不可也不应本地化）。
+
+  本文件按功能域分区，便于检索与维护。
+-->
+<resources>
+
+    <!-- ========== 公共（多处以同一措辞复用） ========== -->
+    <string name="common_cancel">取消</string>
+    <string name="common_close">关闭</string>
+    <string name="common_copy">复制</string>
+    <string name="common_copied">已复制</string>
+    <string name="common_retry">重试</string>
+    <string name="common_delete">删除</string>
+    <string name="common_save">保存</string>
+    <string name="common_edit">编辑</string>
+    <string name="common_collapse">收起</string>
+    <string name="common_expand">展开</string>
+    <string name="common_view">查看</string>
+    <string name="common_back">← 返回</string>
+    <string name="common_unnamed_session">未命名会话</string>
+    <string name="common_unnamed_device">未命名设备</string>
+
+    <!-- ========== 工具家族标签（ToolKindLabels：非运行态） ========== -->
+    <string name="tool_label_read">读取</string>
+    <string name="tool_label_write">写入</string>
+    <string name="tool_label_edit">编辑</string>
+    <string name="tool_label_delete">删除</string>
+    <string name="tool_label_shell">终端</string>
+    <string name="tool_label_search">搜索</string>
+    <string name="tool_label_todo">待办</string>
+    <string name="tool_label_goal">目标</string>
+    <string name="tool_label_explore">查阅</string>
+    <string name="tool_label_session_context">上下文</string>
+    <string name="tool_label_ask_user">询问</string>
+    <string name="tool_label_message">消息</string>
+    <string name="tool_label_task">任务</string>
+    <string name="tool_label_node_repl">Node.js</string>
+    <string name="tool_label_agent">子智能体</string>
+    <string name="tool_label_skill">技能</string>
+    <string name="tool_label_unknown">工具</string>
+
+    <!-- 工具家族标签（运行态） -->
+    <string name="tool_running_read">正在读取</string>
+    <string name="tool_running_write">正在写入</string>
+    <string name="tool_running_edit">正在编辑</string>
+    <string name="tool_running_delete">正在删除</string>
+    <string name="tool_running_shell">正在执行</string>
+    <string name="tool_running_search">正在搜索</string>
+    <string name="tool_running_todo">正在更新待办</string>
+    <string name="tool_running_session_context">正在读取上下文</string>
+    <string name="tool_running_ask_user">正在询问</string>
+    <string name="tool_running_skill">正在运行技能</string>
+
+    <!-- 工具主文案（含查询/路径参数） -->
+    <string name="tool_primary_search_query">查找 %1$s</string>
+    <string name="tool_primary_search_list">列出 %1$s</string>
+
+    <!-- 工具状态文案 -->
+    <string name="tool_status_pending">等待中</string>
+    <string name="tool_status_running">执行中</string>
+    <string name="tool_status_completed">已执行</string>
+    <string name="tool_status_failed">执行失败</string>
+    <string name="tool_status_denied">已拒绝</string>
+    <string name="tool_status_stopped">已停止</string>
+
+    <!-- ========== 倒计时（AutoResolveCountdown） ========== -->
+    <string name="countdown_remaining_seconds">%1$ds 后自动决议</string>
+    <string name="countdown_imminent">即将自动决议</string>
+
+</resources>
