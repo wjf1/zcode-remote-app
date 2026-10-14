@@ -225,11 +225,65 @@ lint 双变体 0 error、detekt、ktlint 0 违规、assembleDebug/Release 通过
   2. **出站大 RPC 物理分片**——同硬门（官方算法已实证，App 现为本地拒绝超限帧）；
   3. **§11.10 `1.0.0` 发布门**——依赖上述两项 + 连续两个 Beta 周期无严重回归。
 - **未做（历史用户决策）**：C-5⑥⑦、Sprint 7 生物识别/自建中继 E2EE、P2-3 余项。
-- **工程债（随手可清，非阻塞）**：`sessionCacheStore` 会话正文缓存仍是明文（任务书 §11.6 目标为加密，
-  属「0.6 安全门」遗留）；`detekt-baseline.xml` 105 条存量告警；`tools/` 下 11 个 `_` 前缀一次性脚本；
-  全库 0 个 `@Preview`；界面文案硬编码中文、无 `strings.xml`（国际化缺失）。
+- **工程债（随手可清，非阻塞）**：`detekt-baseline.xml` 105 条存量告警；`tools/` 下 11 个 `_` 前缀一次性脚本。
+  ~~会话正文缓存明文~~（beta44 已加密）、~~全库 0 个 `@Preview`~~（beta45 已补 debug 源集预览）、
+  ~~界面文案硬编码中文、无 `strings.xml`~~（i18n 资源化第 1/6 批已合入，进行中）。
 - **若其他会话接手**：先读本文件 → `HANDOVER.md` 文首覆盖层 → `CHANGELOG.md` 最新条目，
   再按「§2 核心命令」跑一次 `testDebugUnitTest` 建立基线。
+
+### 5.1 外部分析待办清单（2026-10-14 第三方全仓走查）
+
+> 来源：对仓库（beta46 基线）的一次独立代码 + UX 全面走查，以下为走查新发现、
+> 未被任务书 v2 / HANDOVER 覆盖的增量项；作者任务书已标记或已立项推进的存量项（B-2、A-4、
+> C-3、C-5、C-9、C-12 残余、全局 Typography、横屏/平板适配、国际化资源化）不重复列出。
+
+**P0 性能与正确性**
+
+1. **流式期每 token 双 O(n) 解析**：`ui/screens/ConversationScreen.kt:64/70` 的 `remember(rows)`
+   内对全量行执行 `SessionFiles.extract` + `TurnChanges.aggregate`，流式输出每个 token 触发两遍；
+   `MainActivity.kt:89` 每次重组 `vm.rows.toList()` 整表拷贝。长会话 + 快流式时是主要掉帧源。
+   建议：派生子集改 `derivedStateOf`、行存储外提为 `SnapshotStateList`（C-5 线程模型项的同族债）。
+2. **附件上传流水线重构**：`relay/ConversationChannel.kt` `uploadChunks` 递归回调 + 每 256KB 分片
+   一次串行 RPC；失败重试每次重新 `openStream()` + `skip()`（O(n) IO）。建议改 suspend/flow 顺序
+   上传 + seekable 流。
+3. **两处 `!!` 隐患**：`ConversationChannel.kt:1341` `input!!.read(...)`（读循环内可变局部变量，
+   abort 重入可 NPE）；`ui/screens/HomeScreen.kt:465` `s.lastError!!` 连用两次。改 `?.let{}` 安全路径。
+
+**P1 连接层资源管理（任务书未覆盖）**
+
+4. **`OkHttpClient` 未复用**：`RelayClient`、`repo/UpdateRepository.kt:62` 各自新建实例，无共享
+   连接池/调度器。建议单例注入。
+5. **重连退避无 jitter**：`RelayClient` 退避封顶 `3s * 2^4 = 48s` 固定值，多设备同断网重连形成
+   雷群。建议 `backoff * (0.5 + Random.nextDouble() * 0.5)`。
+6. **自建 `CoroutineScope` 未绑定生命周期**：`RelayClient`、`service/RemoteConnectionManager.kt`
+   均 `CoroutineScope(SupervisorJob() + Dispatchers.IO)`，全靠手动 `close()`，泄漏路径上心跳/重连
+   Job 不取消。建议注入 ApplicationScope 或审计全部 close 调用点。
+
+**P1 安全补齐（beta44 加密轮后的残余缺口）**
+
+7. **无证书固定**：`wss://zcode.z.ai/ws` 承载配对 proof，当前完全依赖系统 CA，Manifest 仅
+   `usesCleartextTraffic=false`、无 `networkSecurityConfig`。建议加 `CertificatePinner` 或显式
+   `networkSecurityConfig` 声明（注意与官方证书轮换策略兼容，留后备 pin）。
+8. **备份策略未声明**：Manifest 未见 `android:allowBackup="false"` 或 `dataExtractionRules`。
+   密文 + Keystore 密钥别名被备份还原到他机后无法解密——安全但用户会「安全地丢数据」。
+   建议显式配置备份排除规则并写入文档。
+9. **旧明文缓存无回写迁移**：`storage/SessionCacheStore.decodeCacheText` 对 beta44 前的旧明文
+   **永远原样返回**，没有「读出后重写为密文」的回写路径，旧文件不删则明文无限期存在。
+   建议首次成功双读后立即以密文重写。
+10. **`TokenStore.read()` 明文 String 长驻内存**：建议改 `CharArray` 或调用方即用即清。
+
+**P2 体验体系化**
+
+11. **加载/空态信息量不足**：会话页「握手中…/订阅中…」无已等待秒数与阶段进度（任务书 §7
+    已要求未落地）；首页错误态仅一行红字（`HomeScreen.kt:462`）无重试按钮；会话为空无引导文案。
+12. **无障碍覆盖薄弱**：全 ui/ `contentDescription` 仅 22 处（其中 11 处是 `= null` 装饰图标），
+    `semantics` 修饰符几乎不用，TalkBack 下审批按钮/状态胶囊/会话行基本不可达。
+13. **Markdown 禁外链图片的兜底体验**：图片类回答仅一行灰字占位，建议加「复制链接 / 浏览器
+    打开」快捷操作（可复用现有 `SafeUriHandler`），不改变不加载外链图片的安全决策。
+14. **会话流缺日期分隔与未读标记**：长会话无时间锚点，定位困难。
+15. **布局回归自动化防线**：C-14 类顶栏布局错乱此前只能靠真机人肉发现，§11.2 仪器化布局断言
+    刚起步，建议优先补「关键组件祖先链 + 边界数值」断言（对齐 AGENTS.md「DOM 断言须验证祖先链」
+    规范）。
 
 ## 6. 关键避坑与运行约束
 
