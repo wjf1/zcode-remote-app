@@ -35,7 +35,7 @@
     <ID>CyclomaticComplexMethod:RpcChannel.kt$RpcChannel$suspend fun onRpcFrame(payload: JsonObject)</ID>
     <ID>CyclomaticComplexMethod:SessionsIndexChannel.kt$SessionsIndexChannel$fun onEvent(event: RpcChannel.RpcEvent)</ID>
     <ID>CyclomaticComplexMethod:SettingsTab.kt$@OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class) @Composable fun SettingsTab( deviceName: String, state: RelayState, bridgeState: RpcChannel.BridgeState, devices: List&lt;PairedDevice>, activeSid: String?, endpointMode: String, customRelayUrl: String, themeMode: String, updateState: UpdateRepository.UpdateState, githubToken: String, onSwitchDevice: (String) -> Unit, onRemoveDevice: (String) -> Unit, onDisconnect: () -> Unit, onRescan: () -> Unit, onEndpointChange: (String, String?) -> Unit, onThemeChange: (String) -> Unit, onShowGuide: () -> Unit, onSetGithubToken: (String) -> Unit, onCheckUpdate: () -> Unit, )</ID>
-    <ID>CyclomaticComplexMethod:ToolKindLabels.kt$ToolKindLabels$fun label( family: ToolFamily, toolName: String? = null, ): String</ID>
+    <ID>CyclomaticComplexMethod:ToolKindLabels.kt$ToolKindLabels$fun label( family: ToolFamily, toolName: String? = null, ): UiText</ID>
     <ID>CyclomaticComplexMethod:UpdateRepository.kt$UpdateRepository.Companion$internal fun isNewerVersion( current: String, remote: String, ): Boolean</ID>
     <ID>CyclomaticComplexMethod:WorkspaceConfigChannel.kt$WorkspaceConfigChannel$fun onEvent(event: RpcChannel.RpcEvent)</ID>
     <ID>EmptyFunctionBlock:VoiceInput.kt$&lt;no name provided>${}</ID>

@@ -1,5 +1,7 @@
 package com.zcode.remote.ui.components
 
+import com.zcode.remote.R
+import com.zcode.remote.util.UiText
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
@@ -109,42 +111,42 @@ class ToolKindLabelsTest {
         assertEquals(ToolFamily.Unknown, ToolKindLabels.familyFor("Frobnicate"))
     }
 
-    // ---------- 类型标签 ----------
+    // ---------- 类型标签（资源化后断言资源 id：JVM 侧仍可守文案键位不串） ----------
 
     @Test
     fun labelMatchesDesktopWording() {
-        assertEquals("读取", ToolKindLabels.label(ToolFamily.FileRead))
-        assertEquals("终端", ToolKindLabels.label(ToolFamily.Shell))
-        assertEquals("搜索", ToolKindLabels.label(ToolFamily.Search))
-        assertEquals("待办", ToolKindLabels.label(ToolFamily.Todo))
-        assertEquals("查阅", ToolKindLabels.label(ToolFamily.Explore))
-        assertEquals("子智能体", ToolKindLabels.label(ToolFamily.Agent))
-        assertEquals("技能", ToolKindLabels.label(ToolFamily.Skill))
-        assertEquals("Node.js", ToolKindLabels.label(ToolFamily.NodeRepl))
-        assertEquals("工具", ToolKindLabels.label(ToolFamily.Unknown))
+        assertEquals(UiText.res(R.string.tool_label_read), ToolKindLabels.label(ToolFamily.FileRead))
+        assertEquals(UiText.res(R.string.tool_label_shell), ToolKindLabels.label(ToolFamily.Shell))
+        assertEquals(UiText.res(R.string.tool_label_search), ToolKindLabels.label(ToolFamily.Search))
+        assertEquals(UiText.res(R.string.tool_label_todo), ToolKindLabels.label(ToolFamily.Todo))
+        assertEquals(UiText.res(R.string.tool_label_explore), ToolKindLabels.label(ToolFamily.Explore))
+        assertEquals(UiText.res(R.string.tool_label_agent), ToolKindLabels.label(ToolFamily.Agent))
+        assertEquals(UiText.res(R.string.tool_label_skill), ToolKindLabels.label(ToolFamily.Skill))
+        assertEquals(UiText.res(R.string.tool_label_node_repl), ToolKindLabels.label(ToolFamily.NodeRepl))
+        assertEquals(UiText.res(R.string.tool_label_unknown), ToolKindLabels.label(ToolFamily.Unknown))
     }
 
     @Test
     fun fileWriteLabelDistinguishesVerb() {
-        assertEquals("写入", ToolKindLabels.label(ToolFamily.FileWrite, "Write"))
-        assertEquals("编辑", ToolKindLabels.label(ToolFamily.FileWrite, "Edit"))
-        assertEquals("编辑", ToolKindLabels.label(ToolFamily.FileWrite, "ApplyPatch"))
-        assertEquals("删除", ToolKindLabels.label(ToolFamily.FileWrite, "delete_file"))
+        assertEquals(UiText.res(R.string.tool_label_write), ToolKindLabels.label(ToolFamily.FileWrite, "Write"))
+        assertEquals(UiText.res(R.string.tool_label_edit), ToolKindLabels.label(ToolFamily.FileWrite, "Edit"))
+        assertEquals(UiText.res(R.string.tool_label_edit), ToolKindLabels.label(ToolFamily.FileWrite, "ApplyPatch"))
+        assertEquals(UiText.res(R.string.tool_label_delete), ToolKindLabels.label(ToolFamily.FileWrite, "delete_file"))
         // 无 toolName 时退化为「写入」，不能崩
-        assertEquals("写入", ToolKindLabels.label(ToolFamily.FileWrite))
+        assertEquals(UiText.res(R.string.tool_label_write), ToolKindLabels.label(ToolFamily.FileWrite))
     }
 
     @Test
     fun runningLabelUsesProgressWording() {
-        assertEquals("正在读取", ToolKindLabels.runningLabel(ToolFamily.FileRead))
-        assertEquals("正在执行", ToolKindLabels.runningLabel(ToolFamily.Shell))
-        assertEquals("正在搜索", ToolKindLabels.runningLabel(ToolFamily.Search))
-        assertEquals("正在更新待办", ToolKindLabels.runningLabel(ToolFamily.Todo))
-        assertEquals("正在运行技能", ToolKindLabels.runningLabel(ToolFamily.Skill))
-        assertEquals("正在写入", ToolKindLabels.runningLabel(ToolFamily.FileWrite, "Write"))
-        assertEquals("正在编辑", ToolKindLabels.runningLabel(ToolFamily.FileWrite, "Edit"))
+        assertEquals(UiText.res(R.string.tool_running_read), ToolKindLabels.runningLabel(ToolFamily.FileRead))
+        assertEquals(UiText.res(R.string.tool_running_shell), ToolKindLabels.runningLabel(ToolFamily.Shell))
+        assertEquals(UiText.res(R.string.tool_running_search), ToolKindLabels.runningLabel(ToolFamily.Search))
+        assertEquals(UiText.res(R.string.tool_running_todo), ToolKindLabels.runningLabel(ToolFamily.Todo))
+        assertEquals(UiText.res(R.string.tool_running_skill), ToolKindLabels.runningLabel(ToolFamily.Skill))
+        assertEquals(UiText.res(R.string.tool_running_write), ToolKindLabels.runningLabel(ToolFamily.FileWrite, "Write"))
+        assertEquals(UiText.res(R.string.tool_running_edit), ToolKindLabels.runningLabel(ToolFamily.FileWrite, "Edit"))
         // 未定义运行态措辞的家族沿用静态标签
-        assertEquals("子智能体", ToolKindLabels.runningLabel(ToolFamily.Agent))
+        assertEquals(UiText.res(R.string.tool_label_agent), ToolKindLabels.runningLabel(ToolFamily.Agent))
     }
 
     // ---------- 状态文案 ----------
@@ -171,12 +173,12 @@ class ToolKindLabelsTest {
 
     @Test
     fun statusLabelsAreTheSixDesktopStrings() {
-        assertEquals("等待中", ToolKindLabels.statusLabel("input-streaming"))
-        assertEquals("执行中", ToolKindLabels.statusLabel("running"))
-        assertEquals("已执行", ToolKindLabels.statusLabel("output-available"))
-        assertEquals("执行失败", ToolKindLabels.statusLabel("output-error"))
-        assertEquals("已拒绝", ToolKindLabels.statusLabel("output-denied"))
-        assertEquals("已停止", ToolKindLabels.statusLabel("stopped"))
+        assertEquals(UiText.res(R.string.tool_status_pending), ToolKindLabels.statusLabel("input-streaming"))
+        assertEquals(UiText.res(R.string.tool_status_running), ToolKindLabels.statusLabel("running"))
+        assertEquals(UiText.res(R.string.tool_status_completed), ToolKindLabels.statusLabel("output-available"))
+        assertEquals(UiText.res(R.string.tool_status_failed), ToolKindLabels.statusLabel("output-error"))
+        assertEquals(UiText.res(R.string.tool_status_denied), ToolKindLabels.statusLabel("output-denied"))
+        assertEquals(UiText.res(R.string.tool_status_stopped), ToolKindLabels.statusLabel("stopped"))
         // 未知状态不渲染状态字，而不是显示一个占位符
         assertNull(ToolKindLabels.statusLabel("something-else"))
         assertNull(ToolKindLabels.statusLabel(null))
@@ -186,36 +188,36 @@ class ToolKindLabelsTest {
 
     @Test
     fun fileReadPrimaryTextShowsBasename() {
-        assertEquals("c.kt", ToolKindLabels.primaryText("Read", inputJson = """{"file_path":"/a/b/c.kt"}"""))
-        assertEquals("y.md", ToolKindLabels.primaryText("Read", inputJson = """{"filePath":"C:\\x\\y.md"}"""))
+        assertEquals(UiText.Raw("c.kt"), ToolKindLabels.primaryText("Read", inputJson = """{"file_path":"/a/b/c.kt"}"""))
+        assertEquals(UiText.Raw("y.md"), ToolKindLabels.primaryText("Read", inputJson = """{"filePath":"C:\\x\\y.md"}"""))
         // input 缺失时退回 title
-        assertEquals("foo.txt", ToolKindLabels.primaryText("Read", title = "foo.txt"))
+        assertEquals(UiText.Raw("foo.txt"), ToolKindLabels.primaryText("Read", title = "foo.txt"))
     }
 
     @Test
     fun searchPrimaryTextMatchesDesktopWording() {
-        assertEquals("查找 TODO", ToolKindLabels.primaryText("Grep", inputJson = """{"pattern":"TODO"}"""))
-        assertEquals("查找 aaa", ToolKindLabels.primaryText("Grep", inputJson = """{"query":"aaa"}"""))
-        assertEquals("列出 /src", ToolKindLabels.primaryText("Glob", inputJson = """{"cwd":"/src"}"""))
+        assertEquals(UiText.res(R.string.tool_primary_search_query, "TODO"), ToolKindLabels.primaryText("Grep", inputJson = """{"pattern":"TODO"}"""))
+        assertEquals(UiText.res(R.string.tool_primary_search_query, "aaa"), ToolKindLabels.primaryText("Grep", inputJson = """{"query":"aaa"}"""))
+        assertEquals(UiText.res(R.string.tool_primary_search_list, "/src"), ToolKindLabels.primaryText("Glob", inputJson = """{"cwd":"/src"}"""))
     }
 
     @Test
     fun shellPrimaryTextExtractsCommand() {
-        assertEquals("echo hi", ToolKindLabels.primaryText("Bash", inputJson = """{"command":"echo hi"}"""))
+        assertEquals(UiText.Raw("echo hi"), ToolKindLabels.primaryText("Bash", inputJson = """{"command":"echo hi"}"""))
         // 数组形态取 -lc 之后的一项（桌面端 QW 的规则）
         assertEquals(
-            "ls -la",
+            UiText.Raw("ls -la"),
             ToolKindLabels.primaryText("Bash", inputJson = """{"command":["bash","-lc","ls -la"]}"""),
         )
         // 没有 -lc 时整体空格拼接
         assertEquals(
-            "git status",
+            UiText.Raw("git status"),
             ToolKindLabels.primaryText("Bash", inputJson = """{"command":["git","status"]}"""),
         )
         // 换行与缩进压成单行
-        assertEquals("a b", ToolKindLabels.primaryText("Bash", inputJson = """{"command":"a\n   b"}"""))
+        assertEquals(UiText.Raw("a b"), ToolKindLabels.primaryText("Bash", inputJson = """{"command":"a\n   b"}"""))
         // 完全没有 command 字段时退回 title
-        assertEquals("my title", ToolKindLabels.primaryText("Bash", title = "my title", inputJson = "{}"))
+        assertEquals(UiText.Raw("my title"), ToolKindLabels.primaryText("Bash", title = "my title", inputJson = "{}"))
     }
 
     @Test

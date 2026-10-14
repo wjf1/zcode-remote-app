@@ -63,11 +63,13 @@ import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.zcode.remote.R
 import com.zcode.remote.relay.ConversationRow
 import com.zcode.remote.repo.ConversationRepository
 import com.zcode.remote.ui.components.CollapsibleRow
@@ -85,6 +87,8 @@ import com.zcode.remote.ui.theme.ZCodeDimens
 import com.zcode.remote.ui.theme.ZCodeTokens
 import com.zcode.remote.ui.theme.ZCodeType
 import com.zcode.remote.util.Format
+import com.zcode.remote.util.UiText
+import com.zcode.remote.util.asString
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonElement
 
@@ -431,21 +435,26 @@ private fun ToolCallRow(
 
     val family = ToolKindLabels.familyFor(row.toolName, row.kind)
     val status = ToolKindLabels.normalizeStatus(row.status)
-    val label =
-        if (status == ToolStatus.Running) {
-            ToolKindLabels.runningLabel(family, row.toolName)
-        } else {
-            ToolKindLabels.label(family, row.toolName)
-        }
-    val statusText = ToolKindLabels.statusLabel(status)
+    // 文案经 UiText 承载（国际化地基）；本函数是 Composable，直接 asString() 解析为当前语言文本
+    val labelText =
+        (
+            if (status == ToolStatus.Running) {
+                ToolKindLabels.runningLabel(family, row.toolName)
+            } else {
+                ToolKindLabels.label(family, row.toolName)
+            }
+        ).asString()
+    val statusText = ToolKindLabels.statusLabel(status)?.asString()
     val tone = toolStatusTone(status)
     val primary =
-        if (family == ToolFamily.FileWrite) {
-            ToolKindLabels.filePathBasename(input)
-                ?: ToolKindLabels.primaryText(row.toolName, row.kind, null, input)
-        } else {
-            ToolKindLabels.primaryText(row.toolName, row.kind, null, input)
-        }
+        (
+            if (family == ToolFamily.FileWrite) {
+                ToolKindLabels.filePathBasename(input)?.let { UiText.Raw(it) }
+                    ?: ToolKindLabels.primaryText(row.toolName, row.kind, null, input)
+            } else {
+                ToolKindLabels.primaryText(row.toolName, row.kind, null, input)
+            }
+        )?.asString()
     // Sprint 3：写类工具（Edit/Write/MultiEdit）从 inputText 解析红绿 diff —— 纯客户端，零 RPC
     val toolDiff =
         remember(row.rowId, input) {
@@ -461,7 +470,7 @@ private fun ToolCallRow(
         leading = { ToolFamilyIcon(family = family, tint = tone) },
         label = {
             Text(
-                text = label,
+                text = labelText,
                 style =
                     MaterialTheme.typography.labelSmall.copy(
                         fontSize = ZCodeType.Sm,
@@ -638,8 +647,8 @@ private fun TurnHeaderRow(row: ConversationRow) {
 @Composable
 private fun SubagentRow(row: ConversationRow) {
     val tone = if (LocalZCodeDark.current) ZCodeTokens.AssistantTrajectoryDark else ZCodeTokens.AssistantTrajectoryLight
-    val type = row.origin?.trim()?.takeIf { it.isNotEmpty() } ?: "子智能体"
-    val status = ToolKindLabels.statusLabel(row.status)
+    val type = row.origin?.trim()?.takeIf { it.isNotEmpty() } ?: stringResource(R.string.tool_label_agent)
+    val status = ToolKindLabels.statusLabel(row.status)?.asString()
     val summary = Format.singleLine(row.summaryText ?: row.text, limit = 160)
 
     Row(
