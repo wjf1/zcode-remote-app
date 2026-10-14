@@ -1,5 +1,28 @@
 # 变更记录 / Changelog
 
+## v0.5.0-beta39（2026-10-13）· 依赖治理轮：Dependabot 积压处置 + Kotlin 生态升级冻结规则固化
+
+### 新增（工程化；无用户可见行为变化）
+- **Dependabot 升级冻结规则固化**（`.github/dependabot.yml`）：新增 `org.jetbrains.kotlin*` 与 `org.jetbrains.kotlinx*` 两条 ignore 规则。此前仅忽略 `semver-major`，但 **Kotlin 生态的 minor 升级同样会破坏构建**（详见下方修复），且 Dependabot 每周会重新开出此类 PR——把硬约束从文档注释固化为配置，消除持续噪音。
+
+### 修复（依赖积压处置：10 个 Dependabot PR，7 合并 / 3 拒绝）
+
+**合并（均经本地门禁实测后合入）**：
+- **CI Actions**（5 项，零生产代码影响）：`actions/attest-build-provenance 2.2.3→2.4.0`（发布链 provenance 生成）、`actions/checkout 4.2.2→4.4.0`、`actions/setup-java 4.7.1→4.9.1`、`gradle/actions/setup-gradle 4.4.0→4.4.4`、`reactivecircus/android-emulator-runner 2.34.0→2.38.0`。
+- **Gradle 依赖**（3 项，逐项本地实测）：`androidx.test.ext:junit 1.2.1→1.3.0`（含 androidTest APK 构建验证）、`androidx.graphics:graphics-path 1.0.1→1.1.0`、`org.jetbrains.kotlinx.kover 0.9.1→0.9.11`（含 koverHtmlReport 验证）。
+
+**拒绝（Kotlin 版本硬约束，均附实测/机理证据）**：
+- **`org.jetbrains.kotlin.plugin.serialization 2.0.20→2.4.21`（PR#11）**：① 只升单个 Kotlin 插件会让三个官方插件（android/compose/serialization）版本不一致 → Gradle 配置期冲突；② 触碰 HANDOVER 坑 14 硬约束（markdown 渲染库 0.27.0 锁死 Kotlin 2.0.x）；③ Dependabot 判其为 minor（4>0）绕过了 semver-major 过滤。
+- **`kotlinx-coroutines-android 1.8.1→1.11.0`（PR#3）**：**本地实测编译直接失败**——1.11.0 用 Kotlin 2.2.20 编译，`kotlinx-coroutines-core.kotlin_module` 元数据版本为 **2.2.0**，而本项目 Kotlin 编译器（2.0.20）可读上限为 **2.0.0** → `compileDebugKotlin`/`compileReleaseKotlin` 双双 FAILED（`Module was compiled with an incompatible version of Kotlin`）。这是与坑 14 同源的「依赖用更高 Kotlin 编译 → 元数据不可读」机理。
+
+### 验证
+- 单测 **260/260**（`check_test_count.py` 核对）；`detekt` 通过；`ktlintCheck` 0 违规；`assembleDebug`/`assembleDebugAndroidTest`/`assembleRelease` 通过。
+- 合并后工作区全门禁 **BUILD SUCCESSFUL in 3m59s**（144 tasks）。
+
+### 遗留（登记，非遗漏）
+- Kotlin 生态若需真正升级（如为用上新版 coroutines / markdown 渲染库），须**单独立项**：同步全部 Kotlin 插件 + 评估 `multiplatform-markdown-renderer` 替代方案 + 全量回归；不由 Dependabot 驱动。
+- 两项硬门（A-5 逻辑 fragment / 出站物理分片）与 §11.10 `1.0.0` 发布门不变。
+
 ## v0.5.0-beta38（2026-10-13）· 真机验收轮：四项走查全通过 + benchmark 库真机兼容修复
 
 ### 真机验收（小米 15 Pro / Android 17 / HyperOS；release 装机、覆盖升级完整保留配对凭据）

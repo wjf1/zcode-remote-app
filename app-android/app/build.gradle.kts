@@ -70,8 +70,10 @@ android {
         // versionCode 49：beta37 —— §11.8 第二层门禁收尾（长会话 Macrobenchmark + 基线回退探测）
         // versionCode 50：beta38 —— 真机验收轮：协议灰度/诊断导出/界面回归通过 +
         //                           benchmark 库 1.3.4→1.5.0 真机兼容修复（pgrep 截断）
-        versionCode = 50
-        versionName = "0.5.0-beta38"
+        // versionCode 51：beta39 —— 依赖治理轮：Dependabot 积压处置（7 合并 / 2 拒绝）
+        //                           + Kotlin 生态升级冻结规则固化
+        versionCode = 51
+        versionName = "0.5.0-beta39"
         // 仪器化渲染回归网（src/androidTest）用 androidx.test 默认 runner。
         // 只在模拟器/真机上跑；CI runner 无设备，故 ci.yml 不接（见 HANDOVER §6.1 回归网）。
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"

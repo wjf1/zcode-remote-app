@@ -11,6 +11,21 @@ updates:
     ignore:
       - dependency-name: "*"
         update-types: ["version-update:semver-major"]
+      # ⚠️ Kotlin 生态整体冻结在 Kotlin 2.0.20（HANDOVER 坑 14）：凡是 **用 Kotlin 2.1+
+      # 编译的依赖，其 .kotlin_module 元数据版本高于本项目编译器可读的 2.0，会硬报
+      # "Module was compiled with an incompatible version of Kotlin"**。已实测踩中两类：
+      #   ① `org.jetbrains.kotlin.plugin.serialization 2.0.20 → 2.4.21`（PR#11，且只升单个
+      #      插件会造成三个 Kotlin 官方插件版本不一致）——semver 上属 minor，绕过上面的
+      #      semver-major 过滤 → 必须显式 ignore；
+      #   ② `kotlinx-coroutines 1.8.1 → 1.11.0`（PR#3，2026-10-13 本地实测：1.11.0 用
+      #      Kotlin 2.2.20 编译，元数据 2.2.0 ≠ 期望 2.0.0 → compileDebugKotlin/compileReleaseKotlin
+      #      双双 FAILED）。
+      # 另：`com.mikepenz:multiplatform-markdown-renderer 0.27.0` 是最后一个 Kotlin 2.0.x
+      # 编译版（0.30.0 起改 Kotlin 2.1+），锁死 Kotlin 版本即锁死它。
+      # 结论：kotlin 系与 kotlinx 系（含 coroutines / serialization）一律不自动升级；
+      # 需要升级时单独立项——同步全部 Kotlin 插件 + 评估 markdown 渲染库替代 + 全量回归。
+      - dependency-name: "org.jetbrains.kotlin*"
+      - dependency-name: "org.jetbrains.kotlinx*"
   - package-ecosystem: github-actions
     directory: /
     schedule:
