@@ -52,8 +52,20 @@
   `@Test` 全部执行）。
 - `assembleDebug` / `assembleRelease` 通过；`lintDebug` + `lintRelease` 0 error；`detekt` 通过；
   `ktlintCheck` 0 违规。
-- **未经真机走查**（本轮无设备）：通知权限弹框与设置页引导、旋转状态保持、自适应图标与启动屏
-  观感四项待真机验收（清单见 `HANDOFF.md` §5）。
+- **真机走查（小米 15 Pro / Android 17 / HyperOS，release beta42 覆盖安装、配对凭据保留）**：
+  1. **旋转状态保持 ✅**——进入会话页（「分析 zcode-remote-app 仓库优化空间 / 已连接 · 运行中 · 共 424 行」）
+     后强制横屏，**仍停留在该会话页**（顶栏返回/标题/状态齐全），修复前会被踢回列表。
+  2. **通知权限申请 ✅**——撤销 `POST_NOTIFICATIONS` 后冷启动，系统弹出
+     「允许"ZCode Remote"发送通知？」（uiautomator 抓到文本证据），P0 的主动申请真实生效；
+     授予后设置页状态行显示「已开启，锁屏可收到审批推送」。
+  3. **会话流渲染正常 ✅**——release 包在改动后流式画面、工具折叠行（终端/已执行/展开）、
+     顶栏模式与模型胶囊均正常；`logcat -b crash` 与 `AndroidRuntime` 无 FATAL。
+  4. **自适应图标 ✅**——`aapt2 dump badging` 确认 APK 已含 `application-icon`（编译后的
+     adaptive-icon 资源），由 `@mipmap/ic_launcher` 装载。
+- **待补**：自适应图标在启动器内的最终观感、冷启动启动屏过渡帧（启动屏一闪而过，
+  属预期快速过渡；`windowSplashScreen*` 已由编译与无 inflate 崩溃间接验证）。
+- **说明**：本轮 release 包在真机上的 `d/i/w` 日志已被 R8 剥离（预期行为），
+  故走查以 UI 层（uiautomator dump + 截图）与中国大陆 ROM 行为为准。
 
 ## v0.5.0-beta41（2026-10-14）· 依赖治理轮（第三批）：二维码与 SBOM 工具升级 + AGP 跳跃拒绝
 
