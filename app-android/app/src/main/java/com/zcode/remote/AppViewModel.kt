@@ -513,9 +513,12 @@ class AppViewModel(
 
     // ---- 发送消息 / 停止（P0-1）----
 
-    /** 会话页输入栏草稿（跨重组保持，发送成功才清空）。 */
-    var promptDraft by mutableStateOf("")
-        private set
+    /**
+     * 会话页输入栏草稿（跨重组保持，发送成功才清空）。
+     * §11.7 拆分：草稿存储已移入 [ConversationRepository]（按 taskId 隔离，防串会话），
+     * 此处转发仅保持 UI 调用签名不变。
+     */
+    val promptDraft: String get() = convRepo.promptDraft
 
     var sending by mutableStateOf(false)
         private set
@@ -558,7 +561,7 @@ class AppViewModel(
     }
 
     fun updatePromptDraft(v: String) {
-        promptDraft = v
+        convRepo.updatePromptDraft(v)
     }
 
     /** 发送输入栏消息：成功后服务端把 userInput 行推回会话流（本地只留 pending 回显气泡）。 */
@@ -579,7 +582,7 @@ class AppViewModel(
                 sending = false
                 r.fold(
                     onSuccess = {
-                        promptDraft = ""
+                        convRepo.clearPromptDraft()
                         attachments.clear()
                         ZLog.i(TAG, "sendPrompt ok session=$subscribedSessionId atts=${atts.size}")
                     },
@@ -728,7 +731,7 @@ class AppViewModel(
                             viewModelScope.launch { SessionCacheStore.save(getApplication(), sessions.toList()) }
                         }
                         // 首轮指令已随 createSession 的 firstInput 发出，输入框保持空白
-                        promptDraft = ""
+                        convRepo.clearPromptDraft()
                         clearAttachments()
                         openSession(item)
                         onSuccess(item)
@@ -814,7 +817,7 @@ class AppViewModel(
                             convRepo.subscribedSession = null
                             connectionCoordinator.resetHandshakeRetry()
                             convRepo.rowStore.clear()
-                            promptDraft = ""
+                            convRepo.clearPromptDraft()
                             attachments.clear()
                             conversation?.reset()
                         }
@@ -875,7 +878,8 @@ class AppViewModel(
         notifyCoordinator.clearPending()
         syncWidget(0)
         clearAttachments()
-        promptDraft = ""
+        // 草稿按会话隔离，断开时全部清空（凭据/会话上下文都不在了）
+        convRepo.clearAllDrafts()
         // C-6：连接没了，本地回显气泡无从确认，清掉避免误导
         convRepo.clearPendingMessages()
     }
@@ -890,6 +894,7 @@ class AppViewModel(
         convRepo.rows.clear()
         convRepo.subscribedSessionId = null
         convRepo.subscribedSession = null
+        convRepo.clearAllDrafts()
     }
 
     // ---- 执行模式（P0-B）----

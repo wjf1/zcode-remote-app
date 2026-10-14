@@ -17,7 +17,7 @@
   （Kotlin + Jetpack Compose）。逆向复用官方中继与配对协议，提供更强的通知、锁屏审批、
   流式会话与移动端操控体验。
 - **仓库**：<https://github.com/wjf1/zcode-remote-app>（owner：wjf1）
-- **当前版本**：`0.5.0-beta42`（versionCode 54）；上一个发布 tag `v0.5.0-beta41`。
+- **当前版本**：`0.5.0-beta43`（versionCode 55）；上一个发布 tag `v0.5.0-beta42`。
 - **许可**：[MIT](LICENSE)；安全披露见 [SECURITY.md](SECURITY.md)。
 - **部署形态**：侧滑安装的签名 Release APK（无 Play 分发）；自用 + 受控灰度。
 - **主分支**：`master`。
@@ -82,7 +82,21 @@ app-android/app/src/main/java/com/zcode/remote/
 ## 4. 最近一轮变更与交付成果
 
 > 完整逐轮记录见 [CHANGELOG.md](CHANGELOG.md) 与 [HANDOVER.md](HANDOVER.md) 文首覆盖层。
-> 本轮为 **v0.5.0-beta42：用户体验与生命周期缺陷修复轮**。
+> 最近两轮均为用户体验缺陷修复：**v0.5.0-beta43（草稿隔离 + 倒计时实时化）**、
+> **v0.5.0-beta42（通知权限 / 网络回调 / 旋转状态）**。
+
+### v0.5.0-beta43：交互修复轮
+
+| 项 | 问题 | 修法 |
+|---|---|---|
+| **会话草稿串会话** | 草稿是单一全局字段，切会话不清空 → 在 A 打的半句切到 B 后仍在输入框，**点发送错发到 B** | 草稿移入 `ConversationRepository` 按 `taskId` 隔离（`switchDraftTo` 存旧/恢复新，LRU 20），断开清空；时序抽纯函数 `switchDraft` |
+| **审批倒计时不动** | 两处审批卡在组合期算静态秒数，用户盯着的数字不跳变 | 新增 `AutoResolveCountdown`（`LaunchedEffect` 每秒推进，到点停），文案抽纯函数 `countdownLabel` |
+| 工程 | 真机跑仪器化测试需 debug 包、但与已装 release 签名冲突 | 新增 `-PdebugUseReleaseSigning=true`（默认关闭，同 benchmark 开关模式），可同签名覆盖安装 |
+
+**验证**：JVM 单测 **279/279**（+15）；仪器化 `ConversationDraftInstrumentedTest` 真机 **3/3 通过**；
+lint 双变体 0 error、detekt、ktlint 0 违规、assembleDebug/Release 通过。
+
+### v0.5.0-beta42：通知权限 / 网络回调 / 旋转状态
 
 **本轮修复（不影响既有交互路径，均为「补上缺失能力」或「消除泄漏」）**
 
@@ -110,12 +124,23 @@ app-android/app/src/main/java/com/zcode/remote/
 - ✅ **自适应图标**：`aapt2 dump badging` 确认 APK 含 `application-icon`（adaptive-icon 资源）。
 - ⏳ **待补**：启动器内图标观感、启动屏过渡帧（启动屏一闪而过属预期；`windowSplashScreen*`
   已由编译 + 无 inflate 崩溃间接验证）。
+- ⚠️ **测试基建限制（既有，非本轮引入）**：真机为 **API 37（Android 17）**，Espresso/Compose
+  测试库的 `InputManager.getInstance()` 在该版本被移除 → 依赖 `createComposeRule` 的仪器化测试
+  （含既有的 `MarkdownRenderTest`）在 Android 17 真机上必失败；**CI 的 API 35 emulator 不受影响**。
+  故真机侧改用不依赖 Espresso 注入的仪器化测试（如 `ConversationDraftInstrumentedTest`）取证。
 
 ## 5. 接力开发指引与待办（Next Steps / Backlog）
 
-- **最高优先（本轮已闭环）**：通知权限、网络回调泄漏、旋转状态保持——均已完成并**通过真机走查**。
+- **最高优先（已闭环）**：通知权限、网络回调泄漏、旋转状态保持、草稿串会话、倒计时不动——
+  均已完成；前四项已通过 beta42 真机走查，草稿隔离已通过 beta43 真机仪器化测试（3/3）。
 - **待补真机项（非阻塞）**：① 自适应图标在启动器内的观感（圆形/方形蒙版）；
-  ② 冷启动启动屏过渡帧观感（启动屏一闪而过，属预期的快速过渡）。
+  ② 冷启动启动屏过渡帧观感（启动屏一闪而过，属预期的快速过渡）；
+  ③ 倒计时组件在真机的可视刷新（真机 API 37 因 Espresso 限制跑不了 `createComposeRule` 用例，
+  由纯函数单测 + CI API 35 emulator 覆盖）。
+- **已知测试基建限制（既有）**：API 37（Android 17）真机上 Espresso/Compose 测试库
+  的 `InputManager.getInstance()` 缺失 → 依赖 `createComposeRule` 的仪器化用例在该真机必失败
+  （既有 `MarkdownRenderTest` 同样失败）；CI 的 API 35 emulator 不受影响。真机取证请改用不依赖
+  Espresso 注入的用例。
 - **观测记录（非缺陷）**：一次 `force-stop` 后重启的**过渡残帧**里曾见到首页卡片「PC焦点」
   徽章短暂出现在搜索框上方；稳定态（0.8s 与 5s 两次复测）均正常、未复现，判定为 Activity
   恢复期的中间帧，非稳定缺陷。

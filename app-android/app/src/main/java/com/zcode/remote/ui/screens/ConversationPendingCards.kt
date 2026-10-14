@@ -35,6 +35,7 @@ import androidx.compose.ui.unit.sp
 import com.zcode.remote.relay.ApprovalOption
 import com.zcode.remote.relay.PendingApproval
 import com.zcode.remote.relay.PendingElicitation
+import com.zcode.remote.ui.components.AutoResolveCountdown
 import com.zcode.remote.ui.theme.statusPendingTone
 
 /**
@@ -182,9 +183,8 @@ internal fun ApprovalCard(
                     color = statusPendingTone(),
                 )
                 Spacer(Modifier.weight(1f))
-                a.autoResolveAt?.let {
-                    val sec = ((it - System.currentTimeMillis()).coerceAtLeast(0) / 1000).toInt()
-                    Text("${sec}s 自动决议", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                a.autoResolveAt?.let { deadline ->
+                    AutoResolveCountdown(deadlineAt = deadline)
                 }
             }
             a.summary?.let {

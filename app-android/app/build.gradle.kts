@@ -16,6 +16,13 @@ val benchmarkUseReleaseSigning =
         .map { it.toBoolean() }
         .getOrElse(false)
 
+// 真机仪器化取证：debug 变体是否改用 release 签名（默认关闭，见 buildTypes.debug 注释）。
+val debugUseReleaseSigning =
+    providers
+        .gradleProperty("debugUseReleaseSigning")
+        .map { it.toBoolean() }
+        .getOrElse(false)
+
 plugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.android")
@@ -77,8 +84,10 @@ android {
         // versionCode 53：beta41 —— 依赖治理轮（第三批）：zxing / cyclonedx 升级 + AGP 跳跃拒绝
         // versionCode 54：beta42 —— 用户体验与生命周期修复轮：通知权限运行时申请 +
         //                           网络回调注销 + 旋转状态保持 + 自适应图标/启动屏 + 死参数清理
-        versionCode = 54
-        versionName = "0.5.0-beta42"
+        // versionCode 55：beta43 —— 交互修复轮：会话草稿按 taskId 隔离（防串会话错发）+
+        //                           审批自动决议倒计时逐秒刷新 + debug 变体可选 release 签名开关
+        versionCode = 55
+        versionName = "0.5.0-beta43"
         // 仪器化渲染回归网（src/androidTest）用 androidx.test 默认 runner。
         // 只在模拟器/真机上跑；CI runner 无设备，故 ci.yml 不接（见 HANDOVER §6.1 回归网）。
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
@@ -106,6 +115,15 @@ android {
     }
 
     buildTypes {
+        // 真机仪器化取证开关（默认关闭 → CI/无 keystore 环境行为不变）：开启且本机有
+        // keystore.properties 时 debug 变体改用 release 签名——可**同签名覆盖安装**已装 release 包
+        // （免卸载、保配对凭据），从而在真机上跑 connectedDebugAndroidTest / 手动 instrument。
+        // 用法：gradle :app:assembleDebug -PdebugUseReleaseSigning=true
+        debug {
+            if (debugUseReleaseSigning && keystoreProps.isNotEmpty()) {
+                signingConfig = signingConfigs.getByName("release")
+            }
+        }
         release {
             // P0-C：开 R8 做日志剥离与库裁剪（proguard-rules.pro；自家代码本轮保守 keep，
             // 混淆改名待真机冒烟后再放开）。release 构建后必须真机冒烟验证。
