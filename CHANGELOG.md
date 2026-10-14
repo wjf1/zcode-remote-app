@@ -1,5 +1,47 @@
 # 变更记录 / Changelog
 
+## 未发布（进行中）· 国际化资源化（分批次推进）
+
+> ⚠️ **状态：进行中，已完成第 1 批。** 默认语言仍为中文，**行为零变化**；本项是「把散落的
+> 中文字面量抽到 `strings.xml`」的工程地基重构，**不是**要做英文界面（用户已明确无英文需求）。
+
+### 背景与规模（实测数据）
+
+全库用户可见中文字面量共 **561 条**（`ui/` 365、`relay/` 138、`repo/` 62、`notify/` 30、其余 ~20），
+分布特点决定了实施方式：
+
+- **仅 41 条在集中式对象里**（`ToolKindLabels` / `StatusPanelLabels` / `UserFacingError`），
+  其余 **486 条散落在 30+ 文件**；资源化的收益主要在「文案集中管理 + 未来可翻译 + 可加门禁防硬编码」。
+- **约 140 条在纯函数层**（标签/映射类），而 `stringResource()` 只能在 `@Composable` 调用，
+  项目又刻意靠 **JVM 单测（无 Robolectric）** 保证质量 → 必须引入 `UiText` 抽象（返回资源 id + 参数，
+  资源 id 是 Int 常量，单测仍可断言）。
+- **107 条含 `$` 插值**（如 `"${sec}s 后自动决议"`），需逐条改签名/调用点传参，不能直接搬运。
+- **日志（96 条）与协议常量/诊断码不进 `strings.xml`** —— 它们不可也不应本地化，保持原样。
+
+### 已完成（第 1 批，2026-10-14）
+
+- 新增 `util/UiText.kt`：`UiText.Res(资源id, 参数)` / `UiText.Raw(运行期文本)`，
+  Composable 侧 `asString()`、非 Compose 侧 `resolve(context)`。
+- 新增 `res/values/strings.xml`（公共文案 + 工具家族标签；默认语言 = 中文，与原子面量逐字一致）。
+- `ToolKindLabels` 的 `label` / `runningLabel` / `statusLabel` / `primaryText` 改返回 `UiText`；
+  消费点 `ConversationTimeline` 经 `asString()` 解析；`primaryText` 顺带拆出 `searchPrimaryText` 降复杂度。
+- `detekt-baseline.xml` 更新 `label` 条目签名（`: String` → `: UiText`），条数不变（无新增抑制）。
+
+**验证**：单测 **287/287**；lint 双变体 0 error；detekt、ktlint 0 违规；`assembleDebug`/`assembleRelease` 通过。
+
+### 待做（后续批次，按文件域分批提交，每批独立保绿）
+
+| 批次 | 范围 | 条数 | 说明 |
+|---|---|---|---|
+| 2 | `StatusPanelLabels` | 24 | 纯函数，同上模式 |
+| 3 | `UserFacingError` | 17 | **最微妙**：映射表改为「英文键 → 资源 id」，测试断言同步改 |
+| 4 | `ui/screens/` 各屏 | 365 | 最大头，可按屏再分（HomeScreen 59 / SettingsTab 66 / ConversationTopBar 27 …） |
+| 5 | `notify/` + `repo/` + `widget/` | ~93 | 有 `Context`，用 `resolve(context)` |
+| 6 | `relay/` 用户可见错误文案 | ~46 | **需逐条甄别**用户可见 vs 日志/协议，只搬前者 |
+
+**说明**：全部做完预计 8–12 批提交。若后续决定不做英文，批次 2–3（纯函数标签层）仍有
+「集中管理 + 可加防硬编码门禁」的确定收益；批次 4–6 属可选深水区。
+
 ## v0.5.0-beta46（2026-10-14）· 弃用 API 清理轮：编译警告归零
 
 ### 工程改进（无用户可见行为变化）

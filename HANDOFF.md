@@ -18,6 +18,9 @@
   流式会话与移动端操控体验。
 - **仓库**：<https://github.com/wjf1/zcode-remote-app>（owner：wjf1）
 - **当前版本**：`0.5.0-beta46`（versionCode 58）；上一个发布 tag `v0.5.0-beta45`。
+- **⚠️ 进行中的工作（未发布）**：**国际化资源化**——已完成**第 1 批**（`UiText` 地基 + `ToolKindLabels`），
+  仍在 `master` 上（未打 tag，**默认语言仍为中文、行为零变化**）。后续 5 个批次与详细进度见
+  §5「进行中的工作」与 [CHANGELOG.md](CHANGELOG.md) 的「未发布（进行中）」段。**接手请先读该段。**
 - **许可**：[MIT](LICENSE)；安全披露见 [SECURITY.md](SECURITY.md)。
 - **部署形态**：侧滑安装的签名 Release APK（无 Play 分发）；自用 + 受控灰度。
 - **主分支**：`master`。
@@ -69,7 +72,7 @@ app-android/app/src/main/java/com/zcode/remote/
 │                  ApprovalsTab · SettingsTab · ScanScreen · KeepAliveGuideScreen · DiagnosticsSection
 ├── ui/components/ MarkdownView · DiffView · CollapsibleRow · SessionStatusPanel · TurnChangesCard …
 ├── ui/theme/      Theme（色板/Token）· Typography（ZCodeType）· Dimens
-├── util/          ZLog（日志门）· LogRedactor（脱敏）· Format · diag/（诊断环形缓冲）
+├── util/          ZLog（日志门）· LogRedactor（脱敏）· UiText（用户文案载体，i18n 地基）· Format · diag/（诊断环形缓冲）
 └── widget/        PendingWidgetProvider（桌面待处理角标）
 ```
 
@@ -162,6 +165,47 @@ lint 双变体 0 error、detekt、ktlint 0 违规、assembleDebug/Release 通过
   故真机侧改用不依赖 Espresso 注入的仪器化测试（如 `ConversationDraftInstrumentedTest`）取证。
 
 ## 5. 接力开发指引与待办（Next Steps / Backlog）
+
+### 🔄 进行中的工作：国际化资源化（第 1/6 批已完成）
+
+**目标**：把散落的中文字面量抽到 `res/values/strings.xml`，实现「文案集中管理 + 未来可翻译 +
+可加防硬编码门禁」。**不是**做英文界面（用户已明确无英文需求）；**默认语言仍为中文，行为零变化**。
+
+**规模实测**：用户可见中文串 **561 条**（`ui/` 365、`relay/` 138、`repo/` 62、`notify/` 30）；
+其中 **~140 条在纯函数层**、**107 条含 `$` 插值**（需改签名/传参）、仅 **41 条**在集中式对象里。
+日志（96 条）与协议常量/诊断码**不进** strings.xml。
+
+**已完成（第 1 批）**
+- `app-android/app/src/main/java/com/zcode/remote/util/UiText.kt` — 文案载体抽象
+  （`Res(资源id, 参数)` / `Raw(运行期文本)`；`asString()` 用于 Composable、`resolve(context)` 用于通知/Widget）。
+- `app-android/app/src/main/res/values/strings.xml` — 公共文案 + 工具家族标签（中文）。
+- `ui/components/ToolKindLabels.kt` — `label`/`runningLabel`/`statusLabel`/`primaryText` 返回 `UiText`。
+- `ui/screens/ConversationTimeline.kt` — 消费点经 `asString()`；`primaryText` 拆出 `searchPrimaryText`。
+- `detekt-baseline.xml` — `label` 条目签名更新（`: String`→`: UiText`），条数不变。
+
+**后续批次（每批独立提交 + 全门禁，可单独回退）**
+
+| 批次 | 范围 | 条数 | 要点 |
+|---|---|---|---|
+| 2 | `ui/components/StatusPanelLabels.kt` | 24 | 纯函数，照第 1 批模式（返回 `UiText`，测试断言改资源 id） |
+| 3 | `relay/UserFacingError.kt` | 17 | **最微妙**：`LOCAL_ERRORS`/`FAULT_ERRORS` 映射表改为「英文键 → 资源 id」；`UserFacingErrorTest` 同步改 |
+| 4 | `ui/screens/` 各屏 | 365 | 最大头，建议按屏分（HomeScreen 59 / SettingsTab 66 / ConversationTopBar 27 / KeepAliveGuideScreen 20 …） |
+| 5 | `notify/` + `repo/` + `widget/` | ~93 | 有 `Context`，用 `UiText.resolve(context)`（注意通知构建在非 Compose 上下文） |
+| 6 | `relay/` 用户可见错误文案 | ~46 | **逐条甄别**：`ConversationChannel` 里同文件混有用户可见串与日志/协议串，只搬前者 |
+
+**实施注意**（踩过的坑）
+- 纯函数返回类型改 `UiText` 会**连带改测试断言**（本项目无 Robolectric，这是必要的代价，不是回归）。
+- 容器类 `when` 加 `res(...)` 包装会抬高 **detekt CyclomaticComplexity**；把子分支抽成私有函数
+  （如 `searchPrimaryText`），而不是加 `@Suppress`。
+- `UiText.asString()/resolve()` 的 `*args` 展开触发 **detekt SpreadOperator**，已就地 `@Suppress` 并注明理由。
+- import 顺序：`ktlintFormat` 会自动修正（`com.zcode.remote.R` 的位置）。
+- **每批做完必须**：`ktlintCheck detekt testDebugUnitTest lintDebug lintRelease assembleDebug assembleRelease`
+  全绿 + `python tools/check_test_count.py --min 260`（现为 287）。
+
+**决策待定**：全量做（6 批，为「可能永远不来的英文需求」做全量工程）vs 只做批次 2–3（纯函数标签层，
+收益是集中管理 + 可加门禁，风险最低）。用户倾向与后续取舍见 CHANGELOG「未发布（进行中）」段。
+
+### 其他待办
 
 - **最高优先（已闭环）**：通知权限、网络回调泄漏、旋转状态保持、草稿串会话、倒计时不动——
   均已完成；前四项已通过 beta42 真机走查，草稿隔离已通过 beta43 真机仪器化测试（3/3）。
