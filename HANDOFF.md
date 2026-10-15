@@ -266,6 +266,9 @@ lint 双变体 0 error、detekt、ktlint 0 违规、assembleDebug/Release 通过
 >   （刷新时间戳会让过期文件被 TTL 误判为新鲜）；加密失败绝不回写明文。
 >   **含竞态防护**：迁移前在锁内重新比对文件内容，若已被 `save()` 更新则放弃迁移
 >   （否则会用读取时捕获的旧明文覆盖刚写入的新数据）。补 `CacheCryptoTest` 3 项。
+> - **#10 GitHub Token 暴露面**：核实发现不只是内存驻留——明文被预填进设置输入框（打开设置页即铺屏）。
+>   已改：设置页不预填 + 圆点掩码 + 参数改 `hasGithubToken: Boolean`，`UpdateRepository` 明文状态字段
+>   亦改布尔、明文只在 `checkForUpdate()` 按需读取。
 
 **P0 性能与正确性**
 
@@ -311,7 +314,13 @@ lint 双变体 0 error、detekt、ktlint 0 违规、assembleDebug/Release 通过
 9. ~~**旧明文缓存无回写迁移**~~（**✅ 2026-10-15 已修**）：`storage/SessionCacheStore.decodeCacheText` 对 beta44 前的旧明文
    **永远原样返回**，没有「读出后重写为密文」的回写路径，旧文件不删则明文无限期存在。
    建议首次成功双读后立即以密文重写。
-10. **`TokenStore.read()` 明文 String 长驻内存**：建议改 `CharArray` 或调用方即用即清。
+10. ~~**`TokenStore.read()` 明文 String 长驻内存**~~（**✅ 2026-10-15 已修，且核实发现更广问题**）：
+    原描述只提内存驻留；核实发现更直接的是 **UI 明文铺屏**——`UpdateRepository` 构造时解密一次后，
+    明文一路传到设置页被 `tokenDraft` 预填，打开设置页即见完整 Token（输入框无掩码）。
+    **已修**：设置页不再预填、输入框改圆点掩码（`PasswordVisualTransformation` + `KeyboardType.Password`）、
+    参数由 `githubToken: String` 改 `hasGithubToken: Boolean`；`UpdateRepository` 的明文状态字段
+    亦改为布尔，明文只在 `checkForUpdate()` 内按需读取。建议改 `CharArray` 的进一步优化**未做**
+    （`Cipher.doFinal` 与 OkHttp header 均为 String 接口，收益有限）。
 
 **P2 体验体系化**
 

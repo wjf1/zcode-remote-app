@@ -213,7 +213,9 @@ class AppViewModel(
 
     // ---- 软件版本与在线更新（§11.7 拆分：实现在 repo/UpdateRepository，此处转发保持签名不变）----
     val updateState: UpdateRepository.UpdateState get() = updateRepo.updateState
-    val githubToken: String get() = updateRepo.githubToken
+
+    /** 只暴露「是否已配置」——明文 Token 不进 UI 状态（走查 #10）。 */
+    val hasGithubToken: Boolean get() = updateRepo.hasGithubToken
 
     fun updateGithubToken(token: String) = updateRepo.updateGithubToken(token)
 

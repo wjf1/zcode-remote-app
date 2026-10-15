@@ -388,7 +388,7 @@ class MainActivity : ComponentActivity() {
                                                 customRelayUrl = vm.customRelayUrl,
                                                 themeMode = vm.themeMode,
                                                 updateState = vm.updateState,
-                                                githubToken = vm.githubToken,
+                                                hasGithubToken = vm.hasGithubToken,
                                                 onSwitchDevice = { vm.switchDevice(it) },
                                                 onRemoveDevice = { vm.removeDevice(it) },
                                                 onDisconnect = { vm.disconnect() },

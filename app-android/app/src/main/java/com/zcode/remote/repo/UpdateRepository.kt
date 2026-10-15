@@ -45,12 +45,20 @@ class UpdateRepository(
 
     var updateState by androidx.compose.runtime.mutableStateOf<UpdateState>(UpdateState.Idle)
         private set
-    var githubToken by androidx.compose.runtime.mutableStateOf(settings.githubToken)
+
+    /**
+     * 是否已配置 GitHub Token —— **只暴露布尔值，不把明文 Token 放进长期存活的 Compose 状态**。
+     *
+     * 走查 #10：原实现 `var githubToken by mutableStateOf(settings.githubToken)` 在构造时解密一次，
+     * 明文串此后一直驻留在状态字段里（且会一路传到设置页预填显示）。改为只记「有没有」，
+     * 真正的明文只在 [checkForUpdate] 里按需读取、用完即随局部变量释放。
+     */
+    var hasGithubToken by androidx.compose.runtime.mutableStateOf(settings.githubToken.isNotBlank())
         private set
 
     fun updateGithubToken(token: String) {
         settings.githubToken = token
-        githubToken = token
+        hasGithubToken = settings.githubToken.isNotBlank()
     }
 
     fun checkForUpdate() {

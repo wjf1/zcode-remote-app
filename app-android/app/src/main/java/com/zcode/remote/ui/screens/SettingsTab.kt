@@ -11,6 +11,7 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
@@ -21,6 +22,8 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -49,7 +52,7 @@ fun SettingsTab(
     customRelayUrl: String,
     themeMode: String,
     updateState: UpdateRepository.UpdateState,
-    githubToken: String,
+    hasGithubToken: Boolean,
     onSwitchDevice: (String) -> Unit,
     onRemoveDevice: (String) -> Unit,
     onDisconnect: () -> Unit,
@@ -64,7 +67,9 @@ fun SettingsTab(
     var pendingRemove by remember { mutableStateOf<String?>(null) }
     var editingCustom by remember { mutableStateOf<String?>(null) }
     var editingToken by remember { mutableStateOf(false) }
-    var tokenDraft by remember(githubToken) { mutableStateOf(githubToken) }
+    // 走查 #10：不再用已存的 Token 预填输入框（原 `remember(githubToken){ mutableStateOf(githubToken) }`
+    // 会在打开设置页时把明文 Token 铺在屏幕上）。改为空白起手，仅在用户主动输入时承载草稿。
+    var tokenDraft by remember { mutableStateOf("") }
     var showDevGuide by remember { mutableStateOf(false) }
 
     Column(
@@ -517,7 +522,7 @@ fun SettingsTab(
                                 Text(
                                     if (editingToken) {
                                         "收起"
-                                    } else if (githubToken.isNotBlank()) {
+                                    } else if (hasGithubToken) {
                                         "已配置"
                                     } else {
                                         "配置"
@@ -530,15 +535,25 @@ fun SettingsTab(
                             OutlinedTextField(
                                 value = tokenDraft,
                                 onValueChange = { tokenDraft = it },
-                                placeholder = { Text("ghp_... 只读权限即可", style = MaterialTheme.typography.bodySmall) },
+                                placeholder = {
+                                    Text(
+                                        ghTokenPlaceholder(hasGithubToken),
+                                        style = MaterialTheme.typography.bodySmall,
+                                    )
+                                },
                                 singleLine = true,
+                                // 走查 #10：Token 属敏感凭据，输入时以圆点掩码显示（不再明文铺屏）
+                                visualTransformation = PasswordVisualTransformation(),
+                                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
                                 modifier = Modifier.fillMaxWidth(),
                                 shape = RoundedCornerShape(8.dp),
                                 trailingIcon = {
                                     TextButton(onClick = {
-                                        onSetGithubToken(tokenDraft.trim())
+                                        val draft = tokenDraft.trim()
+                                        onSetGithubToken(draft)
+                                        tokenDraft = ""
                                         editingToken = false
-                                        Toast.makeText(context, "Token 已保存", Toast.LENGTH_SHORT).show()
+                                        Toast.makeText(context, ghTokenSavedToast(draft), Toast.LENGTH_SHORT).show()
                                     }) { Text("保存") }
                                 },
                             )
@@ -739,3 +754,9 @@ private fun bridgeLabel(b: RpcChannel.BridgeState) =
         is RpcChannel.BridgeState.Ready -> "就绪"
         is RpcChannel.BridgeState.Failed -> "失败"
     }
+
+/** 走查 #10：Token 输入框占位文案（抽成纯函数，避免给 SettingsTab 增加圈复杂度）。 */
+internal fun ghTokenPlaceholder(configured: Boolean): String = if (configured) "已配置（留空保存 = 清除）" else "ghp_... 只读权限即可"
+
+/** 走查 #10：保存 Token 的反馈文案——空草稿即清除。 */
+internal fun ghTokenSavedToast(draft: String): String = if (draft.isEmpty()) "Token 已清除" else "Token 已保存"

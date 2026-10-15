@@ -1,5 +1,38 @@
 # 变更记录 / Changelog
 
+## 未发布（2026-10-15）· 走查清单第四批：GitHub Token 明文暴露面收敛
+
+> 承接同日三轮走查修复。**核实发现真实问题比原描述更广**（原描述只提内存驻留，实际更直接的是
+> UI 明文铺屏）。无功能变化，仅收敛暴露面。
+
+### 核实（原描述不完整）
+
+- 走查 #10 称「`TokenStore.read()` 明文 String 长驻内存」——成立，但**漏了更直接的一处**：
+  `UpdateRepository` 构造时 `var githubToken by mutableStateOf(settings.githubToken)` 解密一次后，
+  明文一路传到设置页并被 `tokenDraft` **预填**进输入框——用户一打开设置页，**Token 明文就铺在屏幕上**
+  （且输入框无掩码、键盘为明文类型）。
+
+### 修复
+
+- **不再预填、不再明文显示（UI 层，主要修复）**：
+  - `SettingsTab` 的 `tokenDraft` 改为空白起手（原 `remember(githubToken){ mutableStateOf(githubToken) }`
+    会在进入设置页时载入真实 Token）；
+  - 输入框加 `PasswordVisualTransformation` + `KeyboardType.Password`（圆点掩码）；
+  - 参数 `githubToken: String` → `hasGithubToken: Boolean`，UI 只据「是否已配置」显示状态；
+  - 保存后清空草稿；占位文案提示「已配置（留空保存 = 清除）」，`保存` 时空草稿即清除并提示
+    「Token 已清除」。
+- **不再长期持有明文（状态层）**：`UpdateRepository` 的 `var githubToken`（明文串驻留 Compose 状态）
+  改为 `hasGithubToken: Boolean`；真正的明文只在 `checkForUpdate()` 内按需读取（`settings.githubToken`），
+  随局部变量释放。`AppViewModel` 同步改暴露 `hasGithubToken`。
+
+### 验证
+
+- 单测 **291/291**；`ktlintCheck` 0 违规；`detekt` 通过；`lintDebug`/`lintRelease` 0 error；
+  `assembleDebug`/`assembleRelease` 通过。
+- 本轮无新增单测：改动集中在 Compose UI 与设置状态，仓库无 Robolectric/Compose 单测基建。
+  **真机走查建议（下一轮）**：打开设置页确认输入框为掩码且为空、占位提示正确；
+  配置 Token → 收起再展开确认不回显；留空保存确认清除且提示正确。
+
 ## 未发布（2026-10-15）· 走查清单第三批：连接韧性调度任务的作废缺口
 
 > 承接同日两轮走查修复。**核实推翻了原描述**并修掉其中的真实缺口。无用户可见行为变化。
