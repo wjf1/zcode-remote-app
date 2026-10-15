@@ -277,10 +277,15 @@ lint 双变体 0 error、detekt、ktlint 0 违规、assembleDebug/Release 通过
 >   · 已等待 N 秒」；`Live`（已订阅但无行）呈现「会话暂无内容」而非「还在同步」；`Failed`
 >   指引点顶部「重试」；草稿态显示发送引导。`ConversationScreen` 空态区块改用之，
 >   `strings.xml` 增 8 条 `sync_*`。
->   **验证**：单测 **304/304**（+14 `ConversationSyncInfoTest`）；ktlint 0 违规 / detekt /
->   lint 双变体 0 error / assembleDebug+Release 全通过。**待真机走查**（断网走秒 / 空会话 /
->   握手失败三态）。
->   **残余未做**：#11 的另一半——首页错误态仍仅一行红字、无重试按钮（本轮未动）。
+> - **#11 后半（2026-10-16 同日）**：首页会话列表空态原只匹配 `WaitingPeer`/`Paired`，
+>   其余落 `else → 「正在建立安全连接…」`——`RelayState.Failed` 被误报为「正在连接」，
+>   其中 `KICKED`/`AUTH_FAILED`/`PROTOCOL_MISMATCH`/`INVALID_ENDPOINT` 是终态（不自动重连），
+>   界面会永久停在「正在连接」。新增 `ui/screens/HomeConnectionInfo.kt`：纯函数
+>   `connectionEmptyStateText` / `isTerminalFailure`（终态判定与 `RelayClient.fail()` 同源）；
+>   首页失败态改用之并给终态失败增设「前往设置」引导，`strings.xml` 增 8 条 `home_conn_*`。
+>   **验证**：单测 **313/313**（+14 `ConversationSyncInfoTest` +9 `HomeConnectionInfoTest`）；
+>   ktlint 0 违规 / detekt / lint 双变体 0 error / assembleDebug+Release 全通过。
+>   **待真机走查**（会话空态三态；首页配对失效/断网两种失败态）。
 
 **P0 性能与正确性**
 
@@ -336,8 +341,11 @@ lint 双变体 0 error、detekt、ktlint 0 违规、assembleDebug/Release 通过
 
 **P2 体验体系化**
 
-11. ~~**加载/空态信息量不足**~~（**✅ 2026-10-16 已修，见下「本次已修」**）：会话页「握手中…/订阅中…」无已等待秒数与阶段进度（任务书 §7
-    已要求未落地）；首页错误态仅一行红字（`HomeScreen.kt:462`）无重试按钮；会话为空无引导文案。
+11. ~~**加载/空态信息量不足**~~（**✅ 2026-10-16 已修**：会话空态「阶段+秒数」+ 首页连接失败态误报，见下「本次已修」）：
+    会话页「握手中…/订阅中…」无已等待秒数与阶段进度（任务书 §7 已要求未落地）；会话为空无引导文案；
+    首页「连接失败」被误报为「正在连接」。
+    **残余未做**：会话卡片内的异常原因行（`HomeScreen.kt:462` 附近）仍仅一行红字、无重试按钮——
+    与上述 relay 级连接空态是不同位置，本轮未动。
 12. **无障碍覆盖薄弱**：全 ui/ `contentDescription` 仅 22 处（其中 11 处是 `= null` 装饰图标），
     `semantics` 修饰符几乎不用，TalkBack 下审批按钮/状态胶囊/会话行基本不可达。
 13. **Markdown 禁外链图片的兜底体验**：图片类回答仅一行灰字占位，建议加「复制链接 / 浏览器

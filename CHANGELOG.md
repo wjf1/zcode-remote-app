@@ -1,5 +1,41 @@
 # 变更记录 / Changelog
 
+## 未发布（2026-10-16）· 走查清单第六批：首页连接失败态不再误报「正在连接」
+
+> 承接第五批（会话空态）。走查 #11 的**后半**：首页会话列表空态的占位文案此前只覆盖两种状态，
+> 其余全落 `else -> 「正在建立安全连接…」`，导致 `RelayState.Failed` 也被显示成「正在连接」。
+
+### 问题
+
+- `HomeScreen` 的 `sessions.isEmpty()` 空态用 `when (state)` 只匹配 `WaitingPeer` / `Paired`，
+  **其余全部回落到 `else -> "正在建立安全连接…"`**。
+  于是 `RelayState.Failed` 也显示「正在连接」——其中 `KICKED` / `AUTH_FAILED` /
+  `PROTOCOL_MISMATCH` / `INVALID_ENDPOINT` 是**终态失败**（`RelayClient.fail()` 明确置
+  `terminalFailed=true`、不参与自动重连），界面会永久停在「正在建立安全连接…」：
+  用户以为还在连、实则永远不会成功，也无从知道要去设置页重新配对。
+
+### 修复
+
+- 新增 `ui/screens/HomeConnectionInfo.kt`：
+  - 纯函数 `connectionEmptyStateText(state)`——逐状态映射文案：连接类三态合一、`WaitingPeer` /
+    `Paired` 保留原文案、`Failed` 按 `FailureReason` 分派到可操作文案（接管/配对失效/协议升级/
+    地址不安全/通用重试中）。
+  - 纯函数 `isTerminalFailure(state)`——与 `RelayClient.fail()` 的终态判定**同源**（那四处
+    不自动重连），决定是否给出「前往设置」引导。
+- `ui/screens/HomeScreen.kt` 空态改用上述函数：失败态文案用 `error` 配色；终态失败在文案下方
+  增设「前往设置」按钮（非终态失败不给，它们会自行退避重连，给了反而误导）。
+- `res/values/strings.xml` 新增 8 条 `home_conn_*` 文案。
+
+### 验证
+
+- 新增 `HomeConnectionInfoTest`（9 项）：逐状态文案、**「失败态绝不再显示为正在连接」的
+  全枚举回归**、终态判定与 `RelayClient` 同源、非失败态不误判终态。
+- 单测 **313/313**（含新增 9 项）；`python tools/check_test_count.py --min 264` 通过。
+- `ktlintCheck` 0 违规；`detekt` 通过；`lintDebug`/`lintRelease` 0 error（新增字符串均被引用，
+  未引入新的 `UnusedResources`）；`assembleDebug`/`assembleRelease` 通过。
+- **真机走查建议（下一轮）**：登出/失效配对后进入首页，确认显示「配对已失效…」+「前往设置」
+  而非「正在建立安全连接…」；断网场景确认显示通用「连接失败，正在自动重试…」。
+
 ## 未发布（2026-10-16）· 走查清单第五批：会话空态显示同步阶段与已等待秒数（任务书 §7）
 
 > 承接走查清单 P2 #11。任务书 §7 验收标准要求「空态须显示当前阶段与已等待秒数」，

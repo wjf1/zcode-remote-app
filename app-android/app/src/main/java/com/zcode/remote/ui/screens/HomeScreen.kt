@@ -34,6 +34,7 @@ import com.zcode.remote.ui.theme.ZCodeTokens
 import com.zcode.remote.ui.theme.statusPendingTone
 import com.zcode.remote.ui.theme.toolCallTrajectoryTone
 import com.zcode.remote.ui.voice.VoiceInputButton
+import com.zcode.remote.util.asString
 
 /**
  * 现代高信息密度会话工作台 (Sessions Tab)
@@ -260,17 +261,30 @@ fun HomeScreen(
                         .padding(bottom = 60.dp),
                 contentAlignment = Alignment.Center,
             ) {
-                Text(
-                    text =
-                        when (state) {
-                            is RelayState.WaitingPeer -> "已连接中继，等待 PC 桌面端接入…\n请在 PC 打开「移动端远程控制」"
-                            is RelayState.Paired -> "已与 PC 配对，正在拉取会话列表…"
-                            else -> "正在建立安全连接…"
-                        },
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    textAlign = androidx.compose.ui.text.style.TextAlign.Center,
-                )
+                Column(
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.spacedBy(12.dp),
+                    modifier = Modifier.padding(horizontal = 24.dp),
+                ) {
+                    Text(
+                        text = connectionEmptyStateText(state).asString(),
+                        style = MaterialTheme.typography.bodyMedium,
+                        color =
+                            if (state is RelayState.Failed) {
+                                MaterialTheme.colorScheme.error
+                            } else {
+                                MaterialTheme.colorScheme.onSurfaceVariant
+                            },
+                        textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+                    )
+                    // 终态失败（KICKED/AUTH_FAILED/PROTOCOL_MISMATCH/INVALID_ENDPOINT）不会自动重连，
+                    // 给出「前往设置」引导，避免用户对着永不成功的「正在连接」干等。
+                    if (isTerminalFailure(state)) {
+                        TextButton(onClick = onNavigateToSettings) {
+                            Text("前往设置", style = MaterialTheme.typography.labelMedium)
+                        }
+                    }
+                }
             }
         } else {
             LazyColumn(
