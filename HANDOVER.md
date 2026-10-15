@@ -1,6 +1,19 @@
 # 交接开发计划（HANDOVER）
 
-> ## ✅ 当前项目状态（2026-10-13，权威覆盖层）
+> ## ✅ 当前项目状态（2026-10-15，权威覆盖层）
+>
+> - **当前主干**：`master`；远端已推进至 `v0.5.0-beta46` 系列。**⚠️ 本机工作副本此前落后远端 50 个提交**（`git status` 因未 fetch 曾误显「领先 15」）；已于 2026-10-15 `git rebase origin/master` 对齐。**教训：任何文档/版本号判断前先 `git fetch`。**
+> - **✅ 仓库门面与展示素材专项（2026-10-15，未发版）**：纯展示层/元数据改动，**未触碰 App 源码与发布链**，不改版本号。① README 中英双语新增 Hero 区（锁屏审批动图 + 一句话定位）与「与官方网页版的关键差别」对照表，把「锁屏通知栏审批」从功能列表一行提升为首屏卖点；② 新增「隐私与数据（爆雷之后，先看这一节）」区块（中英双语）：不上传任何数据、凭据只存本机、诊断仅用户主动导出、边界如实说明（仍经官方中继）；③ **新素材** `docs/screenshots/app-lockscreen-approval.png` + `lockscreen-approval.gif`（`tools/render_screenshots.py` 新增 `render_lockscreen_approval()`，锁屏审批三态）；④ GitHub 仓库 description + 8 topics 补齐（此前全空）；⑤ README 英文版补 `### Screenshots` 区、补 `Visible Session Error Reasons` 条目、**修复英文 Milestones 表空行断裂**。**同时修掉展示素材的真实缺陷**：三处标签被同色半透明块吞字（`ImageDraw` 在 RGBA 上不做 alpha 混合 → 新增 `chip_bg`/`draw_chip`）、7 类 emoji（`⏳🔍🎤💻➕➤✓`）全部渲染成缺字方块（msyh 无 emoji 字形 → 改几何图元 `draw_magnifier`/`draw_mic`/`draw_monitor`/`draw_send`）、导航角标压图标、锁屏卡留白过大。详见 `CHANGELOG.md` 顶部「未发布（2026-10-15）」段。
+>   - **⚠️ 素材澄清**：`docs/screenshots/app-{sessions,approval-notification,conversation,working}.png` 是 `tools/render_screenshots.py` 用 PIL 绘制的**设计预览图**，**不是真机截图**；真机图是带 `-phone`/`installed` 后缀的那几张。改 README 配图时勿混淆。
+>   - **推送注意**：推送前先 `git fetch`，按 §7 流程；代理端口以实际监听为准（`http.proxy` 当前固化 `127.0.0.1:7900`，本文件 §3 与 AGENTS.md 里的 7897 已过时）。
+> - **本次专项未触碰**：协议路径（beta33 真机灰度已于 beta38 完成）、A-5 逻辑 fragment、出站物理分片、§11.10 `1.0.0` 发布门——均按远端既定口径继续。
+> - **本次专项不触发新 tag/Release**（展示层改动，版本号不变；远端最新 `v0.5.0-beta46`）。
+>
+> ---
+>
+> 以下为 2026-10-13 的 beta41 权威状态块（远端工作线，含 beta37–beta46 交付记录），保留作历史证据。
+
+> ## ✅ 历史权威状态（2026-10-13，beta41）
 >
 > - **当前主干**：`master`；构建配置 `versionName=0.5.0-beta41`、`versionCode=53`。
 > - **✅ 依赖治理轮第三批（2026-10-14，beta41）——Dependabot 3 个 PR（2 合并 / 1 拒绝）**：合并 `zxing 3.5.4`、`cyclonedx 2.4.1`（含 `cyclonedxBom` 实测，6m1s 通过）；拒绝 `AGP 8.5.2→8.13.2`（跨 8 minor + 与 Gradle 强耦合，须专项协调升级）。`dependabot.yml` 再补 AGP 系三条 ignore（`com.android.application` / `com.android.library` / `com.android.tools.build:gradle`）。

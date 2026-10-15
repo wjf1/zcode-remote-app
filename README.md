@@ -6,6 +6,33 @@
 
 ## 中文
 
+> **离开电脑，也能看住你的 Agent。** ZCode 官方远程控制的第三方原生安卓客户端——**锁屏通知栏直接批准 / 拒绝**、断网自动重连、会话离线秒开。
+
+<p align="center">
+  <img src="docs/screenshots/lockscreen-approval.gif" width="300" alt="锁屏状态下直接批准或拒绝工具调用审批">
+</p>
+<p align="center">
+  <sub>锁屏权限审批：下拉通知即可 <b>允许一次 / 总是允许 / 拒绝</b>，并可<b>免解锁内联回复</b>。<br>
+  这一条是官方网页版做不到的——它必须先解锁、开浏览器、再点进页面。<br>
+  <i>注：本页所有界面图为同一套设计系统渲染的界面预览（<code>tools/render_screenshots.py</code>），非真机录制。动图未播放时见<a href="docs/screenshots/app-lockscreen-approval.png">静态图</a>。</i></sub>
+</p>
+
+### 与官方网页版的关键差别
+
+| 场景 | 官方网页版 | 本客户端 |
+|---|---|---|
+| 锁屏收到权限审批 | 解锁 → 开浏览器 → 找到页面 | **通知栏直接决策**，支持内联回复 |
+| 网络抖动 / 切换 | 页面掉线，需手动刷新 | **断网感知，恢复 <9s 自动重连** |
+| 点开会话看历史 | 每次等服务器返回 | **离线缓存秒开**（首帧 0ms，最近 200 行） |
+| 长任务挂后台 | 浏览器后台被冻结 | **前台服务保活**，锁屏 / 划掉仍在跑 |
+
+### 隐私与数据（爆雷之后，先看这一节）
+
+- **客户端不向任何服务器上传数据**：无遥测、无埋点、无账号体系、无广告。
+- **配对凭据只存本机**：AES-256-GCM + Android Keystore 加密；日志脱敏，SID / 路径 / 会话正文一律不落盘。
+- **诊断日志由你主动导出**：只记固定事件码 / 计数 / 耗时，默认 512 条环形缓冲，导出前经熵启发式掩码（凭据、hex、base64 片段一律 `<masked>`）；**App 内不存在自动上传通道**。
+- **边界如实说明**：通信仍经官方中继（与官方网页版同一条链路），中继可见通信内容；本项目不额外做本地或云端留存。二维码 / 配对链接等同控制权，请勿外发。
+
 ZCode 官方远程控制（`zcode.z.ai/remote`）的**原生安卓增强客户端**——Kotlin + Jetpack Compose 实现，深度对标 [zai-org/ZCode](https://github.com/zai-org/ZCode) 工业级设计规范与现代移动端交互架构（GitHub Mobile / Claude Mobile），复用官方中继与配对协议（逆向实证，见 [PROTOCOL.md](PROTOCOL.md)），提供比官方 Web 版更强的通知、审批、流式会话与移动端操控体验。
 
 > ⚠️ **免责声明（务必先读）**：本项目是**非官方第三方客户端**，与 ZCode 官方及其开发方**无任何隶属、授权或背书关系**。它通过逆向工程复用官方中继与配对协议，使用可能违反相关服务的服务条款；官方协议亦可能随时变更导致功能失效。请自行评估风险后使用，因使用产生的任何后果由使用者自负。安全问题报告方式见 [SECURITY.md](SECURITY.md)，许可为 [MIT](LICENSE)。
@@ -179,6 +206,33 @@ ZCode 官方远程控制（`zcode.z.ai/remote`）的**原生安卓增强客户�
 
 ## English
 
+> **Keep an eye on your agent after you leave the desk.** An unofficial native Android client for ZCode Remote Control — **approve or deny straight from the lock-screen notification**, auto-reconnect on flaky networks, instant offline session open.
+
+<p align="center">
+  <img src="docs/screenshots/lockscreen-approval.gif" width="300" alt="Approve or deny an approval request right from the lock screen">
+</p>
+<p align="center">
+  <sub>Lock-screen approvals: pull down the notification to <b>Allow once / Always allow / Deny</b>, and <b>reply inline without unlocking</b>.<br>
+  The official web client cannot do this — it needs you to unlock, open a browser and navigate into the page.<br>
+  <i>Note: all UI images on this page are interface previews rendered from the same design system (<code>tools/render_screenshots.py</code>), not device recordings. If the animation does not play, see the <a href="docs/screenshots/app-lockscreen-approval.png">static image</a>.</i></sub>
+</p>
+
+### What you get over the official web client
+
+| Scenario | Official web client | This client |
+|---|---|---|
+| Approval arrives while locked | Unlock → open browser → find the page | **Decide from the notification**, inline reply supported |
+| Network hiccup / switch | Page drops, manual refresh | **Network-aware, reconnects in <9s** |
+| Opening a session for history | Wait for the server every time | **Instant offline open** (frame 0, last 200 rows) |
+| Long task in the background | Browser tab gets frozen | **Foreground-service keep-alive** across lock/task-swipe |
+
+### Privacy & Data (read this first after the data-collection incident)
+
+- **The client uploads nothing to any server**: no telemetry, no analytics, no accounts, no ads.
+- **Pairing credentials stay on-device**: AES-256-GCM + Android Keystore; logs are redacted so SIDs, paths and message bodies never hit disk.
+- **Diagnostics export is user-initiated**: only fixed event codes / counts / durations, a bounded 512-entry ring, entropy-masked before export (credentials, hex and base64 fragments become `<masked>`); **there is no auto-upload path in the app**.
+- **Stated limits, honestly**: traffic still goes through the official relay (the same link the official web client uses), so the relay can see message content; this project adds no local or cloud retention of its own. A QR code or pairing link is equivalent to control — never share it.
+
 A **native Android client** for the official ZCode Remote Control relay (`zcode.z.ai/remote`), built with Kotlin + Jetpack Compose. Deeply aligned with the [zai-org/ZCode](https://github.com/zai-org/ZCode) design specifications and modern mobile interaction patterns (GitHub Mobile / Claude Mobile), it reuses the official pairing protocol and relay (reverse-engineered and verified, see [PROTOCOL.md](PROTOCOL.md)) to deliver a far superior notification, approval, live streaming, and session experience.
 
 ### Architecture & Features
@@ -244,9 +298,16 @@ A **native Android client** for the official ZCode Remote Control relay (`zcode.
 - **Foreground Service Keep-Alive & Terminal Notifications (Sprint 1–2 / P0-A)**: `ConnectionService` promoted to a real `specialUse` Foreground Service with process-level `ConnectionScope` singleton to keep connections alive across lock-screen and task killing; persistent system notifications for KICKED / AUTH_FAILED / PROTOCOL_MISMATCH.
 - **Resilient Network-Aware Reconnection (Sprint 1)**: `NetworkGate` actively monitors network connectivity via `ConnectivityManager`, instantly resetting on connection loss and reconnecting in <9s upon network availability.
 - **Attachment Chips in the Conversation Stream**: messages sent with attachments render a chip (icon + file name + size) above the message bubble, matching the official client; the attachment field rides along in the row cache so chips also show on instant-open cold starts.
+- **Visible Session Error Reasons**: a failed session shows its full error reason in the session page (one-tap copy) and the reason is backfilled into the session list, matching the desktop's information level.
 - **Regression Safety Net (since Sprint 6, continuously extended)**: Bi-directional VQL binary codec golden fixture tests (Python↔Kotlin shared vectors), **264** pure-function & state-decision unit tests (including static theme-contrast assertions), and GitHub Actions CI automation (with "no raw English error strings in the UI layer" and "`ZLog.e` carries metadata only" assertions).
 - **Home-Screen Widget**: Live card showing total pending items, tap to jump into the app.
 - **Reliable Connectivity**: HMAC handshake proof, 30s heartbeat, exponential backoff, and offline outbound queue.
+
+### Screenshots
+
+| Sessions Workbench | Approvals Inbox | Conversation Console | Settings |
+|:---:|:---:|:---:|:---:|
+| ![Sessions](docs/screenshots/app-sessions.png) | ![Approvals](docs/screenshots/app-approval-notification.png) | ![Conversation](docs/screenshots/app-conversation.png) | ![Working](docs/screenshots/app-working.png) |
 
 ### Milestones
 
