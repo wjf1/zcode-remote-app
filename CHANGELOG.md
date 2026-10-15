@@ -33,8 +33,16 @@
 - 单测 **313/313**（含新增 9 项）；`python tools/check_test_count.py --min 264` 通过。
 - `ktlintCheck` 0 违规；`detekt` 通过；`lintDebug`/`lintRelease` 0 error（新增字符串均被引用，
   未引入新的 `UnusedResources`）；`assembleDebug`/`assembleRelease` 通过。
-- **真机走查建议（下一轮）**：登出/失效配对后进入首页，确认显示「配对已失效…」+「前往设置」
-  而非「正在建立安全连接…」；断网场景确认显示通用「连接失败，正在自动重试…」。
+- **真机走查（2026-10-16，小米 15 Pro / Android 17 / API 37）**：
+  - **已通过（冒烟 + 无回归）**：同上，带本批修复的 release 签名包覆盖安装后冷启动无 FATAL，
+    首页 / 会话页 / 设置页 / 新建弹窗渲染正常；`aapt2 dump resources` 确认 `home_conn_connecting` /
+    `home_conn_failed_auth` / `home_conn_failed_kicked` 已进 APK。
+  - **失败态未走到（环境不可达，非缺陷）**：首页空态需 `sessions.isEmpty()`，
+    而 `disconnect()` **有意保留**会话缓存供离线浏览（列表清空只发生在 `forget()` 清除配对）。
+    在真机触发需清掉配对再重扫码，代价过高，未做。文案分派与终态判定由 `HomeConnectionInfoTest`
+    （9 项，含「失败态绝不再显示为正在连接」全枚举回归）覆盖。
+  - **过程中一处已恢复的操作**：为尝试触发失败态点过设置页「断开」，随后 force-stop 重启 App，
+    状态回到「就绪」，配对凭据未受影响。
 
 ## 未发布（2026-10-16）· 走查清单第五批：会话空态显示同步阶段与已等待秒数（任务书 §7）
 
@@ -73,8 +81,15 @@
 - `python tools/check_test_count.py --min 264` 通过（声明 304 = 执行 304）。
 - `ktlintCheck` 0 违规；`detekt` 通过；`lintDebug`/`lintRelease` 0 error；
   `assembleDebug`/`assembleRelease` 通过。
-- **真机走查建议（下一轮）**：断网进入会话页观察空态是否走秒、切到已订阅空会话是否显示
-  「暂无内容」、握手失败后是否显示「点顶部重试」。
+- **真机走查（2026-10-16，小米 15 Pro / Android 17 / API 37）**：
+  - **已通过（冒烟 + 无回归）**：带本批修复的 **release 签名包**覆盖安装（`apksigner` 指纹
+    `1d46e9e8…` 与官方签名一致，配对凭据保留）；冷启动 `logcat -b crash` 无 FATAL；
+    首页（98 会话列表）、会话页（166 行完整流式渲染：工具行 / 子智能体 / 流式态）、设置页、
+    新建会话弹窗**全部正常渲染，无回归**；`aapt2 dump resources` 确认新增的 `sync_wait_handshake` /
+    `sync_empty_session` 等字符串已进 APK。
+  - **空态三态未走到（环境不可达，非缺陷）**：需**零行会话**才能渲染，
+    而「立即创建」要求非空 prompt（会真实建会话并消耗额度），未在真机构造。
+    文案逻辑由 `ConversationSyncInfoTest`（14 项）+ 全量单测覆盖。
 
 ## 未发布（2026-10-15）· 走查清单第四批：GitHub Token 明文暴露面收敛
 

@@ -285,7 +285,13 @@ lint 双变体 0 error、detekt、ktlint 0 违规、assembleDebug/Release 通过
 >   首页失败态改用之并给终态失败增设「前往设置」引导，`strings.xml` 增 8 条 `home_conn_*`。
 >   **验证**：单测 **313/313**（+14 `ConversationSyncInfoTest` +9 `HomeConnectionInfoTest`）；
 >   ktlint 0 违规 / detekt / lint 双变体 0 error / assembleDebug+Release 全通过。
->   **待真机走查**（会话空态三态；首页配对失效/断网两种失败态）。
+>   **真机走查（2026-10-16，小米 15 Pro / Android 17 / API 37）**：带两批修复的 release 签名包
+>   覆盖安装（指纹 `1d46e9e8…` 一致，配对保留），冷启动无 FATAL，首页/会话页（166 行流式）/
+>   设置页/新建弹窗渲染正常无回归，新增字符串经 `aapt2` 确认已打包。
+>   **但两处修复的目标态均未在真机走到**（环境不可达，非缺陷）：① 会话空态需零行会话，
+>   而「立即创建」要求非空 prompt（会真建会话耗额度）；② 首页失败态需 `sessions.isEmpty()`，
+>   而 `disconnect()` 有意保留会话缓存（清空仅在 `forget()` 清配对）。两处文案逻辑均由
+>   单测覆盖，**视觉呈现待后续在零行会话 / 空列表环境下补走查**。
 
 **P0 性能与正确性**
 
