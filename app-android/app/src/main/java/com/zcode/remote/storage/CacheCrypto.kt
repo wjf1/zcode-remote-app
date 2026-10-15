@@ -84,3 +84,17 @@ internal fun decodeCacheText(
     raw: String,
     cipher: CacheCipher,
 ): String? = if (CacheEnvelope.isWrapped(raw)) cipher.decrypt(raw) else raw
+
+/**
+ * 读侧解码 + 旧明文回写判定（纯函数，JVM 单测覆盖）。
+ *
+ * §11.6 补完：`beta44` 引入加密后，「新旧双读」让旧明文仍可读，但只有该文件**再次被写入**
+ * 才会转密文——长期不再打开的旧会话文件会一直留明文。本函数在读取时判定是否需要**回写迁移**。
+ *
+ * @return 需要回写的密文（非 null 即回写）；`null` 表示无需回写（已是密文，或加密器不可用）。
+ *   **绝不在加密失败时返回明文**——那会把「加密」变成「原样重写」的假迁移。
+ */
+internal fun legacyRewriteTarget(
+    raw: String,
+    encrypted: String?,
+): String? = if (CacheEnvelope.isWrapped(raw)) null else encrypted

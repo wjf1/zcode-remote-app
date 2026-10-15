@@ -1,5 +1,61 @@
 # 变更记录 / Changelog
 
+## 未发布（2026-10-15）· 第三方走查清单核实与修复轮：`!!` 隐患 + 重连抖动 + 旧明文缓存回写迁移
+
+> 来源：对 `HANDOFF.md` §5.1「2026-10-14 第三方全仓走查」15 项的**逐条代码核实**。
+> 核实结论：**11 项成立、1 项已不成立、1 项大部分失效、2 项描述漂移**（详见 `HANDOFF.md` §5.1 核实段）。
+> 本轮按优先级修复其中 3 项（均为小改动、收益明确）；已失效/漂移项在文档中就地标注。
+
+### 修复（正确性）
+
+- **`ConversationChannel` 附件上传读循环 `input!!`（P0）**：`input` 是回调闭包内被重赋值的可变局部变量，
+  无法智能转换；在 `abort` 重入路径下 `input` 可能已被置空，`input!!.read(...)` 可 NPE。
+  改为取不可变快照 `val stream = input` + 显式判空失败（`fail("附件读取流不可用")`）。
+- **`HomeScreen` 会话异常原因 `s.lastError!!` 连用两次（P0）**：改为局部非空值
+  `val errorReason = s.lastError?.takeIf { it.isNotBlank() }`，条件与文本同时消费同一值，
+  消除两次 `!!` 与「判空后取值」之间的不一致窗口。
+
+### 修复（连接韧性）
+
+- **重连退避加抖动（P1）**：新增纯函数 `jitteredBackoffMs(attempt, factor)`
+  —— 在 `reconnectBackoffMs` 基准上按 `0.5 + 0.5 * factor` 缩放，结果落在 `[base/2, base]`。
+  **只缩短不延长**，不破坏既有「48s 封顶」承诺；越界 factor 夹取。调用点由
+  `reconnectBackoffMs` 改为 `jitteredBackoffMs(reconnectAttempt, Math.random())`。
+  动机：多端/多实例在同一确定性退避值到点重连会形成「重连雷群」压垮中继。
+  原 `reconnectBackoffMs` 与其既有断言**保持不变**（纯函数语义未动）。
+
+### 修复（安全，§11.6 敏感存储治理补完）
+
+- **旧明文缓存无回写迁移（P1）**：beta44 的「新旧双读」只让旧明文继续可读，但只有文件**再次被写入**
+  才转密文——**长期不再打开的旧会话文件会一直留明文**。本轮补上读侧主动迁移：
+  - 新增纯函数 `legacyRewriteTarget(raw, encrypted)`：仅在「确为旧明文」且「加密成功」时返回回写目标；
+    **加密失败返回 null（绝不回写明文）**——避免把「加密」做成「原样重写」的假迁移。
+  - `SessionCacheStore.readDecoded` 命中旧明文时回调上层；`load`/`loadRows` 两条读路径均接入
+    `rewriteLegacyAsEncrypted`，经独立 `migrationScope`(IO) + 既有 `writeMutex` **原子回写**。
+  - **保留原 mtime**：迁移是格式转换而非内容更新，刷新时间戳会让过期文件被 TTL 误判为新鲜
+    （`load`/`loadRows` 都会因 `isCacheStale` 删文件）。
+  - **竞态防护**：迁移前在锁内**重新比对文件内容**，若已被 `save()` 写入更新数据则放弃迁移
+    ——否则会用读取时捕获的旧明文覆盖刚写入的新数据。
+  - 迁移幂等（已是密文则 `legacyRewriteTarget` 返回 null），失败静默仅告警（读路径不因迁移失败而失败）。
+
+### 测试
+
+- `PureFunctionsTest` 新增 `jitteredBackoffStaysWithinHalfToFull`：边界值（factor=0/1）、越界夹取、
+  以及 6×21 组合的区间断言 `[base/2, base]`。
+- `CacheCryptoTest` 新增 3 项：旧明文触发回写、已是密文不重复迁移、**加密失败绝不回写明文**。
+
+### 验证
+
+- 单测 **291/291**（+4；`check_test_count.py --min 260` 门禁仍满足）；`ktlintCheck` 0 违规；
+  `detekt` 通过；`lintDebug`/`lintRelease` 0 error；`assembleDebug`/`assembleRelease` 通过。
+- 本机工具链：`F:\AndroidTools`（JDK 17.0.20.1 + Gradle 8.11.1，AGP 8.5.2 兼容）。
+
+### 说明
+
+- **无用户可见行为变化**，不改版本号、不触发新 tag/Release。
+- 走查清单其余项（`OkHttpClient` 复用、自建 `CoroutineScope` 生命周期、证书固定、
+  `TokenStore` 明文驻留、无障碍、空态等）**本轮未动**，已在 `HANDOFF.md` §5.1 标注现状待后续立项。
+
 ## 未发布（进行中）· 国际化资源化（分批次推进）
 
 > ⚠️ **状态：进行中，已完成第 1 批。** 默认语言仍为中文，**行为零变化**；本项是「把散落的

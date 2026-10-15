@@ -1335,10 +1335,18 @@ class ConversationChannel(
                         }
                 }
                 var filled = 0
+                // input 是回调闭包内的可变局部变量、无法智能转换；取其不可变快照，
+                // 避免 abort 重入时 input 被置空导致的 NPE。
+                val stream = input
+                if (stream == null) {
+                    closeQuietly()
+                    fail("附件读取流不可用")
+                    return
+                }
                 while (filled < CHUNK_BYTES) {
                     val n =
                         try {
-                            input!!.read(buf, filled, CHUNK_BYTES - filled)
+                            stream.read(buf, filled, CHUNK_BYTES - filled)
                         } catch (e: Exception) {
                             closeQuietly()
                             fail("读取附件分片失败：${e.message}")

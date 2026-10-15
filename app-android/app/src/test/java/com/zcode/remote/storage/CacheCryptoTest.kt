@@ -91,4 +91,31 @@ class CacheCryptoTest {
         val c = FakeCipher(failEncrypt = true)
         assertNull(c.encrypt("sensitive conversation body"))
     }
+
+    // ---------- §11.6 补完：旧明文回写迁移判定 ----------
+
+    /** 旧明文 + 加密可用 → 返回密文（触发回写迁移）。 */
+    @Test
+    fun legacyPlainTriggersRewriteToCiphertext() {
+        val target = legacyRewriteTarget("""[{"title":"旧明文缓存"}]""", "ZCE1:iv:data")
+        assertEquals("ZCE1:iv:data", target)
+    }
+
+    /** 已是密文 → 不回写（幂等：重复读取不会重复迁移）。 */
+    @Test
+    fun alreadyWrappedNeedsNoRewrite() {
+        val wrapped = CacheEnvelope.wrap("iv", "data")
+        assertNull(legacyRewriteTarget(wrapped, "ZCE1:newiv:newdata"))
+    }
+
+    /**
+     * 旧明文 + 加密失败 → null（**绝不返回明文**）。
+     * 这是迁移的安全底线：若此处返回明文，上层会把「加密」变成「原样重写」的假迁移，
+     * 明文将继续留在磁盘上而系统却报告迁移成功。
+     */
+    @Test
+    fun legacyPlainWithFailedEncryptionDoesNotRewritePlaintext() {
+        val plain = """[{"title":"旧明文缓存"}]"""
+        assertNull(legacyRewriteTarget(plain, null))
+    }
 }

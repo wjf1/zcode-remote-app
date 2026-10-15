@@ -236,24 +236,45 @@ lint 双变体 0 error、detekt、ktlint 0 违规、assembleDebug/Release 通过
 > 来源：对仓库（beta46 基线）的一次独立代码 + UX 全面走查，以下为走查新发现、
 > 未被任务书 v2 / HANDOVER 覆盖的增量项；作者任务书已标记或已立项推进的存量项（B-2、A-4、
 > C-3、C-5、C-9、C-12 残余、全局 Typography、横屏/平板适配、国际化资源化）不重复列出。
+>
+> **⚠️ 2026-10-15 逐项代码核实（务必先读）**：本清单写在 beta46 基线，此后代码已有推进，
+> 下列条目与当前 `master` **不完全一致**，接手前请勿照单全收：
+> - **#1 已大部分失效**：`MainActivity` 已传 `vm.rowsSnapshot`（C-5③，非 `rows.toList()`）；
+>   `extract`/`aggregate` 已有按 `rowId + 内容指纹` 的增量解析缓存（C-5④）。
+>   **残留**仅为 `remember(rows)` 每次仍全量**遍历**（O(n) 查表，非 O(n) 解析），收益远小于原文描述。
+> - **#8 已不成立**：`AndroidManifest.xml` 已有 `android:allowBackup="false"`。
+> - **#9 描述偏重且函数名漂移**：函数在 `CacheCrypto.kt`（非 `SessionCacheStore`）；
+>   `save`/`saveRows` 覆写同一文件，故活跃会话会自然转密文；真实问题是**长期不再打开的旧文件**
+>   一直留明文。**已于本次修复**（见下方「本次已修」）。
+>
+> **本次已修（2026-10-15，#3/#5/#9）**
+> - **#3 两处 `!!`**：`ConversationChannel` 的读循环改取不可变快照 `stream`（原 `input!!` 在 abort
+>   重入路径可 NPE）；`HomeScreen` 的 `s.lastError!!` 改 `errorReason` 局部非空值。
+> - **#5 重连抖动**：新增纯函数 `jitteredBackoffMs(attempt, factor)`（只缩短不延长，区间
+>   `[base/2, base]`，不破坏 48s 封顶承诺），调用点改用之；补 `PureFunctionsTest` 断言。
+> - **#9 旧明文回写迁移**：新增纯函数 `legacyRewriteTarget`，`SessionCacheStore` 读路径命中旧明文时
+>   经 `migrationScope`（IO）+ `writeMutex` **异步原子回写**为密文，并**保留原 mtime**
+>   （刷新时间戳会让过期文件被 TTL 误判为新鲜）；加密失败绝不回写明文。
+>   **含竞态防护**：迁移前在锁内重新比对文件内容，若已被 `save()` 更新则放弃迁移
+>   （否则会用读取时捕获的旧明文覆盖刚写入的新数据）。补 `CacheCryptoTest` 3 项。
 
 **P0 性能与正确性**
 
-1. **流式期每 token 双 O(n) 解析**：`ui/screens/ConversationScreen.kt:64/70` 的 `remember(rows)`
+1. ~~**流式期每 token 双 O(n) 解析**~~（**已大部分失效，见上方核实说明**）：`ui/screens/ConversationScreen.kt:64/70` 的 `remember(rows)`
    内对全量行执行 `SessionFiles.extract` + `TurnChanges.aggregate`，流式输出每个 token 触发两遍；
    `MainActivity.kt:89` 每次重组 `vm.rows.toList()` 整表拷贝。长会话 + 快流式时是主要掉帧源。
    建议：派生子集改 `derivedStateOf`、行存储外提为 `SnapshotStateList`（C-5 线程模型项的同族债）。
 2. **附件上传流水线重构**：`relay/ConversationChannel.kt` `uploadChunks` 递归回调 + 每 256KB 分片
    一次串行 RPC；失败重试每次重新 `openStream()` + `skip()`（O(n) IO）。建议改 suspend/flow 顺序
    上传 + seekable 流。
-3. **两处 `!!` 隐患**：`ConversationChannel.kt:1341` `input!!.read(...)`（读循环内可变局部变量，
+3. ~~**两处 `!!` 隐患**~~（**✅ 2026-10-15 已修**）：`ConversationChannel.kt:1341` `input!!.read(...)`（读循环内可变局部变量，
    abort 重入可 NPE）；`ui/screens/HomeScreen.kt:465` `s.lastError!!` 连用两次。改 `?.let{}` 安全路径。
 
 **P1 连接层资源管理（任务书未覆盖）**
 
 4. **`OkHttpClient` 未复用**：`RelayClient`、`repo/UpdateRepository.kt:62` 各自新建实例，无共享
    连接池/调度器。建议单例注入。
-5. **重连退避无 jitter**：`RelayClient` 退避封顶 `3s * 2^4 = 48s` 固定值，多设备同断网重连形成
+5. ~~**重连退避无 jitter**~~（**✅ 2026-10-15 已修**）：`RelayClient` 退避封顶 `3s * 2^4 = 48s` 固定值，多设备同断网重连形成
    雷群。建议 `backoff * (0.5 + Random.nextDouble() * 0.5)`。
 6. **自建 `CoroutineScope` 未绑定生命周期**：`RelayClient`、`service/RemoteConnectionManager.kt`
    均 `CoroutineScope(SupervisorJob() + Dispatchers.IO)`，全靠手动 `close()`，泄漏路径上心跳/重连
@@ -264,10 +285,10 @@ lint 双变体 0 error、detekt、ktlint 0 违规、assembleDebug/Release 通过
 7. **无证书固定**：`wss://zcode.z.ai/ws` 承载配对 proof，当前完全依赖系统 CA，Manifest 仅
    `usesCleartextTraffic=false`、无 `networkSecurityConfig`。建议加 `CertificatePinner` 或显式
    `networkSecurityConfig` 声明（注意与官方证书轮换策略兼容，留后备 pin）。
-8. **备份策略未声明**：Manifest 未见 `android:allowBackup="false"` 或 `dataExtractionRules`。
+8. ~~**备份策略未声明**~~（**❌ 已不成立**：Manifest 已有 `android:allowBackup="false"`）：Manifest 未见 `android:allowBackup="false"` 或 `dataExtractionRules`。
    密文 + Keystore 密钥别名被备份还原到他机后无法解密——安全但用户会「安全地丢数据」。
    建议显式配置备份排除规则并写入文档。
-9. **旧明文缓存无回写迁移**：`storage/SessionCacheStore.decodeCacheText` 对 beta44 前的旧明文
+9. ~~**旧明文缓存无回写迁移**~~（**✅ 2026-10-15 已修**）：`storage/SessionCacheStore.decodeCacheText` 对 beta44 前的旧明文
    **永远原样返回**，没有「读出后重写为密文」的回写路径，旧文件不删则明文无限期存在。
    建议首次成功双读后立即以密文重写。
 10. **`TokenStore.read()` 明文 String 长驻内存**：建议改 `CharArray` 或调用方即用即清。

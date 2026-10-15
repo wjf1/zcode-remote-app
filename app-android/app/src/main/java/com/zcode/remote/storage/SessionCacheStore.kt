@@ -4,7 +4,10 @@ import android.content.Context
 import com.zcode.remote.relay.ConversationRow
 import com.zcode.remote.relay.SessionItem
 import com.zcode.remote.util.ZLog
+import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
@@ -39,6 +42,15 @@ object SessionCacheStore {
     /** §11.6：写串行化 —— 流式期同一会话的保存可能并发，Mutex 保证「tmp 写 + rename」序列不交错。 */
     private val writeMutex = Mutex()
 
+    /**
+     * §11.6 补完：旧明文回写迁移的专用作用域。
+     *
+     * 读路径（`load` 在冷启动主线程同步读）不能因迁移而阻塞，故迁移异步执行；
+     * 用独立的 IO 作用域而非调用方 scope，保证迁移不随页面销毁被取消。
+     * 迁移是幂等的（已是密文则 `legacyRewriteTarget` 返回 null），重复触发无副作用。
+     */
+    private val migrationScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+
     /** §11.6：缓存 TTL —— 超过 7 天视为过期（换设备/长期未用后不再回放陈旧会话）。 */
     const val CACHE_TTL_MS = 7 * 24 * 60 * 60_000L
 
@@ -57,13 +69,62 @@ object SessionCacheStore {
     /**
      * §11.6：读文件 → 明文（新旧双读）。加密信封走解密，旧明文原样返回；
      * 解密失败（密钥不可用/篡改/损坏）返回 null，由调用方按空缓存处理——**绝不回退明文**。
+     *
+     * @param onLegacyPlain 命中「旧明文」时回调，携带明文以便上层**回写迁移为密文**。
      */
-    private fun readDecoded(file: File): String? {
+    private fun readDecoded(
+        file: File,
+        onLegacyPlain: ((String) -> Unit)? = null,
+    ): String? {
         val raw = file.readText()
         val c = cipher
-        if (!CacheEnvelope.isWrapped(raw)) return raw // 旧明文（迁移期）
+        if (!CacheEnvelope.isWrapped(raw)) {
+            if (onLegacyPlain != null && c != null) onLegacyPlain(raw)
+            return raw // 旧明文（迁移期）
+        }
         if (c == null) return null // 无加密器 → 无法解密的加密文件，安全失败
         return c.decrypt(raw)
+    }
+
+    /**
+     * §11.6 补完：把命中的**旧明文**缓存原子地重写为密文（回写迁移）。
+     *
+     * 背景：beta44 的「新旧双读」只在文件**再次被写入**时才转密文，长期不再打开的旧会话
+     * 会一直留明文。这里在读取时主动迁移，闭合「数据目录不可检索正文」这条安全门。
+     *
+     * 约束：
+     * - **保留原 mtime**：迁移是格式转换、不是内容更新，刷新时间戳会让过期文件被 TTL 判为新鲜；
+     * - **绝不在加密失败时写明文**（`legacyRewriteTarget` 已保证）；
+     * - 失败静默（读路径不能因迁移失败而失败），仅告警。
+     */
+    private fun rewriteLegacyAsEncrypted(
+        file: File,
+        plain: String,
+    ) {
+        migrationScope.launch {
+            writeMutex.withLock {
+                runCatching {
+                    // 竞态防护：迁移任务与 save() 共享文件。若在本次迁移拿到锁之前，
+                    // save() 已写入更新的密文（内容已变），则**放弃迁移**——
+                    // 否则会用读取时捕获的旧明文覆盖刚写入的新数据。
+                    val current = runCatching { file.readText() }.getOrNull()
+                    if (current != plain) {
+                        ZLog.d(TAG, "跳过旧明文迁移：文件已被更新（${file.name}）")
+                        return@runCatching
+                    }
+                    val encrypted = legacyRewriteTarget(plain, encodeEncrypted(plain)) ?: return@runCatching
+                    val originalModified = file.lastModified()
+                    val tmp = File(file.parentFile, "${file.name}.tmp")
+                    tmp.writeText(encrypted)
+                    if (tmp.renameTo(file) || (file.delete() && tmp.renameTo(file))) {
+                        if (originalModified > 0) file.setLastModified(originalModified)
+                        ZLog.d(TAG, "旧明文缓存已回写迁移为密文: ${file.name}")
+                    } else {
+                        tmp.delete()
+                    }
+                }.onFailure { ZLog.w(TAG, "旧明文缓存回写失败（保留原文）: ${it.message}") }
+            }
+        }
     }
 
     /** §11.6：明文 → 加密信封文本；加密器不可用返回 null（调用方跳过落盘，不写明文）。 */
@@ -79,7 +140,8 @@ object SessionCacheStore {
             return emptyList()
         }
         return runCatching {
-            val plain = readDecoded(file) ?: return emptyList()
+            // §11.6 补完：命中旧明文时异步触发回写迁移（不阻塞冷启动主线程）
+            val plain = readDecoded(file) { legacy -> rewriteLegacyAsEncrypted(file, legacy) } ?: return emptyList()
             json.decodeFromString<List<SessionItem>>(plain)
         }.onFailure {
             ZLog.w(TAG, "解析本地会话缓存失败: ${it.message}")
@@ -127,7 +189,8 @@ object SessionCacheStore {
             return emptyList()
         }
         return runCatching {
-            val plain = readDecoded(file) ?: return emptyList()
+            // §11.6 补完：命中旧明文时异步触发回写迁移（本方法已在 IO 线程）
+            val plain = readDecoded(file) { legacy -> rewriteLegacyAsEncrypted(file, legacy) } ?: return emptyList()
             // §11.6：读侧行数上限 —— 与写侧对齐，防旧文件/异常文件超限
             json.decodeFromString<List<ConversationRow>>(plain).takeLast(MAX_ROWS_PER_FILE)
         }.onFailure {

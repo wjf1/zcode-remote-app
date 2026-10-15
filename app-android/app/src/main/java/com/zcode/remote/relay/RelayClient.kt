@@ -59,6 +59,22 @@ enum class FailureReason { KICKED, AUTH_FAILED, DEVICE_OFFLINE, NETWORK, INTERNA
  */
 internal fun reconnectBackoffMs(attempt: Int): Long = 3000L * (1L shl minOf(attempt, 4))
 
+/**
+ * 退避加抖动（纯函数）：把基准值按 [factor] 缩放到 [0.5, 1.0] 区间。
+ *
+ * 动机：多台设备/多个实例在同一次断网后按**同一个确定值**重连（3s/6s/…/48s），
+ * 会形成同时到点的「重连雷群」压垮中继。抖动只缩短不延长（上限仍是 [reconnectBackoffMs]），
+ * 因此不违反「封顶 48s」的既有承诺，仅把同时到点摊开。
+ */
+internal fun jitteredBackoffMs(
+    attempt: Int,
+    factor: Double,
+): Long {
+    val base = reconnectBackoffMs(attempt)
+    val clamped = factor.coerceIn(0.0, 1.0)
+    return (base * (0.5 + 0.5 * clamped)).toLong()
+}
+
 class RelayClient(
     private val device: com.zcode.remote.storage.PairedDevice,
     private val appVersion: String = "0.1.0",
@@ -437,7 +453,8 @@ class RelayClient(
             ZLog.i(TAG, "reconnect: 已有调度在等待（attempt=$reconnectAttempt），跳过重复调度")
             return
         }
-        val delayMs = reconnectBackoffMs(reconnectAttempt) // 3s,6s,12s,24s,48s 封顶
+        // 3s,6s,12s,24s,48s 封顶 + 抖动（只缩短不延长）：避免多端同时到点的重连雷群
+        val delayMs = jitteredBackoffMs(reconnectAttempt, Math.random())
         reconnectAttempt++
         reconnectJob =
             io.launch {

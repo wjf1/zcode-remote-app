@@ -524,6 +524,27 @@ class PureFunctionsTest {
     }
 
     @Test
+    fun jitteredBackoffStaysWithinHalfToFull() {
+        // factor=0 → 下限（基准的一半）；factor=1 → 上限（等于基准，不破坏封顶承诺）
+        assertEquals(1_500L, jitteredBackoffMs(0, 0.0))
+        assertEquals(3_000L, jitteredBackoffMs(0, 1.0))
+        // attempt=3 → 基准 24s；attempt=4 → 基准 48s（封顶）
+        assertEquals(24_000L, jitteredBackoffMs(3, 1.0))
+        assertEquals(48_000L, jitteredBackoffMs(4, 1.0))
+        // 越界 factor 被夹取：抖动只缩短不延长
+        assertEquals(3_000L, jitteredBackoffMs(0, 99.0))
+        assertEquals(1_500L, jitteredBackoffMs(0, -5.0))
+        // 抖动结果始终落在 [base/2, base]
+        for (attempt in 0..5) {
+            val base = reconnectBackoffMs(attempt)
+            for (i in 0..20) {
+                val ms = jitteredBackoffMs(attempt, i / 20.0)
+                assertTrue("attempt=$attempt i=$i ms=$ms", ms in (base / 2)..base)
+            }
+        }
+    }
+
+    @Test
     fun staleReplyDetection() {
         // 同代次：本轮握手的应答，正常处理
         assertFalse(ConversationChannel.isStaleReply(3, 3))
