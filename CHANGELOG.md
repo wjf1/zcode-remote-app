@@ -1,5 +1,45 @@
 # 变更记录 / Changelog
 
+## 未发布（2026-10-16）· 走查清单第五批：会话空态显示同步阶段与已等待秒数（任务书 §7）
+
+> 承接走查清单 P2 #11。任务书 §7 验收标准要求「空态须显示当前阶段与已等待秒数」，
+> C-3 条目把它记为「Status 细粒度化，留待需要时立项」——本轮落地该项。**仅空态文案增强，
+> 不碰协议、不改状态机。**
+
+### 问题
+
+- 会话页在无行可渲染时只显示一句静态的「等待会话同步…」：
+  ① 说不出**当前卡在哪个阶段**（连接 / 握手 / 订阅），用户无法判断是正常建连还是已卡死；
+  ② 不给**已等待时长**，用户没法据此决定要不要点顶栏的「重试」；
+  ③ 「已订阅但会话确实为空」与「还在同步」这两种语义完全不同的情况，显示同一句话。
+
+### 修复
+
+- 新增 `ui/screens/ConversationSyncInfo.kt`：
+  - 纯函数 `syncHeadline(status, isDraft, elapsedSeconds)`——按 `Status` 映射阶段文案，
+    等待态带「· 已等待 N 秒」；`isDraft`（新会话草稿）优先于一切；`Live`（已订阅无行）
+    呈现为「会话暂无内容」而非「还在同步」；`Failed` 指引点顶部「重试」。
+  - 纯函数 `syncSubtext(status, isDraft)`——草稿态给发送引导、等待态解释在同步什么、
+    失败/空会话态返回 null（主标题已说清，不重复）。
+  - 纯函数 `isWaitingForSync(status)`——计时开关（仅 Idle/Hello/Initialized 计时），
+    供计时协程与单测共用同一判定。
+  - `EmptySyncHeadline` 组件——唯一的计时驱动点（`LaunchedEffect` 每秒推进），
+    `waiting` 由 false 变化时协程结束、秒数冻结；阶段迁移（Idle→Hello→Initialized）不重启计时，
+    显示的是**累计等待时长**而非分阶段时长。
+- `ui/screens/ConversationScreen.kt` 空态区块改用上述组件（主标题 `EmptySyncHeadline` +
+  副文案 `syncSubtext`，原硬编码中文串删除）。
+- `res/values/strings.xml` 新增 8 条 `sync_*` 文案（沿用 i18n 第 1 批的 key 命名与 `%1$d` 占位符约定）。
+
+### 验证
+
+- 新增 `ConversationSyncInfoTest`（14 项）：各阶段文案、草稿优先、失败/空会话不给秒数、
+  秒数进入占位符、计时开关边界。单测 **304/304**（含新增 14 项）。
+- `python tools/check_test_count.py --min 264` 通过（声明 304 = 执行 304）。
+- `ktlintCheck` 0 违规；`detekt` 通过；`lintDebug`/`lintRelease` 0 error；
+  `assembleDebug`/`assembleRelease` 通过。
+- **真机走查建议（下一轮）**：断网进入会话页观察空态是否走秒、切到已订阅空会话是否显示
+  「暂无内容」、握手失败后是否显示「点顶部重试」。
+
 ## 未发布（2026-10-15）· 走查清单第四批：GitHub Token 明文暴露面收敛
 
 > 承接同日三轮走查修复。**核实发现真实问题比原描述更广**（原描述只提内存驻留，实际更直接的是

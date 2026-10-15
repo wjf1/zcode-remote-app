@@ -32,6 +32,7 @@ import androidx.compose.ui.unit.dp
 import com.zcode.remote.ui.components.QueuePendingStrip
 import com.zcode.remote.ui.components.SessionStatusPanel
 import com.zcode.remote.ui.components.StatusPanelLabels
+import com.zcode.remote.util.asString
 import kotlinx.coroutines.launch
 
 /**
@@ -358,22 +359,19 @@ fun ConversationScreen(
                                 modifier = Modifier.size(24.dp),
                             )
                         }
-                        Text(
-                            text = if (meta.phase == "draft") "新会话已就绪" else "等待会话同步…",
+                        EmptySyncHeadline(
+                            status = status,
+                            isDraft = meta.phase == "draft",
                             style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.SemiBold),
-                            color = MaterialTheme.colorScheme.onSurface,
                         )
-                        Text(
-                            text =
-                                if (meta.phase == "draft") {
-                                    "在下方输入指令或语音输入，即可发送给 PC 端 Agent 开始探索与编码。"
-                                } else {
-                                    "正在与桌面端 Agent 同步会话历史流…"
-                                },
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            textAlign = androidx.compose.ui.text.style.TextAlign.Center,
-                        )
+                        syncSubtext(status, isDraft = meta.phase == "draft")?.let { sub ->
+                            Text(
+                                text = sub.asString(),
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+                            )
+                        }
                     }
                 }
             } else {

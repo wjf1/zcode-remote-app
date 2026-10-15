@@ -270,6 +270,18 @@ lint 双变体 0 error、detekt、ktlint 0 违规、assembleDebug/Release 通过
 >   已改：设置页不预填 + 圆点掩码 + 参数改 `hasGithubToken: Boolean`，`UpdateRepository` 明文状态字段
 >   亦改布尔、明文只在 `checkForUpdate()` 按需读取。
 
+> **本次已修（2026-10-16，#11 会话空态）**
+> - 新增 `ui/screens/ConversationSyncInfo.kt`：纯函数 `syncHeadline` / `syncSubtext` /
+>   `isWaitingForSync`（JVM 可测）+ 计时组件 `EmptySyncHeadline`（`LaunchedEffect` 每秒推进，
+>   阶段迁移不重启计时 = 累计等待时长）。空态按状态显示「建立连接中 / 握手建立中 / 订阅会话中
+>   · 已等待 N 秒」；`Live`（已订阅但无行）呈现「会话暂无内容」而非「还在同步」；`Failed`
+>   指引点顶部「重试」；草稿态显示发送引导。`ConversationScreen` 空态区块改用之，
+>   `strings.xml` 增 8 条 `sync_*`。
+>   **验证**：单测 **304/304**（+14 `ConversationSyncInfoTest`）；ktlint 0 违规 / detekt /
+>   lint 双变体 0 error / assembleDebug+Release 全通过。**待真机走查**（断网走秒 / 空会话 /
+>   握手失败三态）。
+>   **残余未做**：#11 的另一半——首页错误态仍仅一行红字、无重试按钮（本轮未动）。
+
 **P0 性能与正确性**
 
 1. ~~**流式期每 token 双 O(n) 解析**~~（**已大部分失效，见上方核实说明**）：`ui/screens/ConversationScreen.kt:64/70` 的 `remember(rows)`
@@ -324,7 +336,7 @@ lint 双变体 0 error、detekt、ktlint 0 违规、assembleDebug/Release 通过
 
 **P2 体验体系化**
 
-11. **加载/空态信息量不足**：会话页「握手中…/订阅中…」无已等待秒数与阶段进度（任务书 §7
+11. ~~**加载/空态信息量不足**~~（**✅ 2026-10-16 已修，见下「本次已修」**）：会话页「握手中…/订阅中…」无已等待秒数与阶段进度（任务书 §7
     已要求未落地）；首页错误态仅一行红字（`HomeScreen.kt:462`）无重试按钮；会话为空无引导文案。
 12. **无障碍覆盖薄弱**：全 ui/ `contentDescription` 仅 22 处（其中 11 处是 `= null` 装饰图标），
     `semantics` 修饰符几乎不用，TalkBack 下审批按钮/状态胶囊/会话行基本不可达。

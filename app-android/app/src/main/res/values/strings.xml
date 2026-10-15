@@ -76,4 +76,14 @@
     <string name="countdown_remaining_seconds">%1$ds 后自动决议</string>
     <string name="countdown_imminent">即将自动决议</string>
 
+    <!-- ========== 会话空态：同步阶段 + 已等待秒数（任务书 §7） ========== -->
+    <string name="sync_new_session_ready">新会话已就绪</string>
+    <string name="sync_new_session_hint">在下方输入指令或语音输入，即可发送给 PC 端 Agent 开始探索与编码。</string>
+    <string name="sync_wait_connecting">建立连接中… · 已等待 %1$d 秒</string>
+    <string name="sync_wait_handshake">握手建立中… · 已等待 %1$d 秒</string>
+    <string name="sync_wait_subscribing">订阅会话中… · 已等待 %1$d 秒</string>
+    <string name="sync_syncing_hint">正在与桌面端 Agent 同步会话历史流…</string>
+    <string name="sync_empty_session">会话暂无内容，在下方输入指令即可开始。</string>
+    <string name="sync_failed">同步失败，可点顶部「重试」重新订阅。</string>
+
 </resources>
