@@ -247,13 +247,17 @@ lint 双变体 0 error、detekt、ktlint 0 违规、assembleDebug/Release 通过
 >   `save`/`saveRows` 覆写同一文件，故活跃会话会自然转密文；真实问题是**长期不再打开的旧文件**
 >   一直留明文。**已于本次修复**（见下方「本次已修」）。
 >
-> **本次已修（2026-10-15，#3/#4/#5/#7/#9）**
+> **本次已修（2026-10-15，#3/#4/#5/#6/#7/#9）**
 > - **#3 两处 `!!`**：`ConversationChannel` 的读循环改取不可变快照 `stream`（原 `input!!` 在 abort
 >   重入路径可 NPE）；`HomeScreen` 的 `s.lastError!!` 改 `errorReason` 局部非空值。
 > - **#4 OkHttp 复用**：新增 `util/HttpClientProvider`（进程级单例 + 显式钉池/调度器），
 >   两处调用改 `newBuilder()` 派生——共享底层资源、超时各自保留。
 > - **#5 重连抖动**：新增纯函数 `jitteredBackoffMs(attempt, factor)`（只缩短不延长，区间
 >   `[base/2, base]`，不破坏 48s 封顶承诺），调用点改用之；补 `PureFunctionsTest` 断言。
+> - **#6 韧性任务作废**：原文「心跳/重连 Job 不取消」不成立（`close()` 已 `io.cancel()`）；
+>   真实缺口是 `ConnectionCoordinator` 的 `handshakeRetryJob`/`bridgeReopenJob` 挂在进程级 scope
+>   上、`connect()` 重建时不取消 → 遗留任务对新连接栈重复开桥。已新增 `cancelResilienceJobs()`
+>   并在 `connect()` 重建前与 `disconnect()` 调用。
 > - **#7 网络安全策略**：固化为 `res/xml/network_security_config.xml`（主源集禁明文 + 仅系统 CA；
 >   debug 同名资源放开明文）。**证书固定刻意未做**——`*.z.ai` 通配符证书每年轮换、侧载无自动
 >   更新渠道，硬钉会导致官方轮换后彻底失联；理由与取证详见 CHANGELOG。
@@ -282,9 +286,17 @@ lint 双变体 0 error、detekt、ktlint 0 违规、assembleDebug/Release 通过
    ——共享连接池/调度器、超时各自保留，行为不变。
 5. ~~**重连退避无 jitter**~~（**✅ 2026-10-15 已修**）：`RelayClient` 退避封顶 `3s * 2^4 = 48s` 固定值，多设备同断网重连形成
    雷群。建议 `backoff * (0.5 + Random.nextDouble() * 0.5)`。
-6. **自建 `CoroutineScope` 未绑定生命周期**：`RelayClient`、`service/RemoteConnectionManager.kt`
-   均 `CoroutineScope(SupervisorJob() + Dispatchers.IO)`，全靠手动 `close()`，泄漏路径上心跳/重连
-   Job 不取消。建议注入 ApplicationScope 或审计全部 close 调用点。
+6. **自建 `CoroutineScope` 未绑定生命周期**（**⚠️ 2026-10-15 核实：原描述不准确，已修真实缺口**）：
+   原文称「`RelayClient`、`RemoteConnectionManager` 的心跳/重连 Job 不取消」——**不成立**：
+   `RelayClient.close()` 已 `io.cancel()`（心跳/泵/重连三 Job 均在该作用域内），
+   `RemoteConnectionManager.shutdown()` 也已 `scope.cancel()`。
+   **实际缺口在 `ConnectionCoordinator`**：其 `handshakeRetryJob` / `bridgeReopenJob` 跑在
+   **进程级 scope** 上（§11.4 阶段③ 的刻意设计，使 VM 被清后自愈仍生效），因而**不在**
+   `cancelCollectors()` 管理范围内；`connect()` 重建连接栈时只取消了 collector，
+   遗留任务会在退避到点后对着**重建后的新连接栈**执行 `openBridge` → 重复开桥/重复订阅。
+   **已修**：新增 `cancelResilienceJobs()`（统一作废两个任务 + 预算归零），在
+   `connect()` 重建前与 `disconnect()` 中调用。**无 JVM 单测覆盖**（该类需 Context + 多个 repo，
+   仓库无 Robolectric），靠代码审计与门禁兜底。
 
 **P1 安全补齐（beta44 加密轮后的残余缺口）**
 

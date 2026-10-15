@@ -866,8 +866,8 @@ class AppViewModel(
         conversation = null
         sessionsIndex = null
         workspaceConfig = null
-        // A-2：连接没了，作废在途的握手自动重订与重试上下文
-        connectionCoordinator.resetHandshakeRetry()
+        // A-2：连接没了，作废在途的握手自动重订与桥重开调度（含预算归零）
+        connectionCoordinator.cancelResilienceJobs()
         convRepo.subscribedSession = null
         // 连接没了就没人能应答：摘掉桥并撤掉通知，避免用户点了个"假批准"
         ApprovalBridge.handler = null

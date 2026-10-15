@@ -100,6 +100,23 @@ class ConnectionCoordinator(
     }
 
     /**
+     * 作废本协调器调度的**全部**韧性任务（握手自动重订 + 桥自动重开）并把预算归零。
+     *
+     * 为什么需要：这两个 Job 跑在进程级 [RemoteConnectionManager.scope] 上（§11.4 阶段③，
+     * 使 VM 被清后自愈仍生效），因此**不在** [RemoteConnectionManager.cancelCollectors] 的
+     * 管理范围内——而 `connect()` 重建连接栈时只取消了 collector。若不在此一并作废，
+     * 旧连接栈遗留的桥重开/握手重订任务会在退避到点后对着**新**连接栈执行
+     * （`ConnectionScope.channel?.openBridge(...)` 读的是当前静态字段 = 新实例），
+     * 造成重复开桥 / 重复订阅，进而触发协议违例与重同步。
+     */
+    fun cancelResilienceJobs() {
+        resetHandshakeRetry()
+        bridgeReopenJob?.cancel()
+        bridgeReopenJob = null
+        bridgeReopenCount = 0
+    }
+
+    /**
      * §11.5.2/§11.3.3：协议违例 / 入站丢帧 / 未知逻辑帧 → 重订阅权威快照（A-4 同一自愈路径）。
      *
      * 节流：每次重订阅都会复位 A-2 重订预算，若持续违例（如 CRC 错帧风暴）不节流会把
@@ -126,6 +143,9 @@ class ConnectionCoordinator(
         // §11.4 阶段②：重建连接栈前先取消旧 collector —— 否则重连会叠加旧流，
         // 旧流继续写旧实例（重复订阅 / 重复审批卡 / 重复通知）。
         RemoteConnectionManager.cancelCollectors()
+        // 同步作废本协调器的韧性调度任务（握手重订 + 桥重开）：它们挂在进程级 scope 上、
+        // 不受 cancelCollectors 管理，若留到退避到点会对着重建后的新连接栈重复开桥/重复订阅。
+        cancelResilienceJobs()
         ConnectionScope.client?.close()
         ConnectionScope.channel?.reset()
         ConnectionScope.conversation?.reset()

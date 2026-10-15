@@ -1,5 +1,39 @@
 # 变更记录 / Changelog
 
+## 未发布（2026-10-15）· 走查清单第三批：连接韧性调度任务的作废缺口
+
+> 承接同日两轮走查修复。**核实推翻了原描述**并修掉其中的真实缺口。无用户可见行为变化。
+
+### 核实（原描述与代码不符）
+
+- 走查 #6 称「`RelayClient`、`RemoteConnectionManager` 的心跳/重连 Job 不取消，全靠手动 `close()`」
+  ——**不成立**：`RelayClient.close()` 内部已 `io.cancel()`（`heartbeatJob`/`pumpJob`/`reconnectJob`
+  三者的启动点全部在该作用域内），`RemoteConnectionManager.shutdown()` 也已 `scope.cancel()`。
+
+### 修复（真实缺口）
+
+- **`ConnectionCoordinator` 的韧性调度任务在连接重建时不被作废（#6 的真实版本）**：
+  `handshakeRetryJob`（握手自动重订）与 `bridgeReopenJob`（桥自动重开）跑在**进程级
+  `RemoteConnectionManager.scope`** 上——这是 §11.4 阶段③ 的刻意设计（使 ViewModel 被清后
+  自愈仍生效），代价是它们**不在** `cancelCollectors()` 的管理范围内。
+  而 `connect()` 重建连接栈时只调用了 `cancelCollectors()`，于是旧连接栈遗留的退避任务
+  到点后会继续执行——`scheduleBridgeReopen` 内部读的是 `ConnectionScope.channel`（当前静态字段
+  = **新**实例），因此会对着新连接栈重复 `openBridge` / 重复订阅，进而触发协议违例与重同步。
+  - 新增 `ConnectionCoordinator.cancelResilienceJobs()`：统一作废上述两个任务并把
+    `handshakeRetryCount` / `bridgeReopenCount` 归零；`resetHandshakeRetry()` 保持原语义
+    （仅重置握手重订），供「新订阅 / 删会话」这类**只该重置握手预算**的调用点继续使用。
+  - 调用点：`connect()` 重建连接栈前（紧随 `cancelCollectors()`）、`disconnect()` 中
+    （原 `resetHandshakeRetry()` 升级为 `cancelResilienceJobs()`）。
+
+### 验证
+
+- 单测 **291/291**（本轮无新增：`ConnectionCoordinator` 需 `Context` + 多个 repo 注入，
+  仓库无 Robolectric，无法 JVM 单测覆盖——靠逐行代码审计 + 全门禁兜底，此处如实标注）；
+  `ktlintCheck` 0 违规；`detekt` 通过；`lintDebug`/`lintRelease` 0 error；
+  `assembleDebug`/`assembleRelease` 通过。
+- **真机验证建议**（下一轮）：连接重建后观察 logcat 中 `bridge re-open` 与
+  `remote.rpcFrame.*` 违例计数，确认无「重连后立刻重复开桥」序列。
+
 ## 未发布（2026-10-15）· 走查清单第二批：HTTP 客户端复用 + 网络安全策略显式化
 
 > 承接同日「走查清单核实与修复轮」，处理剩余 P1 中风险最低、收益明确的两项。
