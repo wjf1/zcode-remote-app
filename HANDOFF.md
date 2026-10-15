@@ -247,11 +247,16 @@ lint 双变体 0 error、detekt、ktlint 0 违规、assembleDebug/Release 通过
 >   `save`/`saveRows` 覆写同一文件，故活跃会话会自然转密文；真实问题是**长期不再打开的旧文件**
 >   一直留明文。**已于本次修复**（见下方「本次已修」）。
 >
-> **本次已修（2026-10-15，#3/#5/#9）**
+> **本次已修（2026-10-15，#3/#4/#5/#7/#9）**
 > - **#3 两处 `!!`**：`ConversationChannel` 的读循环改取不可变快照 `stream`（原 `input!!` 在 abort
 >   重入路径可 NPE）；`HomeScreen` 的 `s.lastError!!` 改 `errorReason` 局部非空值。
+> - **#4 OkHttp 复用**：新增 `util/HttpClientProvider`（进程级单例 + 显式钉池/调度器），
+>   两处调用改 `newBuilder()` 派生——共享底层资源、超时各自保留。
 > - **#5 重连抖动**：新增纯函数 `jitteredBackoffMs(attempt, factor)`（只缩短不延长，区间
 >   `[base/2, base]`，不破坏 48s 封顶承诺），调用点改用之；补 `PureFunctionsTest` 断言。
+> - **#7 网络安全策略**：固化为 `res/xml/network_security_config.xml`（主源集禁明文 + 仅系统 CA；
+>   debug 同名资源放开明文）。**证书固定刻意未做**——`*.z.ai` 通配符证书每年轮换、侧载无自动
+>   更新渠道，硬钉会导致官方轮换后彻底失联；理由与取证详见 CHANGELOG。
 > - **#9 旧明文回写迁移**：新增纯函数 `legacyRewriteTarget`，`SessionCacheStore` 读路径命中旧明文时
 >   经 `migrationScope`（IO）+ `writeMutex` **异步原子回写**为密文，并**保留原 mtime**
 >   （刷新时间戳会让过期文件被 TTL 误判为新鲜）；加密失败绝不回写明文。
@@ -272,8 +277,9 @@ lint 双变体 0 error、detekt、ktlint 0 违规、assembleDebug/Release 通过
 
 **P1 连接层资源管理（任务书未覆盖）**
 
-4. **`OkHttpClient` 未复用**：`RelayClient`、`repo/UpdateRepository.kt:62` 各自新建实例，无共享
-   连接池/调度器。建议单例注入。
+4. ~~**`OkHttpClient` 未复用**~~（**✅ 2026-10-15 已修**）：新增进程级 `util/HttpClientProvider`
+   （显式钉 ConnectionPool/Dispatcher），`RelayClient` 与 `UpdateRepository` 改 `newBuilder()` 派生
+   ——共享连接池/调度器、超时各自保留，行为不变。
 5. ~~**重连退避无 jitter**~~（**✅ 2026-10-15 已修**）：`RelayClient` 退避封顶 `3s * 2^4 = 48s` 固定值，多设备同断网重连形成
    雷群。建议 `backoff * (0.5 + Random.nextDouble() * 0.5)`。
 6. **自建 `CoroutineScope` 未绑定生命周期**：`RelayClient`、`service/RemoteConnectionManager.kt`
@@ -282,9 +288,11 @@ lint 双变体 0 error、detekt、ktlint 0 违规、assembleDebug/Release 通过
 
 **P1 安全补齐（beta44 加密轮后的残余缺口）**
 
-7. **无证书固定**：`wss://zcode.z.ai/ws` 承载配对 proof，当前完全依赖系统 CA，Manifest 仅
-   `usesCleartextTraffic=false`、无 `networkSecurityConfig`。建议加 `CertificatePinner` 或显式
-   `networkSecurityConfig` 声明（注意与官方证书轮换策略兼容，留后备 pin）。
+7. **无证书固定**（**⚠️ 2026-10-15 部分处理，证书固定刻意未做**）：`wss://zcode.z.ai/ws` 承载配对
+   proof，当前完全依赖系统 CA。已把它固化为**显式可审计的** `res/xml/network_security_config.xml`
+   （主源集禁明文 + 仅系统 CA；debug 同名资源放开明文）。**未做 pin**：取证显示 `zcode.z.ai` 用
+   `*.z.ai` 通配符证书（Sectigo DV，2026-11-27 到期，每年轮换），本项目侧载分发无自动更新渠道，
+   硬钉会导致官方轮换后彻底失联（含配对）。详见 CHANGELOG 该条。
 8. ~~**备份策略未声明**~~（**❌ 已不成立**：Manifest 已有 `android:allowBackup="false"`）：Manifest 未见 `android:allowBackup="false"` 或 `dataExtractionRules`。
    密文 + Keystore 密钥别名被备份还原到他机后无法解密——安全但用户会「安全地丢数据」。
    建议显式配置备份排除规则并写入文档。

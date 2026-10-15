@@ -59,8 +59,8 @@ class UpdateRepository(
         scope.launch(Dispatchers.IO) {
             runCatching {
                 val client =
-                    okhttp3.OkHttpClient
-                        .Builder()
+                    com.zcode.remote.util.HttpClientProvider
+                        .newBuilder()
                         .connectTimeout(10, java.util.concurrent.TimeUnit.SECONDS)
                         .readTimeout(15, java.util.concurrent.TimeUnit.SECONDS)
                         .build()

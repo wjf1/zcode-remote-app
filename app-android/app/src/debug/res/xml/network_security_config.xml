@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  debug 变体的网络安全策略（同名覆盖 src/main 的版本）。
+
+  与 release 的唯一差别：放开**明文流量**，供局域网 `ws://` 中继调试
+  （对应 src/debug/AndroidManifest.xml 的 usesCleartextTraffic="true"）。
+  注意：当 app 同时声明 networkSecurityConfig 与 usesCleartextTraffic 时，
+  **以 networkSecurityConfig 为准**（API 24+）——因此必须在 debug 这里显式放开，
+  否则调试构建的局域网 ws:// 会被 main 的策略禁掉。
+
+  信任锚仍仅系统 CA（不做固定，理由见 src/main 版本）。
+-->
+<network-security-config>
+    <base-config cleartextTrafficPermitted="true">
+        <trust-anchors>
+            <certificates src="system" />
+        </trust-anchors>
+    </base-config>
+</network-security-config>

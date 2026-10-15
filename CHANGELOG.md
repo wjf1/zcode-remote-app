@@ -1,5 +1,46 @@
 # 变更记录 / Changelog
 
+## 未发布（2026-10-15）· 走查清单第二批：HTTP 客户端复用 + 网络安全策略显式化
+
+> 承接同日「走查清单核实与修复轮」，处理剩余 P1 中风险最低、收益明确的两项。
+> 无用户可见行为变化，不改版本号、不触发 tag/Release。
+
+### 修复（资源管理）
+
+- **`OkHttpClient` 未复用（P1-4）**：`RelayClient`（每次 `connect()` 新建实例）与
+  `repo/UpdateRepository` 原先各自 `OkHttpClient.Builder().build()`，每次重连都新建一套
+  连接池 / 线程池 / DNS 缓存，且旧实例从不 `shutdown()`，长期运行持续累积。
+  新增 `util/HttpClientProvider`（进程级单例，**显式钉死** `ConnectionPool(5, 5min)` 与
+  `Dispatcher(64/5)`，避免 OkHttp 版本默认值漂移），调用方一律 `newBuilder()` 派生——
+  **共享底层资源、超时各自独立**，两处既有超时参数（中继 20s ping/10s connect；
+  更新检查 10s connect/15s read）**逐字保留**，行为不变。
+  单例**不主动 shutdown**（中继与检查更新随时可能发起请求，关停连接池只会让后续请求重建）。
+
+### 修复（安全配置可审计化）
+
+- **网络安全策略显式化（P1-7）**：此前明文策略只写在 Manifest 属性与代码注释里，现固化为
+  `res/xml/network_security_config.xml`（主源集：禁明文 + 仅信任系统 CA，显式写出以免
+  未来误加 `src="user"` 静默放宽）；debug 源集同名资源覆盖（放开明文，供局域网 `ws://` 调试
+  ——同时声明时 **networkSecurityConfig 优先于 usesCleartextTraffic**，故必须在 debug 显式放开）。
+  Manifest 增 `android:networkSecurityConfig`，**保留 `usesCleartextTraffic="false"`**
+  （CI 对 release APK 的二进制断言依赖该属性，已确认不破坏）。
+
+  **⚠️ 本轮刻意未做证书固定（CertificatePinner / pin-set），理由（取证）**：
+  - `zcode.z.ai` 使用 **`*.z.ai` 通配符证书**，Sectigo DV 签发，**2026-11-27 到期**（每年轮换）；
+    链为 `*.z.ai` → Sectigo Public Server Authentication CA DV R36 → Root R46。
+  - 本项目为**侧载分发、无自动更新渠道**：硬钉叶证书或中间 CA，一旦官方轮换/更换 CA，
+    App 将**彻底无法连接（含配对）**，用户只能等新 APK 手动安装。
+  - 钉根 CA 同样受「官方可能更换 CA」影响，且根证书被大量站点共用，对 MITM 边际防护有限。
+  - 综合判定：**不以可用性换取此处有限的防护增益**；既有防线（release 强制 wss://、明文关闭、
+    HMAC 握手 proof、日志脱敏）不变。若后续官方给出证书轮换承诺，可在该文件 `<domain-config>`
+    补 `<pin-set>`（支持同域多 pin，任一匹配即通过，便于灰度切换）。
+
+### 验证
+
+- 单测 **291/291**（本轮无新增测试：改动为配置与依赖注入，行为等价）；`ktlintCheck` 0 违规；
+  `detekt` 通过；`lintDebug`/`lintRelease` 0 error；`assembleDebug`/`assembleRelease` 通过。
+- CI 侧 release 产物明文断言（`usesCleartextTraffic=false`）不受影响（属性保留）。
+
 ## 未发布（2026-10-15）· 第三方走查清单核实与修复轮：`!!` 隐患 + 重连抖动 + 旧明文缓存回写迁移
 
 > 来源：对 `HANDOFF.md` §5.1「2026-10-14 第三方全仓走查」15 项的**逐条代码核实**。

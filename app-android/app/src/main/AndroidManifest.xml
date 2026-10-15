@@ -27,11 +27,15 @@
         android:icon="@mipmap/ic_launcher"
         android:theme="@style/Theme.ZCodeRemote"
         android:allowBackup="false"
+        android:networkSecurityConfig="@xml/network_security_config"
         android:usesCleartextTraffic="false">
         <!-- P0 传输止血（任务书 §11.3.1）：Release 关闭一切明文流量，中继连接强制 wss://。
-             本项目 minSdk 31、无 networkSecurityConfig，故该属性即为最低明文策略；
+             P1-7：明文策略已从「仅有 Manifest 属性」固化为显式可审计的
+             res/xml/network_security_config.xml（release 禁明文 + 仅信任系统 CA；
+             不在其中做证书固定——理由见该文件注释：`*.z.ai` 通配符证书每年轮换，
+             侧载分发无自动更新渠道，硬钉会导致官方轮换后彻底失联）。
              无任何本地回环（127.0.0.1/localhost）依赖，关闭明文不误伤既有能力。
-             debug 变体在 src/debug/AndroidManifest.xml 单独放开（仅用于局域网 ws:// 调试）。 -->
+             debug 变体由 src/debug 的同名资源 + Manifest 放开（仅用于局域网 ws:// 调试）。 -->
 
         <activity
             android:name=".MainActivity"

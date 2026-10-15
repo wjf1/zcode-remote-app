@@ -1,6 +1,7 @@
 package com.zcode.remote.relay
 
 import com.zcode.remote.BuildConfig
+import com.zcode.remote.util.HttpClientProvider
 import com.zcode.remote.util.LogRedactor
 import com.zcode.remote.util.ZLog
 import kotlinx.coroutines.CoroutineScope
@@ -21,7 +22,6 @@ import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.put
-import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.Response
 import okhttp3.WebSocket
@@ -82,8 +82,8 @@ class RelayClient(
     private val relayWsUrlOverride: String? = null,
 ) {
     private val client =
-        OkHttpClient
-            .Builder()
+        HttpClientProvider
+            .newBuilder()
             .pingInterval(20, TimeUnit.SECONDS)
             .connectTimeout(10, TimeUnit.SECONDS)
             .build()
