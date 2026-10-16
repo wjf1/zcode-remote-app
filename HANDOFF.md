@@ -18,9 +18,10 @@
   流式会话与移动端操控体验。
 - **仓库**：<https://github.com/wjf1/zcode-remote-app>（owner：wjf1）
 - **当前版本**：`0.5.0-beta47`（versionCode 59），tag `v0.5.0-beta47`；上一个发布 tag `v0.5.0-beta46`。
-- **⚠️ 进行中的工作（未发布）**：**国际化资源化**——已完成**第 1 批**（`UiText` 地基 + `ToolKindLabels`），
-  仍在 `master` 上（未打 tag，**默认语言仍为中文、行为零变化**）。后续 5 个批次与详细进度见
-  §5「进行中的工作」与 [CHANGELOG.md](CHANGELOG.md) 的「未发布（进行中）」段。**接手请先读该段。**
+- **✅ 已发布**：`v0.5.0-beta47`（2026-10-16）——走查修复 10 项（第二至第八批）+
+  **国际化资源化 6 批完成**（`strings.xml` 67→452 条）。Release 含签名 APK + SHA-256 +
+  证书指纹 + CycloneDX SBOM。**当前 `master` 无未发布提交**（工作树干净）。
+- **本仓库无 iOS / 桌面端**，仅 Android 原生客户端（`app-android/`）。
 - **许可**：[MIT](LICENSE)；安全披露见 [SECURITY.md](SECURITY.md)。
 - **部署形态**：侧滑安装的签名 Release APK（无 Play 分发）；自用 + 受控灰度。
 - **主分支**：`master`。
@@ -85,10 +86,38 @@ app-android/app/src/main/java/com/zcode/remote/
 ## 4. 最近一轮变更与交付成果
 
 > 完整逐轮记录见 [CHANGELOG.md](CHANGELOG.md) 与 [HANDOVER.md](HANDOVER.md) 文首覆盖层。
-> 最近五轮均为质量修复：**v0.5.0-beta46（弃用 API 清理，编译警告归零）**、
-> **v0.5.0-beta45（工程清债：@Preview / 脚本索引 / 文档可移植化）**、
-> **v0.5.0-beta44（会话正文缓存加密）**、**v0.5.0-beta43（草稿隔离 + 倒计时实时化）**、
-> **v0.5.0-beta42（通知权限 / 网络回调 / 旋转状态）**。
+
+### v0.5.0-beta47：走查修复第二至第八批 + 国际化资源化 6 批（2026-10-16，已发布）
+
+**两件事**：① 走查清单修复 10 项；② i18n 资源化 6 批完成。**用户可见文案零变化**。
+
+**① 走查修复（第二至第八批）**
+
+| 批次 | 提交 | 内容 |
+|---|---|---|
+| 核实轮 | `e3b5dc1` | `!!` 隐患（读循环改不可变快照）、重连抖动（`jitteredBackoffMs`）、旧明文缓存异步回写迁移 |
+| 第二 | `639ecc8` | `HttpClientProvider`（OkHttp 连接池/调度器复用）+ `network_security_config.xml` 显式化 |
+| 第三 | `f536a04` | `ConnectionCoordinator.cancelResilienceJobs()`（连接重建时作废遗留自愈任务） |
+| 第四 | `f95d6bf` | GitHub Token 明文暴露面收敛（设置页不再预填 + 圆点掩码 + 布尔状态） |
+| 第五 | `567b797` | 会话空态显示同步阶段 + 已等待秒数（任务书 §7；`ConversationSyncInfo.kt`） |
+| 第六 | `e95a32e` | 首页连接失败不再误报「正在连接」+ 终态失败「前往设置」引导（`HomeConnectionInfo.kt`） |
+| 第七 | `8a385b2` | 断开态切换会话不再显示上一个会话的内容（`subscribeConversation` 视图切换始终执行） |
+| 第八 | `886ef96` | 切会话复位 `_earlier`/`_meta`/防误停令牌（**`_earlier` 不被快照重写 → 不修则新会话永远无法上翻**） |
+
+- 真机红-绿验证（第七/八批）：修复前版本 `Tests run: 2, Failures: 1`，修复后 `OK (4 tests)`
+  ——证明仪器化用例真能捕获缺陷（详见 §5「已修复」段与 CHANGELOG）。
+- 新增仪器化测试：`ConversationOfflineSwitchInstrumentedTest`、`ConversationChannelStateResetInstrumentedTest`。
+
+**② i18n 资源化 6 批**（详见 §5 的「已完成」段）
+- `strings.xml` **67 → 452 条**；`ui/`、`notify/`、`widget/` 用户可见中文字面量**清零**。
+- 核心：`util/UiText.kt`（`Res`/`Raw`，支持嵌套）——纯函数返回 `UiText` 而非 `String`，
+  把取字符串推迟到有 Context 处，**无需 Robolectric 即可在 JVM 单测断言资源 id**。
+- **架构约束**：`relay/` 层 24 条错误文案绑在 `IllegalStateException(String)` 上（Java 异常
+  API 只能携带 String），**刻意不资源化**（详见 §5 该段）。
+
+**验证**：JVM 单测 **329/329**；`ktlintCheck` 0 违规；`detekt` 通过；`lintDebug`/`lintRelease`
+0 error；`assembleDebug`/`assembleRelease`/`assembleDebugAndroidTest` 通过；
+APK 实测 `versionCode=59 / versionName=0.5.0-beta47`。
 
 ### v0.5.0-beta46：弃用 API 清理轮
 
@@ -269,9 +298,9 @@ lint 双变体 0 error、detekt、ktlint 0 违规、assembleDebug/Release 通过
 - **未做（历史用户决策）**：C-5⑥⑦、Sprint 7 生物识别/自建中继 E2EE、P2-3 余项。
 - **工程债（随手可清，非阻塞）**：`detekt-baseline.xml` 105 条存量告警；`tools/` 下 11 个 `_` 前缀一次性脚本。
   ~~会话正文缓存明文~~（beta44 已加密）、~~全库 0 个 `@Preview`~~（beta45 已补 debug 源集预览）、
-  ~~界面文案硬编码中文、无 `strings.xml`~~（i18n 资源化第 1/6 批已合入，进行中）。
-- **若其他会话接手**：先读本文件 → `HANDOVER.md` 文首覆盖层 → `CHANGELOG.md` 最新条目，
-  再按「§2 核心命令」跑一次 `testDebugUnitTest` 建立基线。
+  ~~界面文案硬编码中文、无 `strings.xml`~~（**i18n 资源化 6 批已全部完成并随 beta47 发布**，见上方「已完成」段）。
+- **若其他会话接手**：先读本文件 → `HANDOVER.md` 文首覆盖层 → `CHANGELOG.md` 最新条目（beta47），
+  再按「§2 核心命令」跑一次 `testDebugUnitTest` 建立基线（当前应为 **329/329**）。
 
 ### 5.1 外部分析待办清单（2026-10-14 第三方全仓走查）
 
@@ -395,7 +424,7 @@ lint 双变体 0 error、detekt、ktlint 0 违规、assembleDebug/Release 通过
 **P2 体验体系化**
 
 11. ~~**加载/空态信息量不足**~~（**✅ 2026-10-16 已修**：会话空态「阶段+秒数」+ 首页连接失败态误报，见下「本次已修」）：
-    会话页「握手中…/订阅中…」无已等待秒数与阶段进度（任务书 §7 已要求未落地）；会话为空无引导文案；
+    会话页「握手中…/订阅中…」无已等待秒数与进度（任务书 §7 已要求未落地）；会话为空无引导文案；
     首页「连接失败」被误报为「正在连接」。
     **残余未做**：会话卡片内的异常原因行（`HomeScreen.kt:462` 附近）仍仅一行红字、无重试按钮——
     与上述 relay 级连接空态是不同位置，本轮未动。
@@ -403,10 +432,29 @@ lint 双变体 0 error、detekt、ktlint 0 违规、assembleDebug/Release 通过
     `semantics` 修饰符几乎不用，TalkBack 下审批按钮/状态胶囊/会话行基本不可达。
 13. **Markdown 禁外链图片的兜底体验**：图片类回答仅一行灰字占位，建议加「复制链接 / 浏览器
     打开」快捷操作（可复用现有 `SafeUriHandler`），不改变不加载外链图片的安全决策。
+    **注**：`multiplatform-markdown-renderer 0.27.0` 的 alt/url 读取助手是 `internal`，取图片
+    链接需另寻实现路径（自遍历 AST 或升级库——后者受 Kotlin 版本冻结约束）。
 14. **会话流缺日期分隔与未读标记**：长会话无时间锚点，定位困难。
+    **注**：wire 协议只下发 `startedAt`/`endedAt`/`activeMs` 相对量，**无绝对时间戳**——做日期
+    分隔需服务端补字段或改用本地接收时刻（后者在离线缓存场景语义不准）。
 15. **布局回归自动化防线**：C-14 类顶栏布局错乱此前只能靠真机人肉发现，§11.2 仪器化布局断言
-    刚起步，建议优先补「关键组件祖先链 + 边界数值」断言（对齐 AGENTS.md「DOM 断言须验证祖先链」
-    规范）。
+    刚起步（现有 `ConversationTopBarLayoutTest` 单点），建议优先补「关键组件祖先链 + 边界数值」
+    断言（对齐 AGENTS.md「DOM 断言须验证祖先链」规范）。
+
+### 5.2 5.1 清单的当前剩余（2026-10-16 收尾盘点）
+
+截至 `v0.5.0-beta47`，5.1 清单的实际剩余项只有 5 条，按优先级：
+
+| 项 | 内容 | 备注 |
+|---|---|---|
+| #2 | 附件上传流水线重构（递归回调 → suspend/flow） | 协议层行为变更，**需真机验收**，无设备时勿盲改 |
+| #12 | 无障碍（`semantics` / contentDescription） | 覆盖面广、单点收益低、真机 TalkBack 才能验 |
+| #13 | Markdown 图片兜底交互 | 受库 `internal` 限制，见上方注 |
+| #14 | 会话流日期分隔/未读标记 | 受协议无绝对时间戳限制，见上方注 |
+| #15 | 布局回归断言体系化 | 现有单点，可增量补 |
+
+**已全部闭环**：#1（大部分失效）、#3–#11。**#7 证书固定**为作者**刻意不做**（非遗漏）。
+**#8 不成立**（`allowBackup=false` 已有）。
 
 ## 6. 关键避坑与运行约束
 
@@ -424,3 +472,26 @@ lint 双变体 0 error、detekt、ktlint 0 违规、assembleDebug/Release 通过
   Actions 一律 pin commit SHA + 最小权限。
 - **发布流程**：升 `versionName`/`versionCode` → 更新 CHANGELOG/README/HANDOFF → 打 annotated tag
   （标题 `vX.Y.Z: 中文摘要`）→ push → 核验/修正 GitHub Release 标题与正文（见 `AGENTS.md` 四步门禁）。
+  - **发版前必跑本地预检**：`python tools/check_release_consistency.py vX.Y.Z`——CI 用同一脚本做
+    五处一致性核对，**CHANGELOG 头条必须是 `## vX.Y.Z（日期）· 摘要`**（写「未发布」会直接阻断 CI）。
+  - **`git push --tags` 会因历史旧 tag 冲突而报错**（如远端已存在 `v0.5.0-beta1`），属预期；
+    用 `git push origin vX.Y.Z` 单独推本次 tag 即可（`--tags` 那次通常已把本次 tag 推上去，先 `git ls-remote --tags origin` 确认）。
+
+## 7. 本次会话（2026-10-16）新增的操作避坑
+
+- **`strings.xml` 等资源文件是 CRLF 行尾**：用脚本批量改资源时必须 `io.open(..., newline='')`
+  二进制安全读写并匹配 `\r\n`，否则替换静默失败（Windows 侧 `Write`/`Edit` 工具正常）。
+- **非 Composable 上下文不能调 `stringResource`**：通知（`Notification.Builder`）、`Toast`、
+  Widget、Service 里用 `context.getString(id)` 或 `UiText.resolve(context)`；只有 `@Composable`
+  与 `UiText.asString()` 能用 `stringResource`。
+- **`ktlintFormat` 会自动修 import 顺序**，改完大量文件后先跑它再跑 `ktlintCheck`，能省手工排序。
+- **改纯函数签名会失配 `detekt-baseline.xml`**（条目签名含参数类型），需同步更新基线条目，
+  否则 detekt 报「新违规」。
+- **MIUI 会拦 Gradle 的 UTP 安装**（`INSTALL_FAILED_USER_RESTRICTED: Install canceled by user`）——
+  真机跑仪器化测试时改用 `adb install -r <apk>` + `adb shell am instrument -w ...` 直跑；
+  且 debug/release 需同签名（`-PdebugUseReleaseSigning=true`）才能覆盖安装、保配对数据。
+- **本机（兆芯 CPU 无虚拟化）跑不了模拟器**，UI 一律真机验收；仪器化用例请写「不依赖 Espresso
+  注入」的形式（API 37 真机的 `InputManager.getInstance()` 已移除，`createComposeRule` 类用例必失败）。
+- **工具链（`toolchain/`）被 gitignore、不在 clone 中**：在 `/tmp` 等副本构建前需先从正式副本
+  （`F:\AI\Zcode\zcode-remote-app`）`cp` 源码过去，或用正式副本本身构建；本地 SDK 路径见
+  `app-android/local.properties`（`sdk.dir`）。
