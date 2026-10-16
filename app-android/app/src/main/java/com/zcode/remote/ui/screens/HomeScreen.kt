@@ -24,6 +24,10 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.clearAndSetSemantics
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -118,9 +122,13 @@ fun HomeScreen(
                 Spacer(Modifier.height(2.dp))
                 Row(
                     verticalAlignment = Alignment.CenterVertically,
-                    modifier = Modifier.clickable { onNavigateToSettings() },
+                    modifier =
+                        Modifier
+                            .clickable(role = Role.Button, onClickLabel = stringResource(R.string.a11y_open_settings)) {
+                                onNavigateToSettings()
+                            },
                 ) {
-                    StatusDot(state)
+                    StatusDot(state, statusLabel(state).asString())
                     Spacer(Modifier.width(6.dp))
                     Text(
                         text =
@@ -360,6 +368,14 @@ private fun SessionItemCard(
 ) {
     var showDeleteConfirm by remember { mutableStateOf(false) }
 
+    // 无障碍（走查 #12）：卡片语义文案在 Composable 层拼好（semantics 块内不能调 stringResource）
+    val a11yCardLabel =
+        stringResource(
+            R.string.a11y_session_card,
+            s.title.ifBlank { stringResource(R.string.common_unnamed_session) },
+            statusText(s.displayStatus).asString(),
+        ) + "，" + stringResource(R.string.a11y_session_card_long_press_hint)
+
     Card(
         shape = RoundedCornerShape(12.dp),
         colors =
@@ -391,7 +407,11 @@ private fun SessionItemCard(
         modifier =
             Modifier
                 .fillMaxWidth()
-                .combinedClickable(
+                // 无障碍（走查 #12）：自定义点击行补语义——TalkBack 需知道它是按钮、
+                // 读得出「会话 + 标题 + 状态」，并被告知有长按删除（否则功能不可发现）。
+                .semantics(mergeDescendants = true) {
+                    contentDescription = a11yCardLabel
+                }.combinedClickable(
                     onClick = onClick,
                     onLongClick = { showDeleteConfirm = true },
                 ),
@@ -538,7 +558,10 @@ private fun statusText(s: String): UiText =
     }
 
 @Composable
-private fun StatusDot(state: RelayState) {
+private fun StatusDot(
+    state: RelayState,
+    a11yStatusText: String,
+) {
     val color =
         when (state) {
             is RelayState.Paired -> ZCodeTokens.StatusOnline
@@ -546,7 +569,15 @@ private fun StatusDot(state: RelayState) {
             is RelayState.Failed -> ZCodeTokens.StatusError
             else -> ZCodeTokens.StatusOffline
         }
-    Canvas(Modifier.size(8.dp)) { drawCircle(color) }
+    // 无障碍（走查 #12）：这是纯视觉圆点，TalkBack 读不到颜色——补语义标签。
+    // clearAndSetSemantics 避免它与紧邻的状态文案各读一遍（两处合成一句）。
+    Canvas(
+        Modifier
+            .size(8.dp)
+            .clearAndSetSemantics {
+                contentDescription = a11yStatusText
+            },
+    ) { drawCircle(color) }
 }
 
 private fun statusLabel(state: RelayState): UiText =

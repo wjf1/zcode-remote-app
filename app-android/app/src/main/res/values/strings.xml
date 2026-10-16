@@ -224,6 +224,12 @@
     <string name="home_delete_body">将删除「%1$s」并从 PC 端会话列表移除，PC 端同步生效。确定删除？</string>
     <string name="home_delete_confirm">删除</string>
     <string name="home_meta_joined">%1$s · %2$s</string>
+    <!-- 无障碍（走查 #12）：TalkBack 需要知道纯视觉元素与自定义点击行的语义 -->
+    <string name="a11y_connection_status">连接状态：%1$s</string>
+    <string name="a11y_session_card">会话 %1$s，%2$s</string>
+    <string name="a11y_session_card_long_press_hint">长按可删除</string>
+    <string name="a11y_open_settings">打开设置</string>
+    <string name="a11y_timeline_item">会话消息</string>
     <!-- 会话状态 / 继电器状态 / 思考档位 / 执行模式标签（HomeScreen 内纯函数） -->
     <string name="home_session_status_running">运行中</string>
     <string name="home_session_status_streaming">生成中</string>
