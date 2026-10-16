@@ -31,6 +31,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -78,14 +79,14 @@ internal fun ConversationTopBar(
         ) {
             Icon(
                 imageVector = Icons.AutoMirrored.Filled.ArrowBack,
-                contentDescription = "返回列表",
+                contentDescription = stringResource(R.string.topbar_back),
                 tint = MaterialTheme.colorScheme.onSurface,
             )
         }
         Spacer(Modifier.width(6.dp))
         Column(Modifier.weight(1f)) {
             Text(
-                text = title.ifBlank { "会话控制台" },
+                text = title.ifBlank { stringResource(R.string.topbar_default_title) },
                 style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
@@ -94,9 +95,9 @@ internal fun ConversationTopBar(
                 text =
                     listOfNotNull(
                         statusLabel(status),
-                        meta.phase?.let { phaseLabel(it) },
-                        meta.totalCount?.let { "共 $it 行" },
-                        approvalsCount.takeIf { it > 0 }?.let { "待审批 $it" },
+                        meta.phase?.let { phaseLabel(it).asString() },
+                        meta.totalCount?.let { stringResource(R.string.topbar_row_count, it) },
+                        approvalsCount.takeIf { it > 0 }?.let { stringResource(R.string.topbar_approvals_count, it) },
                     ).joinToString(" · "),
                 style = MaterialTheme.typography.labelSmall,
                 color =
@@ -127,7 +128,7 @@ internal fun ConversationTopBar(
                     modifier = Modifier.padding(horizontal = 10.dp),
                 ) {
                     Text(
-                        text = "重试",
+                        text = stringResource(R.string.topbar_retry),
                         style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.SemiBold),
                         color = MaterialTheme.colorScheme.onErrorContainer,
                     )
@@ -141,7 +142,7 @@ internal fun ConversationTopBar(
         // 真机实测），故改为二级入口，把宽度让给标题。仅在确有条目时出现。
         val overflowEntries =
             buildList {
-                if (sessionFileCount > 0) add("files" to "📁 文件（$sessionFileCount）")
+                if (sessionFileCount > 0) add("files" to stringResource(R.string.topbar_files, sessionFileCount))
                 statusEntryLabel?.let { add("status" to it.asString()) }
             }
         if (overflowEntries.isNotEmpty()) {
@@ -150,7 +151,7 @@ internal fun ConversationTopBar(
                 IconButton(onClick = { overflow = true }, modifier = Modifier.size(32.dp)) {
                     Icon(
                         imageVector = Icons.Default.MoreVert,
-                        contentDescription = "更多",
+                        contentDescription = stringResource(R.string.topbar_more),
                         tint = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                 }
@@ -201,7 +202,7 @@ internal fun ConversationTopBar(
                     modifier = Modifier.padding(horizontal = 8.dp),
                 ) {
                     Text(
-                        text = meta.model?.substringAfterLast('/') ?: "模型",
+                        text = meta.model?.substringAfterLast('/') ?: stringResource(R.string.topbar_model_label),
                         style =
                             MaterialTheme.typography.labelSmall.copy(
                                 fontWeight = FontWeight.SemiBold,
@@ -228,7 +229,7 @@ internal fun ConversationTopBar(
                     // ---- 阶段一：选模型 ----
                     if (availableModels.isEmpty()) {
                         DropdownMenuItem(
-                            text = { Text("未读到备选模型目录", style = MaterialTheme.typography.bodySmall) },
+                            text = { Text(stringResource(R.string.topbar_no_alt_models), style = MaterialTheme.typography.bodySmall) },
                             onClick = {},
                             enabled = false,
                         )
@@ -358,10 +359,10 @@ private fun ModeChip(
                 DropdownMenuItem(
                     text = {
                         Column {
-                            Text(modeDisplayName(m), style = MaterialTheme.typography.bodySmall)
+                            Text(modeDisplayName(m).asString(), style = MaterialTheme.typography.bodySmall)
                             if (m == "yolo") {
                                 Text(
-                                    "免审批：所有工具调用自动放行",
+                                    stringResource(R.string.topbar_yolo_hint),
                                     style = MaterialTheme.typography.labelSmall,
                                     color = MaterialTheme.colorScheme.error,
                                 )
@@ -388,7 +389,7 @@ private fun ModeChip(
             DropdownMenuItem(
                 text = {
                     Text(
-                        "切换仅对下一轮对话生效；运行中的轮次权限不变",
+                        stringResource(R.string.topbar_mode_hint),
                         style = MaterialTheme.typography.labelSmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
@@ -400,12 +401,12 @@ private fun ModeChip(
     }
 }
 
-private fun modeDisplayName(m: String): String =
+private fun modeDisplayName(m: String): UiText =
     when (m) {
-        "plan" -> "规划 plan（只读规划，不改文件）"
-        "build" -> "构建 build（工具调用需审批）"
-        "yolo" -> "全自动 yolo（免审批）"
-        else -> m
+        "plan" -> res(R.string.mode_plan_full)
+        "build" -> res(R.string.mode_build_full)
+        "yolo" -> res(R.string.mode_yolo_full)
+        else -> UiText.Raw(m)
     }
 
 internal fun statusLabel(s: ConversationChannel.Status): UiText =
@@ -425,17 +426,17 @@ internal fun statusLabel(s: ConversationChannel.Status): UiText =
             )
     }
 
-internal fun phaseLabel(p: String) =
+internal fun phaseLabel(p: String): UiText =
     when (p) {
-        "completedSuccess" -> "已完成"
-        "completedInterrupted" -> "已中断"
-        "completedError" -> "执行出错"
-        "idle" -> "空闲"
-        "running" -> "运行中"
-        "waitingUserInput" -> "等待输入"
-        "aborted" -> "已中止"
+        "completedSuccess" -> res(R.string.phase_completed_success)
+        "completedInterrupted" -> res(R.string.phase_completed_interrupted)
+        "completedError" -> res(R.string.phase_completed_error)
+        "idle" -> res(R.string.phase_idle)
+        "running" -> res(R.string.phase_running)
+        "waitingUserInput" -> res(R.string.phase_waiting_user_input)
+        "aborted" -> res(R.string.phase_aborted)
         // host 对失败轮次直接送 phase="error"（非 completedError），此前落到 else 显示英文原文，
         // 与列表里同一状态的「异常」标签不一致。
-        "error" -> "异常"
-        else -> p
+        "error" -> res(R.string.phase_error)
+        else -> UiText.Raw(p)
     }

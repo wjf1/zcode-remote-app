@@ -330,4 +330,71 @@
     <string name="gh_token_saved">Token 已保存</string>
     <string name="gh_token_cleared">Token 已清除</string>
 
+    <!-- ========== 待办与审批（ApprovalsTab） ========== -->
+    <string name="approvals_title">待办与审批</string>
+    <string name="approvals_pending_count">%1$d 项待处理</string>
+    <string name="approvals_empty">暂无待决议事项</string>
+    <string name="approvals_empty_hint">所有会话均正常运行或已就绪，新的权限申请与提问将在此显示。</string>
+    <string name="approvals_section_permissions">权限审批请求 (%1$d)</string>
+    <string name="approvals_section_forms">表单与计划应答 (%1$d)</string>
+    <string name="approvals_other_sessions">其它会话的待办</string>
+    <string name="approvals_session_pending">%1$d 项请求等待处理</string>
+    <string name="approvals_switch">切换处理</string>
+    <string name="approvals_tool_call">工具调用 · %1$s</string>
+    <string name="approvals_tool_default">Command</string>
+    <string name="approvals_deny">拒绝</string>
+    <string name="approvals_allow_once">允许一次</string>
+    <string name="approvals_allow_always">总是允许</string>
+    <string name="approvals_allow">允许</string>
+    <string name="approvals_kind_plan">实施方案待批准</string>
+    <string name="approvals_kind_questions">需要你的输入回答</string>
+    <string name="approvals_kind_confirm">操作确认</string>
+    <string name="approvals_reject_plan">拒绝方案</string>
+    <string name="approvals_approve_execute">批准并执行</string>
+    <string name="approvals_custom_answer_hint">输入自定义回答…</string>
+    <string name="approvals_submit_answer">提交回答</string>
+
+    <!-- ========== 会话顶栏（ConversationTopBar） ========== -->
+    <string name="topbar_back">返回列表</string>
+    <string name="topbar_default_title">会话控制台</string>
+    <string name="topbar_row_count">共 %1$d 行</string>
+    <string name="topbar_approvals_count">待审批 %1$d</string>
+    <string name="topbar_retry">重试</string>
+    <string name="topbar_files">📁 文件（%1$d）</string>
+    <string name="topbar_more">更多</string>
+    <string name="topbar_model_label">模型</string>
+    <string name="topbar_no_alt_models">未读到备选模型目录</string>
+    <string name="topbar_yolo_hint">免审批：所有工具调用自动放行</string>
+    <string name="topbar_mode_hint">切换仅对下一轮对话生效；运行中的轮次权限不变</string>
+    <!-- 顶栏纯函数（模式全称 / 相位） -->
+    <string name="mode_plan_full">规划 plan（只读规划，不改文件）</string>
+    <string name="mode_build_full">构建 build（工具调用需审批）</string>
+    <string name="mode_yolo_full">全自动 yolo（免审批）</string>
+    <string name="phase_completed_success">已完成</string>
+    <string name="phase_completed_interrupted">已中断</string>
+    <string name="phase_completed_error">执行出错</string>
+    <string name="phase_idle">空闲</string>
+    <string name="phase_running">运行中</string>
+    <string name="phase_waiting_user_input">等待输入</string>
+    <string name="phase_aborted">已中止</string>
+    <string name="phase_error">异常</string>
+
+    <!-- ========== 保活引导（KeepAliveGuideScreen） ========== -->
+    <string name="keepalive_back">← 返回</string>
+    <string name="keepalive_title">保活引导（小米 / HyperOS）</string>
+    <string name="keepalive_intro">审批通知的可靠性依赖以下系统授权。桌面端请求权限时，只有通知能及时送达，你才能在锁屏上直接批准/拒绝。</string>
+    <string name="keepalive_step1_title">1. 允许通知</string>
+    <string name="keepalive_step1_body">系统设置 → 通知与控制中心 → 应用通知 → ZCode Remote → 打开全部通知。审批类通知是高优先级，锁屏也会弹出。</string>
+    <string name="keepalive_step2_title">2. 打开自启动</string>
+    <string name="keepalive_step2_body">系统设置 → 应用管理 → ZCode Remote → 自启动 → 打开。没有自启动权限，后台连接会被系统随时杀掉。</string>
+    <string name="keepalive_step3_title">3. 省电策略设为无限制</string>
+    <string name="keepalive_step3_body">系统设置 → 应用管理 → ZCode Remote → 省电策略 → 无限制。「智能限制后台」会掐断长连接，导致审批收不到。</string>
+    <string name="keepalive_step4_title">4. 锁定后台任务卡</string>
+    <string name="keepalive_step4_body">最近任务里下拉 ZCode Remote 卡片点锁头图标，防止一键清理误杀。</string>
+    <string name="keepalive_step5_title">5. 常驻通知不要关</string>
+    <string name="keepalive_step5_body">App 的「连接保持中」前台通知是连接的命脉，关闭它等于断开远程控制。</string>
+    <string name="keepalive_step6_title">6. （可选）锁屏显示</string>
+    <string name="keepalive_step6_body">通知管理 → 锁屏通知 → 显示，锁屏状态下不用解锁就能看到审批内容。</string>
+    <string name="keepalive_note">注：官方桌面端与本 App 同一时刻只能有一端在线（单终端槽位）；若桌面端 Web 版开着，App 会被踢下线。</string>
+
 </resources>

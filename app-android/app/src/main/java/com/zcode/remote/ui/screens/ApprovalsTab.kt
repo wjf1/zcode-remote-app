@@ -18,11 +18,13 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalHapticFeedback
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.zcode.remote.R
 import com.zcode.remote.relay.ApprovalOption
 import com.zcode.remote.relay.PendingApproval
 import com.zcode.remote.relay.PendingElicitation
@@ -76,7 +78,7 @@ fun ApprovalsTab(
             modifier = Modifier.padding(bottom = 12.dp),
         ) {
             Text(
-                text = "待办与审批",
+                text = stringResource(R.string.approvals_title),
                 style = MaterialTheme.typography.headlineSmall.copy(fontWeight = FontWeight.Bold),
                 modifier = Modifier.weight(1f),
             )
@@ -89,7 +91,7 @@ fun ApprovalsTab(
                     border = BorderStroke(1.dp, statusPendingTone().copy(alpha = 0.4f)),
                 ) {
                     Text(
-                        text = "$totalCurrentPending 项待处理",
+                        text = stringResource(R.string.approvals_pending_count, totalCurrentPending),
                         style =
                             MaterialTheme.typography.labelSmall.copy(
                                 color = statusPendingTone(),
@@ -160,12 +162,12 @@ fun ApprovalsTab(
                         )
                     }
                     Text(
-                        text = "暂无待决议事项",
+                        text = stringResource(R.string.approvals_empty),
                         style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Medium),
                         color = MaterialTheme.colorScheme.onSurface,
                     )
                     Text(
-                        text = "所有会话均正常运行或已就绪，新的权限申请与提问将在此显示。",
+                        text = stringResource(R.string.approvals_empty_hint),
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         modifier = Modifier.padding(horizontal = 32.dp),
@@ -183,7 +185,7 @@ fun ApprovalsTab(
                 if (approvals.isNotEmpty()) {
                     item {
                         Text(
-                            text = "权限审批请求 (${approvals.size})",
+                            text = stringResource(R.string.approvals_section_permissions, approvals.size),
                             style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.Bold),
                             color = statusPendingTone(),
                         )
@@ -197,7 +199,7 @@ fun ApprovalsTab(
                 if (elicitations.isNotEmpty()) {
                     item {
                         Text(
-                            text = "表单与计划应答 (${elicitations.size})",
+                            text = stringResource(R.string.approvals_section_forms, elicitations.size),
                             style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.Bold),
                             color = MaterialTheme.colorScheme.primary,
                         )
@@ -216,7 +218,7 @@ fun ApprovalsTab(
                 if (otherPendingSessions.isNotEmpty()) {
                     item {
                         Text(
-                            text = "其它会话的待办",
+                            text = stringResource(R.string.approvals_other_sessions),
                             style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.Bold),
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
@@ -244,7 +246,7 @@ fun ApprovalsTab(
                                     )
                                     Spacer(Modifier.height(2.dp))
                                     Text(
-                                        text = "${sessionPending[s.taskId] ?: 0} 项请求等待处理",
+                                        text = stringResource(R.string.approvals_session_pending, sessionPending[s.taskId] ?: 0),
                                         style = MaterialTheme.typography.bodySmall,
                                         color = statusPendingTone(),
                                     )
@@ -254,7 +256,7 @@ fun ApprovalsTab(
                                     contentPadding = PaddingValues(horizontal = 14.dp, vertical = 0.dp),
                                     modifier = Modifier.height(34.dp),
                                 ) {
-                                    Text("切换处理", style = MaterialTheme.typography.labelSmall)
+                                    Text(stringResource(R.string.approvals_switch), style = MaterialTheme.typography.labelSmall)
                                 }
                             }
                         }
@@ -294,7 +296,7 @@ private fun ApprovalInboxCard(
                     shape = RoundedCornerShape(6.dp),
                 ) {
                     Text(
-                        text = "工具调用 · ${a.toolName ?: "Command"}",
+                        text = stringResource(R.string.approvals_tool_call, a.toolName ?: stringResource(R.string.approvals_tool_default)),
                         style =
                             MaterialTheme.typography.labelSmall.copy(
                                 color = toolCallTrajectoryTone(),
@@ -363,7 +365,7 @@ private fun ApprovalInboxCard(
                     ) {
                         Icon(Icons.Default.Close, null, modifier = Modifier.size(16.dp))
                         Spacer(Modifier.width(4.dp))
-                        Text("拒绝", style = MaterialTheme.typography.labelMedium)
+                        Text(stringResource(R.string.approvals_deny), style = MaterialTheme.typography.labelMedium)
                     }
                 }
 
@@ -391,9 +393,9 @@ private fun ApprovalInboxCard(
                         Text(
                             text =
                                 when (opt.kind) {
-                                    "allowOnce" -> "允许一次"
-                                    "allowAlways" -> "总是允许"
-                                    else -> opt.label.ifBlank { "允许" }
+                                    "allowOnce" -> stringResource(R.string.approvals_allow_once)
+                                    "allowAlways" -> stringResource(R.string.approvals_allow_always)
+                                    else -> opt.label.ifBlank { stringResource(R.string.approvals_allow) }
                                 },
                             style = MaterialTheme.typography.labelMedium,
                         )
@@ -434,9 +436,9 @@ private fun ElicitationInboxCard(
                 Text(
                     text =
                         when {
-                            el.isPlanApproval -> "实施方案待批准"
-                            el.questions.isNotEmpty() -> "需要你的输入回答"
-                            else -> "操作确认"
+                            el.isPlanApproval -> stringResource(R.string.approvals_kind_plan)
+                            el.questions.isNotEmpty() -> stringResource(R.string.approvals_kind_questions)
+                            else -> stringResource(R.string.approvals_kind_confirm)
                         },
                     style =
                         MaterialTheme.typography.labelSmall.copy(
@@ -480,13 +482,13 @@ private fun ElicitationInboxCard(
                         colors = ButtonDefaults.outlinedButtonColors(contentColor = MaterialTheme.colorScheme.error),
                         modifier = Modifier.weight(1f).height(38.dp),
                     ) {
-                        Text("拒绝方案")
+                        Text(stringResource(R.string.approvals_reject_plan))
                     }
                     Button(
                         onClick = { onAccept(emptyMap()) },
                         modifier = Modifier.weight(1.5f).height(38.dp),
                     ) {
-                        Text("批准并执行")
+                        Text(stringResource(R.string.approvals_approve_execute))
                     }
                 }
                 return@Column
@@ -553,7 +555,7 @@ private fun ElicitationInboxCard(
                 OutlinedTextField(
                     value = freeTextDraft,
                     onValueChange = { freeTextDraft = it },
-                    placeholder = { Text("输入自定义回答…", style = MaterialTheme.typography.bodySmall) },
+                    placeholder = { Text(stringResource(R.string.approvals_custom_answer_hint), style = MaterialTheme.typography.bodySmall) },
                     modifier = Modifier.fillMaxWidth(),
                     shape = RoundedCornerShape(8.dp),
                     maxLines = 3,
@@ -569,7 +571,7 @@ private fun ElicitationInboxCard(
                     colors = ButtonDefaults.outlinedButtonColors(contentColor = MaterialTheme.colorScheme.error),
                     modifier = Modifier.weight(1f).height(38.dp),
                 ) {
-                    Text("拒绝")
+                    Text(stringResource(R.string.approvals_deny))
                 }
                 Button(
                     onClick = {
@@ -587,7 +589,7 @@ private fun ElicitationInboxCard(
                     enabled = selected.isNotEmpty() || freeTextDraft.isNotBlank(),
                     modifier = Modifier.weight(1.5f).height(38.dp),
                 ) {
-                    Text("提交回答")
+                    Text(stringResource(R.string.approvals_submit_answer))
                 }
             }
         }

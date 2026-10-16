@@ -606,7 +606,7 @@ private fun TurnHeaderRow(row: ConversationRow) {
         listOfNotNull(
             "轮次",
             row.origin?.trim()?.takeIf { it.isNotEmpty() },
-            row.state?.let { phaseLabel(it) },
+            row.state?.let { phaseLabel(it).asString() },
         ).joinToString(" · ")
 
     Column(
