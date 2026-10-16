@@ -11,6 +11,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asAndroidBitmap
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.captureToImage
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onAllNodesWithText
@@ -162,6 +163,61 @@ class MarkdownRenderTest {
             "语法高亮的主题 token 色应真的画到屏幕上（命中 $tokens 像素，期望 ≥ 30）",
             tokens >= 30,
         )
+    }
+
+    /**
+     * 图片兜底（走查 #13）：App 不加载外链图片，但必须给出**可操作的兜底**——
+     * 图片 URL 可得（`MarkdownComponentModel.content`），故渲染占位行 + 「复制链接」按钮，
+     * http(s) 链接才额外给「打开」入口。
+     *
+     * 断言点：占位文案在、图片 URL **不在**语义树里当正文渲染（只作为按钮数据源）、
+     * 「复制链接」按钮存在（用户有路可走，不是死胡同）。
+     */
+    @Test
+    fun imagePlaceholderOffersCopyLinkFallback() {
+        rule.setContent {
+            ZCodeTheme(forceDark = true) {
+                Box(
+                    Modifier
+                        .fillMaxWidth()
+                        .background(pageBg)
+                        .padding(12.dp)
+                        .testTag("mdroot"),
+                ) {
+                    MarkdownView("![示意图](https://example.com/a.png)")
+                }
+            }
+        }
+        rule.waitForIdle()
+        dumpTree("图片兜底样本")
+
+        // 占位提示与兜底动作都在（文案来自 strings.xml，中文 UI）
+        assertTextRendered("图片（未加载）")
+        assertTextRendered("复制链接")
+        // http(s) 图片额外给「打开」入口（非 http(s) 不给——安全白名单，见 SafeUriHandler）
+        assertTextRendered("打开")
+    }
+
+    /** 非 http(s) 的图片链接：仍显示占位与「复制链接」，但**不给**「打开」（白名单收敛）。 */
+    @Test
+    fun nonHttpImageHasNoOpenAction() {
+        rule.setContent {
+            ZCodeTheme(forceDark = true) {
+                Box(
+                    Modifier
+                        .fillMaxWidth()
+                        .background(pageBg)
+                        .padding(12.dp)
+                        .testTag("mdroot"),
+                ) {
+                    MarkdownView("![x](ftp://example.com/a.png)")
+                }
+            }
+        }
+        rule.waitForIdle()
+        assertTextRendered("图片（未加载）")
+        assertTextRendered("复制链接")
+        rule.onAllNodesWithText("打开", substring = true, useUnmergedTree = true).assertCountEquals(0)
     }
 
     /**

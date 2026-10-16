@@ -463,6 +463,9 @@
     <string name="diff_copy">⧉ 复制</string>
     <string name="diff_unchanged_lines">⋯ %1$d 行未变更，点击展开 ⋯</string>
     <string name="markdown_image_notice">图片（未加载）</string>
+    <string name="markdown_image_copy_link">复制链接</string>
+    <string name="markdown_image_link_copied">图片链接已复制</string>
+    <string name="markdown_image_open">打开</string>
     <string name="uri_blocked">已拦截非 http(s) 链接</string>
     <string name="turn_changes_title">📦 本轮变更</string>
     <string name="turn_changes_summary">共 %1$d 个文件 (+%2$d −%3$d)</string>

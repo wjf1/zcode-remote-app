@@ -3,19 +3,24 @@ package com.zcode.remote.ui.components
 import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
+import android.widget.Toast
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.getValue
@@ -135,7 +140,7 @@ fun MarkdownView(
         markdownComponents(
             codeFence = { model -> HighlightedCodeCard(model) },
             codeBlock = { model -> HighlightedIndentedCodeCard(model) },
-            image = { model -> MarkdownImageNotice() },
+            image = { model -> MarkdownImageNotice(model.content) },
         )
 
     val uriHandler = rememberSafeUriHandler()
@@ -306,18 +311,26 @@ private fun HighlightedCodeText(
 }
 
 /**
- * 图片占位。因为全工程没有图片加载器，这里只显示一行提示，
- * 明确告诉用户「这里有一张图，但没有加载」，避免空白区域被误认为渲染失败。
+ * 图片占位。因为全工程没有图片加载器（不发起任何外链请求），这里只显示一行提示 +
+ * 两个兜底动作，明确告诉用户「这里有一张图，但没有加载」，并用**复制链接 / 浏览器打开**
+ * 让有意查看的用户自己去看（不改变「App 不加载外链图片」的安全决策）。
  *
- * **不回显 alt 文本**：取 alt 需要 `findChildOfTypeRecursive` / `getUnescapedTextInNode`，
- * 这两个助手在 0.27.0 里是 `internal`，外部模块不可见；自己遍历 AST 又要把
- * `MarkdownElementTypes` 的节点名当字符串比对，代价高于收益。只保留固定提示。
+ * **URL 来源**：image lambda 的入参 `MarkdownComponentModel.getContent()` 即图片 URL
+ * （库 `ImageTransformer.transform(url)` 印证；0.27.0 的 `content` 字段是 public）。
+ * 打开动作走 `isAllowedLinkScheme` 白名单 + [rememberSafeUriHandler]，
+ * 与正文链接同一条安全路径——非 http(s) 一律拦下。
+ *
+ * **仍不回显 alt 文本**：取 alt 需要 `findChildOfTypeRecursive` / `getUnescapedTextInNode`，
+ * 这两个助手在 0.27.0 里是 `internal`，外部模块不可见；自己遍历 AST 代价高于收益。
  */
 @Composable
-private fun MarkdownImageNotice() {
+private fun MarkdownImageNotice(url: String) {
     val dark = LocalZCodeDark.current
     val border = if (dark) ZCodeTokens.BorderSubtleDark else ZCodeTokens.BorderSubtleLight
     val shape = RoundedCornerShape(ZCodeDimens.RadiusLg)
+    val context = LocalContext.current
+    val uriHandler = rememberSafeUriHandler()
+    val safe = isAllowedLinkScheme(url)
 
     Row(
         modifier =
@@ -325,6 +338,7 @@ private fun MarkdownImageNotice() {
                 .fillMaxWidth()
                 .padding(vertical = ZCodeDimens.GapTight),
         verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(ZCodeDimens.GapTight),
     ) {
         Text(
             text = stringResource(R.string.markdown_image_notice),
@@ -336,6 +350,29 @@ private fun MarkdownImageNotice() {
                     .border(1.dp, border, shape)
                     .padding(horizontal = 10.dp, vertical = 6.dp),
         )
+        // 兜底动作：链接非空才显示（防御空 URL；安全 scheme 判断与正文链接同源）
+        if (url.isNotBlank()) {
+            TextButton(
+                onClick = {
+                    copyToClipboard(context, url)
+                    Toast.makeText(context, context.getString(R.string.markdown_image_link_copied), Toast.LENGTH_SHORT).show()
+                },
+                contentPadding = PaddingValues(horizontal = 6.dp, vertical = 0.dp),
+                modifier = Modifier.height(28.dp),
+            ) {
+                Text(stringResource(R.string.markdown_image_copy_link), style = MaterialTheme.typography.labelSmall)
+            }
+            // 仅白名单 scheme 给「打开」入口（非 http(s) 无意义且不安全）
+            if (safe) {
+                TextButton(
+                    onClick = { uriHandler.openUri(url) },
+                    contentPadding = PaddingValues(horizontal = 6.dp, vertical = 0.dp),
+                    modifier = Modifier.height(28.dp),
+                ) {
+                    Text(stringResource(R.string.markdown_image_open), style = MaterialTheme.typography.labelSmall)
+                }
+            }
+        }
     }
 }
 
