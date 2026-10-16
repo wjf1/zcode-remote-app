@@ -17,14 +17,17 @@
   （Kotlin + Jetpack Compose）。逆向复用官方中继与配对协议，提供更强的通知、锁屏审批、
   流式会话与移动端操控体验。
 - **仓库**：<https://github.com/wjf1/zcode-remote-app>（owner：wjf1）
-- **当前版本**：`0.5.0-beta49`（versionCode 61），tag `v0.5.0-beta49`；上一个发布 tag `v0.5.0-beta48`。
-- **✅ 已发布**：`v0.5.0-beta49`（2026-10-16）——**修复 beta48 的走查 #13「Markdown 图片兜底」为死代码**
-  （CI 首次真正执行仪器化用例时暴露：兜底挂在了永不触发的 `components.image` 上）。改挂**段落/引用块级**，
-  并修掉「URL 误取整篇文档」与「180dp 空白占位」两个伴随缺陷。仪器化全量 **OK (24 tests)**（API 35 模拟器）。
-  上一发布 `v0.5.0-beta48`——走查清单 P2 剩余项闭环 4 项（#12 无障碍 / #13 图片兜底 / #14 日期分隔 /
-  #15 布局断言）；`v0.5.0-beta47`——走查修复 10 项 + 国际化资源化 6 批完成（`strings.xml` 67→452 条）。
-  Release 含签名 APK + SHA-256 + 证书指纹 + CycloneDX SBOM。
-  **当前 `master` 无未发布提交**（工作树干净）。
+- **当前版本**：`0.5.0-beta50`（versionCode 62），tag `v0.5.0-beta50`（本地已打，**未推送**——推送时本机代理 7900 无监听）；上一个发布 tag `v0.5.0-beta48`。
+- **⚠️ 待推送（本地已提交+打 tag）**：`v0.5.0-beta49` 与 `v0.5.0-beta50` 两个 tag 已在本地产出，
+  **因 GitHub 不可达（代理 7900 无监听、直连 github.com:443 被拒）未能推送**；恢复网络后
+  `git push origin master && git push origin v0.5.0-beta49 && git push origin v0.5.0-beta50` 即可
+  （见 §7「推送受阻」条）。
+- **✅ beta50（2026-10-16）**：**附件上传流水线重构**（走查 5.1 清单**最后一项 #2**）——递归回调 →
+  顺序 suspend 流水线 + 可定位（seekable）内容源（续传 O(1) 定位）+ 阻塞读下放 IO 线程；
+  上传编排**首次进入 JVM 单测**（`AttachmentUploadPipelineTest` 11 项）。**5.1 清单至此全部闭环**。
+- **✅ beta49（2026-10-16）**：**修复 beta48 的走查 #13「Markdown 图片兜底」为死代码**——兜底挂在了
+  永不触发的 `components.image` 上，改挂**段落/引用块级**，并修掉「URL 误取整篇文档」与「180dp 空白占位」。
+  CI 的 `instrumentation` job 已由红转绿（本机 API 35 模拟器复现并验证全量 `OK (24 tests)`）。
 - **本仓库无 iOS / 桌面端**，仅 Android 原生客户端（`app-android/`）。
 - **许可**：[MIT](LICENSE)；安全披露见 [SECURITY.md](SECURITY.md)。
 - **部署形态**：侧滑安装的签名 Release APK（无 Play 分发）；自用 + 受控灰度。
@@ -91,7 +94,42 @@ app-android/app/src/main/java/com/zcode/remote/
 
 > 完整逐轮记录见 [CHANGELOG.md](CHANGELOG.md) 与 [HANDOVER.md](HANDOVER.md) 文首覆盖层。
 
-### v0.5.0-beta49：修复 beta48 的「图片兜底」死代码（2026-10-16，已发布）
+### v0.5.0-beta50：附件上传流水线重构（走查 5.1 清单最后一项 #2，2026-10-16）
+
+**5.1 清单至此全部闭环**（#1–#15 全部处理完毕）。
+
+| 问题（旧实现） | 修法 |
+|---|---|
+| 递归回调金字塔（`uploadChunks`→`next()`→`rpc.call{}→next()`），埋在依赖 Looper 的类里、**无法单测** | 编排外提到 `relay/AttachmentUploadPipeline.kt`：四步流程改**顺序 `while` + `suspend`**；依赖（内容源 / RPC / IO 调度器 / 日志）全部注入 → 纯逻辑，可 JVM 单测 |
+| 续传 `openStream()` + `skip(N*chunkBytes)` = **O(offset) IO** | `AttachmentUploader.openAttachmentStream`：优先 `openFileDescriptor` + `FileChannel.position()` 做 **O(1) 定位**；不可 seek 时回退 `openInputStream + skip` |
+| 整文件哈希 + 逐片读都在**主线程**（调用方是 `viewModelScope`） | 阻塞读全部 `withContext(ioDispatcher)`；RPC 与进度回调仍在调用方上下文（Main），UI 状态写入线程不变 |
+| 取消靠独立 `aborted` 标记 | `UploadHandle.abort()` = 取消协程；流水线在 `CancellationException` 路径以 `NonCancellable` **补发 `attachmentAbortV4`**（与旧 `abort()` 等价） |
+
+- **行为等价（刻意保持）**：帧序列/参数、幂等短路（`state=="committed"` 直接复用 ref）、
+  进度口径（`index*chunkBytes` 封顶 total）、失败文案、以及「begin 被拒/读取失败**不发** abort；
+  分片失败/非法进度**发** abort」的细分语义。
+- **日志出口改为注入式** `UploadLogger`：沿用「被 JVM 单测覆盖的纯逻辑类零 `ZLog`」约定
+  （`ZLog` 会落 `android.util.Log`，无 Robolectric 时抛 "not mocked"）；生产侧由
+  `ConversationChannel` 的 `init` 注入 `ZLog` 实现（带 `LogRedactor.pathLabel` 脱敏）。
+- **验证**：JVM **358/358**（+11 `AttachmentUploadPipelineTest`：四步顺序与分片字节逐字节比对、
+  begin 参数、幂等短路不传分片、**续传按绝对偏移开流且只传剩余分片**、进度封顶、分片失败/ack 异常
+  → 发 abort 不 commit、短读可读失败、非法进度不入分片阶段、**取消补发 abort**）；
+  `ktlintCheck` 0 违规；`detekt` 通过；lint 双变体 0 error；双装配通过。
+- **⚠️ 真机验收为「协议层」而非「SAF 全链路」**：MIUI 的 SAF 文件选择器要求**指纹解锁**
+  （`com.miui.applicationlock.AppLockActivity`，adb 走查进不去），故无法用真人点选文件跑通。
+  改用 **debug-only 探针 `AttachUploadProbeActivity`**：从**进程内真实连接栈**
+  （`RemoteConnectionManager.conversation`）发起真上传，只有**内容源**用内存字节（不经 SAF），
+  **协议四步全程真实 RPC**。实测（小米 15 Pro / Android 17 / API 37，PC host 在线）：
+  - 1.2 MB（4 片）：`chunk=4` → 4 次进度 → `附件已提交 ref=zcode-artifact://…` 用时 **2022 ms**。
+  - 2.5 MB（7 片）：7 次进度（393216…2500000 封顶）→ `附件已提交 ref=…` 用时 **4189 ms**，无 FATAL。
+  - **线程契约实测**：探针传 Main scope 时，progress/onResult 全在主线程（PID=TID）；
+    传 `Dispatchers.Default` 时回调落在 IO 线程（探针初版即因此段 `Toast` 抛
+    「Can't toast on a thread that has not called Looper.prepare()」——**该崩溃在探针里、不在生产代码**；
+    生产 `AttachmentUploader` 传 `viewModelScope`（Main.immediate），回调天然在主线程）。
+  - **未覆盖**：SAF 真开流（`openFileDescriptor`/`FileChannel.position` O(1) 定位路径）未在真机验证
+    ——需要指纹解锁的真人操作；该路径有 JVM 单测覆盖「按偏移开流」的编排语义，IO 实现本身待补真机。
+
+### v0.5.0-beta49：修复 beta48 的「图片兜底」死代码（2026-10-16）
 
 **根因**：走查 #13 把兜底挂在 `markdownComponents(image = { … })`，但库
 （`multiplatform-markdown-renderer 0.27.0`）的 `Markdown.kt` **只对 `MARKDOWN_FILE` 顶层子节点**
@@ -491,21 +529,21 @@ lint 双变体 0 error、detekt、ktlint 0 违规、assembleDebug/Release 通过
     刚起步（现有 `ConversationTopBarLayoutTest` 单点），建议优先补「关键组件祖先链 + 边界数值」
     断言（对齐 AGENTS.md「DOM 断言须验证祖先链」规范）。
 
-### 5.2 5.1 清单的当前剩余（2026-10-16 收尾，随 beta48/beta49 发布）
+### 5.2 5.1 清单的当前剩余（2026-10-16 收尾，随 beta48/49/50 发布）
 
-**5.1 清单已几乎全部闭环——仅剩 #2 一项。**
+**5.1 清单已全部闭环（#1–#15 处理完毕，含 #2）。**
 
 | 项 | 状态 |
 |---|---|
-| #2 附件上传流水线重构（递归回调 → suspend/flow） | **未做**：协议层行为变更，**需真机验收**，无设备时不盲改 |
+| #2 附件上传流水线重构（递归回调 → suspend/flow） | ✅ **已完成**（beta50）：顺序 suspend 流水线 + 可定位源（O(1) 续传）+ 阻塞读下放 IO 线程 + 11 项 JVM 单测。**真机按协议层验收**（SAF 开流路径待补，见 §4 beta50） |
 | #12 无障碍 | ✅ 已修（`8725bad`）：会话卡语义 / `StatusDot` / 设置入口 Role |
 | #13 Markdown 图片兜底 | ✅ 已修（`c7862fd` 首次；**beta48 版本实为死代码，`beta49` 重修为真修**）：复制链接 / 打开（**原判「库 API 不可达」不成立**——URL 可得，不可达的是 alt 文本）。**beta49 更正**：兜底改挂段落/引用块级（`components.image` 在库中永不触发），URL 取自 AST 节点 |
 | #14 会话流日期分隔 | ✅ 已修（`2a9efdd`）：按本地时区日历日（**原判「协议无绝对时间戳」用错字段**——`createdAt` 是行级绝对时间戳） |
 | #15 布局回归断言 | ✅ 扩展（`d906da0`）：输入栏高度 + 会话流未被挤压 |
 
-**已闭环**：#1、#3–#15（含 #7 证书固定为作者刻意不做、#8 不成立）。
-**发布状态**：#12–#15 随 **v0.5.0-beta48 发布**；#13 的**死代码问题**已由 **v0.5.0-beta49 修复**并发布
-（`master` 干净，无未发布提交）。
+**已闭环**：#1–#15 全部闭环（含 #7 证书固定为作者刻意不做、#8 不成立）。
+**发布状态**：#12–#15 随 **v0.5.0-beta48 发布**；#13 的死代码由 **v0.5.0-beta49 修复**；
+#2 由 **v0.5.0-beta50 完成**。beta49/beta50 两个 tag **本地已打、因 GitHub 不可达暂未推送**（见 §1 与 §7）。
 
 ## 6. 关键避坑与运行约束
 
@@ -527,9 +565,28 @@ lint 双变体 0 error、detekt、ktlint 0 违规、assembleDebug/Release 通过
     五处一致性核对，**CHANGELOG 头条必须是 `## vX.Y.Z（日期）· 摘要`**（写「未发布」会直接阻断 CI）。
   - **`git push --tags` 会因历史旧 tag 冲突而报错**（如远端已存在 `v0.5.0-beta1`），属预期；
     用 `git push origin vX.Y.Z` 单独推本次 tag 即可（`--tags` 那次通常已把本次 tag 推上去，先 `git ls-remote --tags origin` 确认）。
+- **推送受阻（2026-10-16 实测）**：本机代理端口**会中途失效**——`127.0.0.1:7900`（Clash Verge 的
+  `verge_mixed_port`）在一次会话中从「有监听」变成「无监听」（仅剩 `clash-verge-service.exe` 服务助手，
+  内核已退出），此时 git 报 `Failed to connect to github.com port 443 via 127.0.0.1`。
+  **直连亦不可用**：`github.com:443` 被拒、DNS（默认与 8.8.8.8）解析出的部分 IP 也连不上；
+  但 `api.github.com` / 普通网站可直连（`gh` CLI 走 API，故 `gh` 有时仍可用而 `git push` 不可用）。
+  判定与处置：`netstat -ano | grep 127.0.0.1:7900` 无 `LISTENING` 即代理已挂；
+  启动 Clash Verge（`/e/Clash Verge/clash-verge.exe`）恢复代理后再推，勿反复重试。
 
 ## 7. 本次会话（2026-10-16）新增的操作避坑
 
+- **MIUI 的 SAF 文件选择器要指纹解锁**：真机点「添加附件」会弹
+  `com.miui.applicationlock.AppLockActivity`（「请用指纹解锁 用于打开文件管理」）——**adb 走查进不去**，
+  故「真人点选文件 → 上传」这条链路无法自动化验收。需要真机验证上传时，用 debug-only 探针
+  从进程内连接栈直发（见 `AttachUploadProbeActivity`），协议层照样是真 RPC。
+- **`android.util.Base64` / `android.util.Log` 在无 Robolectric 的 JVM 单测里会抛 "not mocked"**：
+  被 JVM 单测覆盖的类要避开它们——base64 用 `java.util.Base64`（minSdk 31 可用，与 `NO_WRAP` 等价）、
+  日志走**注入式出口**（本仓库既有约定：`RpcFrameAssembler`/`ProtocolLimits` 零 `ZLog` 调用）。
+  否则整批单测会以 `RuntimeException: Method … not mocked` 全红（本轮初版即踩，11/11 全红）。
+- **`suspendCancellableCoroutine` 的 `continuation.resume(value)` 在本项目协程版本需带 `onCancellation`**：
+  写 `cont.resume(reply) { _ -> }`（单参 lambda），不是三参。
+- **`@file:OptIn(...)` 必须写在 `package` 之前**（Kotlin 语法要求）；且 lambda 体内不能 opt-in
+  实验性 API（如 `runComposeUiTest`）——只能文件级/类级。
 - **`strings.xml` 等资源文件是 CRLF 行尾**：用脚本批量改资源时必须 `io.open(..., newline='')`
   二进制安全读写并匹配 `\r\n`，否则替换静默失败（Windows 侧 `Write`/`Edit` 工具正常）。
 - **非 Composable 上下文不能调 `stringResource`**：通知（`Notification.Builder`）、`Toast`、

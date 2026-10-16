@@ -1,5 +1,55 @@
 # 变更记录 / Changelog
 
+## v0.5.0-beta50（2026-10-16）· 附件上传流水线重构（走查 5.1 清单最后一项 #2）
+
+> **一句话**：把附件上传从「递归回调金字塔 + 主线程整文件 IO」改为**顺序 suspend 流水线 +
+> 可定位（seekable）内容源**，并首次让**上传编排进入 JVM 单测**（+11 项）。协议行为不变，
+> 服务端可见的帧序列、幂等短路、进度口径、失败/取消语义全部保持。
+
+### 问题（走查 #2 的原始描述 + 本轮代码实证）
+
+`ConversationChannel.uploadAttachment` 旧实现：
+
+1. **递归回调金字塔**：`uploadChunks(from)` → `next()` → `rpc.call{ … next() }`，控制流靠递归
+   回调串起来，可读性与可测性都差（埋在依赖 Android Looper 的类里，**无法单测**）；
+2. **续传 O(n) IO**：每次 `openStream()` 后 `skip(index * CHUNK_BYTES)` 跳过前 N 片——
+   20MiB 附件重试时是显著的无谓 IO，且对不可 seek 的 provider 会退化成逐字节丢弃；
+3. **主线程整文件读**：整文件 sha256（第一遍流式读）+ 逐片读全部发生在**调用线程**，
+   而调用方是 `viewModelScope`（Main）——大附件上传期间主线程被 IO 占用。
+
+### 重构
+
+| 项 | 做法 |
+|---|---|
+| 编排外提 | 新增 `relay/AttachmentUploadPipeline.kt`：四步流程（sha256 → begin → chunk×N → commit）改为**顺序 `while` + `suspend`**，不再递归回调 |
+| 依赖注入 | 内容源 `UploadSource.openAt(offset)`、RPC 出口 `UploadRpc.call`、IO 调度器、日志出口 `UploadLogger` 全部注入——**纯逻辑、零 Android 依赖**，可 JVM 单测 |
+| 可定位源 | `AttachmentUploader.openAttachmentStream`：优先 `openFileDescriptor` + `FileChannel.position(offset)` 做 **O(1) 定位**；不可 seek 时回退 `openInputStream + skip`（语义仍正确） |
+| 线程下放 | 阻塞读（哈希与逐片）全部 `withContext(ioDispatcher)`（默认 `Dispatchers.IO`）；RPC 与进度回调仍在调用方上下文（Main），UI 状态写入线程不变 |
+| 取消语义 | `UploadHandle.abort()` → 取消协程；流水线在 `CancellationException` 路径上以 `NonCancellable` **补发一次 `attachmentAbortV4`**，服务端可回收在途分片（与旧 `abort()` 等价） |
+| 日志出口 | 注入式 `UploadLogger`（默认静默）——沿用「被 JVM 单测覆盖的纯逻辑类零 `ZLog`」既有约定（`RpcFrameAssembler`/`ProtocolLimits` 同款），生产侧由 `ConversationChannel` 注入 `ZLog` |
+
+**行为等价性（刻意保持不变）**：帧序列与参数（`begin` 带 `checksum`/`totalChunks`/`totalBytes`）、
+幂等短路（`state=="committed"` 直接用 ref）、进度口径（`index*chunkBytes` 封顶 `totalBytes`）、
+失败文案（`附件上传初始化失败` / `分片 N 上传失败` / `服务端分片进度异常` / `附件内容比声明大小短` …）、
+以及**「begin 被服务端拒 / 读取失败不发 abort、分片失败与非法进度发 abort」**的细分语义。
+
+### 验证
+
+- 新增 **JVM 单测 `AttachmentUploadPipelineTest`（11 项）**——上传编排**首次**进入 JVM 单测：
+  四步顺序与分片字节逐字节比对、`begin` 参数（规范化 `sha256:` 前缀 + 分片数）、
+  幂等短路不传分片、**续传按绝对偏移开流且只传剩余分片**（老实现必失败的断言）、
+  进度累计与封顶、分片失败/ack 异常 → 发 abort 不 commit、声明长度短 → 可读失败、
+  非法进度 → 不进入分片阶段、**取消 → 补发 abort**。
+- JVM 单测 **358/358**；`ktlintCheck` 0 违规；`detekt` 通过；`lintDebug`/`lintRelease` 0 error；
+  `assembleDebug`/`assembleRelease` 通过。
+- **真机验收（协议层，小米 15 Pro / Android 17 / API 37，PC 端 host 在线）**：MIUI 的 SAF 选择器
+  要求指纹解锁（adb 走查进不去），故改用 **debug-only 探针 `AttachUploadProbeActivity`** 从
+  **进程内真实连接栈**发起真上传（仅内容源用内存字节，协议四步全程真实 RPC）。实测
+  1.2 MB（4 片）`附件已提交 ref=zcode-artifact://…` 2022 ms、2.5 MB（7 片）4189 ms，进度逐片递增并封顶，
+  `logcat` 无 FATAL；**线程契约**实测：Main scope 下 progress/onResult 全在主线程（与生产
+  `viewModelScope` 一致）。**未覆盖**：SAF 真开流（`FileChannel.position` O(1) 定位）需指纹解锁的
+  真人操作，待补真机；其编排语义由 JVM 单测覆盖。
+
 ## v0.5.0-beta49（2026-10-16）· 修复 beta48 的「图片兜底」死代码（CI 首次真跑仪器化用例即暴露）
 
 > **一句话**：beta48 的走查 #13「Markdown 图片兜底」**在真实渲染路径上从不生效**——

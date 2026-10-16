@@ -1,13 +1,15 @@
 package com.zcode.remote.relay
 
-import android.util.Base64
 import com.zcode.remote.R
 import com.zcode.remote.util.LogRedactor
 import com.zcode.remote.util.UiText
 import com.zcode.remote.util.UiText.Companion.res
 import com.zcode.remote.util.ZLog
+import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.buildJsonObject
@@ -1194,6 +1196,14 @@ class ConversationChannel(
 
     // ---------- 附件上传（P1-3，协议实证见 PROTOCOL.md §6.6）----------
 
+    init {
+        // 把生产日志（走 ZLog + 路径脱敏）注入上传流水线；JVM 单测里该字段保持默认 NOOP。
+        AttachmentUploadPipeline.logger =
+            UploadLogger { message, warn ->
+                if (warn) ZLog.w("AttachUpload", message) else ZLog.i("AttachUpload", message)
+            }
+    }
+
     /**
      * 上传句柄（A-1）：调用方（AppViewModel）在切会话 / 清空附件时据此终止在途上传，
      * 避免上传完成后把文件回写进另一个会话的附件条。`abort()` 幂等，未开始的上传返回空实现。
@@ -1215,9 +1225,19 @@ class ConversationChannel(
      * - checksum = `"sha256:" + sha256(bytes).hex`（小写）
      * - 全程不需要 connectionId（host 从 workspace/session 上下文解析；实机验证）
      *
-     * P2-3 流式改造：内容经 [openStream] 分片读取（可重入，SAF uri 可重复开流），
-     * 内存峰值 = 一倍分片 + 64KiB hash 缓冲，不再整文件读进内存。
-     * 流程 = 第一遍流式算 sha256 → begin → 单次开流顺序读满分片逐片上传。
+     * **走查 #2 重构（递归回调 → 顺序 suspend 流水线）**：编排整体移入
+     * [AttachmentUploadPipeline]（纯逻辑、依赖经 [UploadRpc]/[UploadSource] 注入，可 JVM 单测），
+     * 本函数只做「收口」：解析会话上下文、构造 [UploadSource]（按偏移开流）、把 RPC 适配成
+     * [UploadRpc]、在 [scope] 上跑协程并把取消暴露为 [UploadHandle.abort]。
+     *
+     * 与旧实现相比的行为等价点：文案、幂等短路（`state=="committed"` 直接复用 ref）、
+     * 进度口径（`chunkIndex * CHUNK_BYTES` 封顶 total）、失败即发 abort 后回 `Result.failure`。
+     * 改进点：续传按偏移直接定位（不再 `skip()` 前 N 片）；阻塞读下放
+     * [AttachmentUploadPipeline] 的 IO 调度器（旧实现整文件哈希与逐片读都在主线程）；
+     * 取消走结构化并发，`abort()` 时补发 `attachmentAbortV4`。
+     *
+     * A-1 线程不变量：`scope` 由调用方注入（AppViewModel 传 `viewModelScope`，Main.immediate），
+     * 故 [onProgress] 与 [onResult] 仍在主线程回调，UI 状态写入线程与旧实现一致。
      */
     fun uploadAttachment(
         /** C-1：调用方持有并复用的上传 id。重试必须复用同一 id（服务端按 uploadId 幂等，
@@ -1226,7 +1246,13 @@ class ConversationChannel(
         fileName: String,
         mime: String,
         totalBytes: Long,
-        openStream: () -> java.io.InputStream,
+        scope: CoroutineScope,
+        /**
+         * 按**绝对偏移**打开一个独立流（走查 #2 的 seekable 源）。调用方（SAF）应实现为
+         * `openFileDescriptor` + `FileChannel.position(offset)` 的 **O(1) 定位**；
+         * 顺序上传恒传 0，续传时直接定位而不重读前 N 片。
+         */
+        openAt: (offset: Long) -> java.io.InputStream,
         onProgress: ((uploaded: Long, total: Long) -> Unit)? = null,
         onResult: (Result<AttachmentRef>) -> Unit,
     ): UploadHandle {
@@ -1255,197 +1281,50 @@ class ConversationChannel(
         // C-1：uploadId 由调用方持有（重试复用，命中服务端 committed 幂等分支）
         base["uploadId"] = uploadId
 
-        // A-1：外部可终止标记。置位后一切在途回调（begin/chunk/commit 的应答）与后续分片
-        // 全部短路，且不再回写 onResult——否则切会话后旧上传仍会把结果投给新会话。
-        // 线程不变量：RpcChannel 的应答经 viewModelScope(Main.immediate) 分发、超时经 mainHandler，
-        // 故本标记与调用方 clearAttachments() 同在主线程，无需 @Volatile（若日后应答改到 IO 线程须加）。
+        // A-1：外部可终止标记。置位后不再回写 onResult——否则切会话后旧上传仍会把结果投给新会话。
+        // 取消由「协程取消」承载（pipeline 会在取消时补发 abort），本标记只负责屏蔽迟到回调。
         var aborted = false
-        val handle =
-            object : UploadHandle {
-                override fun abort() {
-                    if (aborted) return
-                    aborted = true
-                    val abortedId = base["uploadId"]
-                    rpc.call(RpcChannel.CHANNEL_AGENT, "attachmentAbortV4", listOf(HashMap(base))) {
-                        ZLog.i(TAG, "attachmentAbort sent uploadId=$abortedId")
-                    }
-                }
-            }
-
-        fun fail(message: String) {
-            if (aborted) return
-            ZLog.w(TAG, "uploadAttachment 失败：$message")
-            handle.abort()
-            onResult(Result.failure(IllegalStateException(message)))
-        }
-
-        // 第一遍：流式计算整文件 sha256（begin 的 args 需要 checksum 先行）
-        val digest =
-            runCatching {
-                val md = java.security.MessageDigest.getInstance("SHA-256")
-                openStream().use { input ->
-                    val buf = ByteArray(64 * 1024)
-                    while (true) {
-                        val n = input.read(buf)
-                        if (n <= 0) break
-                        md.update(buf, 0, n)
-                    }
-                }
-                md.digest().joinToString("") { "%02x".format(it) }
-            }.getOrElse {
-                if (!aborted) onResult(Result.failure(IllegalStateException("读取附件失败：${it.message}")))
-                return handle
-            }
-        if (aborted) return handle
-
-        // 注意：Kotlin 局部函数只能引用「已声明」的同层函数，故按依赖顺序声明。
-        fun commit() {
-            if (aborted) return
-            rpc.call(RpcChannel.CHANNEL_AGENT, "attachmentCommitV4", listOf(HashMap(base))) { reply ->
-                if (aborted) return@call
-                when (reply) {
-                    is RpcChannel.RpcReply.Err -> fail("提交附件失败：${reply.message}")
-                    is RpcChannel.RpcReply.Ok -> {
-                        val ref =
-                            reply.data
-                                .asObj()
-                                ?.get("ref")
-                                .asStr()
-                        if (ref.isNullOrBlank()) {
-                            fail("提交附件未返回 ref：${reply.data}")
-                        } else {
-                            ZLog.i(TAG, "附件已提交 ref=$ref file=$fileName bytes=$total")
-                            onResult(Result.success(AttachmentRef(ref, fileName, mime, total)))
-                        }
-                    }
-                }
-            }
-        }
-
-        fun uploadChunks(from: Int) {
-            // 单次开流顺序读满分片（续传 from>0 时 skip 前部，仅重试场景出现）
-            var index = from
-            var input: java.io.InputStream? = null
-            val buf = ByteArray(CHUNK_BYTES)
-
-            fun closeQuietly() {
-                runCatching { input?.close() }
-            }
-
-            fun next() {
-                // A-1：被外部终止后不再继续读流/发分片
-                if (aborted) {
-                    closeQuietly()
-                    return
-                }
-                if (index >= totalChunks) {
-                    closeQuietly()
-                    commit()
-                    return
-                }
-                if (input == null) {
-                    input =
-                        try {
-                            openStream().also { s ->
-                                var toSkip = index.toLong() * CHUNK_BYTES
-                                while (toSkip > 0) {
-                                    val n = s.skip(toSkip)
-                                    if (n <= 0) break
-                                    toSkip -= n
-                                }
-                            }
-                        } catch (e: Exception) {
-                            fail("读取附件失败：${e.message}")
-                            return
-                        }
-                }
-                var filled = 0
-                // input 是回调闭包内的可变局部变量、无法智能转换；取其不可变快照，
-                // 避免 abort 重入时 input 被置空导致的 NPE。
-                val stream = input
-                if (stream == null) {
-                    closeQuietly()
-                    fail("附件读取流不可用")
-                    return
-                }
-                while (filled < CHUNK_BYTES) {
-                    val n =
-                        try {
-                            stream.read(buf, filled, CHUNK_BYTES - filled)
-                        } catch (e: Exception) {
-                            closeQuietly()
-                            fail("读取附件分片失败：${e.message}")
-                            return
-                        }
-                    if (n <= 0) break
-                    filled += n
-                }
-                if (filled == 0) {
-                    closeQuietly()
-                    fail("附件内容比声明大小短")
-                    return
-                }
-                val args = HashMap(base)
-                args["chunkIndex"] = index
-                args["dataBase64"] = Base64.encodeToString(buf.copyOf(filled), Base64.NO_WRAP)
-                val sent = index
-                rpc.call(RpcChannel.CHANNEL_AGENT, "attachmentChunkV4", listOf(args)) { reply ->
-                    if (aborted) return@call
-                    when (reply) {
-                        is RpcChannel.RpcReply.Err -> fail("分片 $sent 上传失败：${reply.message}")
-                        is RpcChannel.RpcReply.Ok -> {
-                            val ack =
-                                reply.data
-                                    .asObj()
-                                    ?.get("nextChunkIndex")
-                                    .asInt()
-                            if (ack != sent + 1) {
-                                fail("服务端分片进度异常（期望 ${sent + 1}，收到 $ack）")
-                                return@call
-                            }
-                            index = sent + 1
-                            onProgress?.invoke(minOf(index.toLong() * CHUNK_BYTES, total), total)
-                            next()
-                        }
-                    }
-                }
-            }
-            next()
-        }
-
-        val beginArgs = HashMap(base)
-        beginArgs["fileName"] = fileName
-        beginArgs["mime"] = mime
-        beginArgs["totalBytes"] = totalBytes
-        beginArgs["totalChunks"] = totalChunks
-        beginArgs["checksum"] = "sha256:" + digest
-        ZLog.i(TAG, "attachmentBegin file=${LogRedactor.pathLabel(fileName)} mime=$mime bytes=$total chunks=$totalChunks")
-        rpc.call(RpcChannel.CHANNEL_AGENT, "attachmentBeginV4", listOf(beginArgs)) { reply ->
-            if (aborted) return@call
-            when (reply) {
-                is RpcChannel.RpcReply.Err ->
-                    onResult(
-                        Result.failure(IllegalStateException("附件上传初始化失败：${reply.message}")),
+        val job =
+            scope.launch {
+                val result =
+                    AttachmentUploadPipeline.run(
+                        source = { offset -> openAt(offset) },
+                        rpc = { method, args -> rpcAwait(method, args) },
+                        base = base,
+                        fileName = fileName,
+                        mime = mime,
+                        totalBytes = total,
+                        totalChunks = totalChunks,
+                        chunkBytes = CHUNK_BYTES,
+                        onProgress = { up, all -> if (!aborted) onProgress?.invoke(up, all) },
                     )
-                is RpcChannel.RpcReply.Ok -> {
-                    val o = reply.data.asObj()
-                    val ref = o?.get("ref").asStr()
-                    // 幂等：服务端可能对该 uploadId 已有 committed 内容（重试场景）
-                    if (o?.get("state").asStr() == "committed" && !ref.isNullOrBlank()) {
-                        onResult(Result.success(AttachmentRef(ref, fileName, mime, total)))
-                        return@call
-                    }
-                    val next = o?.get("nextChunkIndex").asInt() ?: 0
-                    if (next > totalChunks) {
-                        fail("服务端返回了非法进度 $next")
-                        return@call
-                    }
-                    uploadChunks(next)
-                }
+                if (!aborted) onResult(result)
+            }
+        return object : UploadHandle {
+            override fun abort() {
+                if (aborted) return
+                aborted = true
+                job.cancel()
             }
         }
-        return handle
     }
+
+    /**
+     * 挂起等待一次 RPC 应答（把回调式 [rpc] 桥成 suspend）。
+     *
+     * 注：沿用 [rpc] 既有超时（[SEND_ACK_TIMEOUT_MS]）——桥半死时以错误收场，不永久挂起。
+     */
+    private suspend fun rpcAwait(
+        method: String,
+        args: Map<String, Any>,
+    ): RpcChannel.RpcReply =
+        suspendCancellableCoroutine { cont ->
+            val id =
+                rpc.call(RpcChannel.CHANNEL_AGENT, method, listOf(HashMap(args)), SEND_ACK_TIMEOUT_MS) { reply ->
+                    if (cont.isActive) cont.resume(reply) { _ -> }
+                }
+            if (id == null && cont.isActive) cont.resume(RpcChannel.RpcReply.Err("bridge not ready", null)) { _ -> }
+        }
 
     /**
      * 停止当前运行（官方 web 版同款命令，host asar 实证）：
@@ -1495,8 +1374,6 @@ class ConversationChannel(
     private fun JsonElement?.asObj(): JsonObject? = this?.let { runCatching { it.jsonObject }.getOrNull() }
 
     private fun JsonElement?.asStr(): String? = this?.let { runCatching { it.jsonPrimitive.content }.getOrNull() }
-
-    private fun JsonElement?.asInt(): Int? = this?.let { runCatching { it.jsonPrimitive.content.toIntOrNull() }.getOrNull() }
 
     private fun JsonElement?.asArray(): List<JsonElement>? = this?.let { runCatching { it.jsonArray }.getOrNull() }
 

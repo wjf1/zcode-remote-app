@@ -101,8 +101,11 @@ android {
         //                           仪器化用例时暴露）：库只在顶层分发组件，`components.image`
         //                           对段落内图片永不触发 → 改挂段落/引用块级；顺带修「URL 误取
         //                           整篇文档」与 180dp 空白占位
-        versionCode = 61
-        versionName = "0.5.0-beta49"
+        // versionCode 62：beta50 —— 附件上传流水线重构（走查 5.1 清单最后一项 #2）：
+        //                           递归回调 → 顺序 suspend 流水线 + 可定位内容源（O(1) 续传）
+        //                           + 阻塞读下放 IO 线程 + 上传编排首次进入 JVM 单测
+        versionCode = 62
+        versionName = "0.5.0-beta50"
         // 仪器化渲染回归网（src/androidTest）用 androidx.test 默认 runner。
         // 只在模拟器/真机上跑；CI runner 无设备，故 ci.yml 不接（见 HANDOVER §6.1 回归网）。
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"

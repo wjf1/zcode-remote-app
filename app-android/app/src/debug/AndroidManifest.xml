@@ -44,5 +44,15 @@
             android:name=".debug.MarkdownProbeActivity"
             android:exported="true"
             android:label="MarkdownProbe" />
+
+        <!--
+          附件上传端到端探针（仅 debug）：从进程内真实连接栈发起一次真上传。
+          存在理由见 HANDOVER §7——MIUI 的 SAF 选择器要求指纹解锁，adb 走查进不去，
+          故用探针覆盖「协议四步真的跑通」这一层（内容源用内存，不经 SAF）。
+        -->
+        <activity
+            android:name=".debug.AttachUploadProbeActivity"
+            android:exported="true"
+            android:label="AttachProbe" />
     </application>
 </manifest>

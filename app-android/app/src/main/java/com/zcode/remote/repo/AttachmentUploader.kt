@@ -104,8 +104,9 @@ class AttachmentUploader(
     /**
      * 上传一个附件。走 conversation 通道的四步流程（begin/chunk/commit），
      * 成功后加入 [attachments]，UI 显示 chip，发送时随 sendPrompt 带走。
-     * P2-3 流式改造：只持 uri，内容经 openStream 分片读（内存峰值一倍分片），
-     * 不再整文件读进内存；选中后文件被移动/删除会在上传时报错提示。
+     * **走查 #2**：内容经**按偏移开流**分片读（内存峰值一倍分片 + 64KiB 哈希缓冲），
+     * 续传时 `FileChannel.position()` 直接定位（不再重读/跳过前 N 片）；选中后文件被移动/删除
+     * 会在上传时报错提示。编排见 `AttachmentUploadPipeline`（顺序 suspend，可 JVM 单测）。
      *
      * A-1：上传发起时把「发起会话」捕获进闭包，所有回调先校验会话归属——否则在途上传
      * 完成后会把文件塞进用户已经切过去的另一个会话的附件条（数据正确性 + 隐私风险）。
@@ -160,10 +161,11 @@ class AttachmentUploader(
                 fileName,
                 mime,
                 size,
-                openStream = {
-                    context.contentResolver.openInputStream(uri)
-                        ?: throw IllegalStateException(context.getString(R.string.error_open_file_failed))
-                },
+                scope = scope,
+                // 走查 #2：按绝对偏移开流。SAF 走 ParcelFileDescriptor + FileChannel.position
+                // 做 **O(1) 定位**（续传不再重读/跳过前 N 片）；拿不到 fd 时才回退
+                // openInputStream + skip（旧行为，仍正确但退化为 O(offset)）。
+                openAt = { offset -> openAttachmentStream(context, uri, offset) },
                 onProgress = { up, total ->
                     // 切走会话后旧上传的进度不得再点亮新会话的进度条
                     if (uploadBelongsTo(originSession, subscribedSessionId())) {
@@ -210,6 +212,57 @@ class AttachmentUploader(
 
     companion object {
         private const val TAG = "AttachmentUploader"
+
+        /**
+         * 按绝对偏移打开附件流（走查 #2 的 seekable 源）。
+         *
+         * 首选 `openFileDescriptor` + `FileChannel.position(offset)`：**O(1) 定位**，
+         * 续传时不再重读/跳过前 N 片（旧实现每次 `openStream()` + `skip()` 是 O(offset) IO，
+         * 对 20MiB 附件续传代价显著）。
+         *
+         * 回退路径：部分 provider 不提供可 seek 的 fd（`openFileDescriptor` 返回 null 或
+         * `FileChannel.position` 抛异常），此时退回 `openInputStream` + `skip`——语义仍正确
+         * （只是定位退化为 O(offset)），保证「拿不到 fd 也能传完」。
+         */
+        internal fun openAttachmentStream(
+            context: Context,
+            uri: android.net.Uri,
+            offset: Long,
+        ): java.io.InputStream {
+            if (offset > 0L) {
+                val seekable = seekableStream(context, uri, offset)
+                if (seekable != null) return seekable
+            }
+            val input =
+                context.contentResolver.openInputStream(uri)
+                    ?: throw IllegalStateException(context.getString(R.string.error_open_file_failed))
+            var remaining = offset
+            while (remaining > 0) {
+                val n = input.skip(remaining)
+                if (n <= 0) break
+                remaining -= n
+            }
+            return input
+        }
+
+        /**
+         * 尝试以 O(1) 定位打开；不可 seek 时返回 null（由调用方回退到 openInputStream + skip）。
+         *
+         * 用 [android.os.ParcelFileDescriptor.AutoCloseInputStream]：它既是 `FileInputStream`
+         * （暴露 `channel` 可 `position()`），又负责在 `close()` 时关闭 PFD——不会泄漏描述符。
+         * 对管道等不可 seek 的 fd，`channel.position()` 会抛异常 → 由 runCatching 收敛为 null。
+         */
+        private fun seekableStream(
+            context: Context,
+            uri: android.net.Uri,
+            offset: Long,
+        ): java.io.InputStream? =
+            runCatching {
+                val pfd = context.contentResolver.openFileDescriptor(uri, "r") ?: return null
+                android.os.ParcelFileDescriptor
+                    .AutoCloseInputStream(pfd)
+                    .also { it.channel.position(offset) }
+            }.getOrNull()
 
         /**
          * 上传回调的会话归属判定（A-1）。仅当发起上传时的会话仍是当前打开的会话时才允许
