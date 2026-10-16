@@ -37,9 +37,11 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.zcode.remote.R
 import com.zcode.remote.ui.voice.VoiceInputButton
 import kotlinx.coroutines.delay
 
@@ -58,11 +60,11 @@ internal fun ActionChipsBar(
 ) {
     val chips =
         listOf(
-            "继续",
-            "运行测试验证",
-            "修复该问题",
-            "检查 Git 状态",
-            "整理并提交",
+            stringResource(R.string.composer_chip_continue),
+            stringResource(R.string.composer_chip_run_tests),
+            stringResource(R.string.composer_chip_fix_issue),
+            stringResource(R.string.composer_chip_check_git),
+            stringResource(R.string.composer_chip_commit),
         )
     Row(
         modifier =
@@ -118,7 +120,7 @@ internal fun InputBar(
     var voiceLive by remember { mutableStateOf<String?>(null) }
 
     Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-        val voiceLine = if (voiceListening) "🎤 正在聆听: ${voiceLive ?: "…"}" else voiceLive
+        val voiceLine = if (voiceListening) stringResource(R.string.composer_voice_listening, voiceLive ?: "…") else voiceLive
         voiceLine?.let { line ->
             LaunchedEffect(line) {
                 if (line.startsWith("⚠️")) {
@@ -154,7 +156,7 @@ internal fun InputBar(
                 ) {
                     Icon(
                         imageVector = Icons.Default.Add,
-                        contentDescription = "添加附件",
+                        contentDescription = stringResource(R.string.composer_add_attachment),
                         tint = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                 }
@@ -177,7 +179,7 @@ internal fun InputBar(
                     value = prompt,
                     onValueChange = onPromptChange,
                     modifier = Modifier.weight(1f),
-                    placeholder = { Text("发送指令到 PC 端 Agent…", style = MaterialTheme.typography.bodySmall) },
+                    placeholder = { Text(stringResource(R.string.composer_placeholder), style = MaterialTheme.typography.bodySmall) },
                     maxLines = 4,
                     shape = RoundedCornerShape(16.dp),
                     colors =
@@ -207,7 +209,7 @@ internal fun InputBar(
                                 color = MaterialTheme.colorScheme.onPrimary,
                             )
                         } else {
-                            Icon(Icons.AutoMirrored.Filled.Send, contentDescription = "发送", modifier = Modifier.size(18.dp))
+                            Icon(Icons.AutoMirrored.Filled.Send, contentDescription = stringResource(R.string.composer_send), modifier = Modifier.size(18.dp))
                         }
                     }
                 } else if (canStop) {
@@ -220,7 +222,7 @@ internal fun InputBar(
                                 containerColor = MaterialTheme.colorScheme.error,
                             ),
                     ) {
-                        Icon(Icons.Default.Close, contentDescription = "中断", modifier = Modifier.size(18.dp))
+                        Icon(Icons.Default.Close, contentDescription = stringResource(R.string.composer_stop), modifier = Modifier.size(18.dp))
                     }
                 } else {
                     IconButton(
@@ -230,7 +232,7 @@ internal fun InputBar(
                     ) {
                         Icon(
                             imageVector = Icons.AutoMirrored.Filled.Send,
-                            contentDescription = "发送",
+                            contentDescription = stringResource(R.string.composer_send),
                             tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.35f),
                             modifier = Modifier.size(18.dp),
                         )

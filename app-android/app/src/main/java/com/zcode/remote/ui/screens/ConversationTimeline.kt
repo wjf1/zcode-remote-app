@@ -159,12 +159,12 @@ private fun UserBubble(row: ConversationRow) {
                     Icon(
                         // C-3：与输入栏附件 chip 同一图标（material-icons-extended 的 AttachFile）
                         imageVector = Icons.Default.AttachFile,
-                        contentDescription = "附件",
+                        contentDescription = stringResource(R.string.timeline_attachment),
                         tint = MaterialTheme.colorScheme.primary,
                         modifier = Modifier.size(14.dp),
                     )
                     Text(
-                        text = a.fileName ?: "附件",
+                        text = a.fileName ?: stringResource(R.string.timeline_attachment),
                         style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.Medium),
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis,
@@ -229,7 +229,7 @@ internal fun PendingUserBubble(p: ConversationRepository.PendingUserMessage) {
                 modifier = Modifier.padding(bottom = 4.dp),
             ) {
                 Text(
-                    text = "附件 · $name",
+                    text = stringResource(R.string.timeline_attachment_named, name),
                     style = MaterialTheme.typography.labelSmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     maxLines = 1,
@@ -262,7 +262,7 @@ internal fun PendingUserBubble(p: ConversationRepository.PendingUserMessage) {
                 )
                 Spacer(Modifier.height(2.dp))
                 Text(
-                    text = "发送中…",
+                    text = stringResource(R.string.timeline_sending),
                     style = MaterialTheme.typography.labelSmall.copy(fontSize = ZCodeType.Sm),
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
@@ -302,7 +302,7 @@ private fun AssistantText(row: ConversationRow) {
                 )
                 Spacer(Modifier.width(6.dp))
                 ShimmerText(
-                    text = "正在生成…",
+                    text = stringResource(R.string.timeline_generating),
                     style = MaterialTheme.typography.labelSmall.copy(fontSize = ZCodeType.Sm),
                 )
             }
@@ -344,7 +344,7 @@ private fun ReasoningBlock(
         },
         label = {
             Text(
-                text = if (worked.isEmpty()) "思考" else "思考 · 持续了 $worked",
+                text = if (worked.isEmpty()) stringResource(R.string.timeline_thinking) else stringResource(R.string.timeline_thinking_duration, worked),
                 style =
                     MaterialTheme.typography.labelSmall.copy(
                         fontSize = ZCodeType.Sm,
@@ -358,7 +358,7 @@ private fun ReasoningBlock(
         primary = {
             if (row.isStreaming) {
                 ShimmerText(
-                    text = "正在思考",
+                    text = stringResource(R.string.timeline_thinking_now),
                     modifier = Modifier.weight(1f),
                     style = MaterialTheme.typography.labelSmall.copy(fontSize = ZCodeType.Sm),
                     baseColor = tone.copy(alpha = 0.6f),
@@ -389,15 +389,15 @@ private fun ReasoningBlock(
                 onClick = {
                     val cm = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
                     cm.setPrimaryClip(ClipData.newPlainText("reasoning", content))
-                    Toast.makeText(context, "思考过程已复制", Toast.LENGTH_SHORT).show()
+                    Toast.makeText(context, context.getString(R.string.timeline_reasoning_copied), Toast.LENGTH_SHORT).show()
                 },
                 contentPadding = PaddingValues(horizontal = 4.dp, vertical = 0.dp),
                 modifier = Modifier.height(24.dp),
             ) {
-                Text("复制", style = MaterialTheme.typography.labelSmall.copy(fontSize = ZCodeType.Sm))
+                Text(stringResource(R.string.common_copy), style = MaterialTheme.typography.labelSmall.copy(fontSize = ZCodeType.Sm))
             }
             Text(
-                text = "${content.length} 字符",
+                text = stringResource(R.string.timeline_char_count, content.length),
                 style = MaterialTheme.typography.labelSmall.copy(fontSize = ZCodeType.Sm),
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
@@ -604,7 +604,7 @@ private fun TurnHeaderRow(row: ConversationRow) {
             ?: if (row.startedAt != null && row.endedAt != null) row.endedAt - row.startedAt else null
     val meta =
         listOfNotNull(
-            "轮次",
+            stringResource(R.string.timeline_turn_label),
             row.origin?.trim()?.takeIf { it.isNotEmpty() },
             row.state?.let { phaseLabel(it).asString() },
         ).joinToString(" · ")
@@ -727,7 +727,7 @@ private fun HookInvocationRow(
     expanded: Boolean,
     onToggleExpand: () -> Unit,
 ) {
-    val hook = row.toolName?.trim().takeIf { !it.isNullOrEmpty() } ?: "钩子"
+    val hook = row.toolName?.trim().takeIf { !it.isNullOrEmpty() } ?: stringResource(R.string.timeline_hook)
     val detail =
         row.outputText
             ?.trim()
@@ -825,9 +825,9 @@ internal fun ConversationTimelineArea(
                 Text(
                     text =
                         when {
-                            earlier.loading -> "加载更早历史…"
-                            earlier.pulled && !earlier.hasMore -> "已到会话开头"
-                            else -> "上滑加载更早历史"
+                            earlier.loading -> stringResource(R.string.timeline_loading_earlier)
+                            earlier.pulled && !earlier.hasMore -> stringResource(R.string.timeline_at_start)
+                            else -> stringResource(R.string.timeline_swipe_for_earlier)
                         },
                     style = MaterialTheme.typography.labelSmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
@@ -878,13 +878,13 @@ internal fun ConversationTimelineArea(
                 ) {
                     Icon(
                         imageVector = Icons.Default.KeyboardArrowDown,
-                        contentDescription = "回到底部",
+                        contentDescription = stringResource(R.string.timeline_back_to_bottom),
                         tint = MaterialTheme.colorScheme.onPrimaryContainer,
                         modifier = Modifier.size(16.dp),
                     )
                     Spacer(Modifier.width(4.dp))
                     Text(
-                        text = "回到底部",
+                        text = stringResource(R.string.timeline_back_to_bottom),
                         style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.SemiBold),
                         color = MaterialTheme.colorScheme.onPrimaryContainer,
                     )

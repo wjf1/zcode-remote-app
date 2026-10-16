@@ -27,11 +27,13 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalHapticFeedback
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.zcode.remote.R
 import com.zcode.remote.relay.ApprovalOption
 import com.zcode.remote.relay.PendingApproval
 import com.zcode.remote.relay.PendingElicitation
@@ -68,9 +70,9 @@ internal fun ElicitationCard(
             Text(
                 text =
                     when {
-                        el.isPlanApproval -> "实施方案待批准"
-                        el.questions.isNotEmpty() -> "提问 · 需要你的回答"
-                        else -> "确认请求"
+                        el.isPlanApproval -> stringResource(R.string.pending_plan_approval)
+                        el.questions.isNotEmpty() -> stringResource(R.string.pending_questions)
+                        else -> stringResource(R.string.pending_confirm_request)
                     },
                 style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.Bold),
                 color = MaterialTheme.colorScheme.tertiary,
@@ -93,8 +95,8 @@ internal fun ElicitationCard(
 
             if (el.isPlanApproval) {
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Button(onClick = { onAccept(emptyMap()) }) { Text("批准方案") }
-                    OutlinedButton(onClick = onDecline) { Text("拒绝") }
+                    Button(onClick = { onAccept(emptyMap()) }) { Text(stringResource(R.string.pending_approve_plan)) }
+                    OutlinedButton(onClick = onDecline) { Text(stringResource(R.string.pending_deny)) }
                 }
                 return@Column
             }
@@ -132,7 +134,7 @@ internal fun ElicitationCard(
                 OutlinedTextField(
                     value = freeTextDraft,
                     onValueChange = { freeTextDraft = it },
-                    placeholder = { Text("输入自定义回答…", style = MaterialTheme.typography.bodySmall) },
+                    placeholder = { Text(stringResource(R.string.pending_custom_answer_hint), style = MaterialTheme.typography.bodySmall) },
                     modifier = Modifier.fillMaxWidth(),
                     shape = RoundedCornerShape(8.dp),
                     maxLines = 3,
@@ -150,8 +152,8 @@ internal fun ElicitationCard(
                         onAccept(answers.filter { it.value.isNotEmpty() })
                     },
                     enabled = selected.isNotEmpty() || freeTextDraft.isNotBlank(),
-                ) { Text("提交回答") }
-                OutlinedButton(onClick = onDecline) { Text("拒绝") }
+                ) { Text(stringResource(R.string.pending_submit_answer)) }
+                OutlinedButton(onClick = onDecline) { Text(stringResource(R.string.pending_deny)) }
             }
         }
     }
@@ -178,7 +180,7 @@ internal fun ApprovalCard(
         Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text(
-                    text = "权限审批 · ${a.toolName ?: "Command"}",
+                    text = stringResource(R.string.pending_permission_tool, a.toolName ?: stringResource(R.string.pending_permission_default_tool)),
                     style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.Bold),
                     color = statusPendingTone(),
                 )
@@ -220,10 +222,10 @@ internal fun ApprovalCard(
                     ) {
                         Text(
                             when {
-                                opt.kind == "allowOnce" -> "允许一次"
-                                opt.kind == "allowAlways" -> "总是允许"
-                                opt.isDeny -> "拒绝"
-                                else -> opt.label.ifBlank { "选项" }
+                                opt.kind == "allowOnce" -> stringResource(R.string.pending_allow_once)
+                                opt.kind == "allowAlways" -> stringResource(R.string.pending_allow_always)
+                                opt.isDeny -> stringResource(R.string.pending_deny)
+                                else -> opt.label.ifBlank { stringResource(R.string.pending_option_default) }
                             },
                             style = MaterialTheme.typography.labelSmall,
                         )
