@@ -4,12 +4,15 @@ import android.content.Context
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
+import com.zcode.remote.R
 import com.zcode.remote.notify.ApprovalNotifier
 import com.zcode.remote.notify.ElicitationNotifier
 import com.zcode.remote.relay.ConversationChannel
 import com.zcode.remote.relay.PendingApproval
 import com.zcode.remote.relay.PendingElicitation
 import com.zcode.remote.relay.UserFacingError
+import com.zcode.remote.util.UiText
+import com.zcode.remote.util.UiText.Companion.res
 import com.zcode.remote.util.ZLog
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.launch
@@ -33,7 +36,7 @@ class ApprovalRepository(
     private val conversation: () -> ConversationChannel?,
     private val activeWorkspaceKey: () -> String?,
     private val firstSessionWorkspace: () -> String?,
-    private val flash: (String, Boolean) -> Unit,
+    private val flash: (UiText, Boolean) -> Unit,
     private val onPendingChanged: () -> Unit,
 ) {
     /** 当前会话的待审批项（会话流 pendingInteractions + 任务事件流两条来源合并）。 */
@@ -129,7 +132,7 @@ class ApprovalRepository(
         val a = approvals.firstOrNull { it.interactionId == interactionId }
         val opt = a?.options?.firstOrNull { it.optionId == optionId }
         if (a == null || opt == null) {
-            flash("这条审批已经不在待处理列表里了（可能桌面端已处理）", false)
+            flash(res(R.string.flash_approval_gone), false)
             return
         }
         resolve(a, opt)
@@ -142,7 +145,7 @@ class ApprovalRepository(
     ) {
         val conv =
             conversation() ?: run {
-                flash("连接已断开，未发出", true)
+                flash(res(R.string.flash_disconnected_not_sent), true)
                 return
             }
         val ws = activeWorkspaceKey() ?: firstSessionWorkspace()
@@ -160,15 +163,16 @@ class ApprovalRepository(
                     when (r) {
                         is ConversationChannel.ResolveResult.Accepted ->
                             when (r.status) {
-                                "accepted" -> (if (option.isAllow) "已批准" else "已拒绝") to false
-                                "duplicate" -> "已收到（重复提交，服务端只认第一次）" to false
-                                else -> "服务端已消解（可能桌面端先处理了）" to false
+                                "accepted" ->
+                                    (if (option.isAllow) res(R.string.flash_approval_allowed) else res(R.string.flash_approval_denied)) to false
+                                "duplicate" -> res(R.string.flash_approval_duplicate) to false
+                                else -> res(R.string.flash_approval_resolved_elsewhere) to false
                             }
                         is ConversationChannel.ResolveResult.Failed -> {
                             // 失败回滚：放回审批列表中
                             taskApprovals[interId] = approval
                             refreshApprovals()
-                            "发送失败：${UserFacingError.map(r.message)}" to true
+                            res(R.string.flash_send_failed, UserFacingError.map(r.message)) to true
                         }
                     }
                 flash(feedback, failure)
@@ -188,7 +192,7 @@ class ApprovalRepository(
     ) {
         val conv =
             conversation() ?: run {
-                flash("连接已断开，未发送", true)
+                flash(res(R.string.flash_disconnected_cannot_send), true)
                 return
             }
         val ws = activeWorkspaceKey() ?: firstSessionWorkspace()
@@ -223,7 +227,7 @@ class ApprovalRepository(
                 put("content", content)
             }
         conv.resolveElicitation(el, answer, fallbackWorkspacePath = ws) { r ->
-            handleElicitationResult(r, "已提交回答", el)
+            handleElicitationResult(r, res(R.string.flash_elicitation_answered), el)
         }
     }
 
@@ -231,7 +235,7 @@ class ApprovalRepository(
     fun declineElicitation(el: PendingElicitation) {
         val conv =
             conversation() ?: run {
-                flash("连接已断开，未发送", true)
+                flash(res(R.string.flash_disconnected_cannot_send), true)
                 return
             }
         val ws = activeWorkspaceKey() ?: firstSessionWorkspace()
@@ -242,7 +246,7 @@ class ApprovalRepository(
         onPendingChanged()
 
         conv.resolveElicitation(el, buildJsonObject { put("action", "decline") }, fallbackWorkspacePath = ws) { r ->
-            handleElicitationResult(r, "已拒绝", el)
+            handleElicitationResult(r, res(R.string.flash_elicitation_declined), el)
         }
     }
 
@@ -250,7 +254,7 @@ class ApprovalRepository(
     fun approveElicitationPlan(el: PendingElicitation) {
         val conv =
             conversation() ?: run {
-                flash("连接已断开，未发送", true)
+                flash(res(R.string.flash_disconnected_cannot_send), true)
                 return
             }
         val ws = activeWorkspaceKey() ?: firstSessionWorkspace()
@@ -261,7 +265,7 @@ class ApprovalRepository(
         onPendingChanged()
 
         conv.resolveElicitation(el, buildJsonObject { put("action", "accept") }, fallbackWorkspacePath = ws) { r ->
-            handleElicitationResult(r, "已批准计划", el)
+            handleElicitationResult(r, res(R.string.flash_plan_approved), el)
         }
     }
 
@@ -272,7 +276,7 @@ class ApprovalRepository(
     ) {
         val conv =
             conversation() ?: run {
-                flash("连接已断开，未发送", true)
+                flash(res(R.string.flash_disconnected_cannot_send), true)
                 return
             }
         val ws = activeWorkspaceKey() ?: firstSessionWorkspace()
@@ -292,13 +296,13 @@ class ApprovalRepository(
             },
             fallbackWorkspacePath = ws,
         ) { r ->
-            handleElicitationResult(r, "已提交", el)
+            handleElicitationResult(r, res(R.string.flash_elicitation_submitted), el)
         }
     }
 
     private fun handleElicitationResult(
         r: ConversationChannel.ResolveResult,
-        okText: String,
+        okText: UiText,
         el: PendingElicitation,
     ) {
         scope.launch {
@@ -307,7 +311,7 @@ class ApprovalRepository(
                 is ConversationChannel.ResolveResult.Failed -> {
                     taskElicitations[el.interactionId] = el
                     refreshElicitations()
-                    flash("应答失败：${UserFacingError.map(r.message)}", true)
+                    flash(res(R.string.flash_reply_failed, UserFacingError.map(r.message)), true)
                 }
             }
         }
@@ -329,19 +333,19 @@ class ApprovalRepository(
                     .parseToJsonElement(answerJson)
                     .jsonObject
             }.getOrNull() ?: return false
-        conv.resolveElicitation(el, answer) { r -> flashResolve(r, "已提交") }
+        conv.resolveElicitation(el, answer) { r -> flashResolve(r, res(R.string.flash_elicitation_submitted)) }
         return true
     }
 
     private fun flashResolve(
         r: ConversationChannel.ResolveResult,
-        okText: String,
+        okText: UiText,
     ) {
         scope.launch {
             when (r) {
                 is ConversationChannel.ResolveResult.Accepted -> flash(okText, false)
                 is ConversationChannel.ResolveResult.Failed ->
-                    flash("应答失败：${UserFacingError.map(r.message)}", true)
+                    flash(res(R.string.flash_reply_failed, UserFacingError.map(r.message)), true)
             }
         }
     }

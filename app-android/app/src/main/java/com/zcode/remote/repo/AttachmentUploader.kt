@@ -5,8 +5,11 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
+import com.zcode.remote.R
 import com.zcode.remote.relay.ConversationChannel
 import com.zcode.remote.relay.UserFacingError
+import com.zcode.remote.util.UiText
+import com.zcode.remote.util.UiText.Companion.res
 import com.zcode.remote.util.ZLog
 import kotlinx.coroutines.launch
 
@@ -22,7 +25,7 @@ class AttachmentUploader(
     private val context: Context,
     private val conversation: () -> ConversationChannel?,
     private val subscribedSessionId: () -> String?,
-    private val flash: (String, Boolean) -> Unit,
+    private val flash: (UiText, Boolean) -> Unit,
 ) {
     /** 已上传完成、随下一条消息发出去的附件。 */
     val attachments = mutableStateListOf<ConversationChannel.AttachmentRef>()
@@ -138,15 +141,15 @@ class AttachmentUploader(
     ) {
         val conv =
             conversation() ?: run {
-                flash("连接已断开，无法上传", true)
+                flash(res(R.string.flash_disconnected_cannot_upload), true)
                 return
             }
         if (attachUpload != null) {
-            flash("还有附件在上传中", false)
+            flash(res(R.string.flash_attachment_in_progress), false)
             return
         }
         if (size > ConversationChannel.MAX_ATTACHMENT_BYTES) {
-            flash("附件超过 20MiB 上限", false)
+            flash(res(R.string.flash_attachment_limit), false)
             return
         }
         val originSession = subscribedSessionId()
@@ -179,13 +182,13 @@ class AttachmentUploader(
                             attachments.add(it)
                             attachFailed = null
                             signalAttachmentFeedback(ok = true)
-                            flash("已添加附件 ${it.fileName}", false)
+                            flash(res(R.string.flash_attachment_added, it.fileName), false)
                         },
                         onFailure = {
                             signalAttachmentFeedback(ok = false)
                             // C-1：记录失败态供「重试/取消」；重试复用同一 uploadId
                             attachFailed = FailedUpload(uri, fileName, mime, size, uploadId, it.message ?: "上传失败")
-                            flash("附件上传失败：${UserFacingError.map(it.message)}", true)
+                            flash(res(R.string.flash_upload_failed, UserFacingError.map(it.message)), true)
                         },
                     )
                 }

@@ -26,12 +26,15 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.zcode.remote.AppViewModel
+import com.zcode.remote.R
+import com.zcode.remote.util.asString
 
 /**
  * 会话页弹层（§11.7 结构性拆分：自 `ConversationScreen.kt` 原样搬出，只移动不改行为）。
@@ -166,7 +169,7 @@ internal fun SessionFilesPanel(
 
                     is AppViewModel.FilePreview.Failed ->
                         Text(
-                            "读取失败：${p.message}\n\n$p.path",
+                            text = stringResource(R.string.file_preview_failed, p.message.asString(), p.path),
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.error,
                             modifier = Modifier.padding(vertical = 16.dp),

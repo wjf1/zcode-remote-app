@@ -8,6 +8,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
+import com.zcode.remote.R
 import com.zcode.remote.notify.ApprovalBridge
 import com.zcode.remote.notify.ApprovalNotifier
 import com.zcode.remote.notify.ElicitationBridge
@@ -44,6 +45,8 @@ import com.zcode.remote.storage.PairedDevice
 import com.zcode.remote.storage.SessionCacheStore
 import com.zcode.remote.storage.SettingsStore
 import com.zcode.remote.util.LogRedactor
+import com.zcode.remote.util.UiText
+import com.zcode.remote.util.UiText.Companion.res
 import com.zcode.remote.util.ZLog
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.launch
@@ -364,7 +367,7 @@ class AppViewModel(
 
         data class Failed(
             val path: String,
-            val message: String,
+            val message: UiText,
         ) : FilePreview
     }
 
@@ -531,7 +534,7 @@ class AppViewModel(
      * 且审批 Tab 从不消费 approvalFeedback（`consumeApprovalFeedback` 只在会话页被调），
      * 表现为审批 Tab 文案永久滞留——合并为单队列后该缺陷消失。
      */
-    var commandFeedback by mutableStateOf<String?>(null)
+    var commandFeedback by mutableStateOf<UiText?>(null)
         private set
 
     /** 当前反馈是否为失败语义（UI 据此决定横幅配色；与 [flashDurationMs] 的时长档位同源）。 */
@@ -547,7 +550,7 @@ class AppViewModel(
     enum class FlashKind { Info, Failure }
 
     private fun flash(
-        msg: String,
+        msg: UiText,
         kind: FlashKind = FlashKind.Info,
     ) {
         commandFeedback = msg
@@ -573,7 +576,7 @@ class AppViewModel(
         if ((content.isEmpty() && atts.isEmpty()) || sending) return
         val conv =
             conversation ?: run {
-                flash("连接已断开，未发送", FlashKind.Failure)
+                flash(res(R.string.flash_disconnected_cannot_send), FlashKind.Failure)
                 return
             }
         sending = true
@@ -591,7 +594,7 @@ class AppViewModel(
                     onFailure = {
                         // 撤回本地气泡：错误横幅已说明原因，不留下只在手机上存在的「幽灵消息」
                         convRepo.removePendingMessage(pending.id)
-                        flash("发送失败：${UserFacingError.map(it.message)}", FlashKind.Failure)
+                        flash(res(R.string.flash_send_failed, UserFacingError.map(it.message)), FlashKind.Failure)
                     },
                 )
             }
@@ -631,15 +634,16 @@ class AppViewModel(
     fun stopSession() {
         val conv =
             conversation ?: run {
-                flash("连接已断开，未发送", FlashKind.Failure)
+                flash(res(R.string.flash_disconnected_cannot_send), FlashKind.Failure)
                 return
             }
         conv.stop { r ->
             viewModelScope.launch {
                 flash(
                     when (r) {
-                        is ConversationChannel.ResolveResult.Accepted -> "已请求停止"
-                        is ConversationChannel.ResolveResult.Failed -> "停止失败：${UserFacingError.map(r.message)}"
+                        is ConversationChannel.ResolveResult.Accepted -> res(R.string.flash_stop_requested)
+                        is ConversationChannel.ResolveResult.Failed ->
+                            res(R.string.flash_stop_failed, UserFacingError.map(r.message))
                     },
                     when (r) {
                         is ConversationChannel.ResolveResult.Accepted -> FlashKind.Info
@@ -671,16 +675,16 @@ class AppViewModel(
         /** 执行模式（P0-B）：plan/build/yolo，默认 build —— 旧版写死 yolo 让手机建的会话全部免审批。 */
         execMode: String = "build",
         onSuccess: (SessionItem) -> Unit,
-        onError: (String) -> Unit,
+        onError: (UiText) -> Unit,
     ) {
         val conv =
             conversation ?: run {
-                onError("连接尚未就绪，无法创建会话")
+                onError(res(R.string.create_error_not_ready))
                 return
             }
         val ws =
             activeWorkspaceKey ?: sessions.firstOrNull()?.workspacePath ?: run {
-                onError("未定位到活动工作区，请在 PC 端打开一个工作区后再试")
+                onError(res(R.string.create_error_no_workspace))
                 return
             }
 
@@ -825,12 +829,12 @@ class AppViewModel(
                         }
                         recomputeSessionPending()
                         syncWidget()
-                        flash("会话已删除")
+                        flash(res(R.string.flash_session_deleted))
                         onResult(true, "会话已删除")
                     }
                     is RpcChannel.RpcReply.Err -> {
                         ZLog.w(TAG, "deleteTask 失败: ${reply.message}")
-                        flash("删除会话失败: ${UserFacingError.map(reply.message)}", FlashKind.Failure)
+                        flash(res(R.string.flash_delete_failed, UserFacingError.map(reply.message)), FlashKind.Failure)
                         onResult(false, reply.message)
                     }
                 }

@@ -35,9 +35,11 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.zcode.remote.R
 import com.zcode.remote.relay.ConversationChannel
 import com.zcode.remote.relay.WorkspaceConfigChannel
 import com.zcode.remote.util.UiText
+import com.zcode.remote.util.UiText.Companion.res
 import com.zcode.remote.util.asString
 
 /**
@@ -406,14 +408,21 @@ private fun modeDisplayName(m: String): String =
         else -> m
     }
 
-internal fun statusLabel(s: ConversationChannel.Status) =
+internal fun statusLabel(s: ConversationChannel.Status): UiText =
     when (s) {
-        ConversationChannel.Status.Idle -> "未订阅"
-        ConversationChannel.Status.Hello -> "握手中…"
-        ConversationChannel.Status.Initialized -> "订阅中…"
-        is ConversationChannel.Status.Live -> "已连接"
-        // C-2：底层 reason 可能是通道未就绪 / 超时（英文自造短语）这类串，先经 UserFacingError 映射再截断
-        is ConversationChannel.Status.Failed -> "异常：${com.zcode.remote.relay.UserFacingError.map(s.reason).take(50)}"
+        ConversationChannel.Status.Idle -> res(R.string.conv_status_idle)
+        ConversationChannel.Status.Hello -> res(R.string.conv_status_hello)
+        ConversationChannel.Status.Initialized -> res(R.string.conv_status_initialized)
+        is ConversationChannel.Status.Live -> res(R.string.conv_status_live)
+        // C-2：底层 reason 可能是通道未就绪 / 超时（英文自造短语）这类串，先经 UserFacingError 映射；
+        // 截断到 50 字由顶栏 `maxLines=1 + Ellipsis` 兜底，此处保留原文（避免在纯函数层做字符截断
+        // 把已解析的中文串切坏——截断交给 Text 渲染层）。
+        is ConversationChannel.Status.Failed ->
+            res(
+                R.string.conv_status_failed,
+                com.zcode.remote.relay.UserFacingError
+                    .map(s.reason),
+            )
     }
 
 internal fun phaseLabel(p: String) =

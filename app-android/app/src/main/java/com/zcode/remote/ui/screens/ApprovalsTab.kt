@@ -31,6 +31,8 @@ import com.zcode.remote.ui.components.AutoResolveCountdown
 import com.zcode.remote.ui.theme.ZCodeTokens
 import com.zcode.remote.ui.theme.statusPendingTone
 import com.zcode.remote.ui.theme.toolCallTrajectoryTone
+import com.zcode.remote.util.UiText
+import com.zcode.remote.util.asString
 
 /**
  * 集中式审批与待办看板 (Inbox / Approvals Tab)
@@ -43,7 +45,7 @@ fun ApprovalsTab(
     sessions: List<SessionItem>,
     sessionPending: Map<String, Int>,
     subscribedSessionId: String?,
-    feedback: String? = null,
+    feedback: UiText? = null,
     /** C-11：反馈是否为失败语义（配色依据，取代原先按文案前缀猜的白名单）。 */
     feedbackIsFailure: Boolean = false,
     onResolveApproval: (PendingApproval, ApprovalOption) -> Unit,
@@ -115,7 +117,7 @@ fun ApprovalsTab(
                         .padding(bottom = 10.dp),
             ) {
                 Text(
-                    text = msg,
+                    text = msg.asString(),
                     style = MaterialTheme.typography.labelMedium,
                     color =
                         if (feedbackIsFailure) {

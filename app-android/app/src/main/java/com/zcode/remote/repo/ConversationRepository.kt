@@ -6,6 +6,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
+import com.zcode.remote.R
 import com.zcode.remote.relay.ConversationChannel
 import com.zcode.remote.relay.ConversationFrames
 import com.zcode.remote.relay.ConversationRow
@@ -13,6 +14,8 @@ import com.zcode.remote.relay.RowStore
 import com.zcode.remote.relay.SessionItem
 import com.zcode.remote.storage.SessionCacheStore
 import com.zcode.remote.util.LogRedactor
+import com.zcode.remote.util.UiText
+import com.zcode.remote.util.UiText.Companion.res
 import com.zcode.remote.util.ZLog
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -33,7 +36,7 @@ class ConversationRepository(
     private val context: Context,
     private val conversation: () -> ConversationChannel?,
     private val activeWorkspaceKey: () -> String?,
-    private val flash: (String, Boolean) -> Unit,
+    private val flash: (UiText, Boolean) -> Unit,
     private val onNewSubscription: () -> Unit,
     private val clearAttachments: () -> Unit,
 ) {
@@ -230,12 +233,12 @@ class ConversationRepository(
         onNewSubscription()
         val conv =
             conversation() ?: run {
-                flash("连接已断开，无法重试", true)
+                flash(res(R.string.flash_disconnected_cannot_retry), true)
                 return
             }
         val ws =
             s.workspacePath ?: activeWorkspaceKey() ?: run {
-                flash("未定位到工作区，无法重试", true)
+                flash(res(R.string.flash_no_workspace_cannot_retry), true)
                 return
             }
         ZLog.i(TAG, "用户重试订阅 session=${s.taskId}")

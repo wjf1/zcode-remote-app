@@ -1,5 +1,8 @@
 package com.zcode.remote.relay
 
+import com.zcode.remote.R
+import com.zcode.remote.util.UiText
+import com.zcode.remote.util.UiText.Companion.res
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.jsonPrimitive
@@ -17,41 +20,46 @@ import kotlinx.serialization.json.jsonPrimitive
  *
  * 收敛为单一纯函数：任务书 §7 要求「UI 字符串不含裸英文串」可用 grep 断言守住，
  * 全部展示出口经同一映射才能被 JVM 单测钉死（本项目无 androidTest，纯函数是唯一可守形式）。
+ *
+ * 国际化（第 3 批）：返回值由 `String` 改为 [UiText]（资源 id + 参数）——错误文案是
+ * **UI 层最典型的用户可见串**，且消费点遍布 VM / repo / UI 三处，最需要集中管理。
+ * 消费点经 `asString()`（Composable）/ `resolve(context)`（非 Compose）解析。
+ * 已是中文的业务语义与未知错误原文走 [UiText.Raw] 原样透出。
  */
 object UserFacingError {
     /** 兜底文案（message 为空时的最终可见文本）。 */
-    const val FALLBACK = "操作失败，请重试"
+    val FALLBACK: UiText = res(R.string.error_fallback)
 
     /**
-     * 本地通道自造英文 → 中文。改动 RpcChannel 措辞时须同步这里；
+     * 本地通道自造英文 → 资源 id。改动 RpcChannel 措辞时须同步这里；
      * 单测 `UserFacingErrorTest` 覆盖全部已知串。
      */
-    private val LOCAL_ERRORS: List<Pair<String, String>> =
+    private val LOCAL_ERRORS: List<Pair<String, UiText>> =
         listOf(
-            "timeout after" to "响应超时，请检查网络后重试",
-            "bridge not ready" to "连接通道尚未就绪，请稍后重试",
-            "bridge re-established" to "连接已重建，请重试",
-            "channel reset" to "连接已重置，请重试",
+            "timeout after" to res(R.string.error_local_timeout),
+            "bridge not ready" to res(R.string.error_local_bridge_not_ready),
+            "bridge re-established" to res(R.string.error_local_bridge_reestablished),
+            "channel reset" to res(R.string.error_local_channel_reset),
             // OkHttp / JVM 网络栈的自造英文（检查更新、文件预览等 HTTP 路径）
-            "unable to resolve host" to "无法解析服务器地址，请检查网络",
-            "failed to connect" to "无法连接到服务器，请稍后重试",
-            "timed out" to "连接超时，请检查网络后重试",
+            "unable to resolve host" to res(R.string.error_local_unable_resolve_host),
+            "failed to connect" to res(R.string.error_local_failed_to_connect),
+            "timed out" to res(R.string.error_local_timed_out),
         )
 
     /**
-     * 服务端 fault code 关键词 → 中文（code 形如 `fault.connection.handshakeRequired`，
+     * 服务端 fault code 关键词 → 资源 id（code 形如 `fault.connection.handshakeRequired`，
      * 取子串匹配以免把命名空间写死）。顺序即优先级，"timeout" 类放后避免误伤。
      */
-    private val FAULT_ERRORS: List<Pair<String, String>> =
+    private val FAULT_ERRORS: List<Pair<String, UiText>> =
         listOf(
-            "handshakeRequired" to "连接尚未完成握手，请重试",
-            "clientMismatch" to "会话身份不匹配，请重新进入会话",
-            "unauthorized" to "登录态失效，请重新配对",
-            "forbidden" to "没有权限执行该操作",
-            "notFound" to "目标不存在或已被删除",
-            "rateLimit" to "操作过于频繁，请稍后重试",
-            "unavailable" to "服务暂时不可用，请稍后重试",
-            "timeout" to "服务端响应超时，请检查网络后重试",
+            "handshakeRequired" to res(R.string.error_fault_handshake_required),
+            "clientMismatch" to res(R.string.error_fault_client_mismatch),
+            "unauthorized" to res(R.string.error_fault_unauthorized),
+            "forbidden" to res(R.string.error_fault_forbidden),
+            "notFound" to res(R.string.error_fault_not_found),
+            "rateLimit" to res(R.string.error_fault_rate_limit),
+            "unavailable" to res(R.string.error_fault_unavailable),
+            "timeout" to res(R.string.error_fault_timeout),
         )
 
     /**
@@ -63,21 +71,21 @@ object UserFacingError {
     fun map(
         message: String?,
         raw: JsonElement? = null,
-    ): String {
+    ): UiText {
         val code = faultCodeOf(raw)
         if (code != null) {
             translate(code)?.let { return it }
             // 未知 fault：至少给出中文前缀，并保留原 code 便于排查（不直出裸英文段落）
-            return "服务端拒绝了该操作（$code）"
+            return res(R.string.error_fault_unknown, code)
         }
         val msg = message?.trim().orEmpty()
         if (msg.isEmpty()) return FALLBACK
         translate(msg)?.let { return it }
-        return msg
+        return UiText.Raw(msg)
     }
 
     /** 关键词翻译（先本地自造串、再 fault 关键词；都不命中返回 null 表示原样透出）。 */
-    private fun translate(text: String): String? {
+    private fun translate(text: String): UiText? {
         LOCAL_ERRORS.firstOrNull { text.contains(it.first, ignoreCase = true) }?.let { return it.second }
         FAULT_ERRORS.firstOrNull { text.contains(it.first, ignoreCase = true) }?.let { return it.second }
         return null

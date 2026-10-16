@@ -3,10 +3,13 @@ package com.zcode.remote.repo
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
+import com.zcode.remote.R
 import com.zcode.remote.relay.ConversationChannel
 import com.zcode.remote.relay.RpcChannel
 import com.zcode.remote.relay.UserFacingError
 import com.zcode.remote.relay.WorkspaceConfigChannel
+import com.zcode.remote.util.UiText
+import com.zcode.remote.util.UiText.Companion.res
 import com.zcode.remote.util.ZLog
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.launch
@@ -33,7 +36,7 @@ class ModelConfigRepository(
     private val activeWorkspaceKey: () -> String?,
     private val firstSessionWorkspace: () -> String?,
     private val onWorkspaceMode: (String) -> Unit,
-    private val flash: (String, Boolean) -> Unit,
+    private val flash: (UiText, Boolean) -> Unit,
 ) {
     /** 工作区模型状态（workspace-config 订阅推送，snapshot/deltas 双路更新）。 */
     val workspaceModelState: WorkspaceConfigChannel.WorkspaceState?
@@ -328,7 +331,7 @@ class ModelConfigRepository(
     fun switchCurrentSessionModel(modelOption: WorkspaceConfigChannel.ModelOption) {
         val conv =
             conversation() ?: run {
-                flash("连接尚未就绪", true)
+                flash(res(R.string.flash_connection_not_ready), true)
                 return
             }
         val (pid, mid) = WorkspaceConfigChannel.splitModelValue(modelOption.value)
@@ -337,12 +340,23 @@ class ModelConfigRepository(
         conv.switchModelConfig(provider = pid, model = mid, thought = thought) { result ->
             scope.launch {
                 result.fold(
-                    onSuccess = { flash("模型已切换为 $mid" + (thought?.let { " · $it" } ?: ""), false) },
-                    onFailure = { flash("切换模型失败: ${UserFacingError.map(it.message)}", true) },
+                    onSuccess = { flash(modelSwitchedText(mid, thought), false) },
+                    onFailure = { flash(res(R.string.flash_switch_model_failed, UserFacingError.map(it.message)), true) },
                 )
             }
         }
     }
+
+    /** 「模型已切换为 X（· 档位）」——两态各占一条完整句式资源（片段无法被翻译）。 */
+    private fun modelSwitchedText(
+        modelId: String,
+        thought: String?,
+    ): UiText =
+        if (thought.isNullOrBlank()) {
+            res(R.string.flash_model_switched, modelId)
+        } else {
+            res(R.string.flash_model_switched_with_thought, modelId, thought)
+        }
 
     companion object {
         private const val TAG = "ModelConfigRepo"

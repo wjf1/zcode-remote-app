@@ -34,6 +34,7 @@ import com.zcode.remote.storage.QrParser
 import com.zcode.remote.ui.screens.*
 import com.zcode.remote.ui.theme.ZCodeTheme
 import com.zcode.remote.ui.theme.statusPendingTone
+import com.zcode.remote.util.resolve
 
 class MainActivity : ComponentActivity() {
     private var appVm: AppViewModel? = null
@@ -350,7 +351,7 @@ class MainActivity : ComponentActivity() {
                                                             android.widget.Toast
                                                                 .makeText(
                                                                     this@MainActivity,
-                                                                    err,
+                                                                    err.resolve(this@MainActivity),
                                                                     android.widget.Toast.LENGTH_SHORT,
                                                                 ).show()
                                                         },

@@ -267,7 +267,7 @@ fun ConversationScreen(
                     modifier = Modifier.fillMaxWidth(),
                 ) {
                     Text(
-                        text = msg,
+                        text = msg.asString(),
                         style = MaterialTheme.typography.labelMedium,
                         color =
                             if (failure) {

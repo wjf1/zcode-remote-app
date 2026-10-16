@@ -10,6 +10,7 @@ import com.zcode.remote.relay.PendingElicitation
 import com.zcode.remote.relay.WorkspaceConfigChannel
 import com.zcode.remote.repo.AttachmentUploader
 import com.zcode.remote.repo.ConversationRepository
+import com.zcode.remote.util.UiText
 
 /*
  * 会话页状态/动作契约（§11.7 结构性拆分）：以 [ConversationUiState] + [ConversationAction]
@@ -36,7 +37,7 @@ data class ConversationUiState(
     val sending: Boolean = false,
     val canStop: Boolean = false,
     val stopState: String? = null,
-    val commandFeedback: String? = null,
+    val commandFeedback: UiText? = null,
     /** C-11：反馈横幅是否为失败语义（决定配色，与 VM 的 FlashKind 同源）。 */
     val feedbackIsFailure: Boolean = false,
     val attachments: List<ConversationChannel.AttachmentRef> = emptyList(),

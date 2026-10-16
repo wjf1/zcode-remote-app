@@ -50,7 +50,14 @@ sealed interface UiText {
 @Composable
 fun UiText.asString(): String =
     when (this) {
-        is UiText.Res -> if (args.isEmpty()) stringResource(id) else stringResource(id, *args.toTypedArray())
+        is UiText.Res ->
+            if (args.isEmpty()) {
+                stringResource(id)
+            } else {
+                // 参数可能是嵌套的 UiText（如「发送失败：%1$s」的实参是 UserFacingError.map(...)），
+                // 递归解析后再交给 stringResource 拼装；普通值原样透传。
+                stringResource(id, *args.map { if (it is UiText) it.asString() else it }.toTypedArray())
+            }
         is UiText.Raw -> value
     }
 
@@ -58,7 +65,13 @@ fun UiText.asString(): String =
 @Suppress("SpreadOperator") // 同上
 fun UiText.resolve(context: Context): String =
     when (this) {
-        is UiText.Res -> if (args.isEmpty()) context.getString(id) else context.getString(id, *args.toTypedArray())
+        is UiText.Res ->
+            if (args.isEmpty()) {
+                context.getString(id)
+            } else {
+                // 同 asString()：嵌套 UiText 参数先递归解析
+                context.getString(id, *args.map { if (it is UiText) it.resolve(context) else it }.toTypedArray())
+            }
         is UiText.Raw -> value
     }
 

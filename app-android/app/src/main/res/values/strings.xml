@@ -137,4 +137,71 @@
     <string name="status_background_command">后台命令</string>
     <string name="status_no_running_agents">当前没有运行中的子智能体</string>
 
+    <!-- ========== 用户可见错误映射（UserFacingError，C-2 错误分层） ========== -->
+    <string name="error_fallback">操作失败，请重试</string>
+    <!-- 本地通道自造英文 → 中文（措辞与 RpcChannel 内部串对应） -->
+    <string name="error_local_timeout">响应超时，请检查网络后重试</string>
+    <string name="error_local_bridge_not_ready">连接通道尚未就绪，请稍后重试</string>
+    <string name="error_local_bridge_reestablished">连接已重建，请重试</string>
+    <string name="error_local_channel_reset">连接已重置，请重试</string>
+    <string name="error_local_unable_resolve_host">无法解析服务器地址，请检查网络</string>
+    <string name="error_local_failed_to_connect">无法连接到服务器，请稍后重试</string>
+    <string name="error_local_timed_out">连接超时，请检查网络后重试</string>
+    <!-- 服务端 fault code 关键词 → 中文 -->
+    <string name="error_fault_handshake_required">连接尚未完成握手，请重试</string>
+    <string name="error_fault_client_mismatch">会话身份不匹配，请重新进入会话</string>
+    <string name="error_fault_unauthorized">登录态失效，请重新配对</string>
+    <string name="error_fault_forbidden">没有权限执行该操作</string>
+    <string name="error_fault_not_found">目标不存在或已被删除</string>
+    <string name="error_fault_rate_limit">操作过于频繁，请稍后重试</string>
+    <string name="error_fault_unavailable">服务暂时不可用，请稍后重试</string>
+    <string name="error_fault_timeout">服务端响应超时，请检查网络后重试</string>
+    <!-- 未知 fault：给出中文前缀并保留原 code 便于排查 -->
+    <string name="error_fault_unknown">服务端拒绝了该操作（%1$s）</string>
+
+    <!-- ========== 反馈横幅与操作提示（flash 管道） ========== -->
+    <string name="flash_send_failed">发送失败：%1$s</string>
+    <string name="flash_stop_failed">停止失败：%1$s</string>
+    <string name="flash_delete_failed">删除会话失败：%1$s</string>
+    <string name="flash_switch_model_failed">切换模型失败：%1$s</string>
+    <string name="flash_upload_failed">附件上传失败：%1$s</string>
+    <string name="flash_reply_failed">应答失败：%1$s</string>
+    <string name="flash_session_deleted">会话已删除</string>
+    <string name="flash_stop_requested">已请求停止</string>
+    <string name="flash_model_switched">模型已切换为 %1$s</string>
+    <string name="flash_model_switched_with_thought">模型已切换为 %1$s · %2$s</string>
+    <string name="flash_attachment_added">已添加附件 %1$s</string>
+    <string name="flash_disconnected_cannot_send">连接已断开，未发送</string>
+    <string name="flash_disconnected_cannot_upload">连接已断开，无法上传</string>
+    <string name="flash_disconnected_cannot_retry">连接已断开，无法重试</string>
+    <string name="flash_disconnected_not_sent">连接已断开，未发出</string>
+    <string name="flash_no_workspace_cannot_retry">未定位到工作区，无法重试</string>
+    <string name="flash_connection_not_ready">连接尚未就绪</string>
+    <string name="flash_attachment_limit">附件超过 20MiB 上限</string>
+    <string name="flash_attachment_in_progress">还有附件在上传中</string>
+    <string name="flash_approval_gone">这条审批已经不在待处理列表里了（可能桌面端已处理）</string>
+    <string name="flash_approval_allowed">已批准</string>
+    <string name="flash_approval_denied">已拒绝</string>
+    <string name="flash_approval_duplicate">已收到（重复提交，服务端只认第一次）</string>
+    <string name="flash_approval_resolved_elsewhere">服务端已消解（可能桌面端先处理了）</string>
+    <string name="flash_elicitation_declined">已拒绝</string>
+    <string name="flash_elicitation_submitted">已提交</string>
+    <string name="flash_elicitation_answered">已提交回答</string>
+    <string name="flash_plan_approved">已批准计划</string>
+
+    <!-- 新建会话的失败提示（AppViewModel.createNewSession） -->
+    <string name="create_error_not_ready">连接尚未就绪，无法创建会话</string>
+    <string name="create_error_no_workspace">未定位到活动工作区，请在 PC 端打开一个工作区后再试</string>
+    <string name="create_error_failed">创建会话失败</string>
+
+    <!-- 会话通道状态标签（ConversationTopBar.statusLabel） -->
+    <string name="conv_status_idle">未订阅</string>
+    <string name="conv_status_hello">握手中…</string>
+    <string name="conv_status_initialized">订阅中…</string>
+    <string name="conv_status_live">已连接</string>
+    <string name="conv_status_failed">异常：%1$s</string>
+
+    <!-- 文件预览失败（ConversationDialogs） -->
+    <string name="file_preview_failed">读取失败：%1$s\n\n%2$s</string>
+
 </resources>
