@@ -40,8 +40,14 @@
 - JVM 门禁：单测 **313/313**；`ktlintCheck` 0 违规；`detekt` 通过；
   `lintDebug`/`lintRelease` 0 error；`assembleDebug`/`assembleRelease`/
   `assembleDebugAndroidTest` 通过。
-- **仪器化用例在 CI 的 API 35 emulator 上执行**（`.github/workflows/ci.yml` 的
-  `:app:connectedDebugAndroidTest`）；本机真机为 API 37 且走查后已断开连接，**未本地执行**。
+- **真机红-绿验证（2026-10-16，小米 15 Pro / Android 17，`am instrument` 直跑，不依赖 Espresso）**：
+  - **修复前版本 → 失败**：`Tests run: 2, Failures: 1`，失败断言正是
+    「切到 B 后不得继承 A 的 pulled」（`_earlier` 未复位）。**证明用例能捕获该缺陷，非假阳性**。
+  - **修复后版本 → 通过**：`OK (4 tests)`（含 `ConversationOfflineSwitchInstrumentedTest` 2 项）。
+  - 注：本机为 release 签名包（非 debuggable），故用 `adb install -r` + `am instrument` 直跑
+    （绕开 Gradle 的 UTP 安装流程，其在 MIUI 上会被 `INSTALL_FAILED_USER_RESTRICTED` 拦）。
+- 仪器化用例同时进入 CI 的 API 35 emulator 门禁（`.github/workflows/ci.yml` 的
+  `:app:connectedDebugAndroidTest`），防后续回归。
 
 ## 未发布（2026-10-16）· 走查第七批：断开态下切换会话不再显示上一个会话的内容
 

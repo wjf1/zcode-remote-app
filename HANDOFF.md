@@ -246,7 +246,12 @@ lint 双变体 0 error、detekt、ktlint 0 违规、assembleDebug/Release 通过
   - **验证**：新增仪器化 `ConversationChannelStateResetInstrumentedTest`（2 项，不依赖 Espresso；
     复用「桥未就绪时 loadEarlier 走同步错误分支 → `_earlier` 置 `pulled=true`」的复现路径，
     含修复前必失败断言 + 同会话重订不闪回归护栏）。JVM 门禁全绿（313/313、lint 双变体 0 error、
-    三套装配通过）。**仪器化用例在 CI 的 API 35 emulator 执行**。
+    三套装配通过）。
+  - **真机红-绿验证（2026-10-16，小米 15 Pro / API 37）**：修复前版本 `Tests run: 2, Failures: 1`
+    （失败断言 = `_earlier` 未复位）；修复后 `OK (4 tests)`。**证明用例真能捕获缺陷**。
+    跑法：release 签名包（非 debuggable）配 `adb install -r` + `am instrument` 直跑——Gradle 的
+    UTP 安装流程在 MIUI 上被 `INSTALL_FAILED_USER_RESTRICTED` 拦，故绕开。
+  - 仪器化用例同时进 CI 的 API 35 emulator 门禁（防回归）。
 - **既有硬门（沿用历史决策，勿当遗漏）**：
   1. **§11.5.3 A-5 逻辑 fragment 重组**——无真实帧样本不实现（「未知 fragment 显式失同步」已落地）；
   2. **出站大 RPC 物理分片**——同硬门（官方算法已实证，App 现为本地拒绝超限帧）；
