@@ -37,6 +37,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -141,7 +142,8 @@ internal fun InputBar(
             color = MaterialTheme.colorScheme.surface,
             border = CardDefaults.outlinedCardBorder(),
             tonalElevation = 2.dp,
-            modifier = Modifier.fillMaxWidth(),
+            // testTag 供仪器化布局断言锁定输入栏高度（防「内容换行/附件条挤压」撑爆容器）
+            modifier = Modifier.fillMaxWidth().testTag("conv-inputbar"),
         ) {
             Row(
                 // B-2：CenterVertically 而非 Bottom —— 文本框 56dp 高、文字垂直居中（距顶 ~28dp），
