@@ -95,8 +95,10 @@ android {
         // versionCode 59：beta47 —— 走查修复（第二至第八批）+ 国际化资源化 6 批完成
         //                           （strings.xml 67→452 条，ui/notify/widget 用户可见中文清零；
         //                            含断开态切换会话显示上一会话内容、切会话会话级状态未复位等修复）
-        versionCode = 59
-        versionName = "0.5.0-beta47"
+        // versionCode 60：beta48 —— 走查清单 P2 剩余项闭环（#12 无障碍 / #13 Markdown 图片兜底 /
+        //                           #14 会话流日期分隔 / #15 布局回归断言扩展），5.1 清单仅剩 #2
+        versionCode = 60
+        versionName = "0.5.0-beta48"
         // 仪器化渲染回归网（src/androidTest）用 androidx.test 默认 runner。
         // 只在模拟器/真机上跑；CI runner 无设备，故 ci.yml 不接（见 HANDOVER §6.1 回归网）。
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"

@@ -17,11 +17,12 @@
   （Kotlin + Jetpack Compose）。逆向复用官方中继与配对协议，提供更强的通知、锁屏审批、
   流式会话与移动端操控体验。
 - **仓库**：<https://github.com/wjf1/zcode-remote-app>（owner：wjf1）
-- **当前版本**：`0.5.0-beta47`（versionCode 59），tag `v0.5.0-beta47`；上一个发布 tag `v0.5.0-beta46`。
-- **✅ 已发布**：`v0.5.0-beta47`（2026-10-16）——走查修复 10 项（第二至第八批）+
-  **国际化资源化 6 批完成**（`strings.xml` 67→452 条）。Release 含签名 APK + SHA-256 +
-  证书指纹 + CycloneDX SBOM。**当前 `master` 无未发布提交**（工作树干净）。
-- **⚠️ 未发布改动（master 上待发版）**：走查清单 P2 剩余项 4 项（#12 无障碍 / #13 Markdown 图片兜底 / #14 日期分隔 / #15 布局断言），见 §5.2。
+- **当前版本**：`0.5.0-beta48`（versionCode 60），tag `v0.5.0-beta48`；上一个发布 tag `v0.5.0-beta47`。
+- **✅ 已发布**：`v0.5.0-beta48`（2026-10-16）——走查清单 P2 剩余项闭环 4 项（#12 无障碍 /
+  #13 Markdown 图片兜底 / #14 会话流日期分隔 / #15 布局回归断言扩展），**5.1 清单仅剩 #2**。
+  上一发布 `v0.5.0-beta47`——走查修复 10 项（第二至第八批）+ 国际化资源化 6 批完成
+  （`strings.xml` 67→452 条）。Release 含签名 APK + SHA-256 + 证书指纹 + CycloneDX SBOM。
+  **当前 `master` 无未发布提交**（工作树干净）。
 - **本仓库无 iOS / 桌面端**，仅 Android 原生客户端（`app-android/`）。
 - **许可**：[MIT](LICENSE)；安全披露见 [SECURITY.md](SECURITY.md)。
 - **部署形态**：侧滑安装的签名 Release APK（无 Play 分发）；自用 + 受控灰度。
@@ -87,6 +88,25 @@ app-android/app/src/main/java/com/zcode/remote/
 ## 4. 最近一轮变更与交付成果
 
 > 完整逐轮记录见 [CHANGELOG.md](CHANGELOG.md) 与 [HANDOVER.md](HANDOVER.md) 文首覆盖层。
+
+### v0.5.0-beta48：走查清单 P2 剩余项闭环（2026-10-16，已发布）
+
+**4 项体验修复**，全部来自 §5.1 第三方走查清单，**5.1 清单至此仅剩 #2**。
+
+| 项 | 提交 | 内容 |
+|---|---|---|
+| #12 无障碍 | `8725bad` | 会话卡补 `mergeDescendants` 语义（「会话 {标题}，{状态}，长按可删除」）、`StatusDot` 走 `clearAndSetSemantics`、设置入口补 `Role.Button` |
+| #13 Markdown 图片兜底 | `c7862fd` | 图片占位由灰字死胡同改为「复制链接」（所有图片）+「打开」（仅 `http(s)`，走 `isAllowedLinkScheme` 白名单）。**安全决策不变**（仍 `NoOpImageTransformer`，零出站请求） |
+| #14 会话流日期分隔 | `2a9efdd` | 按本地时区**日历日**插入「今天/昨天/年月日」分隔行。**顺带修一真缺陷**：原拟用 `YEAR*366+DAY_OF_YEAR` 比较日历日，平/闰年起点不同会跨年错位 |
+| #15 布局回归断言 | `d906da0` | `InputBar` 加 `testTag("conv-inputbar")`；新增「1.3x 字体 + 长草稿下输入栏高度有界 + 会话流未被挤压」断言 |
+
+- **两项原判被代码实证推翻**：#13 原判「库 API 不可达」→ 不成立（`MarkdownComponentModel.getContent()`
+  即图片 URL，不可达的是 alt；#14 原判「协议无绝对时间戳」→ 用错字段（`ConversationRow.createdAt` 是行级绝对时间戳）。
+- **验证**：JVM 单测 **339/339**（+10 `FormatDateDividerTest`）；`ktlintCheck` 0 违规；`detekt` 通过；
+  `lintDebug`/`lintRelease` 0 error；`assembleDebug`/`assembleRelease`/`assembleDebugAndroidTest` 通过；
+  APK 实测 `versionCode=60 / versionName=0.5.0-beta48`。
+- **#13 的仪器化断言**（`MarkdownRenderTest` +2 项）依赖 `createComposeRule`，只在 CI 的 API 35 emulator 执行
+  （API 37 真机受 Espresso 限制，见 §5「已知测试基建限制」）。
 
 ### v0.5.0-beta47：走查修复第二至第八批 + 国际化资源化 6 批（2026-10-16，已发布）
 
@@ -300,8 +320,8 @@ lint 双变体 0 error、detekt、ktlint 0 违规、assembleDebug/Release 通过
 - **工程债（随手可清，非阻塞）**：`detekt-baseline.xml` 105 条存量告警；`tools/` 下 11 个 `_` 前缀一次性脚本。
   ~~会话正文缓存明文~~（beta44 已加密）、~~全库 0 个 `@Preview`~~（beta45 已补 debug 源集预览）、
   ~~界面文案硬编码中文、无 `strings.xml`~~（**i18n 资源化 6 批已全部完成并随 beta47 发布**，见上方「已完成」段）。
-- **若其他会话接手**：先读本文件 → `HANDOVER.md` 文首覆盖层 → `CHANGELOG.md` 最新条目（beta47），
-  再按「§2 核心命令」跑一次 `testDebugUnitTest` 建立基线（当前应为 **329/329**）。
+- **若其他会话接手**：先读本文件 → `HANDOVER.md` 文首覆盖层 → `CHANGELOG.md` 最新条目（beta48），
+  再按「§2 核心命令」跑一次 `testDebugUnitTest` 建立基线（当前应为 **339/339**）。
 
 ### 5.1 外部分析待办清单（2026-10-14 第三方全仓走查）
 
@@ -442,7 +462,7 @@ lint 双变体 0 error、detekt、ktlint 0 违规、assembleDebug/Release 通过
     刚起步（现有 `ConversationTopBarLayoutTest` 单点），建议优先补「关键组件祖先链 + 边界数值」
     断言（对齐 AGENTS.md「DOM 断言须验证祖先链」规范）。
 
-### 5.2 5.1 清单的当前剩余（2026-10-16 收尾）
+### 5.2 5.1 清单的当前剩余（2026-10-16 收尾，随 beta48 发布）
 
 **5.1 清单已几乎全部闭环——仅剩 #2 一项。**
 
@@ -455,7 +475,7 @@ lint 双变体 0 error、detekt、ktlint 0 违规、assembleDebug/Release 通过
 | #15 布局回归断言 | ✅ 扩展（`d906da0`）：输入栏高度 + 会话流未被挤压 |
 
 **已闭环**：#1、#3–#15（含 #7 证书固定为作者刻意不做、#8 不成立）。
-**未发布**：以上 4 项在 `master` 上，待下次发版。
+**发布状态**：以上 4 项已随 **v0.5.0-beta48 发布**（`master` 干净，无未发布提交）。
 
 ## 6. 关键避坑与运行约束
 
