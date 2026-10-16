@@ -30,6 +30,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalUriHandler
@@ -40,16 +41,21 @@ import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextDecoration
+import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.mikepenz.markdown.compose.components.MarkdownComponentModel
 import com.mikepenz.markdown.compose.components.markdownComponents
+import com.mikepenz.markdown.compose.elements.MarkdownBlockQuote
 import com.mikepenz.markdown.compose.elements.MarkdownCodeBlock
 import com.mikepenz.markdown.compose.elements.MarkdownCodeFence
+import com.mikepenz.markdown.compose.elements.MarkdownParagraph
 import com.mikepenz.markdown.m3.Markdown
 import com.mikepenz.markdown.m3.markdownColor
 import com.mikepenz.markdown.m3.markdownTypography
-import com.mikepenz.markdown.model.NoOpImageTransformerImpl
+import com.mikepenz.markdown.model.ImageData
+import com.mikepenz.markdown.model.ImageTransformer
+import com.mikepenz.markdown.model.PlaceholderConfig
 import com.zcode.remote.R
 import com.zcode.remote.ui.theme.LocalZCodeDark
 import com.zcode.remote.ui.theme.ZCodeDimens
@@ -60,6 +66,8 @@ import dev.snipme.highlights.model.BoldHighlight
 import dev.snipme.highlights.model.ColorHighlight
 import dev.snipme.highlights.model.SyntaxLanguage
 import dev.snipme.highlights.model.SyntaxThemes
+import org.intellij.markdown.MarkdownElementTypes
+import org.intellij.markdown.ast.ASTNode
 
 /**
  * `dev.snipme highlights` 的 `ColorHighlight.rgb` 是**纯 RGB**（如 `0x2BBAC5`，没有 alpha 位），
@@ -140,7 +148,22 @@ fun MarkdownView(
         markdownComponents(
             codeFence = { model -> HighlightedCodeCard(model) },
             codeBlock = { model -> HighlightedIndentedCodeCard(model) },
-            image = { model -> MarkdownImageNotice(model.content) },
+            // 图片兜底走**段落级**注入，而不是 `image = {}`：库的 `handleElement` 只对
+            // `MARKDOWN_FILE` 的顶层子节点分发，而 `![alt](url)` 经解析器实测恒为
+            // `MARKDOWN_FILE > PARAGRAPH > IMAGE`（`PARAGRAPH` 被 `components.paragraph`
+            // 消费后不再下钻）——故 `components.image` 在真实文档里**永不触发**。
+            // 段落（含列表项内的段落）与引用块才是图片真正落点。
+            paragraph = { model ->
+                MarkdownParagraph(model.content, model.node, style = model.typography.paragraph)
+                imageUrlsIn(model.node, model.content).forEach { MarkdownImageNotice(it) }
+            },
+            blockQuote = { model ->
+                MarkdownBlockQuote(model.content, model.node, style = model.typography.quote)
+                imageUrlsIn(model.node, model.content).forEach { MarkdownImageNotice(it) }
+            },
+            // 顶格图片（IMAGE 直接挂在 MARKDOWN_FILE 下）的兜底；与段落路径不会重复渲染。
+            // 注意：`model.content` 是**整篇文档**而非图片 URL，URL 必须从 AST 节点取。
+            image = { model -> imageUrlsIn(model.node, model.content).forEach { MarkdownImageNotice(it) } },
         )
 
     val uriHandler = rememberSafeUriHandler()
@@ -153,9 +176,65 @@ fun MarkdownView(
             // 库默认 modifier 是 fillMaxSize()，不覆盖会把消息行撑满整屏
             modifier = modifier.fillMaxWidth(),
             components = components,
-            imageTransformer = NoOpImageTransformerImpl(),
+            imageTransformer = ZeroSizeImageTransformer,
         )
     }
+}
+
+/**
+ * 零尺寸图片占位。
+ *
+ * 库对行内图片会预留一个默认约 180dp 的占位块（`ImageTransformer.placeholderConfig`），
+ * 由于本工程**不加载任何外链图片**（`transform` 恒返回 null），那块位置会留成一块空白。
+ * 图片说明由段落下方的 [MarkdownImageNotice] 单独给出，故这里把占位收敛为 0，
+ * 既不留空洞，也不改变「零出站请求」的安全决策。
+ */
+private object ZeroSizeImageTransformer : ImageTransformer {
+    @Composable
+    override fun transform(link: String): ImageData? = null
+
+    override fun placeholderConfig(
+        density: Density,
+        containerSize: Size,
+        intrinsicImageSize: Size,
+    ): PlaceholderConfig = PlaceholderConfig(Size.Zero, animate = false)
+}
+
+/**
+ * 取出给定 AST 子树里所有图片的 URL（按文档顺序）。
+ *
+ * 库的 `findChildOfTypeRecursive` / `getUnescapedTextInNode` 是 `internal`、外部不可见，
+ * 故这里直接用 `org.intellij.markdown` 的公开 API 自遍历：IMAGE → INLINE_LINK →
+ * LINK_DESTINATION，按 span 从原文切片即为 URL（与库内 `appendInlineContent` 取的是同一段）。
+ *
+ * `internal` 而非 `private`：走查 #13 的兜底路径（`components.image` 永不可达）是真实踩过的坑，
+ * 用 JVM 单测（`MarkdownImageUrlsTest`，无需 Robolectric/设备）钉死解析结果。
+ */
+internal fun imageUrlsIn(
+    node: ASTNode,
+    content: String,
+): List<String> {
+    val urls = mutableListOf<String>()
+
+    fun walk(n: ASTNode) {
+        if (n.type == MarkdownElementTypes.IMAGE) {
+            n.children
+                .firstOrNull { it.type == MarkdownElementTypes.INLINE_LINK }
+                ?.children
+                ?.firstOrNull { it.type == MarkdownElementTypes.LINK_DESTINATION }
+                ?.let { dest ->
+                    if (dest.endOffset <= content.length && dest.startOffset >= 0) {
+                        content
+                            .substring(dest.startOffset, dest.endOffset)
+                            .takeIf { it.isNotBlank() }
+                            ?.let(urls::add)
+                    }
+                }
+        }
+        n.children.forEach(::walk)
+    }
+    walk(node)
+    return urls
 }
 
 /**

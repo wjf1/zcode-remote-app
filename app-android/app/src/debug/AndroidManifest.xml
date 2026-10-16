@@ -32,5 +32,17 @@
                 <action android:name="com.zcode.remote.action.DEBUG_PAIR" />
             </intent-filter>
         </receiver>
+
+        <!--
+          真机走查探针（仅 debug）：直接渲染真实 MarkdownView，供 uiautomator 断言取证。
+          存在理由见 HANDOVER §5——API 37 真机上 Espresso 的 InputManager 已移除，
+          createComposeRule 类用例（MarkdownRenderTest）只能跑 CI 的 API 35 emulator；
+          本探针提供不依赖 Espresso 的真机渲染路径。exported=true 便于 adb am start 拉起，
+          无权限敏感数据，且不进 release 包（release 变体不合并本文件）。
+        -->
+        <activity
+            android:name=".debug.MarkdownProbeActivity"
+            android:exported="true"
+            android:label="MarkdownProbe" />
     </application>
 </manifest>

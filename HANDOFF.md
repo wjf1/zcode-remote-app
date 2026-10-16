@@ -17,11 +17,13 @@
   （Kotlin + Jetpack Compose）。逆向复用官方中继与配对协议，提供更强的通知、锁屏审批、
   流式会话与移动端操控体验。
 - **仓库**：<https://github.com/wjf1/zcode-remote-app>（owner：wjf1）
-- **当前版本**：`0.5.0-beta48`（versionCode 60），tag `v0.5.0-beta48`；上一个发布 tag `v0.5.0-beta47`。
-- **✅ 已发布**：`v0.5.0-beta48`（2026-10-16）——走查清单 P2 剩余项闭环 4 项（#12 无障碍 /
-  #13 Markdown 图片兜底 / #14 会话流日期分隔 / #15 布局回归断言扩展），**5.1 清单仅剩 #2**。
-  上一发布 `v0.5.0-beta47`——走查修复 10 项（第二至第八批）+ 国际化资源化 6 批完成
-  （`strings.xml` 67→452 条）。Release 含签名 APK + SHA-256 + 证书指纹 + CycloneDX SBOM。
+- **当前版本**：`0.5.0-beta49`（versionCode 61），tag `v0.5.0-beta49`；上一个发布 tag `v0.5.0-beta48`。
+- **✅ 已发布**：`v0.5.0-beta49`（2026-10-16）——**修复 beta48 的走查 #13「Markdown 图片兜底」为死代码**
+  （CI 首次真正执行仪器化用例时暴露：兜底挂在了永不触发的 `components.image` 上）。改挂**段落/引用块级**，
+  并修掉「URL 误取整篇文档」与「180dp 空白占位」两个伴随缺陷。仪器化全量 **OK (24 tests)**（API 35 模拟器）。
+  上一发布 `v0.5.0-beta48`——走查清单 P2 剩余项闭环 4 项（#12 无障碍 / #13 图片兜底 / #14 日期分隔 /
+  #15 布局断言）；`v0.5.0-beta47`——走查修复 10 项 + 国际化资源化 6 批完成（`strings.xml` 67→452 条）。
+  Release 含签名 APK + SHA-256 + 证书指纹 + CycloneDX SBOM。
   **当前 `master` 无未发布提交**（工作树干净）。
 - **本仓库无 iOS / 桌面端**，仅 Android 原生客户端（`app-android/`）。
 - **许可**：[MIT](LICENSE)；安全披露见 [SECURITY.md](SECURITY.md)。
@@ -88,6 +90,33 @@ app-android/app/src/main/java/com/zcode/remote/
 ## 4. 最近一轮变更与交付成果
 
 > 完整逐轮记录见 [CHANGELOG.md](CHANGELOG.md) 与 [HANDOVER.md](HANDOVER.md) 文首覆盖层。
+
+### v0.5.0-beta49：修复 beta48 的「图片兜底」死代码（2026-10-16，已发布）
+
+**根因**：走查 #13 把兜底挂在 `markdownComponents(image = { … })`，但库
+（`multiplatform-markdown-renderer 0.27.0`）的 `Markdown.kt` **只对 `MARKDOWN_FILE` 顶层子节点**
+调 `handleElement`，`PARAGRAPH` 被 `components.paragraph` 消费后**不再下钻**；用库自带解析器实测
+`![alt](url)` 恒为 `MARKDOWN_FILE > PARAGRAPH > IMAGE` → **`components.image` 永不触发**，兜底是死代码。
+
+| 缺陷 | 修法 |
+|---|---|
+| 兜底挂错回调 | 改在 **`paragraph` / `blockQuote`** 组件内注入（先渲染正文，再对本子树内图片逐个渲染兜底行） |
+| URL 误取整篇文档 | 新增 `imageUrlsIn(node, content)`：用 `org.intellij.markdown` 公开 API 自遍历 `IMAGE→INLINE_LINK→LINK_DESTINATION`，按 span 切片取 URL |
+| 180dp 空白占位 | 新增 `ZeroSizeImageTransformer`（`transform` 恒 null → **零出站请求不变**；`placeholderConfig` 归零） |
+
+- **过程教训（务必记住）**：#12–#15 合并时**前一次 CI 被并发取消**，提交信息只记「androidTest 编译通过」，
+  而本机跑不了模拟器 → 仪器化用例**从未真正执行**。直到发布提交 `ca7dbb6` 触发 CI 才首次失败。
+  **「编译通过」≠「测试通过」；新增仪器化断言必须在本机模拟器（`apkrev35`）或 CI 真跑一次。**
+- **验证**：仪器化**全量 OK (24 tests)**（本机 API 35 模拟器，CI 同路径）；JVM 单测 **347/347**（+8 `MarkdownImageUrlsTest`）；
+  `ktlintCheck` 0 违规；`detekt` 通过；`lintDebug`/`lintRelease` 0 error；双装配通过；
+  APK 实测 `versionCode=61 / versionName=0.5.0-beta49`。
+- **新增测试资产**：`MarkdownImageUrlsTest`（JVM，钉死 `IMAGE.parent==PARAGRAPH` 根因）、
+  `MarkdownImageFallbackInstrumentedTest`（4 项，**不依赖 Espresso**，`runComposeUiTest`）、
+  `MarkdownProbeActivity`（仅 debug 源集的真机渲染探针）。
+- **重要环境事实（本轮实测确认）**：本机 **AEHD 虚拟机监控程序可跑 API 35 模拟器**（`apkrev35`，`emulator-5554`），
+  仪器化用例可在本地通过 CI 同路径（`am instrument`）真跑——**不必只依赖 CI**；API 37 真机则受
+  Espresso `InputManager` 移除限制（`createComposeRule` 与 `runComposeUiTest` 均失败，后者因内部注册
+  `EspressoLink`）。
 
 ### v0.5.0-beta48：走查清单 P2 剩余项闭环（2026-10-16，已发布）
 
@@ -320,8 +349,8 @@ lint 双变体 0 error、detekt、ktlint 0 违规、assembleDebug/Release 通过
 - **工程债（随手可清，非阻塞）**：`detekt-baseline.xml` 105 条存量告警；`tools/` 下 11 个 `_` 前缀一次性脚本。
   ~~会话正文缓存明文~~（beta44 已加密）、~~全库 0 个 `@Preview`~~（beta45 已补 debug 源集预览）、
   ~~界面文案硬编码中文、无 `strings.xml`~~（**i18n 资源化 6 批已全部完成并随 beta47 发布**，见上方「已完成」段）。
-- **若其他会话接手**：先读本文件 → `HANDOVER.md` 文首覆盖层 → `CHANGELOG.md` 最新条目（beta48），
-  再按「§2 核心命令」跑一次 `testDebugUnitTest` 建立基线（当前应为 **339/339**）。
+- **若其他会话接手**：先读本文件 → `HANDOVER.md` 文首覆盖层 → `CHANGELOG.md` 最新条目（beta49），
+  再按「§2 核心命令」跑一次 `testDebugUnitTest` 建立基线（当前应为 **347/347**）。
 
 ### 5.1 外部分析待办清单（2026-10-14 第三方全仓走查）
 
@@ -462,7 +491,7 @@ lint 双变体 0 error、detekt、ktlint 0 违规、assembleDebug/Release 通过
     刚起步（现有 `ConversationTopBarLayoutTest` 单点），建议优先补「关键组件祖先链 + 边界数值」
     断言（对齐 AGENTS.md「DOM 断言须验证祖先链」规范）。
 
-### 5.2 5.1 清单的当前剩余（2026-10-16 收尾，随 beta48 发布）
+### 5.2 5.1 清单的当前剩余（2026-10-16 收尾，随 beta48/beta49 发布）
 
 **5.1 清单已几乎全部闭环——仅剩 #2 一项。**
 
@@ -470,12 +499,13 @@ lint 双变体 0 error、detekt、ktlint 0 违规、assembleDebug/Release 通过
 |---|---|
 | #2 附件上传流水线重构（递归回调 → suspend/flow） | **未做**：协议层行为变更，**需真机验收**，无设备时不盲改 |
 | #12 无障碍 | ✅ 已修（`8725bad`）：会话卡语义 / `StatusDot` / 设置入口 Role |
-| #13 Markdown 图片兜底 | ✅ 已修（`c7862fd`）：复制链接 / 打开（**原判「库 API 不可达」不成立**——URL 可得，不可达的是 alt 文本） |
+| #13 Markdown 图片兜底 | ✅ 已修（`c7862fd` 首次；**beta48 版本实为死代码，`beta49` 重修为真修**）：复制链接 / 打开（**原判「库 API 不可达」不成立**——URL 可得，不可达的是 alt 文本）。**beta49 更正**：兜底改挂段落/引用块级（`components.image` 在库中永不触发），URL 取自 AST 节点 |
 | #14 会话流日期分隔 | ✅ 已修（`2a9efdd`）：按本地时区日历日（**原判「协议无绝对时间戳」用错字段**——`createdAt` 是行级绝对时间戳） |
 | #15 布局回归断言 | ✅ 扩展（`d906da0`）：输入栏高度 + 会话流未被挤压 |
 
 **已闭环**：#1、#3–#15（含 #7 证书固定为作者刻意不做、#8 不成立）。
-**发布状态**：以上 4 项已随 **v0.5.0-beta48 发布**（`master` 干净，无未发布提交）。
+**发布状态**：#12–#15 随 **v0.5.0-beta48 发布**；#13 的**死代码问题**已由 **v0.5.0-beta49 修复**并发布
+（`master` 干净，无未发布提交）。
 
 ## 6. 关键避坑与运行约束
 
@@ -513,6 +543,15 @@ lint 双变体 0 error、detekt、ktlint 0 违规、assembleDebug/Release 通过
   且 debug/release 需同签名（`-PdebugUseReleaseSigning=true`）才能覆盖安装、保配对数据。
 - **本机（兆芯 CPU 无虚拟化）跑不了模拟器**，UI 一律真机验收；仪器化用例请写「不依赖 Espresso
   注入」的形式（API 37 真机的 `InputManager.getInstance()` 已移除，`createComposeRule` 类用例必失败）。
+  - **⚠️ 2026-10-16 实测更正**：本机 **API 35 模拟器其实可跑**——`toolchain/android-sdk` 内已装
+    **AEHD** 虚拟机监控程序（服务 `aehd` 处于 RUNNING），AVD `apkrev35` 可正常启动（`emulator-5554`）。
+    启动命令（后台模式）：
+    `export ANDROID_SDK_ROOT=F:/AI/Zcode/zcode-remote-app/toolchain/android-sdk && toolchain/android-sdk/emulator/emulator.exe -avd apkrev35 -no-snapshot-save -no-boot-anim -gpu swiftshader_indirect -no-audio`
+    → 等 `adb shell getprop sys.boot_completed` 为 `1`，再
+    `adb -s emulator-5554 install -r -t <debug.apk>` + `<androidTest.apk>`（或 `gradle :app:connectedDebugAndroidTest`）。
+    **仪器化用例可在本地按 CI 同路径真跑**（本轮实测全量 `OK (24 tests)`），**不必只依赖 CI**。
+    注意：`createComposeRule` 与 `runComposeUiTest` 在 API 37 真机**都**失败（后者内部注册 `EspressoLink`），
+    故真机走查改用「debug-only 探针 Activity + `uiautomator dump` 可编程断言」（见 `MarkdownProbeActivity`）。
 - **工具链（`toolchain/`）被 gitignore、不在 clone 中**：在 `/tmp` 等副本构建前需先从正式副本
   （`F:\AI\Zcode\zcode-remote-app`）`cp` 源码过去，或用正式副本本身构建；本地 SDK 路径见
   `app-android/local.properties`（`sdk.dir`）。

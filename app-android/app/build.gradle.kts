@@ -97,8 +97,12 @@ android {
         //                            含断开态切换会话显示上一会话内容、切会话会话级状态未复位等修复）
         // versionCode 60：beta48 —— 走查清单 P2 剩余项闭环（#12 无障碍 / #13 Markdown 图片兜底 /
         //                           #14 会话流日期分隔 / #15 布局回归断言扩展），5.1 清单仅剩 #2
-        versionCode = 60
-        versionName = "0.5.0-beta48"
+        // versionCode 61：beta49 —— 修复 beta48 的 #13「图片兜底」为死代码（CI 首次真正执行
+        //                           仪器化用例时暴露）：库只在顶层分发组件，`components.image`
+        //                           对段落内图片永不触发 → 改挂段落/引用块级；顺带修「URL 误取
+        //                           整篇文档」与 180dp 空白占位
+        versionCode = 61
+        versionName = "0.5.0-beta49"
         // 仪器化渲染回归网（src/androidTest）用 androidx.test 默认 runner。
         // 只在模拟器/真机上跑；CI runner 无设备，故 ci.yml 不接（见 HANDOVER §6.1 回归网）。
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"

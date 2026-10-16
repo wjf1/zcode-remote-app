@@ -1,5 +1,66 @@
 # 变更记录 / Changelog
 
+## v0.5.0-beta49（2026-10-16）· 修复 beta48 的「图片兜底」死代码（CI 首次真跑仪器化用例即暴露）
+
+> **一句话**：beta48 的走查 #13「Markdown 图片兜底」**在真实渲染路径上从不生效**——
+> 它挂错了库的回调，属死代码；beta49 把兜底改挂到**图片真正的落点**，并修掉同一处
+> 「URL 误取整篇文档」与「180dp 空白占位」两个伴随缺陷。
+
+### 缺陷与根因（两处**同类**问题：接线接到了永不触发的回调）
+
+走查 #13 原实现把兜底挂在 `markdownComponents(image = { MarkdownImageNotice(model.content) })`，
+但 `multiplatform-markdown-renderer 0.27.0` 的 `Markdown.kt` **只对 `MARKDOWN_FILE` 的顶层子节点**
+调 `handleElement`，`PARAGRAPH` 被 `components.paragraph` 消费后**不再下钻**（见库源码
+`multiplatform-markdown-renderer/src/commonMain/.../Markdown.kt`）。用**库自带解析器**实测：
+
+```
+![示意图](https://example.com/a.png)
+  Markdown:MARKDOWN_FILE
+    Markdown:PARAGRAPH
+      Markdown:IMAGE          ← 图片在 PARAGRAPH 内部
+```
+
+即 `IMAGE` 恒被 `PARAGRAPH` 包裹 → **`components.image` 在本 App 的真实文档里永不触发**。
+另有两个伴随缺陷：
+
+1. **URL 取值错误**：`MarkdownComponentModel.content` 是**整篇文档**，不是图片 URL；
+   按原写法「复制链接」会复制整篇 Markdown 原文。
+2. **空白占位**：`NoOpImageTransformerImpl` 的默认 `placeholderConfig` 会为行内图片预留
+   约 **180dp** 的占位块，因不加载图片而留成空洞。
+
+### 为什么 CI 到 beta48 才暴露（重要过程教训）
+
+这 4 个走查提交（#12–#15）在合并时，**前一次 CI 运行被并发取消**，提交信息只记了
+「androidTest **编译**通过」——本机跑不了模拟器，仪器化用例**从未真正执行**。直到 `ca7dbb6`
+（发布提交）触发 CI，`instrumentation` job 里 `MarkdownRenderTest` 的 2 个新用例才首次运行并失败：
+`Can't retrieve node at index '0' of 'Text + EditableText contains '图片（未加载）'`。
+**教训**：「编译通过」不等于「测试通过」；新增仪器化断言必须在本机模拟器或 CI **真跑一次**才算数。
+
+### 修复
+
+| 项 | 修法 |
+|---|---|
+| 兜底挂错位置 | 改在 **`paragraph` / `blockQuote` 组件**内注入：先渲染正文，再对**本子树**内的图片逐个渲染兜底行（这两处才是图片真正落点） |
+| URL 误取整篇文档 | 新增 `imageUrlsIn(node, content)`：用 `org.intellij.markdown` 公开 API 自遍历 `IMAGE → INLINE_LINK → LINK_DESTINATION`，按 span 从原文切片取 URL（库内两助手是 `internal`，外部不可见） |
+| 180dp 空白占位 | 新增 `ZeroSizeImageTransformer`：`transform` 恒 null（**零出站请求不变**）、`placeholderConfig` 归零，不再留空洞 |
+
+### 验证（**在 CI 同路径的 API 35 模拟器上真跑**，非仅编译）
+
+- **仪器化全量 `OK (24 tests)`**（含修复前必失败的 `MarkdownRenderTest` 2 项；修复前该 job 为红）。
+- 新增 `MarkdownImageFallbackInstrumentedTest`（4 项，**不依赖 Espresso**）——`createComposeRule` 与
+  `runComposeUiTest` 在 API 37 真机均因 `InputManager.getInstance()` 被移除而失败，故用
+  `runComposeUiTest`（不注入事件、只读语义树）**在本机 API 35 模拟器上可跑**，覆盖：
+  http 图片给「复制链接+打开」／非 http 只给「复制链接」／段落内联图片仍兜底／代码块内伪图片不兜底。
+- 新增 `MarkdownImageUrlsTest`（**JVM 8 项**，无需设备）——钉死根因：断言 `IMAGE.parent == PARAGRAPH`
+  （即 `components.image` 永不可达的根据）、URL 取自节点切片而非整篇文档、代码块内伪图片不被抽取。
+- 新增 `MarkdownProbeActivity`（**仅 debug 源集**，不进 release 包）：真机 `uiautomator dump` 取证
+  5 用例全部符合预期（真机 API 37 走不了 Espresso，用探针 + 可编程断言替代）。
+- **真机走查**（小米 15 Pro / Android 17 / API 37）：探针渲染 5 用例，`https` → 「图片（未加载）+ 复制链接 + 打开」；
+  `ftp` → 仅「复制链接」无「打开」；段落内联 → 有兜底；代码块内 → 无兜底；纯文字 → 无兜底。`logcat` 无 FATAL。
+- 门禁：JVM 单测 **347/347**（+8 `MarkdownImageUrlsTest`）；`ktlintCheck` 0 违规；`detekt` 通过；
+  `lintDebug`/`lintRelease` 0 error；`assembleDebug`/`assembleRelease` 通过；
+  APK 实测 `versionCode=61 / versionName=0.5.0-beta49`。
+
 ## v0.5.0-beta48（2026-10-16）· 走查清单 P2 剩余项闭环（无障碍 / 图片兜底 / 日期分隔 / 布局断言）
 
 > 承接 beta47 发布后的 5.1 清单收尾盘点。实施前对 5 项逐条做**代码实证**，
