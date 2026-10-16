@@ -37,6 +37,8 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.zcode.remote.relay.ConversationChannel
 import com.zcode.remote.relay.WorkspaceConfigChannel
+import com.zcode.remote.util.UiText
+import com.zcode.remote.util.asString
 
 /**
  * 会话页顶栏（§11.7 结构性拆分：自 `ConversationScreen.kt` 原样搬出，只移动不改行为）。
@@ -51,7 +53,7 @@ internal fun ConversationTopBar(
     meta: ConversationChannel.ConversationMeta,
     approvalsCount: Int,
     sessionFileCount: Int,
-    statusEntryLabel: String?,
+    statusEntryLabel: UiText?,
     currentSessionMode: String?,
     availableModels: List<WorkspaceConfigChannel.ModelOption>,
     modelReasoningLevels: Map<String, List<String>>,
@@ -138,7 +140,7 @@ internal fun ConversationTopBar(
         val overflowEntries =
             buildList {
                 if (sessionFileCount > 0) add("files" to "📁 文件（$sessionFileCount）")
-                statusEntryLabel?.let { add("status" to it) }
+                statusEntryLabel?.let { add("status" to it.asString()) }
             }
         if (overflowEntries.isNotEmpty()) {
             Box {

@@ -96,4 +96,45 @@
     <string name="home_conn_failed_endpoint">中继地址不安全，已拒绝连接（请检查线路设置）。</string>
     <string name="home_conn_failed_generic">连接失败，正在自动重试…</string>
 
+    <!-- ========== 会话状态面板（StatusPanelLabels） ========== -->
+    <string name="status_entry">状态</string>
+    <string name="status_entry_with_ratio">状态 %1$s</string>
+    <string name="status_queue_pending">待发送 %1$d 条</string>
+    <string name="status_queue_pending_auto">待发送 %1$d 条 · 自动发送</string>
+    <string name="status_queue_pending_paused">待发送 %1$d 条 · 暂停发送</string>
+    <string name="status_context_source_messages">消息</string>
+    <string name="status_context_source_system_prompt">系统提示词</string>
+    <string name="status_context_source_other">其他</string>
+    <string name="status_context_source_skills">技能</string>
+    <string name="status_context_source_tool_prompt">工具提示词</string>
+    <string name="status_context_source_system_tool_schemas">系统工具</string>
+    <string name="status_context_source_mcp_tool_schemas">MCP 工具</string>
+    <string name="status_context_usage">上下文 %1$s / %2$s</string>
+    <string name="status_cache_hit">缓存命中 %1$s</string>
+    <string name="status_goal_active">进行中</string>
+    <string name="status_goal_verifying">校验中</string>
+    <string name="status_goal_not_satisfied">未达标</string>
+    <string name="status_goal_elapsed">已运行 %1$s</string>
+    <string name="status_goal_budget_used">%1$s / %2$s tokens</string>
+    <string name="status_goal_budget_only">预算 %1$s tokens</string>
+    <string name="status_plan_folded_completed">已完成 %1$d 项</string>
+    <string name="status_plan_folded_tail">后面 %1$d 项</string>
+    <string name="status_terminals">%1$d 个后台运行</string>
+    <string name="status_agents_running_ended">%1$d 运行 · %2$d 已结束</string>
+    <string name="status_agents_running">%1$d 运行</string>
+    <string name="status_queue_section_summary">%1$d 条</string>
+    <string name="status_section_queue_title">排队输入</string>
+
+    <!-- 状态面板分区标题与容器文案（SessionStatusPanel） -->
+    <string name="status_panel_title">会话状态</string>
+    <string name="status_panel_empty">当前会话没有可展示的状态信息</string>
+    <string name="status_section_context_title">上下文容量</string>
+    <string name="status_section_context_source">上下文来源</string>
+    <string name="status_section_goal_title">目标</string>
+    <string name="status_section_plan_title">进程</string>
+    <string name="status_section_terminals_title">终端</string>
+    <string name="status_section_agents_title">智能体</string>
+    <string name="status_background_command">后台命令</string>
+    <string name="status_no_running_agents">当前没有运行中的子智能体</string>
+
 </resources>

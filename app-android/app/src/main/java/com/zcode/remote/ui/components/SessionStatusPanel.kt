@@ -40,15 +40,18 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import com.zcode.remote.R
 import com.zcode.remote.relay.ConversationFrames
 import com.zcode.remote.ui.theme.LocalZCodeDark
 import com.zcode.remote.ui.theme.ZCodeDimens
 import com.zcode.remote.ui.theme.ZCodeTokens
 import com.zcode.remote.ui.theme.ZCodeType
 import com.zcode.remote.ui.theme.statusPendingTone
+import com.zcode.remote.util.asString
 import kotlinx.coroutines.delay
 
 /**
@@ -81,7 +84,7 @@ fun SessionStatusPanel(
             modifier = Modifier.fillMaxWidth().padding(start = ZCodeDimens.PadInline, end = 4.dp),
         ) {
             Text(
-                text = "会话状态",
+                text = stringResource(R.string.status_panel_title),
                 style =
                     MaterialTheme.typography.titleSmall.copy(
                         fontSize = ZCodeType.Lg,
@@ -90,7 +93,11 @@ fun SessionStatusPanel(
                 modifier = Modifier.weight(1f),
             )
             IconButton(onClick = onClose, modifier = Modifier.size(36.dp)) {
-                Icon(Icons.Default.Close, contentDescription = "关闭", tint = MaterialTheme.colorScheme.onSurfaceVariant)
+                Icon(
+                    Icons.Default.Close,
+                    contentDescription = stringResource(R.string.common_close),
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
             }
         }
 
@@ -149,7 +156,7 @@ fun SessionStatusPanel(
             // 全是本轮不渲染的类型。宁可说清楚，也不要给一个空白面板。
             if (!hasAnyRenderedSection(state)) {
                 Text(
-                    text = "当前会话没有可展示的状态信息",
+                    text = stringResource(R.string.status_panel_empty),
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     modifier = Modifier.padding(vertical = ZCodeDimens.PadBlock),
@@ -236,7 +243,7 @@ private fun SessionStatusSection(
 private fun ContextSection(usage: ConversationFrames.ContextUsage) {
     var expanded by rememberSaveable { mutableStateOf(true) }
     SessionStatusSection(
-        title = "上下文容量",
+        title = stringResource(R.string.status_section_context_title),
         icon = Icons.Default.Info,
         summary = null,
         expanded = expanded,
@@ -253,7 +260,7 @@ private fun ContextSection(usage: ConversationFrames.ContextUsage) {
                 trackColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
             )
             Text(
-                text = StatusPanelLabels.contextUsageLine(usage) ?: "",
+                text = StatusPanelLabels.contextUsageLine(usage)?.asString() ?: "",
                 style = MaterialTheme.typography.labelSmall.copy(fontSize = ZCodeType.Sm),
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
@@ -261,7 +268,7 @@ private fun ContextSection(usage: ConversationFrames.ContextUsage) {
 
         StatusPanelLabels.cacheLine(usage)?.let { line ->
             Text(
-                text = line,
+                text = line.asString(),
                 style = MaterialTheme.typography.labelSmall.copy(fontSize = ZCodeType.Sm),
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
@@ -271,7 +278,7 @@ private fun ContextSection(usage: ConversationFrames.ContextUsage) {
         if (slices.isNotEmpty()) {
             Spacer(Modifier.height(ZCodeDimens.GapTight))
             Text(
-                text = "上下文来源",
+                text = stringResource(R.string.status_section_context_source),
                 style =
                     MaterialTheme.typography.labelSmall.copy(
                         fontSize = ZCodeType.Sm,
@@ -286,7 +293,7 @@ private fun ContextSection(usage: ConversationFrames.ContextUsage) {
                     modifier = Modifier.fillMaxWidth(),
                 ) {
                     Text(
-                        text = StatusPanelLabels.contextSourceLabel(slice.source.source),
+                        text = StatusPanelLabels.contextSourceLabel(slice.source.source).asString(),
                         style = MaterialTheme.typography.labelSmall.copy(fontSize = ZCodeType.Sm),
                         color = MaterialTheme.colorScheme.onSurface,
                         maxLines = 1,
@@ -314,9 +321,9 @@ private fun GoalSection(goal: ConversationFrames.GoalState) {
     // 只有进行中的目标才需要每秒刷新（否则白跑一个 1s 定时器）
     val now = rememberTickingNow(enabled = goal.isRunning)
     SessionStatusSection(
-        title = "目标",
+        title = stringResource(R.string.status_section_goal_title),
         icon = Icons.Default.Star,
-        summary = StatusPanelLabels.goalStatusLabel(goal.status),
+        summary = StatusPanelLabels.goalStatusLabel(goal.status)?.asString(),
         expanded = expanded,
         onToggle = { expanded = !expanded },
     ) {
@@ -330,7 +337,7 @@ private fun GoalSection(goal: ConversationFrames.GoalState) {
         }
         val elapsed = StatusPanelLabels.goalElapsedLabel(goal, now)
         val budget = StatusPanelLabels.goalBudgetLine(goal)
-        val meta = listOfNotNull(elapsed.ifEmpty { null }, budget).joinToString(" · ")
+        val meta = listOfNotNull(elapsed?.asString(), budget?.asString()).joinToString(" · ")
         if (meta.isNotEmpty()) {
             Text(
                 text = meta,
@@ -350,7 +357,7 @@ private fun PlanSection(plan: ConversationFrames.PlanState) {
     var expanded by rememberSaveable { mutableStateOf(true) }
     var showAll by rememberSaveable { mutableStateOf(false) }
     SessionStatusSection(
-        title = "进程",
+        title = stringResource(R.string.status_section_plan_title),
         icon = Icons.AutoMirrored.Filled.List,
         summary = StatusPanelLabels.planCounterLabel(plan),
         expanded = expanded,
@@ -363,13 +370,13 @@ private fun PlanSection(plan: ConversationFrames.PlanState) {
         display.visible.forEach { todo -> PlanTodoLine(todo) }
 
         StatusPanelLabels.planFoldedCompletedLabel(display.foldedCompleted)?.let { label ->
-            FoldHint(text = label, onClick = { showAll = true })
+            FoldHint(text = label.asString(), onClick = { showAll = true })
         }
         StatusPanelLabels.planFoldedTailLabel(display.foldedTail)?.let { label ->
-            FoldHint(text = label, onClick = { showAll = true })
+            FoldHint(text = label.asString(), onClick = { showAll = true })
         }
         if (showAll) {
-            FoldHint(text = "收起", onClick = { showAll = false })
+            FoldHint(text = stringResource(R.string.common_collapse), onClick = { showAll = false })
         }
     }
 }
@@ -430,16 +437,16 @@ private fun TerminalsSection(works: ConversationFrames.BackgroundWorksState) {
     // 默认折叠：终端是「想知道有没有、不常想知道具体是什么」的信息
     var expanded by rememberSaveable { mutableStateOf(false) }
     SessionStatusSection(
-        title = "终端",
+        title = stringResource(R.string.status_section_terminals_title),
         icon = Icons.Default.PlayArrow,
-        summary = StatusPanelLabels.terminalsLabel(works.bashRunningCount),
+        summary = StatusPanelLabels.terminalsLabel(works.bashRunningCount)?.asString(),
         expanded = expanded,
         onToggle = { expanded = !expanded },
     ) {
         works.running.filter { it.kind == "bash" }.forEach { work ->
             // 快照里后台任务只有 workId，没有命令行文本，因此只能给出标识
             Text(
-                text = work.workId ?: work.childSessionId ?: "后台命令",
+                text = work.workId ?: work.childSessionId ?: stringResource(R.string.status_background_command),
                 style = MaterialTheme.typography.bodySmall.copy(fontSize = ZCodeType.Sm),
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 maxLines = 1,
@@ -454,15 +461,15 @@ private fun AgentsSection(subagents: ConversationFrames.SubagentsState) {
     // 默认折叠：子智能体动辄一串 id，平时只需要计数
     var expanded by rememberSaveable { mutableStateOf(false) }
     SessionStatusSection(
-        title = "智能体",
+        title = stringResource(R.string.status_section_agents_title),
         icon = Icons.Default.Person,
-        summary = StatusPanelLabels.agentsLabel(subagents),
+        summary = StatusPanelLabels.agentsLabel(subagents).asString(),
         expanded = expanded,
         onToggle = { expanded = !expanded },
     ) {
         if (subagents.runningChildSessionIds.isEmpty()) {
             Text(
-                text = "当前没有运行中的子智能体",
+                text = stringResource(R.string.status_no_running_agents),
                 style = MaterialTheme.typography.bodySmall.copy(fontSize = ZCodeType.Sm),
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
@@ -484,14 +491,14 @@ private fun AgentsSection(subagents: ConversationFrames.SubagentsState) {
 private fun QueueSection(queue: ConversationFrames.QueueState) {
     var expanded by rememberSaveable { mutableStateOf(true) }
     SessionStatusSection(
-        title = "排队输入",
+        title = stringResource(R.string.status_section_queue_title),
         icon = Icons.AutoMirrored.Filled.Send,
-        summary = "${queue.itemCount} 条",
+        summary = stringResource(R.string.status_queue_section_summary, queue.itemCount),
         expanded = expanded,
         onToggle = { expanded = !expanded },
     ) {
         Text(
-            text = "待发送 ${queue.itemCount} 条" + StatusPanelLabels.queueAutoDrainSuffix(queue.autoDrain),
+            text = StatusPanelLabels.queueDrainLabel(queue.itemCount, queue.autoDrain).asString(),
             style = MaterialTheme.typography.bodySmall.copy(fontSize = ZCodeType.Sm),
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
@@ -551,7 +558,7 @@ fun QueuePendingStrip(
                         .background(statusPendingTone(), shape = RoundedCornerShape(3.dp)),
             )
             Text(
-                text = label,
+                text = label.asString(),
                 style =
                     MaterialTheme.typography.labelSmall.copy(
                         fontSize = ZCodeType.Sm,
