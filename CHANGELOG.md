@@ -1,5 +1,46 @@
 # 变更记录 / Changelog
 
+## 未发布（2026-10-16）· 走查第七批：断开态下切换会话不再显示上一个会话的内容
+
+> 真机走查附带发现并定性。**用户可见**：断开连接后点开会话卡片，会话页显示的是
+> **上一个会话**的标题与内容行——点 A 看到 B 的内容。
+
+### 问题（三处代码共同作用）
+
+- `ConversationRepository.subscribeConversation()` 原以 `val conv = conversation() ?: return`
+  开头：**断开连接**（`disconnect()` 已把 `conversation` 置 null）或未定位到工作区时，
+  整个方法**提前返回**，跳过其后的 `rowStore.clear()`。
+- `rows` / `conversationMeta` 是**单一共享实例**（`ConversationRepository.kt:41-42`），
+  非按会话隔离；`disconnect()` 也不清它们。
+- `ConnectionCoordinator.kt:359-360`：桥就绪时会**自动订阅**运行中的会话，
+  使「上一次订阅的会话」有实际内容可残留。
+
+结果：断开态下点任意卡片，`title = conversationMeta.title ?: target.title` 取到旧标题、
+`rows` 取到旧行，界面呈现的其实是**别的会话**的遗留视图。
+
+### 修复
+
+- `ConversationRepository.subscribeConversation()` 重构为「**视图切换始终执行**」：
+  草稿切换 / `subscribedSessionId` / 清行 / 读本会话离线缓存一律照做，
+  仅在**无法发起网络订阅**（`conv == null` 或 `ws == null`）时跳过 `conv.subscribe()`，
+  并把派生状态（meta / earlier / sessionState / snapshotAligned / status）清空——
+  断开态下这些无人再刷新，不清会一直停留在上一个会话。
+- 修复后与既有产品契约一致：README 的「会话**离线秒开**——点击任意会话卡片立即呈现
+  该会话最近 200 行历史消息」在断开态下同样成立（显示的是**该会话自己**的缓存行）。
+- 保留原有早退时不改 `subscribedSessionId` 之外的行为不变性：草稿/附件/回显气泡的清理
+  时序与在线路径完全一致。
+
+### 验证
+
+- 新增仪器化 `ConversationOfflineSwitchInstrumentedTest`（2 项，复用
+  `ConversationDraftInstrumentedTest` 的 `conversation = { null }` 断连套路）：
+  ① 断开态下先渲染会话 B 的行、再点开 A，断言 **A 不残留 B 的内容行**（修复前必失败）；
+  ② 断开态切换会话时草稿键跟随——不得把 A 的草稿带进 B。
+- JVM 门禁：单测 **313/313**；`ktlintCheck` 0 违规；`detekt` 通过；
+  `lintDebug`/`lintRelease` 0 error；`assembleDebug`/`assembleRelease`/
+  `assembleDebugAndroidTest` 通过。
+- **仪器化用例在 CI 的 API 35 emulator 上执行**（本机真机为 API 37，测试库受限，见 HANDOFF）。
+
 ## 未发布（2026-10-16）· 走查清单第六批：首页连接失败态不再误报「正在连接」
 
 > 承接第五批（会话空态）。走查 #11 的**后半**：首页会话列表空态的占位文案此前只覆盖两种状态，

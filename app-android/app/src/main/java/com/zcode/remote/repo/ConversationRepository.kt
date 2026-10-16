@@ -165,10 +165,17 @@ class ConversationRepository(
      *
      * 走 zcode-agent 通道的官方序列：listen → hello → initialize → subscribe
      * （见 research/CONVERSATION-PROTOCOL.md §4）。
+     *
+     * **断开连接时也要切视图**：原实现把 `conversation() ?: return` 放在最前，
+     * 断开态（或未定位工作区）下直接早退、跳过后面所有状态重置——而 `rows` / `conversationMeta`
+     * 是**单一共享实例**，于是点开会话卡片会看到**上一个会话**的标题与内容行
+     * （2026-10-16 真机走查定性）。现改为：无论能否发起网络订阅，视图切换（清空 + 载入本会话
+     * 离线缓存）都照常执行，仅跳过 `conv.subscribe()`。
      */
     internal fun subscribeConversation(s: SessionItem) {
-        val conv = conversation() ?: return
-        val ws = s.workspacePath ?: activeWorkspaceKey() ?: return
+        val conv = conversation()
+        val ws = s.workspacePath ?: activeWorkspaceKey()
+
         // 草稿按会话隔离：先把当前草稿存回旧会话键，再恢复目标会话的草稿（须在改
         // subscribedSessionId 之前调，否则「存旧」会存到新会话键上）
         switchDraftTo(s.taskId)
@@ -179,7 +186,7 @@ class ConversationRepository(
         clearAttachments() // 附件与会话绑定，切会话即清空
         pendingUserMessages = emptyList() // C-6：本地回显气泡同样与会话绑定
 
-        // Sprint 5 离线缓存秒开：点击会话卡片首帧立即呈现历史消息行。
+        // Sprint 5 离线缓存秒开：点击会话卡片首帧立即呈现历史消息行（离线亦可——纯本地磁盘读）。
         // C-5⑤（2026-10-10，真机故障后立项）：读取**移出主线程**——原实现同步 readText + JSON 解码
         // 阻塞 UI（大缓存会话进页首帧卡顿的来源之一）；改 IO 线程加载，且**仅在权威快照未落地时应用**
         // （否则慢磁盘读会覆盖已到达的新快照 = 旧盖新）；期间切走会话则丢弃。
@@ -193,6 +200,19 @@ class ConversationRepository(
                     ZLog.i(TAG, "离线缓存秒开（异步）: ${cached.size} 行 session=${s.taskId.take(24)}")
                 }
             }
+        }
+
+        // 无法发起网络订阅（断开 / 未定位工作区）：视图已切到该会话（含其离线缓存），
+        // 但派生状态（meta / 翻页 / 会话级状态 / 对齐信号）在断开态下**无人再刷新**，
+        // 须在此清空——否则标题等信息会一直停留在上一个会话。
+        if (conv == null || ws == null) {
+            conversationMeta = ConversationChannel.ConversationMeta()
+            earlier = ConversationChannel.EarlierState()
+            sessionState = ConversationFrames.SessionState()
+            snapshotAligned = null
+            conversationStatus = ConversationChannel.Status.Idle
+            ZLog.i(TAG, "subscribe 跳过（离线）: conv=${conv != null} ws=${ws != null} session=${LogRedactor.maskId(s.taskId)}")
+            return
         }
 
         ZLog.i(TAG, "subscribe conversation session=${LogRedactor.maskId(s.taskId)} ws=${LogRedactor.pathLabel(ws)}")

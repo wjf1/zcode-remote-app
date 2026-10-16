@@ -220,25 +220,20 @@ lint 双变体 0 error、detekt、ktlint 0 违规、assembleDebug/Release 通过
 - **观测记录（非缺陷）**：一次 `force-stop` 后重启的**过渡残帧**里曾见到首页卡片「PC焦点」
   徽章短暂出现在搜索框上方；稳定态（0.8s 与 5s 两次复测）均正常、未复现，判定为 Activity
   恢复期的中间帧，非稳定缺陷。
-- **已定性待修复（2026-10-16 真机走查附带发现，只读排查已定位根因）**：在**断开连接后**
-  点开会话卡片，会话页显示的是**上一次订阅会话的标题与内容行**（状态栏「未订阅」），
-  而非空态。**不是跨会话串台**（标题与行属于同一会话），机制为三处代码共同作用：
+- **已修复（2026-10-16 真机走查发现 → 只读排查定性 → 实施修复）**：原先在**断开连接后**
+  点开会话卡片，会话页显示的是**上一次订阅会话的标题与内容行**（状态栏「未订阅」）。
+  **不是跨会话串台**（标题与行属于同一会话），机制为三处代码共同作用：
   1. `ConnectionCoordinator.kt:359-360`——桥就绪时**自动订阅** `hostSessions.firstOrNull { it.isRunning } ?: firstOrNull()`；
-     App 冷启动约 1s 后桥即 Ready，于是「最后一个被订阅的会话」= 该运行中会话。
-  2. `ConversationRepository.kt:169-186`——`subscribeConversation()` 在
-     `conversation() == null`（断开后 `disconnect()` 已置 null）时**提前 return**，
-     而 `rowStore.clear()` 与随后的 `loadRows` 都在 return 之后 → 断开态下**既不清行也不加载**。
-  3. `AppViewModel.kt:855-887`——`disconnect()` **不碰 `rowStore` 也不重置 `convRepo.conversationMeta`**；
-     且 `rowStore`/`rows` 是**单一共享实例**（`ConversationRepository.kt:41-42`），非按会话隔离。
-  - 结果：断开后点任意卡片，`title = conversationMeta.title ?: target.title` 取到旧标题、
-    `rows` 取到旧行，界面貌似「打开了一个没有内容的会话」，实则展示的是别的会话的遗留视图。
-  - **可达性更正**：空态**并非不可达**——只要在桥就绪自动订阅**之前**断开
-    （冷启动后约 1s 内的窄窗口），或全新安装无缓存且未连接时，`rowStore` 为空即可命中。
-    本次走查因"冷启动后等 9s 再断开"错过了该窗口。
-  - **建议修复（未做，待立项）**：把 `rowStore.clear()` 与 meta 重置提到
-    `subscribeConversation()` 的两处哨兵 `return` **之前**（断开态下先清空视图再早退）；
-    或在 `disconnect()` 内一并清 `rowStore`/`conversationMeta`。改动小但触及「每次点会话」的主路径，
-    需单测 + 真机回归。**未写入 CHANGELOG**（尚未实施）。
+  2. `ConversationRepository.subscribeConversation()` 原以 `conversation() ?: return` 开头，
+     断开态下**早退并跳过 `rowStore.clear()`**；
+  3. `disconnect()` 不清 `rowStore`/`conversationMeta`，且二者为**单一共享实例**。
+  - **修复**：`subscribeConversation()` 改为「视图切换始终执行」——草稿/`subscribedSessionId`/
+    清行/读本会话离线缓存一律照做，仅在无法发起网络订阅时跳过 `conv.subscribe()` 并清空派生状态。
+    与 README「会话离线秒开（点击任意卡片呈现该会话缓存）」契约一致。
+  - **验证**：新增仪器化 `ConversationOfflineSwitchInstrumentedTest`（2 项，含修复前必失败的
+    「A 不残留 B 内容行」断言）；JVM 单测 313/313、ktlint/detekt/lint 双变体 0 error、
+    双变体 + androidTest 装配全通过。**仪器化用例在 CI 的 API 35 emulator 执行**。
+  - 注：本次真机走查**未**覆盖该修复的真机回归（修复在走查之后实施），CI emulator 覆盖为准。
 - **既有硬门（沿用历史决策，勿当遗漏）**：
   1. **§11.5.3 A-5 逻辑 fragment 重组**——无真实帧样本不实现（「未知 fragment 显式失同步」已落地）；
   2. **出站大 RPC 物理分片**——同硬门（官方算法已实证，App 现为本地拒绝超限帧）；
@@ -313,8 +308,8 @@ lint 双变体 0 error、detekt、ktlint 0 违规、assembleDebug/Release 通过
 >   单测覆盖，**视觉呈现待后续在零行会话 / 空列表环境下补走查**。
 >   **方案 A 尝试（同日）**：请用户在 PC 端建空白会话后，手机端重启 App 拉取列表
 >   始终无新增（PC 端「新建任务」草稿页**不发消息不产生 task**，故不进会话列表）；
->   「断开后点开会话」也未命中，反而暴露了一个已定性的遗留缺陷
->   （见下方「已定性待修复」）。**结论更正**：空态**并非不可达**——触发窗口是
+>   「断开后点开会话」也未命中，反而暴露了一个遗留缺陷（已定性并修复，
+>   **见下方「已修复」**）。**结论更正**：空态**并非不可达**——触发窗口是
 >   「App 冷启动后、桥就绪自动订阅**之前**（约 1s 内）断开」此时 `rowStore` 为空；
 >   本次因等 9s 再断开而错过。**空态视觉验收仍待补做**（在窄窗口下复现，或全新安装未连接时）。
 
