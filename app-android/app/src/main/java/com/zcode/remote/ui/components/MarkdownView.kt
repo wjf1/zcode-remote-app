@@ -28,6 +28,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalUriHandler
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.buildAnnotatedString
@@ -44,6 +45,7 @@ import com.mikepenz.markdown.m3.Markdown
 import com.mikepenz.markdown.m3.markdownColor
 import com.mikepenz.markdown.m3.markdownTypography
 import com.mikepenz.markdown.model.NoOpImageTransformerImpl
+import com.zcode.remote.R
 import com.zcode.remote.ui.theme.LocalZCodeDark
 import com.zcode.remote.ui.theme.ZCodeDimens
 import com.zcode.remote.ui.theme.ZCodeTokens
@@ -217,7 +219,7 @@ private fun CodeBlockCard(
             )
             Spacer(Modifier.weight(1f))
             Text(
-                text = if (copied) "已复制" else "复制",
+                text = if (copied) stringResource(R.string.common_copied) else stringResource(R.string.common_copy),
                 style = MaterialTheme.typography.labelSmall,
                 color = if (copied) ZCodeTokens.StatusOnline else MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier =
@@ -325,7 +327,7 @@ private fun MarkdownImageNotice() {
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Text(
-            text = "图片（未加载）",
+            text = stringResource(R.string.markdown_image_notice),
             style = MaterialTheme.typography.labelMedium,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             modifier =

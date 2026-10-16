@@ -29,11 +29,13 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalHapticFeedback
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.zcode.remote.R
 import com.zcode.remote.relay.ConversationRow
 import com.zcode.remote.ui.theme.LocalZCodeDark
 import com.zcode.remote.ui.theme.ZCodeDimens
@@ -318,7 +320,7 @@ fun DiffBlock(
                     modifier = Modifier.height(24.dp),
                 ) {
                     // material-icons-core 无 ContentCopy，用字形替代（避免引入 icons-extended 增包体）
-                    Text("⧉ 复制", style = MaterialTheme.typography.labelSmall)
+                    Text(stringResource(R.string.diff_copy), style = MaterialTheme.typography.labelSmall)
                 }
             }
             // 桌面端 diff 的增删比手写值更淡（14%），底色只做提示，靠左侧竖条承担主要辨识
@@ -335,7 +337,7 @@ fun DiffBlock(
             slices.forEach { slice ->
                 if (slice.collapsedRun != null) {
                     Text(
-                        text = "⋯ ${slice.collapsedRun} 行未变更，点击展开 ⋯",
+                        text = stringResource(R.string.diff_unchanged_lines, slice.collapsedRun),
                         style = MaterialTheme.typography.labelSmall,
                         color = MaterialTheme.colorScheme.primary,
                         modifier =

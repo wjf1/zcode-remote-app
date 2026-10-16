@@ -457,4 +457,23 @@
     <string name="dialog_files_empty">本会话暂无文件操作记录（Edit / Write / Read 等工具调用后会出现在这里）</string>
     <string name="conv_error_copied">错误原因已复制</string>
 
+    <!-- ========== ui/components 与 ui/voice 残留（批次 4 收尾） ========== -->
+    <string name="countdown_auto_resolve_soon">即将自动决议</string>
+    <string name="countdown_auto_resolve_seconds">%1$ds 后自动决议</string>
+    <string name="diff_copy">⧉ 复制</string>
+    <string name="diff_unchanged_lines">⋯ %1$d 行未变更，点击展开 ⋯</string>
+    <string name="markdown_image_notice">图片（未加载）</string>
+    <string name="uri_blocked">已拦截非 http(s) 链接</string>
+    <string name="turn_changes_title">📦 本轮变更</string>
+    <string name="turn_changes_summary">共 %1$d 个文件 (+%2$d −%3$d)</string>
+    <string name="turn_changes_view">查看变更</string>
+    <string name="voice_need_permission">⚠️ 需要麦克风权限才能语音输入</string>
+    <string name="voice_stop">停止语音输入</string>
+    <string name="voice_input">语音输入</string>
+    <string name="voice_no_match">未识别到语音</string>
+    <string name="voice_no_permission">缺少麦克风权限</string>
+    <string name="voice_network_error">识别服务网络错误</string>
+    <string name="voice_busy">识别服务忙，稍后再试</string>
+    <string name="voice_error">语音识别出错（%1$d）</string>
+
 </resources>

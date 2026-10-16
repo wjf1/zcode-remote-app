@@ -11,9 +11,11 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.zcode.remote.R
 import com.zcode.remote.relay.TurnDiffSummary
 
 /**
@@ -44,13 +46,13 @@ fun TurnChangesCard(
                 modifier = Modifier.fillMaxWidth(),
             ) {
                 Text(
-                    text = "📦 本轮变更",
+                    text = stringResource(R.string.turn_changes_title),
                     style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.Bold),
                     color = MaterialTheme.colorScheme.primary,
                 )
                 Spacer(Modifier.width(8.dp))
                 Text(
-                    text = "共 ${summary.fileCount} 个文件 (+${summary.totalAdded} −${summary.totalRemoved})",
+                    text = stringResource(R.string.turn_changes_summary, summary.fileCount, summary.totalAdded, summary.totalRemoved),
                     style = MaterialTheme.typography.labelSmall.copy(fontSize = 11.sp),
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     modifier = Modifier.weight(1f),
@@ -61,7 +63,7 @@ fun TurnChangesCard(
                     modifier = Modifier.height(28.dp),
                 ) {
                     Text(
-                        text = if (expanded) "收起" else "查看变更",
+                        text = if (expanded) stringResource(R.string.common_collapse) else stringResource(R.string.turn_changes_view),
                         style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.SemiBold),
                     )
                     Spacer(Modifier.width(2.dp))

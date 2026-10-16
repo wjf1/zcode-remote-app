@@ -39,10 +39,12 @@ import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.zcode.remote.R
 import com.zcode.remote.ui.theme.LocalZCodeDark
 import com.zcode.remote.ui.theme.ZCodeDimens
 import com.zcode.remote.ui.theme.ZCodeTokens
@@ -94,7 +96,7 @@ fun CollapsibleRow(
             )
             Icon(
                 imageVector = Icons.AutoMirrored.Filled.KeyboardArrowRight,
-                contentDescription = if (expanded) "收起" else "展开",
+                contentDescription = if (expanded) stringResource(R.string.common_collapse) else stringResource(R.string.common_expand),
                 tint = chevronColor,
                 modifier =
                     Modifier

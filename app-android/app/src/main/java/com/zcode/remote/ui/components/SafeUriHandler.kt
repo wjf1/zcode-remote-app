@@ -6,6 +6,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.platform.UriHandler
+import com.zcode.remote.R
 
 /**
  * 只放行 http/https 的 [UriHandler]。
@@ -43,7 +44,7 @@ fun rememberSafeUriHandler(): UriHandler {
     val context = LocalContext.current
     return remember(delegate, context) {
         SafeUriHandler(delegate) {
-            Toast.makeText(context, "已拦截非 http(s) 链接", Toast.LENGTH_SHORT).show()
+            Toast.makeText(context, context.getString(R.string.uri_blocked), Toast.LENGTH_SHORT).show()
         }
     }
 }

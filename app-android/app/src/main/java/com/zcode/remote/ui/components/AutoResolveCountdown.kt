@@ -10,6 +10,10 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import com.zcode.remote.R
+import com.zcode.remote.util.UiText
+import com.zcode.remote.util.UiText.Companion.res
+import com.zcode.remote.util.asString
 import kotlinx.coroutines.delay
 
 /**
@@ -42,7 +46,7 @@ fun AutoResolveCountdown(
         now = System.currentTimeMillis()
     }
     Text(
-        text = countdownLabel(deadlineAt, now),
+        text = countdownLabel(deadlineAt, now).asString(),
         style = style,
         color = color,
         modifier = modifier,
@@ -58,9 +62,9 @@ fun AutoResolveCountdown(
 internal fun countdownLabel(
     deadlineAt: Long,
     now: Long,
-): String {
+): UiText {
     val remainingMs = deadlineAt - now
-    if (remainingMs <= 0) return "即将自动决议"
+    if (remainingMs <= 0) return res(R.string.countdown_auto_resolve_soon)
     val sec = ((remainingMs + 999) / 1000).toInt()
-    return "${sec}s 后自动决议"
+    return res(R.string.countdown_auto_resolve_seconds, sec)
 }

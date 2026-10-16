@@ -24,7 +24,12 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
+import com.zcode.remote.R
+import com.zcode.remote.util.UiText
+import com.zcode.remote.util.UiText.Companion.res
+import com.zcode.remote.util.resolve
 
 /**
  * 语音输入按钮（P1-3）：系统 SpeechRecognizer 转文字，结果交给 [onFinalText] 追加进输入草稿。
@@ -111,7 +116,7 @@ fun VoiceInputButton(
 
             override fun onError(error: Int) {
                 report(false, null)
-                onStateChange(false, errorText(error))
+                onStateChange(false, errorText(error).resolve(context))
             }
         },
     )
@@ -124,7 +129,7 @@ fun VoiceInputButton(
             if (granted) {
                 start()
             } else {
-                onStateChange(false, "⚠️ 需要麦克风权限才能语音输入")
+                onStateChange(false, context.getString(R.string.voice_need_permission))
             }
         }
 
@@ -142,7 +147,7 @@ fun VoiceInputButton(
         // 与输入栏其余图标体系不一致；聆听中改用错误色（点击即停止拾音）。
         Icon(
             imageVector = Icons.Default.Mic,
-            contentDescription = if (listening) "停止语音输入" else "语音输入",
+            contentDescription = if (listening) stringResource(R.string.voice_stop) else stringResource(R.string.voice_input),
             tint = if (listening) MaterialTheme.colorScheme.error else LocalContentColor.current,
         )
     }
@@ -152,12 +157,11 @@ private fun hasRecordAudio(context: Context): Boolean =
     context.checkSelfPermission(Manifest.permission.RECORD_AUDIO) ==
         PackageManager.PERMISSION_GRANTED
 
-private fun errorText(error: Int): String =
-    "⚠️ " +
-        when (error) {
-            SpeechRecognizer.ERROR_NO_MATCH, SpeechRecognizer.ERROR_SPEECH_TIMEOUT -> "未识别到语音"
-            SpeechRecognizer.ERROR_INSUFFICIENT_PERMISSIONS -> "缺少麦克风权限"
-            SpeechRecognizer.ERROR_NETWORK, SpeechRecognizer.ERROR_NETWORK_TIMEOUT -> "识别服务网络错误"
-            SpeechRecognizer.ERROR_RECOGNIZER_BUSY -> "识别服务忙，稍后再试"
-            else -> "语音识别出错（$error）"
-        }
+private fun errorText(error: Int): UiText =
+    when (error) {
+        SpeechRecognizer.ERROR_NO_MATCH, SpeechRecognizer.ERROR_SPEECH_TIMEOUT -> res(R.string.voice_no_match)
+        SpeechRecognizer.ERROR_INSUFFICIENT_PERMISSIONS -> res(R.string.voice_no_permission)
+        SpeechRecognizer.ERROR_NETWORK, SpeechRecognizer.ERROR_NETWORK_TIMEOUT -> res(R.string.voice_network_error)
+        SpeechRecognizer.ERROR_RECOGNIZER_BUSY -> res(R.string.voice_busy)
+        else -> res(R.string.voice_error, error)
+    }
