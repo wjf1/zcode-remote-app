@@ -171,11 +171,33 @@ class ConversationChannel(
     ) {
         generation += 1
         val gen = generation
+        // 是否**切换到不同会话**（在改写 sessionId 之前判定）。同会话重订（A-2 自动重订 /
+        // 用户手动重试）不清会话级状态——否则用户正在看的标题/相位会闪一下再回来。
+        val switchingSession = session != sessionId
         sessionId = session
         subscriptionId = null
-        // 允许预加载离线缓存行：不强制即时 clear，待快照到达时由 replaceAll 平滑对齐权威状态
+        if (switchingSession) {
+            // 会话级状态一律复位（2026-10-16 同类缺陷扫描，与 reset() 对齐）：
+            // 原先只重置 _status/_interactions/_snapshotAligned，而下列状态会**跨会话沿用**：
+            // - _earlier（翻页门控）：**不被快照重写**，上个会话拉到头后的 (pulled=true,
+            //   hasMore=false) 会让 UI 门控 `(hasMore || !pulled)` 恒假 → 新会话**永远无法上翻且不自愈**；
+            // - _meta（标题/相位/行数/模型）：握手窗口内顶栏显示上一会话信息；且快照写入多用
+            //   `?: _meta.value.x` 回退，旧值在快照字段缺失时会串号（如 lastError）；
+            // - _sessionState / _elicitations：状态面板与表单卡显示上一会话数据。
+            // _meta/_sessionState/_elicitations 会被快照权威值覆盖，故复位只影响握手窗口；
+            // _earlier 无此覆盖，复位是**修复**（而非只是消除闪烁）。
+            // 注：rows 不在此清（由调用方 clear + 离线缓存预载，待快照 replaceAll 平滑对齐）。
+            _interactions.value = emptyList()
+            _elicitations.value = emptyList()
+            _sessionState.value = ConversationFrames.SessionState()
+            _earlier.value = EarlierState()
+            _meta.value = ConversationMeta()
+            // 防误停令牌：stop 命令会把它作为 expectedForegroundExecutionId 下发（服务端据此
+            // 校验「停的是不是当前前台任务」）。它只在 control 里非空时被赋值、从不回 null，
+            // 跨会话残留会把上一会话的执行 id 带进本会话的 stop 请求 → 服务端校验不过、停止失效。
+            foregroundExecutionId = null
+        }
         _status.value = Status.Idle
-        _interactions.value = emptyList()
         // 上一次订阅的对齐信号作废（避免新会话首帧就被旧信号驱动定位）
         _snapshotAligned.value = null
 

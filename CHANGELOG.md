@@ -1,5 +1,48 @@
 # 变更记录 / Changelog
 
+## 未发布（2026-10-16）· 走查第八批：切换会话时会话级状态未复位（同类缺陷扫描）
+
+> 承接第七批的**同类扫描**（第七批的模式 = 会话级共享状态在切换路径上漏清）。
+> 在 `ConversationChannel` 中又发现同源实例，且其中一条是**持久性**缺陷。
+
+### 问题
+
+- `ConversationChannel.subscribe()`（切换会话时调用）原先只复位 `_status` / `_interactions` /
+  `_snapshotAligned` **三个**流，而 `reset()` 复位 **七个**——漏掉的 `_meta` / `_earlier` /
+  `_sessionState` / `_elicitations` 会**跨会话沿用**：
+  - **`_earlier`（向上翻页门控）——持久性**：它**不被快照重写**（快照处理只写 `_meta` /
+    `_sessionState` / `_interactions` / `_elicitations`，从无 `_earlier`）。上个会话拉到头后的
+    `(pulled=true, hasMore=false)` 会带给下一个会话，使 UI 门控 `(hasMore || !pulled)` **恒假**
+    —— 新会话**永远无法向上翻页**，且不会自愈。
+  - **`_meta`（标题 / 相位 / 行数 / 模型 / lastError）**：切会话的握手窗口内顶栏显示
+    **上一个会话的标题与模型**；且因快照写入大量使用 `?: _meta.value.x` 回退，
+    旧会话的 `lastError` / `logEpoch` 可能串进新会话（快照字段缺失时）。
+  - **`foregroundExecutionId`（防误停令牌）**：`stop` 命令把它作为 `expectedForegroundExecutionId`
+    下发（服务端校验「停的是不是当前前台任务」）；它只在 `control` 非空时被赋值、**从不回 null**，
+    跨会话残留会让新会话的停止请求带上旧执行 id → 服务端校验不过、**停止失效**。
+
+### 修复
+
+- `ConversationChannel.subscribe()` 中，当且仅当**切换到不同会话**时（在改写 `sessionId` 前判定
+  `session != sessionId`）复位上述会话级状态，并在复位清单中加入 `foregroundExecutionId = null`。
+- **同会话重订不复位**：A-2 自动重订 / 用户手动重试走的是同一 `subscribe()`，若一并复位会让
+  用户正在看的标题与相位**闪一下再回来**，故用 `switchingSession` 闸门区分。
+
+### 验证
+
+- 新增仪器化 `ConversationChannelStateResetInstrumentedTest`（2 项，**不依赖 Espresso**，
+  HANDOVER 记录的「API 37 真机可用」套路）：
+  ① 会话 A 翻页拉到头后切到 B，断言 **B 的翻页门控已复位**（`!pulled`，修复前必失败——
+     `_earlier` 不重置则 `(hasMore || !pulled)` 恒假）；
+  ② **同会话重订保留 `_earlier`**（防标题/相位闪烁的回归护栏）。
+  用例不依赖中继：桥未就绪时 `loadEarlier` 走同步错误分支，恰好把 `_earlier` 置成
+  `(loading=false, hasMore=false, pulled=true)`，可在无网络下稳定复现。
+- JVM 门禁：单测 **313/313**；`ktlintCheck` 0 违规；`detekt` 通过；
+  `lintDebug`/`lintRelease` 0 error；`assembleDebug`/`assembleRelease`/
+  `assembleDebugAndroidTest` 通过。
+- **仪器化用例在 CI 的 API 35 emulator 上执行**（`.github/workflows/ci.yml` 的
+  `:app:connectedDebugAndroidTest`）；本机真机为 API 37 且走查后已断开连接，**未本地执行**。
+
 ## 未发布（2026-10-16）· 走查第七批：断开态下切换会话不再显示上一个会话的内容
 
 > 真机走查附带发现并定性。**用户可见**：断开连接后点开会话卡片，会话页显示的是

@@ -234,6 +234,19 @@ lint 双变体 0 error、detekt、ktlint 0 违规、assembleDebug/Release 通过
     「A 不残留 B 内容行」断言）；JVM 单测 313/313、ktlint/detekt/lint 双变体 0 error、
     双变体 + androidTest 装配全通过。**仪器化用例在 CI 的 API 35 emulator 执行**。
   - 注：本次真机走查**未**覆盖该修复的真机回归（修复在走查之后实施），CI emulator 覆盖为准。
+- **已修复 · 同类扫描第二例（2026-10-16）**：按第七批的模式（会话级共享状态在切换路径漏清）
+  扫描，在 `ConversationChannel.subscribe()` 又发现同源实例——它只复位 3 个流，而 `reset()` 复位 7 个：
+  - **`_earlier` 翻页门控（持久性）**：**不被快照重写**，上个会话的 `(pulled=true, hasMore=false)`
+    会让新会话的 UI 门控 `(hasMore || !pulled)` **恒假 → 永远无法向上翻页且不自愈**。
+  - **`_meta`**：切会话握手窗口内顶栏显示上一会话标题/模型；`lastError`/`logEpoch` 可能串号。
+  - **`foregroundExecutionId`（防误停令牌）**：从不回 null，跨会话残留会让 stop 请求带上旧
+    执行 id → 服务端校验不过、**停止失效**。
+  - **修复**：`subscribe()` 中仅当**切换到不同会话**时复位上述项（`session != sessionId` 闸门），
+    同会话重订（A-2 自动重订 / 用户重试）不清，避免标题/相位闪烁。
+  - **验证**：新增仪器化 `ConversationChannelStateResetInstrumentedTest`（2 项，不依赖 Espresso；
+    复用「桥未就绪时 loadEarlier 走同步错误分支 → `_earlier` 置 `pulled=true`」的复现路径，
+    含修复前必失败断言 + 同会话重订不闪回归护栏）。JVM 门禁全绿（313/313、lint 双变体 0 error、
+    三套装配通过）。**仪器化用例在 CI 的 API 35 emulator 执行**。
 - **既有硬门（沿用历史决策，勿当遗漏）**：
   1. **§11.5.3 A-5 逻辑 fragment 重组**——无真实帧样本不实现（「未知 fragment 显式失同步」已落地）；
   2. **出站大 RPC 物理分片**——同硬门（官方算法已实证，App 现为本地拒绝超限帧）；
