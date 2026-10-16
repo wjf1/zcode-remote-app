@@ -413,6 +413,9 @@
     <string name="timeline_at_start">已到会话开头</string>
     <string name="timeline_swipe_for_earlier">上滑加载更早历史</string>
     <string name="timeline_back_to_bottom">回到底部</string>
+    <string name="timeline_date_today">今天</string>
+    <string name="timeline_date_yesterday">昨天</string>
+    <string name="timeline_date_other">%1$d 年 %2$d 月 %3$d 日</string>
     <string name="pending_plan_approval">实施方案待批准</string>
     <string name="pending_questions">提问 · 需要你的回答</string>
     <string name="pending_confirm_request">确认请求</string>

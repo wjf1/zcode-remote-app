@@ -26,6 +26,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -693,6 +694,33 @@ private fun SubagentRow(row: ConversationRow) {
     }
 }
 
+/**
+ * 日期分隔（走查 #14）：居中日期标签 + 两侧细线，形态复用 [TimelineMarkerRow] 的骨架。
+ *
+ * 长会话无时间锚点时，用户往下翻几百行分不清「这条是今天的还是上周的」。
+ * 时间取自行级绝对时间戳 `ConversationRow.createdAt`（协议文档 §6.2），
+ * 文案由纯函数 [Format.dateDividerLabel] 产出（按本地时区日历日判定今天/昨天/更早）。
+ */
+@Composable
+private fun DateDividerRow(createdAtMs: Long) {
+    val dark = LocalZCodeDark.current
+    val line = if (dark) ZCodeTokens.BorderSubtleDark else ZCodeTokens.BorderSubtleLight
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        modifier = Modifier.fillMaxWidth().padding(vertical = ZCodeDimens.PadBlock),
+    ) {
+        HorizontalDivider(Modifier.weight(1f), color = line)
+        Text(
+            text = Format.dateDividerLabel(createdAtMs, System.currentTimeMillis()).asString(),
+            style = MaterialTheme.typography.labelSmall.copy(fontSize = ZCodeType.Sm),
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            maxLines = 1,
+            modifier = Modifier.padding(horizontal = ZCodeDimens.GapInline),
+        )
+        HorizontalDivider(Modifier.weight(1f), color = line)
+    }
+}
+
 /** 时间线标记（会话被压缩 / 分叉 / 恢复之类的分隔点）：居中标签 + 两侧 1px 细线。 */
 @Composable
 private fun TimelineMarkerRow(row: ConversationRow) {
@@ -835,7 +863,13 @@ internal fun ConversationTimelineArea(
                     textAlign = androidx.compose.ui.text.style.TextAlign.Center,
                 )
             }
-            items(rows, key = { it.rowId }) { row ->
+            itemsIndexed(rows, key = { _, row -> row.rowId }) { index, row ->
+                // 走查 #14：跨日历日时插一条日期分隔（今天/昨天/年月日）。
+                // 判定用行级绝对时间戳 createdAt；首行必插、无时间戳不插（见 Format.needsDateDivider）。
+                val prevCreatedAt = if (index == 0) null else rows[index - 1].createdAt
+                if (Format.needsDateDivider(prevCreatedAt, row.createdAt) && row.createdAt != null) {
+                    DateDividerRow(row.createdAt)
+                }
                 val expandKey = rowExpandKey(row)
                 RowItem(
                     row = row,

@@ -1,5 +1,6 @@
 package com.zcode.remote.util
 
+import com.zcode.remote.R
 import kotlin.math.abs
 import kotlin.math.roundToInt
 
@@ -74,6 +75,84 @@ object Format {
     fun workedDuration(ms: Long?): String {
         val d = duration(ms)
         return if (d.isEmpty()) "" else "已工作 $d"
+    }
+
+    /**
+     * 会话流的日期分隔标签（走查 #14）。
+     *
+     * 输入是**行级绝对时间戳** `ConversationRow.createdAt`（协议文档 §6.2 明列，ms）。
+     * 返回 [UiText] 而非 String：日期文案需本地化（今天/昨天/年月日），
+     * 且本函数是纯函数，`UiText` 让 JVM 单测能断言资源 id 与参数、不必碰 Android。
+     *
+     * 判定按**本地时区的日历日**（`Calendar`），不是「距今 24 小时」——后者在 23:59 与
+     * 00:01 的两行会被判为同一天，而用户看到的是两天的消息。
+     *
+     * @param nowMs 当前时刻（调用方传入，函数不读时钟——否则单测只能靠等到明天）
+     */
+    fun dateDividerLabel(
+        createdAtMs: Long,
+        nowMs: Long,
+    ): UiText {
+        val zone = java.util.TimeZone.getDefault()
+        val then =
+            java.util.Calendar.getInstance(zone).apply {
+                timeInMillis = createdAtMs
+                set(java.util.Calendar.HOUR_OF_DAY, 0)
+                set(java.util.Calendar.MINUTE, 0)
+                set(java.util.Calendar.SECOND, 0)
+                set(java.util.Calendar.MILLISECOND, 0)
+            }
+        val today =
+            java.util.Calendar.getInstance(zone).apply {
+                timeInMillis = nowMs
+                set(java.util.Calendar.HOUR_OF_DAY, 0)
+                set(java.util.Calendar.MINUTE, 0)
+                set(java.util.Calendar.SECOND, 0)
+                set(java.util.Calendar.MILLISECOND, 0)
+            }
+        // 日历日差值：按毫秒差除以一天，四舍五入吸收夏令时导致的 23/25 小时日
+        val dayDiff = Math.round((today.timeInMillis - then.timeInMillis).toDouble() / 86_400_000.0)
+        return when (dayDiff) {
+            0L -> UiText.Res(R.string.timeline_date_today)
+            1L -> UiText.Res(R.string.timeline_date_yesterday)
+            else ->
+                UiText.Res(
+                    R.string.timeline_date_other,
+                    listOf(
+                        then.get(java.util.Calendar.YEAR),
+                        then.get(java.util.Calendar.MONTH) + 1,
+                        then.get(java.util.Calendar.DAY_OF_MONTH),
+                    ),
+                )
+        }
+    }
+
+    /**
+     * 某一行的日期是否与上一行**不同日**——决定要不要在该行上方插日期分隔。
+     *
+     * @param prevCreatedAtMs 上一行的 createdAt（null = 本行是首行，总要插分隔）；
+     *                        `prev` 为 null 但 `current` 也 null 时返回 false（都无时间戳，无从判断）
+     */
+    fun needsDateDivider(
+        prevCreatedAtMs: Long?,
+        currentCreatedAtMs: Long?,
+    ): Boolean {
+        if (currentCreatedAtMs == null) return false
+        if (prevCreatedAtMs == null) return true
+        // 用「年 + 月 + 日」三元组比日历日：**不可**用 `YEAR*366 + DAY_OF_YEAR`——
+        // 平年/闰年的 DAY_OF_YEAR 起点不同（闰年 12-31 的 DAY_OF_YEAR=366，平年同一天=365），
+        // 跨年比较会错位（如闰年 12-30 与次年 1-1 可能被误判为同一天）。
+        val zone = java.util.TimeZone.getDefault()
+
+        fun calendarDay(ms: Long): Triple<Int, Int, Int> =
+            java.util.Calendar.getInstance(zone).apply { timeInMillis = ms }.let {
+                Triple(
+                    it.get(java.util.Calendar.YEAR),
+                    it.get(java.util.Calendar.MONTH),
+                    it.get(java.util.Calendar.DAY_OF_MONTH),
+                )
+            }
+        return calendarDay(prevCreatedAtMs) != calendarDay(currentCreatedAtMs)
     }
 
     /**
