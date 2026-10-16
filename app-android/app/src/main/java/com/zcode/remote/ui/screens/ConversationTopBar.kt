@@ -292,7 +292,7 @@ internal fun ConversationTopBar(
                     HorizontalDivider()
                     levelsOf(stage).forEach { lv ->
                         DropdownMenuItem(
-                            text = { Text(thoughtLabel(lv), style = MaterialTheme.typography.bodySmall) },
+                            text = { Text(thoughtLabel(lv).asString(), style = MaterialTheme.typography.bodySmall) },
                             onClick = {
                                 menuExpanded = false
                                 levelStageModel = null

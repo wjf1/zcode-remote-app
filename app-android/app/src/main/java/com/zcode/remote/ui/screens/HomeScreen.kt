@@ -23,10 +23,12 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.zcode.remote.R
 import com.zcode.remote.relay.FailureReason
 import com.zcode.remote.relay.RelayState
 import com.zcode.remote.relay.SessionItem
@@ -34,6 +36,8 @@ import com.zcode.remote.ui.theme.ZCodeTokens
 import com.zcode.remote.ui.theme.statusPendingTone
 import com.zcode.remote.ui.theme.toolCallTrajectoryTone
 import com.zcode.remote.ui.voice.VoiceInputButton
+import com.zcode.remote.util.UiText
+import com.zcode.remote.util.UiText.Companion.res
 import com.zcode.remote.util.asString
 
 /**
@@ -108,7 +112,7 @@ fun HomeScreen(
         ) {
             Column(modifier = Modifier.weight(1f)) {
                 Text(
-                    text = "ZCode 会话",
+                    text = stringResource(R.string.home_title),
                     style = MaterialTheme.typography.headlineSmall.copy(fontWeight = FontWeight.Bold),
                 )
                 Spacer(Modifier.height(2.dp))
@@ -119,7 +123,12 @@ fun HomeScreen(
                     StatusDot(state)
                     Spacer(Modifier.width(6.dp))
                     Text(
-                        text = "${deviceName.ifEmpty { "远程设备" }} · ${statusLabel(state)}",
+                        text =
+                            stringResource(
+                                R.string.home_device_with_status,
+                                deviceName.ifEmpty { stringResource(R.string.home_device_unnamed) },
+                                statusLabel(state).asString(),
+                            ),
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
@@ -133,7 +142,7 @@ fun HomeScreen(
             ) {
                 Icon(Icons.Default.Add, contentDescription = null, modifier = Modifier.size(16.dp))
                 Spacer(Modifier.width(4.dp))
-                Text("新建会话", style = MaterialTheme.typography.labelSmall)
+                Text(stringResource(R.string.home_new_session), style = MaterialTheme.typography.labelSmall)
             }
         }
 
@@ -160,12 +169,12 @@ fun HomeScreen(
                     Spacer(Modifier.width(8.dp))
                     Column {
                         Text(
-                            text = "控制权已被其它终端接管",
+                            text = stringResource(R.string.home_kicked_title),
                             style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.Bold),
                             color = MaterialTheme.colorScheme.onErrorContainer,
                         )
                         Text(
-                            text = "同一账号单时刻只允许一个终端在线。若要继续，请前往设置重新连接。",
+                            text = stringResource(R.string.home_kicked_body),
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onErrorContainer.copy(alpha = 0.9f),
                         )
@@ -182,7 +191,7 @@ fun HomeScreen(
                 Modifier
                     .fillMaxWidth()
                     .padding(bottom = 8.dp),
-            placeholder = { Text("搜索会话标题或工作区路径…", style = MaterialTheme.typography.bodySmall) },
+            placeholder = { Text(stringResource(R.string.home_search_placeholder), style = MaterialTheme.typography.bodySmall) },
             singleLine = true,
             leadingIcon = {
                 Icon(
@@ -223,7 +232,7 @@ fun HomeScreen(
                     filterOnlyRunning = false
                     filterOnlyPending = false
                 },
-                label = { Text("全部 (${sessions.size})", style = MaterialTheme.typography.labelSmall) },
+                label = { Text(stringResource(R.string.home_filter_all, sessions.size), style = MaterialTheme.typography.labelSmall) },
                 shape = RoundedCornerShape(8.dp),
             )
 
@@ -234,7 +243,7 @@ fun HomeScreen(
                         filterOnlyRunning = !filterOnlyRunning
                         if (filterOnlyRunning) filterOnlyPending = false
                     },
-                    label = { Text("运行中 ($runningCount)", style = MaterialTheme.typography.labelSmall) },
+                    label = { Text(stringResource(R.string.home_filter_running, runningCount), style = MaterialTheme.typography.labelSmall) },
                     shape = RoundedCornerShape(8.dp),
                 )
             }
@@ -246,7 +255,7 @@ fun HomeScreen(
                         filterOnlyPending = !filterOnlyPending
                         if (filterOnlyPending) filterOnlyRunning = false
                     },
-                    label = { Text("待处理 ($pendingCount)", style = MaterialTheme.typography.labelSmall) },
+                    label = { Text(stringResource(R.string.home_filter_pending, pendingCount), style = MaterialTheme.typography.labelSmall) },
                     shape = RoundedCornerShape(8.dp),
                 )
             }
@@ -281,7 +290,7 @@ fun HomeScreen(
                     // 给出「前往设置」引导，避免用户对着永不成功的「正在连接」干等。
                     if (isTerminalFailure(state)) {
                         TextButton(onClick = onNavigateToSettings) {
-                            Text("前往设置", style = MaterialTheme.typography.labelMedium)
+                            Text(stringResource(R.string.home_go_settings), style = MaterialTheme.typography.labelMedium)
                         }
                     }
                 }
@@ -295,7 +304,7 @@ fun HomeScreen(
                 if (filteredSessions.isEmpty()) {
                     item {
                         Text(
-                            text = "没有找到匹配的会话",
+                            text = stringResource(R.string.home_no_match),
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                             modifier = Modifier.padding(vertical = 16.dp),
@@ -413,7 +422,7 @@ private fun SessionItemCard(
                 // 标题行与徽标
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Text(
-                        text = s.title.ifBlank { "未命名会话" },
+                        text = s.title.ifBlank { stringResource(R.string.common_unnamed_session) },
                         style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.SemiBold),
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis,
@@ -427,7 +436,7 @@ private fun SessionItemCard(
                             shape = RoundedCornerShape(4.dp),
                         ) {
                             Text(
-                                text = "正在查看",
+                                text = stringResource(R.string.home_badge_active),
                                 style =
                                     MaterialTheme.typography.labelSmall.copy(
                                         color = MaterialTheme.colorScheme.onPrimary,
@@ -445,7 +454,7 @@ private fun SessionItemCard(
                             shape = RoundedCornerShape(4.dp),
                         ) {
                             Text(
-                                text = "PC焦点",
+                                text = stringResource(R.string.home_badge_desktop_focus),
                                 style = MaterialTheme.typography.labelSmall.copy(fontSize = 10.sp),
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                                 modifier = Modifier.padding(horizontal = 5.dp, vertical = 1.dp),
@@ -462,7 +471,7 @@ private fun SessionItemCard(
                         listOfNotNull(
                             s.workspaceLabel ?: s.workspacePath?.substringAfterLast('/'),
                             s.provider,
-                            statusText(s.displayStatus),
+                            statusText(s.displayStatus).asString(),
                         ).joinToString(" · "),
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -489,7 +498,7 @@ private fun SessionItemCard(
                 if (pending > 0) {
                     Spacer(Modifier.height(4.dp))
                     Text(
-                        text = "⏳ $pending 项待决议 (请前往「待办」处理)",
+                        text = stringResource(R.string.home_pending_hint, pending),
                         style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.SemiBold),
                         color = statusPendingTone(),
                     )
@@ -502,30 +511,30 @@ private fun SessionItemCard(
     if (showDeleteConfirm) {
         AlertDialog(
             onDismissRequest = { showDeleteConfirm = false },
-            title = { Text("删除会话") },
+            title = { Text(stringResource(R.string.home_delete_title)) },
             text = {
-                Text("将删除「${s.title.ifBlank { "未命名会话" }}」并从 PC 端会话列表移除，PC 端同步生效。确定删除？")
+                Text(stringResource(R.string.home_delete_body, s.title.ifBlank { stringResource(R.string.common_unnamed_session) }))
             },
             confirmButton = {
                 TextButton(onClick = {
                     showDeleteConfirm = false
                     onDelete()
-                }) { Text("删除", color = MaterialTheme.colorScheme.error) }
+                }) { Text(stringResource(R.string.home_delete_confirm), color = MaterialTheme.colorScheme.error) }
             },
             dismissButton = {
-                TextButton(onClick = { showDeleteConfirm = false }) { Text("取消") }
+                TextButton(onClick = { showDeleteConfirm = false }) { Text(stringResource(R.string.common_cancel)) }
             },
         )
     }
 }
 
-private fun statusText(s: String) =
+private fun statusText(s: String): UiText =
     when (s) {
-        "running" -> "运行中"
-        "streaming" -> "生成中"
-        "completed" -> "已完成"
-        "error" -> "异常"
-        else -> s
+        "running" -> res(R.string.home_session_status_running)
+        "streaming" -> res(R.string.home_session_status_streaming)
+        "completed" -> res(R.string.home_session_status_completed)
+        "error" -> res(R.string.home_session_status_error)
+        else -> UiText.Raw(s)
     }
 
 @Composable
@@ -540,39 +549,39 @@ private fun StatusDot(state: RelayState) {
     Canvas(Modifier.size(8.dp)) { drawCircle(color) }
 }
 
-private fun statusLabel(state: RelayState) =
+private fun statusLabel(state: RelayState): UiText =
     when (state) {
-        RelayState.Idle -> "未连接"
-        RelayState.Connecting -> "连接中"
-        RelayState.Authenticating -> "握手中"
-        RelayState.WaitingPeer -> "等待接入"
-        RelayState.Paired -> "就绪"
-        is RelayState.Failed -> "异常"
+        RelayState.Idle -> res(R.string.relay_status_idle)
+        RelayState.Connecting -> res(R.string.relay_status_connecting)
+        RelayState.Authenticating -> res(R.string.relay_status_authenticating)
+        RelayState.WaitingPeer -> res(R.string.relay_status_waiting_peer)
+        RelayState.Paired -> res(R.string.relay_status_paired)
+        is RelayState.Failed -> res(R.string.relay_status_failed)
     }
 
 /** 自动挑选的思考档位：优先首个非 disabled（保持推理开启），全为 disabled 时取第一个。 */
 private fun autoThought(levels: List<String>): String? = levels.firstOrNull { !it.equals("disabled", ignoreCase = true) } ?: levels.firstOrNull()
 
 /** 思考档位的中文展示名（未知档位原样回显）。会话页二级菜单复用。 */
-internal fun thoughtLabel(level: String): String =
+internal fun thoughtLabel(level: String): UiText =
     when (level.lowercase()) {
-        "disabled", "off", "none" -> "关闭"
-        "low", "minimal" -> "低"
-        "medium", "enabled" -> "中"
-        "high" -> "高"
-        "max", "xhigh" -> "最高"
-        else -> level
+        "disabled", "off", "none" -> res(R.string.thought_off)
+        "low", "minimal" -> res(R.string.thought_low)
+        "medium", "enabled" -> res(R.string.thought_medium)
+        "high" -> res(R.string.thought_high)
+        "max", "xhigh" -> res(R.string.thought_max)
+        else -> UiText.Raw(level)
     }
 
 /** P0-B：执行模式全集（协议合法值见 tools/setmode.py 的 VALID）。 */
 private val EXEC_MODES = listOf("plan", "build", "yolo")
 
-internal fun execModeLabel(m: String): String =
+internal fun execModeLabel(m: String): UiText =
     when (m) {
-        "plan" -> "规划 plan"
-        "build" -> "构建 build"
-        "yolo" -> "全自动 yolo"
-        else -> m
+        "plan" -> res(R.string.mode_plan_short)
+        "build" -> res(R.string.mode_build_short)
+        "yolo" -> res(R.string.mode_yolo_short)
+        else -> UiText.Raw(m)
     }
 
 /**
@@ -629,21 +638,21 @@ private fun CreateSessionDialog(
         onDismissRequest = onDismiss,
         title = {
             Text(
-                text = "发起新会话",
+                text = stringResource(R.string.create_title),
                 style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
             )
         },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 Text(
-                    text = "在当前活动工作区创建一个全新的 AI Agent 编程会话。",
+                    text = stringResource(R.string.create_subtitle),
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
 
                 if (voiceListening || !voiceLive.isNullOrBlank()) {
                     Text(
-                        text = "🎤 ${voiceLive ?: "正在聆听…"}",
+                        text = stringResource(R.string.create_voice_live, voiceLive ?: stringResource(R.string.create_listening)),
                         style = MaterialTheme.typography.labelSmall,
                         color = MaterialTheme.colorScheme.primary,
                     )
@@ -654,7 +663,7 @@ private fun CreateSessionDialog(
                     onValueChange = { prompt = it },
                     placeholder = {
                         Text(
-                            "输入给 Agent 的第一条任务指令（例如：检查并修复登录组件的单测）…",
+                            stringResource(R.string.create_prompt_placeholder),
                             style = MaterialTheme.typography.bodySmall,
                         )
                     },
@@ -668,7 +677,7 @@ private fun CreateSessionDialog(
                 // ---- 模型选择器 ----
                 Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
                     Text(
-                        text = "模型",
+                        text = stringResource(R.string.create_model_label),
                         style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.SemiBold),
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
@@ -689,8 +698,8 @@ private fun CreateSessionDialog(
                             Text(
                                 text =
                                     effectiveSelection?.name
-                                        ?: currentModel?.let { "默认（$it）" }
-                                        ?: "默认（跟随 PC 端）",
+                                        ?: currentModel?.let { stringResource(R.string.create_model_default_named, it) }
+                                        ?: stringResource(R.string.create_model_default_follow),
                                 style = MaterialTheme.typography.bodySmall,
                                 maxLines = 1,
                                 overflow = TextOverflow.Ellipsis,
@@ -706,7 +715,7 @@ private fun CreateSessionDialog(
                             when {
                                 modelsLoading -> {
                                     DropdownMenuItem(
-                                        text = { Text("加载模型目录中…", style = MaterialTheme.typography.bodySmall) },
+                                        text = { Text(stringResource(R.string.create_models_loading), style = MaterialTheme.typography.bodySmall) },
                                         onClick = {},
                                         enabled = false,
                                     )
@@ -716,11 +725,11 @@ private fun CreateSessionDialog(
                                         text = {
                                             Column {
                                                 Text(
-                                                    "远程模型目录暂不可用",
+                                                    stringResource(R.string.create_models_unavailable),
                                                     style = MaterialTheme.typography.bodySmall,
                                                 )
                                                 Text(
-                                                    "可直接选择「跟随 PC 端默认」创建会话",
+                                                    stringResource(R.string.create_models_unavailable_hint),
                                                     style = MaterialTheme.typography.labelSmall,
                                                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                                                 )
@@ -733,7 +742,7 @@ private fun CreateSessionDialog(
                                 else -> {
                                     // 1. 跟随默认
                                     DropdownMenuItem(
-                                        text = { Text("跟随 PC 端默认", style = MaterialTheme.typography.bodySmall) },
+                                        text = { Text(stringResource(R.string.create_model_follow_pc), style = MaterialTheme.typography.bodySmall) },
                                         leadingIcon = {
                                             if (selectedModel == null) {
                                                 Icon(
@@ -752,7 +761,7 @@ private fun CreateSessionDialog(
                                     // 2. PC 端当前模型（从会话快照 config 快捷置顶）
                                     currentModel?.let { cur ->
                                         DropdownMenuItem(
-                                            text = { Text("PC 当前 · $cur", style = MaterialTheme.typography.bodySmall) },
+                                            text = { Text(stringResource(R.string.create_model_pc_current, cur), style = MaterialTheme.typography.bodySmall) },
                                             leadingIcon = {
                                                 if (selectedModel?.name == cur) {
                                                     Icon(
@@ -818,7 +827,7 @@ private fun CreateSessionDialog(
                 if (availableThoughtLevels.size > 1) {
                     Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
                         Text(
-                            text = "思考档位",
+                            text = stringResource(R.string.create_thought_label),
                             style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.SemiBold),
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
@@ -833,7 +842,7 @@ private fun CreateSessionDialog(
                                     onClick = { selectedThought = lv },
                                     label = {
                                         Text(
-                                            text = thoughtLabel(lv),
+                                            text = thoughtLabel(lv).asString(),
                                             style = MaterialTheme.typography.labelSmall,
                                         )
                                     },
@@ -842,7 +851,7 @@ private fun CreateSessionDialog(
                             }
                         }
                         Text(
-                            text = "档位越高推理越深入，但耗时与消耗也更大。",
+                            text = stringResource(R.string.create_thought_hint),
                             style = MaterialTheme.typography.labelSmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
@@ -852,7 +861,7 @@ private fun CreateSessionDialog(
                 // ---- 执行模式选择器（P0-B）：默认 build；选 yolo 给醒目风险文案 ----
                 Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
                     Text(
-                        text = "执行模式",
+                        text = stringResource(R.string.create_mode_label),
                         style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.SemiBold),
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
@@ -866,7 +875,7 @@ private fun CreateSessionDialog(
                                 onClick = { selectedExecMode = m },
                                 label = {
                                     Text(
-                                        text = execModeLabel(m),
+                                        text = execModeLabel(m).asString(),
                                         style = MaterialTheme.typography.labelSmall,
                                     )
                                 },
@@ -877,13 +886,13 @@ private fun CreateSessionDialog(
                     when (selectedExecMode) {
                         "yolo" ->
                             Text(
-                                text = "⚠ 免审批：所有工具调用自动放行，PC 端将无确认执行任意命令；锁屏审批对本会话不触发。",
+                                text = stringResource(R.string.create_yolo_warning),
                                 style = MaterialTheme.typography.labelSmall,
                                 color = MaterialTheme.colorScheme.error,
                             )
                         else ->
                             Text(
-                                text = "build=工具调用需在手机审批；plan=只读规划。切换仅对新建的会话生效。",
+                                text = stringResource(R.string.create_mode_hint),
                                 style = MaterialTheme.typography.labelSmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                             )
@@ -913,12 +922,12 @@ private fun CreateSessionDialog(
                 enabled = prompt.isNotBlank(),
                 shape = RoundedCornerShape(8.dp),
             ) {
-                Text("立即创建")
+                Text(stringResource(R.string.create_confirm))
             }
         },
         dismissButton = {
             TextButton(onClick = onDismiss) {
-                Text("取消")
+                Text(stringResource(R.string.common_cancel))
             }
         },
     )

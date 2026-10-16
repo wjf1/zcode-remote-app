@@ -204,4 +204,64 @@
     <!-- 文件预览失败（ConversationDialogs） -->
     <string name="file_preview_failed">读取失败：%1$s\n\n%2$s</string>
 
+    <!-- ========== 首页会话列表（HomeScreen） ========== -->
+    <string name="home_title">ZCode 会话</string>
+    <string name="home_device_unnamed">远程设备</string>
+    <string name="home_device_with_status">%1$s · %2$s</string>
+    <string name="home_new_session">新建会话</string>
+    <string name="home_kicked_title">控制权已被其它终端接管</string>
+    <string name="home_kicked_body">同一账号单时刻只允许一个终端在线。若要继续，请前往设置重新连接。</string>
+    <string name="home_search_placeholder">搜索会话标题或工作区路径…</string>
+    <string name="home_filter_all">全部 (%1$d)</string>
+    <string name="home_filter_running">运行中 (%1$d)</string>
+    <string name="home_filter_pending">待处理 (%1$d)</string>
+    <string name="home_go_settings">前往设置</string>
+    <string name="home_no_match">没有找到匹配的会话</string>
+    <string name="home_badge_active">正在查看</string>
+    <string name="home_badge_desktop_focus">PC焦点</string>
+    <string name="home_pending_hint">⏳ %1$d 项待决议 (请前往「待办」处理)</string>
+    <string name="home_delete_title">删除会话</string>
+    <string name="home_delete_body">将删除「%1$s」并从 PC 端会话列表移除，PC 端同步生效。确定删除？</string>
+    <string name="home_delete_confirm">删除</string>
+    <string name="home_meta_joined">%1$s · %2$s</string>
+    <!-- 会话状态 / 继电器状态 / 思考档位 / 执行模式标签（HomeScreen 内纯函数） -->
+    <string name="home_session_status_running">运行中</string>
+    <string name="home_session_status_streaming">生成中</string>
+    <string name="home_session_status_completed">已完成</string>
+    <string name="home_session_status_error">异常</string>
+    <string name="relay_status_idle">未连接</string>
+    <string name="relay_status_connecting">连接中</string>
+    <string name="relay_status_authenticating">握手中</string>
+    <string name="relay_status_waiting_peer">等待接入</string>
+    <string name="relay_status_paired">就绪</string>
+    <string name="relay_status_failed">异常</string>
+    <string name="thought_off">关闭</string>
+    <string name="thought_low">低</string>
+    <string name="thought_medium">中</string>
+    <string name="thought_high">高</string>
+    <string name="thought_max">最高</string>
+    <string name="mode_plan_short">规划 plan</string>
+    <string name="mode_build_short">构建 build</string>
+    <string name="mode_yolo_short">全自动 yolo</string>
+    <!-- 新建会话弹窗 -->
+    <string name="create_title">发起新会话</string>
+    <string name="create_subtitle">在当前活动工作区创建一个全新的 AI Agent 编程会话。</string>
+    <string name="create_listening">正在聆听…</string>
+    <string name="create_voice_live">🎤 %1$s</string>
+    <string name="create_prompt_placeholder">输入给 Agent 的第一条任务指令（例如：检查并修复登录组件的单测）…</string>
+    <string name="create_model_label">模型</string>
+    <string name="create_model_default_named">默认（%1$s）</string>
+    <string name="create_model_default_follow">默认（跟随 PC 端）</string>
+    <string name="create_models_loading">加载模型目录中…</string>
+    <string name="create_models_unavailable">远程模型目录暂不可用</string>
+    <string name="create_models_unavailable_hint">可直接选择「跟随 PC 端默认」创建会话</string>
+    <string name="create_model_follow_pc">跟随 PC 端默认</string>
+    <string name="create_model_pc_current">PC 当前 · %1$s</string>
+    <string name="create_thought_label">思考档位</string>
+    <string name="create_thought_hint">档位越高推理越深入，但耗时与消耗也更大。</string>
+    <string name="create_mode_label">执行模式</string>
+    <string name="create_yolo_warning">⚠ 免审批：所有工具调用自动放行，PC 端将无确认执行任意命令；锁屏审批对本会话不触发。</string>
+    <string name="create_mode_hint">build=工具调用需在手机审批；plan=只读规划。切换仅对新建的会话生效。</string>
+    <string name="create_confirm">立即创建</string>
+
 </resources>
