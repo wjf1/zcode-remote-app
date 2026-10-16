@@ -166,44 +166,54 @@ lint 双变体 0 error、detekt、ktlint 0 违规、assembleDebug/Release 通过
 
 ## 5. 接力开发指引与待办（Next Steps / Backlog）
 
-### 🔄 进行中的工作：国际化资源化（第 1/6 批已完成）
+### ✅ 已完成：国际化资源化（6 批全部完成，2026-10-16）
 
 **目标**：把散落的中文字面量抽到 `res/values/strings.xml`，实现「文案集中管理 + 未来可翻译 +
 可加防硬编码门禁」。**不是**做英文界面（用户已明确无英文需求）；**默认语言仍为中文，行为零变化**。
 
-**规模实测**：用户可见中文串 **561 条**（`ui/` 365、`relay/` 138、`repo/` 62、`notify/` 30）；
-其中 **~140 条在纯函数层**、**107 条含 `$` 插值**（需改签名/传参）、仅 **41 条**在集中式对象里。
-日志（96 条）与协议常量/诊断码**不进** strings.xml。
+**成果**：`strings.xml` 由 **67 条 → 452 条**（+385）。`ui/` 目录用户可见中文字面量**清零**
+（仅剩 `ZLog` 日志）；`notify/` 与 `widget/` 清零。剩余 78 处全部是**正确保留**的
+日志 / 注释 / 协议常量 / 诊断导出头 / 异常消息（见下方架构约束）。
 
-**已完成（第 1 批）**
-- `app-android/app/src/main/java/com/zcode/remote/util/UiText.kt` — 文案载体抽象
-  （`Res(资源id, 参数)` / `Raw(运行期文本)`；`asString()` 用于 Composable、`resolve(context)` 用于通知/Widget）。
-- `app-android/app/src/main/res/values/strings.xml` — 公共文案 + 工具家族标签（中文）。
-- `ui/components/ToolKindLabels.kt` — `label`/`runningLabel`/`statusLabel`/`primaryText` 返回 `UiText`。
-- `ui/screens/ConversationTimeline.kt` — 消费点经 `asString()`；`primaryText` 拆出 `searchPrimaryText`。
-- `detekt-baseline.xml` — `label` 条目签名更新（`: String`→`: UiText`），条数不变。
+**批次与提交**（每批独立提交 + 全门禁）
 
-**后续批次（每批独立提交 + 全门禁，可单独回退）**
-
-| 批次 | 范围 | 条数 | 要点 |
+| 批次 | 范围 | 提交 | 要点 |
 |---|---|---|---|
-| 2 | `ui/components/StatusPanelLabels.kt` | 24 | 纯函数，照第 1 批模式（返回 `UiText`，测试断言改资源 id） |
-| 3 | `relay/UserFacingError.kt` | 17 | **最微妙**：`LOCAL_ERRORS`/`FAULT_ERRORS` 映射表改为「英文键 → 资源 id」；`UserFacingErrorTest` 同步改 |
-| 4 | `ui/screens/` 各屏 | 365 | 最大头，建议按屏分（HomeScreen 59 / SettingsTab 66 / ConversationTopBar 27 / KeepAliveGuideScreen 20 …） |
-| 5 | `notify/` + `repo/` + `widget/` | ~93 | 有 `Context`，用 `UiText.resolve(context)`（注意通知构建在非 Compose 上下文） |
-| 6 | `relay/` 用户可见错误文案 | ~46 | **逐条甄别**：`ConversationChannel` 里同文件混有用户可见串与日志/协议串，只搬前者 |
+| 1 | `ToolKindLabels` + 公共文案 | （已发布） | 确立 `UiText` 模式（`Res` / `Raw`），`asString()` / `resolve(context)` |
+| 2 | `ui/components/StatusPanelLabels.kt` | `8ac2dab` | 队列整句三态改完整句式（片段无法翻译）；新增 `StatusPanelLabelsTest`（该类原无测试） |
+| 3 | `relay/UserFacingError.kt` + flash 管道 | `283db43` | 映射表「英文键→资源 id」；**`UiText` 增加嵌套解析**；`flash`/`commandFeedback` 全链路改 `UiText` |
+| 4 | `ui/screens/` 各屏（7 子提交） | `15d9c23`…`fb0872d` | HomeScreen / SettingsTab / ApprovalsTab / TopBar / KeepAlive / 会话流三组件 / 诊断等；含 `ui/components` 与 `ui/voice` |
+| 5 | `notify/` + `repo/` + `widget/` | `afdd222` | 通知经 `context.getString`；`UpdateRepository` 新增 `context` 构造参数（原无 Context） |
+| 6 | `relay/` 用户可见文案（**缩减范围**） | `bbf732f` | 仅 `handshakeFailureReason` + `Status.Failed.reason`（见下） |
 
-**实施注意**（踩过的坑）
+**⚠️ 批次 6 的架构约束（重要，勿重复踩坑）**
+`relay/` 的 46 条中，**24 条绑在 `Result.failure(IllegalStateException/IllegalArgumentException)`**
+上——Java 异常只能携带 `String`，资源化需换成自定义类型（跨 relay/VM/repo 三层重构），
+风险与收益不成比例；且这些中文串经 `UserFacingError.map()` 后落为 `UiText.Raw`（原文透出），
+**功能完全正常**，只是不参与未来翻译。
+`ResolveResult.Failed.message` 同样受限：它同时服务 **UI 出口**（经 `UserFacingError.map`）
+与 **异常出口**（`parseCommandAck` → `sendPrompt`/`switchModelConfig` 的 `IllegalStateException`），
+改 `UiText` 需给协议层注入 Context 或拆分支——故**批次 6 只做了 `handshakeFailureReason`（纯函数）
+与 `Status.Failed.reason`**（各有独立测试覆盖），其余保持原文透出。
+**结论：relay 层剩余文案不建议继续资源化**，除非将来真要做多语言且接受该重构成本。
+
+**剩余未资源化清单（有意保留，非遗漏）**
+- `util/Format.kt` 的时长文案（`$h 小时 $m 分` 等，纯数字+单位拼接，含在多个格式化函数内）
+- `util/diag/Diagnostics.kt` 的**导出文件头**（诊断导出件标题，非 UI）
+- `service/ConnectionService.kt` 已补（`c9fa3e3`）
+- 日志（`ZLog.*`）、协议常量、诊断事件码——本就不该本地化
+
+**实施注意**（踩过的坑，供后续参考）
 - 纯函数返回类型改 `UiText` 会**连带改测试断言**（本项目无 Robolectric，这是必要的代价，不是回归）。
-- 容器类 `when` 加 `res(...)` 包装会抬高 **detekt CyclomaticComplexity**；把子分支抽成私有函数
-  （如 `searchPrimaryText`），而不是加 `@Suppress`。
-- `UiText.asString()/resolve()` 的 `*args` 展开触发 **detekt SpreadOperator**，已就地 `@Suppress` 并注明理由。
-- import 顺序：`ktlintFormat` 会自动修正（`com.zcode.remote.R` 的位置）。
-- **每批做完必须**：`ktlintCheck detekt testDebugUnitTest lintDebug lintRelease assembleDebug assembleRelease`
-  全绿 + `python tools/check_test_count.py --min 260`（现为 287）。
-
-**决策待定**：全量做（6 批，为「可能永远不来的英文需求」做全量工程）vs 只做批次 2–3（纯函数标签层，
-收益是集中管理 + 可加门禁，风险最低）。用户倾向与后续取舍见 CHANGELOG「未发布（进行中）」段。
+- 容器类 `when` 加 `res(...)` 包装会抬高 **detekt CyclomaticComplexity**；把子分支抽成私有函数，
+  而不是加 `@Suppress`。**签名变化会失配 `detekt-baseline.xml`**（需同步更新基线条目签名）。
+- `UiText.asString()/resolve()` 的 `*args` 展开触发 **detekt SpreadOperator**，已就地 `@Suppress`。
+- **`strings.xml` 是 CRLF 行尾**：脚本化改资源时必须用 `newline=''` 的二进制安全替换，否则匹配失败。
+- **非 Composable 上下文**（通知/Toast/Widget/Service）用 `context.getString(...)` 或 `UiText.resolve(context)`，
+  **不能**用 `stringResource`。
+- 每批做完跑：`ktlintCheck detekt testDebugUnitTest lintDebug lintRelease assembleDebug assembleRelease`
+  + `python tools/check_test_count.py`（现为 **329**）。
+- import 顺序由 `ktlintFormat` 自动修正。
 
 ### 其他待办
 

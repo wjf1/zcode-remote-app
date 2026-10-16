@@ -1,5 +1,52 @@
 # 变更记录 / Changelog
 
+## 未发布（2026-10-16）· 国际化资源化 6 批完成（文案集中管理，用户可见零变化）
+
+> 把散落的中文字面量抽到 `res/values/strings.xml`，实现「文案集中管理 + 未来可翻译 +
+> 可加防硬编码门禁」。**不是**做英文界面（无英文需求）；**默认语言仍为中文，行为零变化**。
+
+**成果**：`strings.xml` **67 条 → 452 条**（+385）。`ui/` 目录用户可见中文字面量**清零**
+（仅剩 `ZLog` 日志）；`notify/`、`widget/` 清零。
+
+### 各批内容（每批独立提交 + 全门禁，见 `HANDOFF.md` §5 的批次表）
+
+- **第 2 批**（`8ac2dab`）：`StatusPanelLabels` 全部自然语言文案改 `UiText`；队列「待发送 N 条 + 后缀」
+  的**片段拼接改为完整句式资源**（片段无法被翻译成通顺的其他语言）；纯数字格式（`78.2%`、`3/7`）
+  保持 `String`；未知枚举走 `UiText.Raw`。新增 `StatusPanelLabelsTest`（15 项，该类此前无测试）。
+- **第 3 批**（`283db43`）：`UserFacingError` 的 `LOCAL_ERRORS`/`FAULT_ERRORS` 由「英文键→中文」
+  改为「英文键→资源 id」；**`UiText` 增强嵌套解析**（`Res` 的参数可为另一 `UiText`，用于
+  「发送失败：%1$s」套错误文案）；`flash` 管道全链路改 `UiText`（`commandFeedback`/`FilePreview.Failed`/
+  `createNewSession.onError` + 4 个 repo 的注入签名）。
+- **第 4 批**（`15d9c23`…`fb0872d`，7 子提交）：`ui/screens/` 全部屏幕 + `ui/components` + `ui/voice`。
+  含 HomeScreen(39) / SettingsTab(63) / ApprovalsTab(22) / TopBar(13) / KeepAlive(16) / 会话流三组件(41) /
+  诊断扫码对话框等(23) / components 与 voice(19)。
+- **第 5 批**（`afdd222`）：`notify/`（3 个 Notifier 共 28 处，经 `context.getString`）、
+  `repo/`（`NotificationCoordinator.terminalTitle` 改 `UiText`；`UpdateRepository` **新增 context 构造参数**）、
+  `widget/`（3 态文案）。
+- **第 6 批（缩减范围）**（`bbf732f`）：`handshakeFailureReason` 改返回 `UiText`；
+  `ConversationChannel.Status.Failed.reason` 改 `UiText`（4 个构造点）。
+- **补漏**（`c9fa3e3`）：`service/ConnectionService` 前台服务常驻通知（渠道名/标题/正文 3 处）。
+
+### ⚠️ 架构约束（决定了第 6 批只能缩减范围）
+
+`relay/` 层 46 条中 **24 条绑在 `Result.failure(IllegalStateException/IllegalArgumentException)`** 上
+—— **Java 异常 API 只能携带 `String`**，资源化需换成自定义类型（跨 relay/VM/repo 三层重构），
+风险与收益不成比例；且这些中文串经 `UserFacingError.map()` 后落为 `UiText.Raw`（原文透出），
+**功能完全正常**，只是不参与未来翻译。
+`ResolveResult.Failed.message` 同样受限：它同时服务 **UI 出口**（经 `UserFacingError.map`）与
+**异常出口**（`parseCommandAck` → `sendPrompt`/`switchModelConfig` 的 `IllegalStateException`），
+改 `UiText` 需给协议层注入 Context 或拆分支。
+**结论：relay 层剩余文案不建议继续资源化**（除非将来确要做多语言并接受该重构成本）。
+
+### 验证
+
+- JVM 单测 **329/329**（i18n 期间新增/改造 `StatusPanelLabelsTest`(15)、`CountdownLabelTest`、
+  `UserFacingErrorTest`、`PureFunctionsTest` 的握手断言等；断言一律改为「资源 id + 参数」）。
+- `ktlintCheck` 0 违规；`detekt` 通过（`detekt-baseline.xml` 的 `ConversationTopBar` 签名同步更新）；
+  `lintDebug`/`lintRelease` **0 error**；`assembleDebug`/`assembleRelease` 通过。
+- **文案值与原字面量逐字一致**（用户可见零变化）——每批均逐条比对资源值。
+- 未引入新的 `UnusedResources` 告警（中途产生的死资源已清理）。
+
 ## 未发布（2026-10-16）· 走查第八批：切换会话时会话级状态未复位（同类缺陷扫描）
 
 > 承接第七批的**同类扫描**（第七批的模式 = 会话级共享状态在切换路径上漏清）。
