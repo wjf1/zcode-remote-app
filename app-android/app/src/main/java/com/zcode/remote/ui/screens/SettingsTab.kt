@@ -20,6 +20,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
@@ -28,6 +29,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.zcode.remote.BuildConfig
+import com.zcode.remote.R
 import com.zcode.remote.notify.NotificationPermission
 import com.zcode.remote.relay.RelayState
 import com.zcode.remote.relay.RpcChannel
@@ -35,6 +37,10 @@ import com.zcode.remote.repo.UpdateRepository
 import com.zcode.remote.storage.PairedDevice
 import com.zcode.remote.ui.theme.ZCodeTokens
 import com.zcode.remote.ui.theme.statusPendingTone
+import com.zcode.remote.util.UiText
+import com.zcode.remote.util.UiText.Companion.res
+import com.zcode.remote.util.asString
+import com.zcode.remote.util.resolve
 
 /**
  * 独立的系统与设备设置中心 (Settings Tab)
@@ -85,7 +91,7 @@ fun SettingsTab(
             modifier = Modifier.padding(bottom = 12.dp),
         ) {
             Text(
-                text = "设置与设备",
+                text = stringResource(R.string.settings_title),
                 style = MaterialTheme.typography.headlineSmall.copy(fontWeight = FontWeight.Bold),
                 modifier = Modifier.weight(1f),
             )
@@ -96,7 +102,7 @@ fun SettingsTab(
             ) {
                 Icon(Icons.Default.Add, null, modifier = Modifier.size(16.dp))
                 Spacer(Modifier.width(4.dp))
-                Text("配对新设备", style = MaterialTheme.typography.labelSmall)
+                Text(stringResource(R.string.settings_pair_new), style = MaterialTheme.typography.labelSmall)
             }
         }
 
@@ -107,7 +113,7 @@ fun SettingsTab(
         ) {
             // 1. 当前连接设备状态卡片
             item {
-                SectionHeader("当前连接设备")
+                SectionHeader(stringResource(R.string.settings_section_current_device))
                 Card(
                     shape = RoundedCornerShape(14.dp),
                     colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
@@ -137,7 +143,7 @@ fun SettingsTab(
                             Spacer(Modifier.width(12.dp))
                             Column(modifier = Modifier.weight(1f)) {
                                 Text(
-                                    text = deviceName.ifEmpty { "未命名设备" },
+                                    text = deviceName.ifEmpty { stringResource(R.string.common_unnamed_device) },
                                     style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.SemiBold),
                                 )
                                 Spacer(Modifier.height(2.dp))
@@ -145,7 +151,12 @@ fun SettingsTab(
                                     StatusDot(state)
                                     Spacer(Modifier.width(6.dp))
                                     Text(
-                                        text = "${statusLabel(state)} · 会话桥 ${bridgeLabel(bridgeState)}",
+                                        text =
+                                            stringResource(
+                                                R.string.settings_bridge_joined,
+                                                statusLabel(state).asString(),
+                                                bridgeLabel(bridgeState).asString(),
+                                            ),
                                         style = MaterialTheme.typography.bodySmall,
                                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                                     )
@@ -156,7 +167,7 @@ fun SettingsTab(
                                 contentPadding = PaddingValues(horizontal = 10.dp, vertical = 0.dp),
                                 modifier = Modifier.height(32.dp),
                             ) {
-                                Text("断开", style = MaterialTheme.typography.labelSmall)
+                                Text(stringResource(R.string.settings_disconnect), style = MaterialTheme.typography.labelSmall)
                             }
                         }
 
@@ -167,7 +178,7 @@ fun SettingsTab(
                                 modifier = Modifier.fillMaxWidth(),
                             ) {
                                 Text(
-                                    text = state.message ?: "连接失败",
+                                    text = state.message ?: stringResource(R.string.settings_connection_failed),
                                     color = MaterialTheme.colorScheme.error,
                                     style = MaterialTheme.typography.bodySmall,
                                     modifier = Modifier.padding(8.dp),
@@ -182,7 +193,7 @@ fun SettingsTab(
             val otherDevices = devices.filter { it.deviceSid != activeSid }
             if (otherDevices.isNotEmpty()) {
                 item {
-                    SectionHeader("已配对的其他设备 (${otherDevices.size})")
+                    SectionHeader(stringResource(R.string.settings_section_other_devices, otherDevices.size))
                     Card(
                         shape = RoundedCornerShape(14.dp),
                         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
@@ -216,7 +227,7 @@ fun SettingsTab(
                                         onClick = { onSwitchDevice(dev.deviceSid) },
                                         contentPadding = PaddingValues(horizontal = 8.dp, vertical = 0.dp),
                                     ) {
-                                        Text("切换连接", style = MaterialTheme.typography.labelSmall)
+                                        Text(stringResource(R.string.settings_switch_connection), style = MaterialTheme.typography.labelSmall)
                                     }
                                     IconButton(
                                         onClick = { pendingRemove = dev.deviceSid },
@@ -238,7 +249,7 @@ fun SettingsTab(
 
             // 3. 通信与外观配置
             item {
-                SectionHeader("网络与个性化")
+                SectionHeader(stringResource(R.string.settings_section_network))
                 Card(
                     shape = RoundedCornerShape(14.dp),
                     colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
@@ -251,16 +262,16 @@ fun SettingsTab(
                     ) {
                         // 线路切换（FlowRow：窄屏下整颗 Chip 换行，文字不折断）
                         Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                            Text("中继线路模式", style = MaterialTheme.typography.labelLarge)
+                            Text(stringResource(R.string.settings_relay_mode_label), style = MaterialTheme.typography.labelLarge)
                             FlowRow(
                                 horizontalArrangement = Arrangement.spacedBy(6.dp),
                                 verticalArrangement = Arrangement.spacedBy(6.dp),
                             ) {
                                 listOf(
-                                    "auto" to "自动判定",
-                                    "main" to "官方主线",
-                                    "backup" to "官方备线",
-                                    "custom" to "自建中继",
+                                    "auto" to stringResource(R.string.settings_relay_auto),
+                                    "main" to stringResource(R.string.settings_relay_main),
+                                    "backup" to stringResource(R.string.settings_relay_backup),
+                                    "custom" to stringResource(R.string.settings_relay_custom),
                                 ).forEach { (mode, label) ->
                                     FilterChip(
                                         selected = endpointMode == mode,
@@ -297,7 +308,7 @@ fun SettingsTab(
                                     ) {
                                         Column(modifier = Modifier.weight(1f)) {
                                             Text(
-                                                text = "自定义中继地址",
+                                                text = stringResource(R.string.settings_custom_relay_label),
                                                 style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Medium),
                                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                                             )
@@ -324,7 +335,7 @@ fun SettingsTab(
                                             contentPadding = PaddingValues(horizontal = 10.dp, vertical = 0.dp),
                                             modifier = Modifier.height(30.dp),
                                         ) {
-                                            Text("编辑", style = MaterialTheme.typography.labelSmall)
+                                            Text(stringResource(R.string.settings_edit), style = MaterialTheme.typography.labelSmall)
                                         }
                                     }
                                 }
@@ -335,15 +346,15 @@ fun SettingsTab(
 
                         // 主题切换
                         Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                            Text("界面外观", style = MaterialTheme.typography.labelLarge)
+                            Text(stringResource(R.string.settings_appearance), style = MaterialTheme.typography.labelLarge)
                             FlowRow(
                                 horizontalArrangement = Arrangement.spacedBy(6.dp),
                                 verticalArrangement = Arrangement.spacedBy(6.dp),
                             ) {
                                 listOf(
-                                    "dark" to "深色模式",
-                                    "system" to "跟随系统",
-                                    "light" to "浅色模式",
+                                    "dark" to stringResource(R.string.settings_theme_dark),
+                                    "system" to stringResource(R.string.settings_theme_system),
+                                    "light" to stringResource(R.string.settings_theme_light),
                                 ).forEach { (mode, label) ->
                                     FilterChip(
                                         selected = themeMode == mode,
@@ -376,9 +387,9 @@ fun SettingsTab(
                             horizontalArrangement = Arrangement.SpaceBetween,
                         ) {
                             Column {
-                                Text("后台保活引导", style = MaterialTheme.typography.labelLarge)
+                                Text(stringResource(R.string.settings_keepalive), style = MaterialTheme.typography.labelLarge)
                                 Text(
-                                    "确保小米 / HyperOS 锁屏能收到审批推送",
+                                    stringResource(R.string.settings_keepalive_desc),
                                     style = MaterialTheme.typography.bodySmall,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                                 )
@@ -388,7 +399,7 @@ fun SettingsTab(
                                 contentPadding = PaddingValues(horizontal = 10.dp, vertical = 0.dp),
                                 modifier = Modifier.height(32.dp),
                             ) {
-                                Text("查看教程", style = MaterialTheme.typography.labelSmall)
+                                Text(stringResource(R.string.settings_view_guide), style = MaterialTheme.typography.labelSmall)
                             }
                         }
                     }
@@ -397,13 +408,13 @@ fun SettingsTab(
 
             // 4. 诊断日志（§11.8 可观测性：本地脱敏记录 + 用户主动导出）
             item {
-                SectionHeader("诊断与排障")
+                SectionHeader(stringResource(R.string.settings_section_diagnostics))
                 DiagnosticsSection()
             }
 
             // 5. 版本更新与维护
             item {
-                SectionHeader("软件版本与更新")
+                SectionHeader(stringResource(R.string.settings_section_update))
                 Card(
                     shape = RoundedCornerShape(14.dp),
                     colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
@@ -425,7 +436,7 @@ fun SettingsTab(
                                     style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.Bold),
                                 )
                                 Text(
-                                    text = "版本 v${BuildConfig.VERSION_NAME} (Build ${BuildConfig.VERSION_CODE})",
+                                    text = stringResource(R.string.settings_version, BuildConfig.VERSION_NAME, BuildConfig.VERSION_CODE),
                                     style = MaterialTheme.typography.bodySmall,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                                 )
@@ -443,9 +454,9 @@ fun SettingsTab(
                                         color = MaterialTheme.colorScheme.onPrimary,
                                     )
                                     Spacer(Modifier.width(6.dp))
-                                    Text("检查中…", style = MaterialTheme.typography.labelSmall)
+                                    Text(stringResource(R.string.settings_checking), style = MaterialTheme.typography.labelSmall)
                                 } else {
-                                    Text("检查更新", style = MaterialTheme.typography.labelSmall)
+                                    Text(stringResource(R.string.settings_check_update), style = MaterialTheme.typography.labelSmall)
                                 }
                             }
                         }
@@ -462,7 +473,7 @@ fun SettingsTab(
                                     ) {
                                         Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                                             Text(
-                                                text = "发现新版本：${info.tagName}",
+                                                text = stringResource(R.string.settings_new_version, info.tagName),
                                                 style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.Bold),
                                                 color = MaterialTheme.colorScheme.onPrimaryContainer,
                                             )
@@ -484,7 +495,7 @@ fun SettingsTab(
                                                         modifier = Modifier.weight(1f).height(32.dp),
                                                         contentPadding = PaddingValues(0.dp),
                                                     ) {
-                                                        Text("下载安装包", style = MaterialTheme.typography.labelSmall)
+                                                        Text(stringResource(R.string.settings_download_apk), style = MaterialTheme.typography.labelSmall)
                                                     }
                                                 }
                                             }
@@ -492,7 +503,7 @@ fun SettingsTab(
                                     }
                                 } else {
                                     Text(
-                                        text = "已是最新版本 (${info.tagName})",
+                                        text = stringResource(R.string.settings_latest_version, info.tagName),
                                         style = MaterialTheme.typography.bodySmall,
                                         color = ZCodeTokens.StatusOnline,
                                     )
@@ -500,7 +511,7 @@ fun SettingsTab(
                             }
                             is UpdateRepository.UpdateState.Error -> {
                                 Text(
-                                    text = "检查失败: ${updateState.message}",
+                                    text = stringResource(R.string.settings_check_failed, updateState.message),
                                     style = MaterialTheme.typography.bodySmall,
                                     color = MaterialTheme.colorScheme.error,
                                 )
@@ -514,18 +525,18 @@ fun SettingsTab(
                             verticalAlignment = Alignment.CenterVertically,
                             horizontalArrangement = Arrangement.SpaceBetween,
                         ) {
-                            Text("GitHub 访问 Token", style = MaterialTheme.typography.labelMedium)
+                            Text(stringResource(R.string.settings_github_token), style = MaterialTheme.typography.labelMedium)
                             TextButton(
                                 onClick = { editingToken = !editingToken },
                                 contentPadding = PaddingValues(0.dp),
                             ) {
                                 Text(
                                     if (editingToken) {
-                                        "收起"
+                                        stringResource(R.string.common_collapse)
                                     } else if (hasGithubToken) {
-                                        "已配置"
+                                        stringResource(R.string.settings_token_configured_short)
                                     } else {
-                                        "配置"
+                                        stringResource(R.string.settings_token_configure)
                                     },
                                     style = MaterialTheme.typography.labelSmall,
                                 )
@@ -537,7 +548,7 @@ fun SettingsTab(
                                 onValueChange = { tokenDraft = it },
                                 placeholder = {
                                     Text(
-                                        ghTokenPlaceholder(hasGithubToken),
+                                        ghTokenPlaceholder(hasGithubToken).asString(),
                                         style = MaterialTheme.typography.bodySmall,
                                     )
                                 },
@@ -553,8 +564,8 @@ fun SettingsTab(
                                         onSetGithubToken(draft)
                                         tokenDraft = ""
                                         editingToken = false
-                                        Toast.makeText(context, ghTokenSavedToast(draft), Toast.LENGTH_SHORT).show()
-                                    }) { Text("保存") }
+                                        Toast.makeText(context, ghTokenSavedToast(draft).resolve(context), Toast.LENGTH_SHORT).show()
+                                    }) { Text(stringResource(R.string.settings_save)) }
                                 },
                             )
                         }
@@ -565,9 +576,12 @@ fun SettingsTab(
                             verticalAlignment = Alignment.CenterVertically,
                             horizontalArrangement = Arrangement.SpaceBetween,
                         ) {
-                            Text("电脑一键覆盖安装指南", style = MaterialTheme.typography.labelMedium)
+                            Text(stringResource(R.string.settings_pc_install_guide), style = MaterialTheme.typography.labelMedium)
                             TextButton(onClick = { showDevGuide = !showDevGuide }, contentPadding = PaddingValues(0.dp)) {
-                                Text(if (showDevGuide) "收起" else "查看", style = MaterialTheme.typography.labelSmall)
+                                Text(
+                                    if (showDevGuide) stringResource(R.string.common_collapse) else stringResource(R.string.common_view),
+                                    style = MaterialTheme.typography.labelSmall,
+                                )
                             }
                         }
                         AnimatedVisibility(visible = showDevGuide) {
@@ -577,7 +591,7 @@ fun SettingsTab(
                                 modifier = Modifier.fillMaxWidth(),
                             ) {
                                 Text(
-                                    text = "手机连电脑后，在仓库根目录运行：\n./build.sh install\n即可一键编译并覆盖推送到手机。",
+                                    text = stringResource(R.string.settings_pc_install_body),
                                     style = MaterialTheme.typography.bodySmall.copy(fontFamily = FontFamily.Monospace, fontSize = 11.sp),
                                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                                     modifier = Modifier.padding(10.dp),
@@ -595,16 +609,16 @@ fun SettingsTab(
         val name = devices.firstOrNull { it.deviceSid == sid }?.deviceName ?: sid.take(12)
         AlertDialog(
             onDismissRequest = { pendingRemove = null },
-            title = { Text("移除设备凭据") },
-            text = { Text("确定移除「$name」？凭据删除后需重新在 PC 扫码才能连接。") },
+            title = { Text(stringResource(R.string.settings_remove_title)) },
+            text = { Text(stringResource(R.string.settings_remove_body, name)) },
             confirmButton = {
                 TextButton(onClick = {
                     onRemoveDevice(sid)
                     pendingRemove = null
-                }) { Text("确认移除", color = MaterialTheme.colorScheme.error) }
+                }) { Text(stringResource(R.string.settings_remove_confirm), color = MaterialTheme.colorScheme.error) }
             },
             dismissButton = {
-                TextButton(onClick = { pendingRemove = null }) { Text("取消") }
+                TextButton(onClick = { pendingRemove = null }) { Text(stringResource(R.string.common_cancel)) }
             },
         )
     }
@@ -613,12 +627,12 @@ fun SettingsTab(
     editingCustom?.let { current ->
         AlertDialog(
             onDismissRequest = { editingCustom = null },
-            title = { Text("自定义 WebSocket 中继") },
+            title = { Text(stringResource(R.string.settings_custom_relay_dialog_title)) },
             text = {
                 OutlinedTextField(
                     value = current,
                     onValueChange = { editingCustom = it },
-                    placeholder = { Text("wss://host/ws") },
+                    placeholder = { Text(stringResource(R.string.settings_custom_relay_hint)) },
                     singleLine = true,
                     shape = RoundedCornerShape(8.dp),
                     modifier = Modifier.fillMaxWidth(),
@@ -628,10 +642,10 @@ fun SettingsTab(
                 TextButton(onClick = {
                     onEndpointChange("custom", editingCustom)
                     editingCustom = null
-                }) { Text("保存并重连") }
+                }) { Text(stringResource(R.string.settings_save_reconnect)) }
             },
             dismissButton = {
-                TextButton(onClick = { editingCustom = null }) { Text("取消") }
+                TextButton(onClick = { editingCustom = null }) { Text(stringResource(R.string.common_cancel)) }
             },
         )
     }
@@ -692,13 +706,13 @@ private fun NotificationPermissionRow() {
         horizontalArrangement = Arrangement.SpaceBetween,
     ) {
         Column(modifier = Modifier.weight(1f)) {
-            Text("系统通知权限", style = MaterialTheme.typography.labelLarge)
+            Text(stringResource(R.string.settings_notif_permission), style = MaterialTheme.typography.labelLarge)
             Text(
                 text =
                     if (granted) {
-                        "已开启，锁屏可收到审批推送"
+                        stringResource(R.string.settings_notif_granted)
                     } else {
-                        "未开启——审批通知无法送达，请在系统设置中允许通知"
+                        stringResource(R.string.settings_notif_denied)
                     },
                 style = MaterialTheme.typography.bodySmall,
                 color = if (granted) MaterialTheme.colorScheme.onSurfaceVariant else MaterialTheme.colorScheme.error,
@@ -719,7 +733,7 @@ private fun NotificationPermissionRow() {
                 contentPadding = PaddingValues(horizontal = 10.dp, vertical = 0.dp),
                 modifier = Modifier.height(32.dp),
             ) {
-                Text("去开启", style = MaterialTheme.typography.labelSmall)
+                Text(stringResource(R.string.settings_notif_grant), style = MaterialTheme.typography.labelSmall)
             }
         }
     }
@@ -737,26 +751,27 @@ private fun StatusDot(state: RelayState) {
     Canvas(Modifier.size(8.dp)) { drawCircle(color) }
 }
 
-private fun statusLabel(state: RelayState) =
+private fun statusLabel(state: RelayState): UiText =
     when (state) {
-        RelayState.Idle -> "未连接"
-        RelayState.Connecting -> "正在连接中继…"
-        RelayState.Authenticating -> "鉴权握手中…"
-        RelayState.WaitingPeer -> "等待桌面端接入"
-        RelayState.Paired -> "已就绪连接"
-        is RelayState.Failed -> "连接异常"
+        RelayState.Idle -> res(R.string.settings_status_idle)
+        RelayState.Connecting -> res(R.string.settings_status_connecting)
+        RelayState.Authenticating -> res(R.string.settings_status_authenticating)
+        RelayState.WaitingPeer -> res(R.string.settings_status_waiting_peer)
+        RelayState.Paired -> res(R.string.settings_status_paired)
+        is RelayState.Failed -> res(R.string.settings_status_failed)
     }
 
-private fun bridgeLabel(b: RpcChannel.BridgeState) =
+private fun bridgeLabel(b: RpcChannel.BridgeState): UiText =
     when (b) {
-        is RpcChannel.BridgeState.Closed -> "未开启"
-        is RpcChannel.BridgeState.Opening -> "开启中…"
-        is RpcChannel.BridgeState.Ready -> "就绪"
-        is RpcChannel.BridgeState.Failed -> "失败"
+        is RpcChannel.BridgeState.Closed -> res(R.string.bridge_state_closed)
+        is RpcChannel.BridgeState.Opening -> res(R.string.bridge_state_opening)
+        is RpcChannel.BridgeState.Ready -> res(R.string.bridge_state_ready)
+        is RpcChannel.BridgeState.Failed -> res(R.string.bridge_state_failed)
     }
 
 /** 走查 #10：Token 输入框占位文案（抽成纯函数，避免给 SettingsTab 增加圈复杂度）。 */
-internal fun ghTokenPlaceholder(configured: Boolean): String = if (configured) "已配置（留空保存 = 清除）" else "ghp_... 只读权限即可"
+internal fun ghTokenPlaceholder(configured: Boolean): UiText =
+    if (configured) res(R.string.gh_token_placeholder_configured) else res(R.string.gh_token_placeholder_empty)
 
 /** 走查 #10：保存 Token 的反馈文案——空草稿即清除。 */
-internal fun ghTokenSavedToast(draft: String): String = if (draft.isEmpty()) "Token 已清除" else "Token 已保存"
+internal fun ghTokenSavedToast(draft: String): UiText = if (draft.isEmpty()) res(R.string.gh_token_cleared) else res(R.string.gh_token_saved)

@@ -264,4 +264,70 @@
     <string name="create_mode_hint">build=工具调用需在手机审批；plan=只读规划。切换仅对新建的会话生效。</string>
     <string name="create_confirm">立即创建</string>
 
+    <!-- ========== 设置与设备（SettingsTab） ========== -->
+    <string name="settings_title">设置与设备</string>
+    <string name="settings_pair_new">配对新设备</string>
+    <string name="settings_section_current_device">当前连接设备</string>
+    <string name="settings_disconnect">断开</string>
+    <string name="settings_connection_failed">连接失败</string>
+    <string name="settings_section_other_devices">已配对的其他设备 (%1$d)</string>
+    <string name="settings_switch_connection">切换连接</string>
+    <string name="settings_section_network">网络与个性化</string>
+    <string name="settings_relay_mode_label">中继线路模式</string>
+    <string name="settings_relay_auto">自动判定</string>
+    <string name="settings_relay_main">官方主线</string>
+    <string name="settings_relay_backup">官方备线</string>
+    <string name="settings_relay_custom">自建中继</string>
+    <string name="settings_custom_relay_label">自定义中继地址</string>
+    <string name="settings_custom_relay_unset">未设置 · 点击右侧「编辑」填写 wss:// 地址</string>
+    <string name="settings_edit">编辑</string>
+    <string name="settings_appearance">界面外观</string>
+    <string name="settings_theme_dark">深色模式</string>
+    <string name="settings_theme_system">跟随系统</string>
+    <string name="settings_theme_light">浅色模式</string>
+    <string name="settings_keepalive">后台保活引导</string>
+    <string name="settings_keepalive_desc">确保小米 / HyperOS 锁屏能收到审批推送</string>
+    <string name="settings_view_guide">查看教程</string>
+    <string name="settings_section_diagnostics">诊断与排障</string>
+    <string name="settings_section_update">软件版本与更新</string>
+    <string name="settings_version">版本 v%1$s (Build %2$d)</string>
+    <string name="settings_checking">检查中…</string>
+    <string name="settings_check_update">检查更新</string>
+    <string name="settings_new_version">发现新版本：%1$s</string>
+    <string name="settings_download_apk">下载安装包</string>
+    <string name="settings_latest_version">已是最新版本 (%1$s)</string>
+    <string name="settings_check_failed">检查失败: %1$s</string>
+    <string name="settings_github_token">GitHub 访问 Token</string>
+    <string name="settings_token_configured_short">已配置</string>
+    <string name="settings_token_configure">配置</string>
+    <string name="settings_save">保存</string>
+    <string name="settings_pc_install_guide">电脑一键覆盖安装指南</string>
+    <string name="settings_pc_install_body">手机连电脑后，在仓库根目录运行：\n./build.sh install\n即可一键编译并覆盖推送到手机。</string>
+    <string name="settings_remove_title">移除设备凭据</string>
+    <string name="settings_remove_body">确定移除「%1$s」？凭据删除后需重新在 PC 扫码才能连接。</string>
+    <string name="settings_remove_confirm">确认移除</string>
+    <string name="settings_custom_relay_dialog_title">自定义 WebSocket 中继</string>
+    <string name="settings_custom_relay_hint">wss://host/ws</string>
+    <string name="settings_save_reconnect">保存并重连</string>
+    <string name="settings_notif_permission">系统通知权限</string>
+    <string name="settings_notif_granted">已开启，锁屏可收到审批推送</string>
+    <string name="settings_notif_denied">未开启——审批通知无法送达，请在系统设置中允许通知</string>
+    <string name="settings_notif_grant">去开启</string>
+    <!-- 设置页状态标签（纯函数） -->
+    <string name="settings_status_idle">未连接</string>
+    <string name="settings_status_connecting">正在连接中继…</string>
+    <string name="settings_status_authenticating">鉴权握手中…</string>
+    <string name="settings_status_waiting_peer">等待桌面端接入</string>
+    <string name="settings_status_paired">已就绪连接</string>
+    <string name="settings_status_failed">连接异常</string>
+    <string name="bridge_state_closed">未开启</string>
+    <string name="bridge_state_opening">开启中…</string>
+    <string name="bridge_state_ready">就绪</string>
+    <string name="bridge_state_failed">失败</string>
+    <string name="settings_bridge_joined">%1$s · 会话桥 %2$s</string>
+    <string name="gh_token_placeholder_configured">已配置（留空保存 = 清除）</string>
+    <string name="gh_token_placeholder_empty">ghp_... 只读权限即可</string>
+    <string name="gh_token_saved">Token 已保存</string>
+    <string name="gh_token_cleared">Token 已清除</string>
+
 </resources>
