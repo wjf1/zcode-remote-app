@@ -1,5 +1,38 @@
 # 变更记录 / Changelog
 
+## 未发布（2026-10-16）· 走查清单 P2 剩余项（#12/#13/#14/#15）
+
+> 承接 beta47 发布后的 5.1 清单收尾盘点。实施前对 5 项逐条做**代码实证**，
+> 其中两项的**原有判断被推翻**（见下），故本轮实际做了 4 项；#2 因需真机验收保持不动。
+
+### 判断更正（评估阶段的实证结论）
+
+- **#13 原判「库 API 不可达」→ 不成立**：`multiplatform-markdown-renderer 0.27.0` 的 image lambda
+  收到 `MarkdownComponentModel`，其 **`getContent()` 即图片 URL**（库 `ImageTransformer.transform(url)` 印证）。
+  不可达的是 **alt 文本**（取 alt 的助手是 `internal`），与 URL 是两码事。
+- **#14 原判「协议无绝对时间戳」→ 用错字段**：协议文档 §6.2 明确 `ConversationRow.createdAt`(ms)
+  是**行级绝对时间戳**；`startedAt`/`endedAt` 才是 turn 级相对量。
+
+### 本轮修复
+
+| 项 | 提交 | 内容 |
+|---|---|---|
+| #13 | `c7862fd` | 图片占位不再是死胡同：占位行 +「复制链接」（所有图片）+「打开」（仅 http(s)，走 `isAllowedLinkScheme` 白名单）。**不改变「不加载外链图片」的安全决策**（仍 `NoOpImageTransformer`，零出站请求） |
+| #15 | `d906da0` | 布局回归断言扩展：`InputBar` 加 `testTag("conv-inputbar")`；新增「1.3x 字体 + 长草稿下输入栏高度有界 + 会话流未被挤压」断言 |
+| #14 | `2a9efdd` | 会话流日期分隔（今天/昨天/年月日，按本地时区**日历日**判定）。**顺带修一真缺陷**：原打算用 `YEAR*366+DAY_OF_YEAR` 比较日历日，平/闰年起点不同会跨年错位 |
+| #12 | `8725bad` | 无障碍：会话卡补 `mergeDescendants` 语义（「会话 {标题}，{状态}，长按可删除」）、`StatusDot` 走 `clearAndSetSemantics`、设置入口补 `Role.Button` |
+
+### 验证
+
+- JVM 单测 **339/339**（+10 `FormatDateDividerTest`）；`ktlintCheck` 0 违规；`detekt` 通过；
+  `lintDebug`/`lintRelease` 0 error；`assembleDebug`/`assembleRelease`/`assembleDebugAndroidTest` 通过。
+- **未做（保持原判）**：#2 附件上传流水线重构——协议层行为变更（递归回调 → suspend/flow），
+  **需真机验收**，本地无设备时不盲改。**#13 的仪器化断言**（`MarkdownRenderTest` +2 项）依赖
+  `createComposeRule`，只在 CI 的 API 35 emulator 执行（API 37 真机受 Espresso 限制）。
+
+**至此 5.1 清单仅剩 #2 一项**（其余全部闭环）。
+
+
 ## v0.5.0-beta47（2026-10-16）· 国际化资源化 6 批完成 + 走查修复第二至第八批
 
 > 本轮 = **走查修复 10 项**（第二至第八批：HTTP 客户端复用、网络安全策略、连接韧性任务作废、Token 明文收敛、首页失败态误报、会话空态阶段+秒数、断开态切换会话显示上一会话内容、切换会话会话级状态未复位等）+ **国际化资源化 6 批完成**（`strings.xml` 67→452 条，`ui/`/`notify/`/`widget/` 用户可见中文清零）。**用户可见文案零变化**（资源值逐字一致）。
