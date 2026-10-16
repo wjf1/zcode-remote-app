@@ -24,7 +24,11 @@ class ConversationSyncInfoTest {
             mode = "build",
             logEpoch = "1",
         )
-    private val failed = ConversationChannel.Status.Failed(reason = "timeout", retryable = true)
+    private val failed =
+        ConversationChannel.Status.Failed(
+            reason = UiText.Raw("timeout"),
+            retryable = true,
+        )
 
     // ---------- syncHeadline：各阶段文案 ----------
 

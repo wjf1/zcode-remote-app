@@ -1,7 +1,10 @@
 package com.zcode.remote.relay
 
 import android.util.Base64
+import com.zcode.remote.R
 import com.zcode.remote.util.LogRedactor
+import com.zcode.remote.util.UiText
+import com.zcode.remote.util.UiText.Companion.res
 import com.zcode.remote.util.ZLog
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -45,7 +48,7 @@ class ConversationChannel(
          * 供 AppViewModel 决定是否退避重试；协议层硬性拒绝（如 handshakeRequired）不可重试。
          */
         data class Failed(
-            val reason: String,
+            val reason: UiText,
             val retryable: Boolean = false,
         ) : Status
     }
@@ -320,7 +323,7 @@ class ConversationChannel(
                                 runCatching { it.jsonPrimitive.content }.getOrNull()
                             }
                         if (subId == null) {
-                            _status.value = Status.Failed("subscribe ack 缺少 subscriptionId: ${sub.data}")
+                            _status.value = Status.Failed(res(R.string.handshake_subscribe_ack_missing_id, sub.data.toString()))
                         } else {
                             subscriptionId = subId
                             _meta.value = _meta.value.copy(logEpoch = epoch)
@@ -1611,12 +1614,12 @@ class ConversationChannel(
         internal fun handshakeFailureReason(
             stage: String,
             message: String,
-        ): String =
+        ): UiText =
             when {
                 // 注意：CJK 字符是合法标识符字符，`$stage超时` 会被解析成变量名 `stage超时`，必须用 ${stage}
-                isTimeoutError(message) -> "${stage}超时，请检查网络后重试"
-                message.contains("bridge not ready") -> "通道尚未就绪，请稍后重试"
-                else -> "${stage}失败：$message"
+                isTimeoutError(message) -> res(R.string.handshake_timeout, stage)
+                message.contains("bridge not ready") -> res(R.string.handshake_channel_not_ready)
+                else -> res(R.string.handshake_failed, stage, message)
             }
 
         /** 超时判定：只用于把 timeout 映射成「超时」措辞。 */

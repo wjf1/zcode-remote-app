@@ -415,15 +415,10 @@ internal fun statusLabel(s: ConversationChannel.Status): UiText =
         ConversationChannel.Status.Hello -> res(R.string.conv_status_hello)
         ConversationChannel.Status.Initialized -> res(R.string.conv_status_initialized)
         is ConversationChannel.Status.Live -> res(R.string.conv_status_live)
-        // C-2：底层 reason 可能是通道未就绪 / 超时（英文自造短语）这类串，先经 UserFacingError 映射；
-        // 截断到 50 字由顶栏 `maxLines=1 + Ellipsis` 兜底，此处保留原文（避免在纯函数层做字符截断
-        // 把已解析的中文串切坏——截断交给 Text 渲染层）。
+        // C-2：reason 已是本地化好的 UiText（握手失败原因在 ConversationChannel 侧映射），
+        // 此处作为嵌套参数拼进「异常：%1$s」；字符截断交给顶栏 maxLines=1 + Ellipsis 兜底。
         is ConversationChannel.Status.Failed ->
-            res(
-                R.string.conv_status_failed,
-                com.zcode.remote.relay.UserFacingError
-                    .map(s.reason),
-            )
+            res(R.string.conv_status_failed, s.reason)
     }
 
 internal fun phaseLabel(p: String): UiText =

@@ -1,10 +1,12 @@
 package com.zcode.remote.relay
 
 import com.zcode.remote.AppViewModel
+import com.zcode.remote.R
 import com.zcode.remote.repo.AttachmentUploader
 import com.zcode.remote.repo.UpdateRepository
 import com.zcode.remote.storage.PairedDevice
 import com.zcode.remote.ui.screens.ConversationScrollPolicy
+import com.zcode.remote.util.UiText
 import kotlinx.serialization.decodeFromString
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.JsonNull
@@ -472,21 +474,17 @@ class PureFunctionsTest {
     // ---------- A-2：握手失败文案与迟到应答判定 ----------
 
     @Test
-    fun handshakeFailureReasonIsReadableChinese() {
+    fun handshakeFailureReasonIsReadable() {
+        // 国际化（第 6 批）：返回 UiText，故断言资源 id + 参数（语义等价、不依赖中文字面量）
         val timeout = ConversationChannel.handshakeFailureReason("握手", "timeout after 8000ms")
-        assertEquals("握手超时，请检查网络后重试", timeout)
-        // 裸英文串不得透出到 UI（任务书 §7 异常的 grep 断言）
-        assertFalse(timeout.contains("timeout after"))
+        assertEquals(UiText.Res(R.string.handshake_timeout, listOf("握手")), timeout)
         assertEquals(
-            "通道尚未就绪，请稍后重试",
+            UiText.Res(R.string.handshake_channel_not_ready),
             ConversationChannel.handshakeFailureReason("订阅", "bridge not ready"),
         )
-        // 非超时类失败保留服务端原文，便于定位
-        assertTrue(
-            ConversationChannel
-                .handshakeFailureReason("订阅", "fault.connection.handshakeRequired")
-                .contains("handshakeRequired"),
-        )
+        // 非超时类失败：前缀资源 + 服务端原文作为参数（原文便于定位，故保留在参数里）
+        val other = ConversationChannel.handshakeFailureReason("订阅", "fault.connection.handshakeRequired")
+        assertEquals(UiText.Res(R.string.handshake_failed, listOf("订阅", "fault.connection.handshakeRequired")), other)
     }
 
     @Test

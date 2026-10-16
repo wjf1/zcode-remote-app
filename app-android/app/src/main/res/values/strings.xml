@@ -518,4 +518,11 @@
     <string name="widget_status_pending">项待处理 · 点按处理</string>
     <string name="widget_status_ok">运行正常</string>
 
+    <!-- 握手失败原因（handshakeFailureReason 纯函数；stage = 握手/初始化/订阅） -->
+    <string name="handshake_timeout">%1$s超时，请检查网络后重试</string>
+    <string name="handshake_channel_not_ready">通道尚未就绪，请稍后重试</string>
+    <string name="handshake_failed">%1$s失败：%2$s</string>
+    <string name="handshake_subscribe_ack_missing_id">subscribe ack 缺少 subscriptionId: %1$s</string>
+
+
 </resources>
