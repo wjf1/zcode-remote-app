@@ -9,6 +9,7 @@ import android.content.Intent
 import android.content.pm.ServiceInfo
 import android.os.Build
 import android.os.IBinder
+import com.zcode.remote.R
 
 /**
  * 中继长连接前台服务（Sprint 1 / P0-A，M2 占位至此真正启用）。
@@ -28,7 +29,7 @@ class ConnectionService : Service() {
         super.onCreate()
         val nm = getSystemService(NotificationManager::class.java)
         nm.createNotificationChannel(
-            NotificationChannel(CHANNEL_ID, "ZCode 连接", NotificationManager.IMPORTANCE_LOW)
+            NotificationChannel(CHANNEL_ID, getString(R.string.conn_service_channel), NotificationManager.IMPORTANCE_LOW)
                 .apply { setShowBadge(false) },
         )
         startForegroundCompat()
@@ -72,8 +73,8 @@ class ConnectionService : Service() {
     private fun buildNotification(): Notification =
         Notification
             .Builder(this, CHANNEL_ID)
-            .setContentTitle("ZCode Remote")
-            .setContentText("保持与 PC 的连接")
+            .setContentTitle(getString(R.string.conn_service_title))
+            .setContentText(getString(R.string.conn_service_text))
             .setSmallIcon(com.zcode.remote.R.drawable.ic_launcher)
             .setOngoing(true)
             .build()

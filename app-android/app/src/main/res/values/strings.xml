@@ -524,5 +524,10 @@
     <string name="handshake_failed">%1$s失败：%2$s</string>
     <string name="handshake_subscribe_ack_missing_id">subscribe ack 缺少 subscriptionId: %1$s</string>
 
+    <!-- 前台服务常驻通知（ConnectionService） -->
+    <string name="conn_service_channel">ZCode 连接</string>
+    <string name="conn_service_title">ZCode Remote</string>
+    <string name="conn_service_text">保持与 PC 的连接</string>
+
 
 </resources>
