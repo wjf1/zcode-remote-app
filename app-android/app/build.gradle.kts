@@ -92,8 +92,11 @@ android {
         //                           + tools/ 脚本索引 + 文档硬编码本机路径可移植化
         // versionCode 58：beta46 —— 弃用 API 清理轮：Icons.AutoMirrored 迁移 + 通知死代码 +
         //                           描边规范化，编译期 deprecation 警告归零
-        versionCode = 58
-        versionName = "0.5.0-beta46"
+        // versionCode 59：beta47 —— 走查修复（第二至第八批）+ 国际化资源化 6 批完成
+        //                           （strings.xml 67→452 条，ui/notify/widget 用户可见中文清零；
+        //                            含断开态切换会话显示上一会话内容、切会话会话级状态未复位等修复）
+        versionCode = 59
+        versionName = "0.5.0-beta47"
         // 仪器化渲染回归网（src/androidTest）用 androidx.test 默认 runner。
         // 只在模拟器/真机上跑；CI runner 无设备，故 ci.yml 不接（见 HANDOVER §6.1 回归网）。
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"

@@ -17,7 +17,7 @@
   （Kotlin + Jetpack Compose）。逆向复用官方中继与配对协议，提供更强的通知、锁屏审批、
   流式会话与移动端操控体验。
 - **仓库**：<https://github.com/wjf1/zcode-remote-app>（owner：wjf1）
-- **当前版本**：`0.5.0-beta46`（versionCode 58）；上一个发布 tag `v0.5.0-beta45`。
+- **当前版本**：`0.5.0-beta47`（versionCode 59），tag `v0.5.0-beta47`；上一个发布 tag `v0.5.0-beta46`。
 - **⚠️ 进行中的工作（未发布）**：**国际化资源化**——已完成**第 1 批**（`UiText` 地基 + `ToolKindLabels`），
   仍在 `master` 上（未打 tag，**默认语言仍为中文、行为零变化**）。后续 5 个批次与详细进度见
   §5「进行中的工作」与 [CHANGELOG.md](CHANGELOG.md) 的「未发布（进行中）」段。**接手请先读该段。**
