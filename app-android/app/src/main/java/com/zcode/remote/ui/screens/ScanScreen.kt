@@ -25,6 +25,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.core.content.ContextCompat
@@ -36,6 +37,7 @@ import com.google.zxing.MultiFormatReader
 import com.google.zxing.PlanarYUVLuminanceSource
 import com.google.zxing.common.GlobalHistogramBinarizer
 import com.google.zxing.common.HybridBinarizer
+import com.zcode.remote.R
 import com.zcode.remote.storage.PairedDevice
 import com.zcode.remote.storage.QrParser
 import com.zcode.remote.util.ZLog
@@ -62,8 +64,8 @@ fun ScanScreen(onPaired: (PairedDevice) -> Unit) {
     LaunchedEffect(Unit) { if (!hasCamera) permissionLauncher.launch(Manifest.permission.CAMERA) }
 
     Column(Modifier.fillMaxSize().padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-        Text("扫码配对", style = MaterialTheme.typography.headlineSmall)
-        Text("在 PC 端 ZCode 打开「移动端远程控制」，将二维码置于框内扫描，支持点按屏幕对焦。", style = MaterialTheme.typography.bodySmall)
+        Text(stringResource(R.string.scan_title), style = MaterialTheme.typography.headlineSmall)
+        Text(stringResource(R.string.scan_hint), style = MaterialTheme.typography.bodySmall)
 
         if (hasCamera) {
             Box(Modifier.fillMaxWidth().aspectRatio(1f)) {
@@ -175,13 +177,13 @@ fun ScanScreen(onPaired: (PairedDevice) -> Unit) {
                 )
             }
         } else {
-            Card { Text("需要相机权限用于扫码", Modifier.padding(16.dp)) }
+            Card { Text(stringResource(R.string.scan_camera_permission), Modifier.padding(16.dp)) }
         }
 
         OutlinedTextField(
             value = manualText,
             onValueChange = { manualText = it },
-            label = { Text("无法扫码？粘贴完整配对链接") },
+            label = { Text(stringResource(R.string.scan_paste_link)) },
             modifier = Modifier.fillMaxWidth(),
             minLines = 2,
         )
@@ -189,7 +191,7 @@ fun ScanScreen(onPaired: (PairedDevice) -> Unit) {
             onClick = { QrParser.parse(manualText)?.let(onPaired) },
             enabled = manualText.isNotBlank(),
             modifier = Modifier.align(Alignment.End),
-        ) { Text("手动配对") }
+        ) { Text(stringResource(R.string.scan_manual_pair)) }
     }
 }
 

@@ -439,4 +439,22 @@
     <string name="composer_send">发送</string>
     <string name="composer_stop">中断</string>
 
+    <!-- ========== 诊断 / 扫码 / 附件条 / 会话对话框（末批） ========== -->
+    <string name="diag_title">诊断日志</string>
+    <string name="diag_desc">本地脱敏记录（事件码 / 计数 / 耗时），不含会话内容与凭据；已记录 %1$d / %2$d 条（共 %3$d）。仅在你主动导出时写出文件，App 不会自动上传。</string>
+    <string name="diag_export">导出诊断日志</string>
+    <string name="diag_export_ok">诊断日志已导出</string>
+    <string name="diag_export_failed">导出失败，请重试</string>
+    <string name="scan_title">扫码配对</string>
+    <string name="scan_hint">在 PC 端 ZCode 打开「移动端远程控制」，将二维码置于框内扫描，支持点按屏幕对焦。</string>
+    <string name="scan_camera_permission">需要相机权限用于扫码</string>
+    <string name="scan_paste_link">无法扫码？粘贴完整配对链接</string>
+    <string name="scan_manual_pair">手动配对</string>
+    <string name="attach_uploading">上传中: %1$s (%2$d%%)</string>
+    <string name="attach_upload_failed">上传失败：%1$s</string>
+    <string name="dialog_back_to_files">← 文件列表</string>
+    <string name="dialog_session_files">本会话涉及的文件</string>
+    <string name="dialog_files_empty">本会话暂无文件操作记录（Edit / Write / Read 等工具调用后会出现在这里）</string>
+    <string name="conv_error_copied">错误原因已复制</string>
+
 </resources>

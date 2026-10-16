@@ -26,9 +26,11 @@ import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import com.zcode.remote.R
 import com.zcode.remote.relay.ConversationChannel
 import com.zcode.remote.repo.AttachmentUploader
 import com.zcode.remote.ui.theme.ZCodeType
@@ -94,7 +96,7 @@ internal fun AttachmentBar(
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
             ) {
                 Text(
-                    text = "上传中: $name ($uploadPercent%)",
+                    text = stringResource(R.string.attach_uploading, name, uploadPercent),
                     style = MaterialTheme.typography.labelSmall,
                     modifier = Modifier.weight(1f),
                     maxLines = 1,
@@ -110,7 +112,7 @@ internal fun AttachmentBar(
                     contentPadding = PaddingValues(horizontal = 6.dp, vertical = 0.dp),
                     modifier = Modifier.height(24.dp),
                 ) {
-                    Text("取消", style = MaterialTheme.typography.labelSmall)
+                    Text(stringResource(R.string.common_cancel), style = MaterialTheme.typography.labelSmall)
                 }
             }
         }
@@ -128,7 +130,7 @@ internal fun AttachmentBar(
                 ) {
                     Column(modifier = Modifier.weight(1f)) {
                         Text(
-                            text = "上传失败：${f.fileName}",
+                            text = stringResource(R.string.attach_upload_failed, f.fileName),
                             style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Medium),
                             color = MaterialTheme.colorScheme.onErrorContainer,
                             maxLines = 1,
@@ -147,14 +149,22 @@ internal fun AttachmentBar(
                         contentPadding = PaddingValues(horizontal = 6.dp, vertical = 0.dp),
                         modifier = Modifier.height(24.dp),
                     ) {
-                        Text("重试", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onErrorContainer)
+                        Text(
+                            stringResource(R.string.common_retry),
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onErrorContainer,
+                        )
                     }
                     TextButton(
                         onClick = onDismissUploadFailure,
                         contentPadding = PaddingValues(horizontal = 6.dp, vertical = 0.dp),
                         modifier = Modifier.height(24.dp),
                     ) {
-                        Text("取消", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onErrorContainer)
+                        Text(
+                            stringResource(R.string.common_cancel),
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onErrorContainer,
+                        )
                     }
                 }
             }

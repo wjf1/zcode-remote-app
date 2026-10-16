@@ -24,8 +24,10 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import com.zcode.remote.BuildConfig
+import com.zcode.remote.R
 import com.zcode.remote.util.ZLog
 import com.zcode.remote.util.diag.DiagEventCode
 import com.zcode.remote.util.diag.Diagnostics
@@ -71,11 +73,9 @@ fun DiagnosticsSection(
             modifier = Modifier.padding(14.dp),
             verticalArrangement = Arrangement.spacedBy(8.dp),
         ) {
-            Text("诊断日志", style = MaterialTheme.typography.titleSmall)
+            Text(stringResource(R.string.diag_title), style = MaterialTheme.typography.titleSmall)
             Text(
-                "本地脱敏记录（事件码 / 计数 / 耗时），不含会话内容与凭据；" +
-                    "已记录 $eventCount / ${Diagnostics.ring.capacity} 条（共 ${Diagnostics.ring.totalRecorded}）。" +
-                    "仅在你主动导出时写出文件，App 不会自动上传。",
+                stringResource(R.string.diag_desc, eventCount, Diagnostics.ring.capacity, Diagnostics.ring.totalRecorded),
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
@@ -93,7 +93,7 @@ fun DiagnosticsSection(
                         val name = defaultFileName()
                         if (exportOverride != null) exportOverride(name) else launcher.launch(name)
                     },
-                ) { Text("导出诊断日志") }
+                ) { Text(stringResource(R.string.diag_export)) }
             }
         }
     }
@@ -134,7 +134,7 @@ private fun writeDiagnostics(
     Toast
         .makeText(
             context,
-            if (ok) "诊断日志已导出" else "导出失败，请重试",
+            if (ok) context.getString(R.string.diag_export_ok) else context.getString(R.string.diag_export_failed),
             Toast.LENGTH_SHORT,
         ).show()
 }

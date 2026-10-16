@@ -58,10 +58,10 @@ internal fun SessionFilesPanel(
                 TextButton(onClick = {
                     onDismissPreview()
                     selected = null
-                }) { Text("← 文件列表") }
+                }) { Text(stringResource(R.string.dialog_back_to_files)) }
             } else {
                 Text(
-                    "本会话涉及的文件",
+                    stringResource(R.string.dialog_session_files),
                     style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.Bold),
                     modifier = Modifier.weight(1f),
                 )
@@ -69,14 +69,14 @@ internal fun SessionFilesPanel(
             TextButton(onClick = {
                 onDismissPreview()
                 onClose()
-            }) { Text("关闭") }
+            }) { Text(stringResource(R.string.common_close)) }
         }
 
         when {
             selected == null -> {
                 if (files.isEmpty()) {
                     Text(
-                        "本会话暂无文件操作记录（Edit / Write / Read 等工具调用后会出现在这里）",
+                        stringResource(R.string.dialog_files_empty),
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         modifier = Modifier.padding(vertical = 24.dp),

@@ -25,10 +25,12 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalHapticFeedback
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import com.zcode.remote.R
 import com.zcode.remote.ui.components.QueuePendingStrip
 import com.zcode.remote.ui.components.SessionStatusPanel
 import com.zcode.remote.ui.components.StatusPanelLabels
@@ -307,12 +309,16 @@ fun ConversationScreen(
                             onClick = {
                                 val cm = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
                                 cm.setPrimaryClip(ClipData.newPlainText("lastError", reason))
-                                Toast.makeText(context, "错误原因已复制", Toast.LENGTH_SHORT).show()
+                                Toast.makeText(context, context.getString(R.string.conv_error_copied), Toast.LENGTH_SHORT).show()
                             },
                             contentPadding = PaddingValues(horizontal = 4.dp, vertical = 0.dp),
                             modifier = Modifier.height(24.dp),
                         ) {
-                            Text("复制", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onErrorContainer)
+                            Text(
+                                stringResource(R.string.common_copy),
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.onErrorContainer,
+                            )
                         }
                     }
                 }
