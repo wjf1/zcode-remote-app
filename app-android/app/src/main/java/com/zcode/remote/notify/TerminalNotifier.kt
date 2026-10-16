@@ -28,7 +28,7 @@ object TerminalNotifier {
         runCatching {
             val nm = context.getSystemService(NotificationManager::class.java)
             nm.createNotificationChannel(
-                NotificationChannel(CHANNEL_ID, "连接终态提醒", NotificationManager.IMPORTANCE_HIGH),
+                NotificationChannel(CHANNEL_ID, context.getString(R.string.notif_terminal_channel_name), NotificationManager.IMPORTANCE_HIGH),
             )
             val pi =
                 PendingIntent.getActivity(
@@ -43,8 +43,8 @@ object TerminalNotifier {
                     .Builder(context, CHANNEL_ID)
                     .setSmallIcon(R.drawable.ic_launcher)
                     .setContentTitle(title)
-                    .setContentText(message ?: "连接已终止，打开 App 重新连接")
-                    .setStyle(Notification.BigTextStyle().bigText(message ?: "连接已终止，打开 App 重新连接"))
+                    .setContentText(message ?: context.getString(R.string.notif_terminal_default))
+                    .setStyle(Notification.BigTextStyle().bigText(message ?: context.getString(R.string.notif_terminal_default)))
                     .setContentIntent(pi)
                     .setOngoing(true)
                     .setAutoCancel(false)

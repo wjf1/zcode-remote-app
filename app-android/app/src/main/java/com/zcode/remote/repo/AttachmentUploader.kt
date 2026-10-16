@@ -162,7 +162,7 @@ class AttachmentUploader(
                 size,
                 openStream = {
                     context.contentResolver.openInputStream(uri)
-                        ?: throw IllegalStateException("无法打开所选文件（可能已被移动或删除）")
+                        ?: throw IllegalStateException(context.getString(R.string.error_open_file_failed))
                 },
                 onProgress = { up, total ->
                     // 切走会话后旧上传的进度不得再点亮新会话的进度条
@@ -187,7 +187,7 @@ class AttachmentUploader(
                         onFailure = {
                             signalAttachmentFeedback(ok = false)
                             // C-1：记录失败态供「重试/取消」；重试复用同一 uploadId
-                            attachFailed = FailedUpload(uri, fileName, mime, size, uploadId, it.message ?: "上传失败")
+                            attachFailed = FailedUpload(uri, fileName, mime, size, uploadId, it.message ?: context.getString(R.string.error_upload_failed))
                             flash(res(R.string.flash_upload_failed, UserFacingError.map(it.message)), true)
                         },
                     )

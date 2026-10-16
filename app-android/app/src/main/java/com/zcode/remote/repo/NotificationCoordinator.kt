@@ -4,12 +4,15 @@ import android.content.Context
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
+import com.zcode.remote.R
 import com.zcode.remote.relay.BridgeFrames
 import com.zcode.remote.relay.FailureReason
 import com.zcode.remote.relay.RelayClient
 import com.zcode.remote.relay.RelayState
 import com.zcode.remote.relay.SessionsIndexChannel
 import com.zcode.remote.util.LogRedactor
+import com.zcode.remote.util.UiText
+import com.zcode.remote.util.UiText.Companion.res
 import com.zcode.remote.util.ZLog
 import com.zcode.remote.widget.PendingWidgetProvider
 
@@ -95,13 +98,13 @@ class NotificationCoordinator(
         private const val TAG = "NotifyCoord"
 
         /** 连接终态通知的短标题（Sprint 2 / A 组）。 */
-        internal fun terminalTitle(reason: FailureReason): String =
+        internal fun terminalTitle(reason: FailureReason): UiText =
             when (reason) {
-                FailureReason.KICKED -> "控制权已在别处接管"
-                FailureReason.AUTH_FAILED -> "配对已失效，请重新扫码"
-                FailureReason.PROTOCOL_MISMATCH -> "中继协议可能已升级"
-                FailureReason.INVALID_ENDPOINT -> "中继地址不安全，已拒绝连接"
-                else -> "连接已终止"
+                FailureReason.KICKED -> res(R.string.terminal_title_kicked)
+                FailureReason.AUTH_FAILED -> res(R.string.terminal_title_auth_failed)
+                FailureReason.PROTOCOL_MISMATCH -> res(R.string.terminal_title_protocol_mismatch)
+                FailureReason.INVALID_ENDPOINT -> res(R.string.terminal_title_invalid_endpoint)
+                else -> res(R.string.terminal_title_generic)
             }
     }
 }

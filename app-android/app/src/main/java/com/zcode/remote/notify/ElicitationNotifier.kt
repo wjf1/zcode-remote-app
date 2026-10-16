@@ -68,8 +68,8 @@ class ElicitationReceiver : BroadcastReceiver() {
                 Notification
                     .Builder(context, ElicitationNotifier.CH_ELICITATIONS)
                     .setSmallIcon(R.drawable.ic_launcher)
-                    .setContentTitle("ZCode Remote 未连接")
-                    .setContentText("回复未发出去，打开 App 重新处理")
+                    .setContentTitle(context.getString(R.string.notif_disconnected_title))
+                    .setContentText(context.getString(R.string.notif_reply_not_sent))
                     .setAutoCancel(true)
                     .build(),
             )
@@ -128,9 +128,13 @@ object ElicitationNotifier {
     ): Notification {
         val title =
             when {
-                el.isPlanApproval -> "计划待批准"
-                el.questions.isNotEmpty() -> "需要你的回答：${el.toolName ?: "表单"}"
-                else -> "需要你补充信息"
+                el.isPlanApproval -> context.getString(R.string.notif_plan_approval_title)
+                el.questions.isNotEmpty() ->
+                    context.getString(
+                        R.string.notif_question_title,
+                        el.toolName ?: context.getString(R.string.notif_question_default_form),
+                    )
+                else -> context.getString(R.string.notif_need_more_info)
             }
         val body =
             listOfNotNull(
@@ -140,7 +144,7 @@ object ElicitationNotifier {
                     ?.question
                     ?.take(140),
                 el.plan?.take(120),
-            ).joinToString("\n").ifBlank { "桌面端在等你的输入" }
+            ).joinToString("\n").ifBlank { context.getString(R.string.notif_waiting_input) }
 
         val contentIntent =
             PendingIntent.getActivity(
@@ -166,7 +170,12 @@ object ElicitationNotifier {
 
         el.autoResolveAt?.let {
             b.setWhen(it)
-            b.setSubText("桌面端 ${DateUtils.getRelativeTimeSpanString(it, System.currentTimeMillis(), DateUtils.MINUTE_IN_MILLIS)} 自动决议")
+            b.setSubText(
+                context.getString(
+                    R.string.notif_auto_resolve_subtext,
+                    DateUtils.getRelativeTimeSpanString(it, System.currentTimeMillis(), DateUtils.MINUTE_IN_MILLIS),
+                ),
+            )
         }
 
         // 只对「答案能被一个动作完整表达」的形态给快捷按钮，其余引导进 App
@@ -175,7 +184,7 @@ object ElicitationNotifier {
             val remoteInput =
                 android.app.RemoteInput
                     .Builder(ElicitationReceiver.KEY_TEXT_REPLY)
-                    .setLabel("输入回复内容…")
+                    .setLabel(context.getString(R.string.notif_reply_hint))
                     .build()
             val replyIntent =
                 Intent(ElicitationReceiver.ACTION_REPLY_TEXT)
@@ -192,17 +201,17 @@ object ElicitationNotifier {
                 Notification.Action
                     .Builder(
                         null,
-                        "直接回复",
+                        context.getString(R.string.notif_direct_reply),
                         replyPendingIntent,
                     ).addRemoteInput(remoteInput)
                     .build()
             b.addAction(replyAction)
         }
 
-        val quick = quickActions(el)
+        val quick = quickActions(context, el)
         if (quick.isEmpty()) {
             if (!el.freeText && el.questions.isNotEmpty()) {
-                b.addAction(Notification.Action.Builder(null, "打开 App 处理", contentIntent).build())
+                b.addAction(Notification.Action.Builder(null, context.getString(R.string.notif_open_app), contentIntent).build())
             }
         } else {
             quick.forEachIndexed { i, (label, answerJson) ->
@@ -220,9 +229,15 @@ object ElicitationNotifier {
     }
 
     /** 返回 (按钮文案, 答案 JSON) 列表；空 = 不给快捷动作。 */
-    private fun quickActions(el: PendingElicitation): List<Pair<String, String>> {
+    private fun quickActions(
+        context: android.content.Context,
+        el: PendingElicitation,
+    ): List<Pair<String, String>> {
         if (el.isPlanApproval) {
-            return listOf("批准计划" to """{"action":"accept"}""", "拒绝" to """{"action":"decline"}""")
+            return listOf(
+                context.getString(R.string.notif_approve_plan) to """{"action":"accept"}""",
+                context.getString(R.string.pending_deny) to """{"action":"decline"}""",
+            )
         }
         // 单题、单选、选项数不超过按钮额度：每个选项给一个按钮
         val q = el.questions.singleOrNull()
@@ -262,10 +277,10 @@ object ElicitationNotifier {
             nm.createNotificationChannel(
                 NotificationChannel(
                     CH_ELICITATIONS,
-                    "表单交互",
+                    context.getString(R.string.notif_form_channel_name),
                     NotificationManager.IMPORTANCE_HIGH,
                 ).apply {
-                    description = "桌面端询问（AskUserQuestion / 计划批准）时的快捷回答入口"
+                    description = context.getString(R.string.notif_form_channel_desc)
                     enableVibration(true)
                 },
             )

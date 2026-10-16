@@ -33,6 +33,7 @@ import com.zcode.remote.util.LogRedactor
 import com.zcode.remote.util.ZLog
 import com.zcode.remote.util.diag.DiagEventCode
 import com.zcode.remote.util.diag.Diagnostics
+import com.zcode.remote.util.resolve
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.launch
 import kotlinx.serialization.json.jsonArray
@@ -241,7 +242,7 @@ class ConnectionCoordinator(
                             it.reason == FailureReason.INVALID_ENDPOINT
                     }
                 if (terminal != null) {
-                    TerminalNotifier.show(host.hostContext, NotificationCoordinator.terminalTitle(terminal.reason), terminal.message)
+                    TerminalNotifier.show(host.hostContext, NotificationCoordinator.terminalTitle(terminal.reason).resolve(host.hostContext), terminal.message)
                 } else {
                     TerminalNotifier.clear(host.hostContext)
                 }

@@ -3,10 +3,12 @@ package com.zcode.remote.repo
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.setValue
 import com.zcode.remote.BuildConfig
+import com.zcode.remote.R
 import com.zcode.remote.relay.UserFacingError
 import com.zcode.remote.storage.SettingsStore
 import com.zcode.remote.util.LogRedactor
 import com.zcode.remote.util.ZLog
+import com.zcode.remote.util.resolve
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -20,6 +22,7 @@ import kotlinx.serialization.json.jsonPrimitive
  */
 class UpdateRepository(
     private val scope: CoroutineScope,
+    private val context: android.content.Context,
     private val settings: SettingsStore,
 ) {
     data class UpdateInfo(
@@ -90,8 +93,15 @@ class UpdateRepository(
                     val code = response.code
                     val errMsg =
                         when (code) {
-                            404, 401 -> if (token.isEmpty()) "私有仓库需配置 GitHub Token 后拉取更新" else "未找到 Release 或 Token 无权限 ($code)"
-                            else -> "检查更新失败: HTTP $code"
+                            404, 401 ->
+                                if (token.isEmpty()) {
+                                    context.getString(
+                                        R.string.update_need_token,
+                                    )
+                                } else {
+                                    context.getString(R.string.update_no_release_or_token, code)
+                                }
+                            else -> context.getString(R.string.update_check_http_failed, code)
                         }
                     updateState = UpdateState.Error(errMsg)
                     return@launch
@@ -120,7 +130,7 @@ class UpdateRepository(
                 updateState =
                     UpdateState.Success(
                         UpdateInfo(
-                            tagName = tagName.ifBlank { "最新版" },
+                            tagName = tagName.ifBlank { context.getString(R.string.update_latest_version) },
                             downloadUrl = downloadUrl,
                             body = releaseBody,
                             hasNew = hasNew,
@@ -128,7 +138,13 @@ class UpdateRepository(
                     )
             }.onFailure { err ->
                 ZLog.w(TAG, "checkForUpdate failed ${LogRedactor.exceptionLabel(err)}")
-                updateState = UpdateState.Error("网络连接失败：${UserFacingError.map(err.message ?: "未知错误")}")
+                updateState =
+                    UpdateState.Error(
+                        context.getString(
+                            R.string.update_network_failed,
+                            UserFacingError.map(err.message ?: context.getString(R.string.update_unknown_error)).resolve(context),
+                        ),
+                    )
             }
         }
     }

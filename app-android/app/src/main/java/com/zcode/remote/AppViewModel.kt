@@ -68,7 +68,7 @@ class AppViewModel(
     private val settings = SettingsStore(app)
 
     // ---- §11.7 结构性拆分：职责域 repository（实现见 repo/，此处装配并转发）----
-    private val updateRepo = UpdateRepository(viewModelScope, settings)
+    private val updateRepo = UpdateRepository(viewModelScope, app, settings)
     private val uploader =
         AttachmentUploader(
             viewModelScope,
@@ -324,7 +324,7 @@ class AppViewModel(
 
     private fun reportViewState() = notifyCoordinator.reportViewState()
 
-    private fun terminalTitle(reason: FailureReason): String = NotificationCoordinator.terminalTitle(reason)
+    private fun terminalTitle(reason: FailureReason): UiText = NotificationCoordinator.terminalTitle(reason)
 
     /** 首页会话搜索关键字（P2-3：按标题/工作区过滤，忽略大小写）。 */
     var sessionQuery by mutableStateOf("")

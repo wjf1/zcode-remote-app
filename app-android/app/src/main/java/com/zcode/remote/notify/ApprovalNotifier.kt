@@ -53,8 +53,8 @@ class ApprovalReceiver : BroadcastReceiver() {
                 Notification
                     .Builder(context, ApprovalNotifier.CH_APPROVALS)
                     .setSmallIcon(R.drawable.ic_launcher)
-                    .setContentTitle("ZCode Remote 未连接")
-                    .setContentText("这条审批没发出去，打开 App 重新处理")
+                    .setContentTitle(context.getString(R.string.notif_disconnected_title))
+                    .setContentText(context.getString(R.string.notif_approval_not_sent))
                     .setAutoCancel(true)
                     .build(),
             )
@@ -112,11 +112,11 @@ object ApprovalNotifier {
         context: Context,
         a: PendingApproval,
     ): Notification {
-        val title = "需要审批：${a.toolName ?: "工具调用"}"
+        val title = context.getString(R.string.notif_approval_title, a.toolName ?: context.getString(R.string.notif_approval_default_tool))
         val body =
             listOfNotNull(a.summary?.take(120), a.detail?.take(160))
                 .joinToString("\n")
-                .ifBlank { "桌面端在等你决定" }
+                .ifBlank { context.getString(R.string.notif_waiting_decision) }
 
         val contentIntent =
             PendingIntent.getActivity(
@@ -143,19 +143,24 @@ object ApprovalNotifier {
 
         a.autoResolveAt?.let {
             b.setWhen(it)
-            b.setSubText("桌面端 ${DateUtils.getRelativeTimeSpanString(it, System.currentTimeMillis(), DateUtils.MINUTE_IN_MILLIS)} 自动决议")
+            b.setSubText(
+                context.getString(
+                    R.string.notif_auto_resolve_subtext,
+                    DateUtils.getRelativeTimeSpanString(it, System.currentTimeMillis(), DateUtils.MINUTE_IN_MILLIS),
+                ),
+            )
         }
 
         val opts = a.options.take(MAX_ACTIONS)
         if (opts.isEmpty()) {
-            b.addAction(Notification.Action.Builder(null, "打开 App 处理", contentIntent).build())
+            b.addAction(Notification.Action.Builder(null, context.getString(R.string.notif_open_app), contentIntent).build())
         } else {
             opts.forEachIndexed { i, opt ->
                 b.addAction(
                     Notification.Action
                         .Builder(
                             null,
-                            labelOf(opt),
+                            labelOf(context, opt),
                             actionIntent(context, a, opt, i),
                         ).build(),
                 )
@@ -164,13 +169,16 @@ object ApprovalNotifier {
         return b.build()
     }
 
-    private fun labelOf(opt: ApprovalOption): String =
+    private fun labelOf(
+        context: android.content.Context,
+        opt: ApprovalOption,
+    ): String =
         when {
-            opt.kind == "allowOnce" -> "允许一次"
-            opt.kind == "allowAlways" -> "总是允许"
-            opt.isDeny -> "拒绝"
+            opt.kind == "allowOnce" -> context.getString(R.string.pending_allow_once)
+            opt.kind == "allowAlways" -> context.getString(R.string.pending_allow_always)
+            opt.isDeny -> context.getString(R.string.pending_deny)
             opt.label.isNotBlank() -> opt.label.take(10)
-            else -> "选项"
+            else -> context.getString(R.string.pending_option_default)
         }
 
     private fun actionIntent(
@@ -198,10 +206,10 @@ object ApprovalNotifier {
             nm.createNotificationChannel(
                 NotificationChannel(
                     CH_APPROVALS,
-                    "权限审批",
+                    context.getString(R.string.notif_approval_channel_name),
                     NotificationManager.IMPORTANCE_HIGH,
                 ).apply {
-                    description = "桌面端 Agent 请求权限时的批准/拒绝入口"
+                    description = context.getString(R.string.notif_approval_channel_desc)
                     enableVibration(true)
                 },
             )

@@ -63,9 +63,9 @@ class PendingWidgetProvider : AppWidgetProvider() {
                 }
             val hint =
                 when {
-                    !connected -> "未连接 · 点按打开 App"
-                    pendingTotal > 0 -> "项待处理 · 点按处理"
-                    else -> "运行正常"
+                    !connected -> context.getString(R.string.widget_status_disconnected)
+                    pendingTotal > 0 -> context.getString(R.string.widget_status_pending)
+                    else -> context.getString(R.string.widget_status_ok)
                 }
             val views =
                 RemoteViews(context.packageName, R.layout.widget_pending).apply {
