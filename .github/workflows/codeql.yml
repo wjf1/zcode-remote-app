@@ -43,7 +43,7 @@ jobs:
 
       # Kotlin 需要真实编译才能提取（纯文本扫描覆盖不到 Kotlin 语义）；
       # 只编译 debug 变体即可覆盖 main/debug 源集，release 由 R8 同源，无需重复扫描。
-      - uses: github/codeql-action/init@24c54180a607b1449ed407dd24f251e4e9147c8d # v4.38.3
+      - uses: github/codeql-action/init@6f2ac81f5cd81fe351a197ba0b00d91d03cd2aee # v4.39.0
         with:
           languages: java-kotlin
           build-mode: manual
