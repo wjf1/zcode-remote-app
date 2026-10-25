@@ -39,6 +39,7 @@ import com.google.zxing.common.GlobalHistogramBinarizer
 import com.google.zxing.common.HybridBinarizer
 import com.zcode.remote.R
 import com.zcode.remote.storage.PairedDevice
+import com.zcode.remote.storage.QrParseResult
 import com.zcode.remote.storage.QrParser
 import com.zcode.remote.util.ZLog
 import java.util.concurrent.Executors
@@ -47,9 +48,29 @@ import java.util.concurrent.atomic.AtomicBoolean
 
 private const val TAG = "ScanScreen"
 
-/** 扫码配对（解析官方二维码：sid/hash/mid/name）。失败可手动粘贴链接。 */
+/** 解析并按 V1/V2 分流回调；返回是否成功解析（相机路径据此决定是否重置去重标志）。 */
+private fun dispatchParsed(
+    raw: String,
+    onPaired: (PairedDevice) -> Unit,
+    onNeedsLogin: (PairedDevice) -> Unit,
+): Boolean =
+    when (val r = QrParser.parseResult(raw)) {
+        is QrParseResult.Ready -> {
+            onPaired(r.device)
+            true
+        }
+        is QrParseResult.NeedsLogin -> {
+            onNeedsLogin(r.device)
+            true
+        }
+        null -> false
+    }
+
 @Composable
-fun ScanScreen(onPaired: (PairedDevice) -> Unit) {
+fun ScanScreen(
+    onPaired: (PairedDevice) -> Unit,
+    onNeedsLogin: (PairedDevice) -> Unit = {},
+) {
     val context = LocalContext.current
     val lifecycleOwner = LocalLifecycleOwner.current
     var hasCamera by remember {
@@ -123,17 +144,23 @@ fun ScanScreen(onPaired: (PairedDevice) -> Unit) {
                                 proxy.close()
                                 if (text != null && pairedHandled.compareAndSet(false, true)) {
                                     ZLog.i(TAG, "二维码扫描成功: ${text.take(60)}...")
-                                    QrParser.parse(text)?.let { dev ->
+                                    val target: Pair<(PairedDevice) -> Unit, PairedDevice>? =
+                                        when (val r = QrParser.parseResult(text)) {
+                                            is QrParseResult.Ready -> onPaired to r.device
+                                            is QrParseResult.NeedsLogin -> onNeedsLogin to r.device
+                                            null -> null
+                                        }
+                                    if (target == null) {
+                                        ZLog.w(TAG, "扫描成功但 QrParser 解析失败: $text")
+                                        pairedHandled.set(false)
+                                    } else {
                                         ContextCompat.getMainExecutor(ctx).execute {
                                             runCatching {
                                                 provider.unbindAll()
                                                 executor.shutdown()
                                             }
-                                            onPaired(dev)
+                                            target.first(target.second)
                                         }
-                                    } ?: run {
-                                        ZLog.w(TAG, "扫描成功但 QrParser 解析失败: $text")
-                                        pairedHandled.set(false)
                                     }
                                 }
                             }
@@ -188,7 +215,7 @@ fun ScanScreen(onPaired: (PairedDevice) -> Unit) {
             minLines = 2,
         )
         Button(
-            onClick = { QrParser.parse(manualText)?.let(onPaired) },
+            onClick = { dispatchParsed(manualText, onPaired, onNeedsLogin) },
             enabled = manualText.isNotBlank(),
             modifier = Modifier.align(Alignment.End),
         ) { Text(stringResource(R.string.scan_manual_pair)) }

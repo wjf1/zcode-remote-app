@@ -1,5 +1,92 @@
 # 变更记录 / Changelog
 
+## v0.5.0-beta52（2026-10-25）· V2 直连打通（真机走查③）：ws2 中继 + token 直连
+
+> **一句话**：推翻 beta51 的「terminal token 仍收 challenge」误判——此前连的是 V1 端点 `/ws`。
+> **V2 中继端点是 `/api/v1/remote/ws2`**（桌面端代码实证）。本版本 App 原生实现
+> 「JWT → relay token → ws2 直连」，真机 paired → bridge-ready → V4 RPC 全链路打通。
+
+### 关键发现（3.16.3 线上 bundle + 桌面端代码实证，详见 PROTOCOL.md §11）
+
+- **V2 中继端点**：`wss://<origin>/api/v1/remote/ws2`（`/ws` 为 V1 专用，不认 token）。
+  握手 = `auth_init{device_sid, meta, client_ts:秒}`（**无 role**，strictObject 拒未知字段）→
+  **auth_ack 一帧直达**（回 `terminal_sid`），全程无 challenge/proof、不需要 passHash。
+- **凭据形态定案**（走查②）：登录回调 URL **不带 `hash=`**；terminal 凭据 = localStorage JWT →
+  `POST /api/v1/remote/token {role:"terminal"}`（data={"token","expires_in":60}，短时效须现取现用）。
+- **bootstrap V2 形态**：`result.workspaces[]`（workspaceKey 即 workspacePath）替代 V1 的
+  `initialViewState/tasks`；心跳帧 V2 为无 `device_sid` 的 `pair_status_query`。
+- **桥广播语义**：桌面端将 `bridge-degraded{terminal-owner-ended}` 等**他桥事件**周期广播给
+  所有 terminal（真机实测官方 web 关页后每 5s 重复）——App 必须按 bridgeSessionId 过滤。
+
+### 改动清单
+
+| 项 | 内容 |
+|---|---|
+| `relay/RelayProtocol.kt` | 新增 `authInitV2`（无 role/秒级 ts）、`heartbeatV2`（无 device_sid）、`v2RelayWsUrl`（origin→ws2 推导） |
+| `relay/RelayClient.kt` | V2 分支：构造注入 `jwtProvider` → `acquireV2Token` → `?token=&mid=` 连 ws2；V2 下收 challenge 视为 PROTOCOL_MISMATCH；无 JWT → 指引「设置 → ZCode 账号」 |
+| `service/ConnectionCoordinator.kt` | 注入 jwtProvider（TokenStore）；`activeWorkspaceKeyOf` 支持 V2 `workspaces[]` |
+| `relay/RpcChannel.kt` | 桥帧按 `bridgeSessionId` 过滤他桥 ready/error/degraded（`BridgeState.Opening` 携带 sid） |
+| `relay/SessionsIndexChannel.kt` | 订阅前补 V4 连接级握手（hello → initialize；V2 host 强制，实测 `fault.connection.handshakeRequired`） |
+| `relay/V2AccountApi.kt` | `Envelope.data` 改 `JsonElement`（token 接口 data 为对象 `{"token","expires_in"}`，String 声明解析失败——真机实测） |
+| `debug/DebugPairReceiver.kt` | 新增 `--es jwt` 注入（V2 直连真机验收用，写入 TokenStore） |
+| 单测 | `V2HandshakeTest`（auth_init 无 role/秒级 ts、心跳无 device_sid、ws2 推导、V1 帧回归） |
+
+### 验证（真机 小米/HyperOS，无线调试 192.168.0.105）
+
+- **走查② PASS**：手机系统浏览器登录 → 跳回 URL 无 hash → 官方 web 三次 paired（桌面日志）。
+- **走查③ PASS**：App 原生 V2 直连——`ws open http=101 v2=true` → auth_ack matched（桌面日志
+  22:45:39 `paired` 实证）→ bootstrap → `bridge-ready` → hello/initialize → `subscribeSessionsIndexV4` OK。
+- JVM：全量单测 + detekt（0 issue）+ ktlint + lintDebug 通过（toolchain gradle-8.7 + JDK17）。
+- probe：`_tmp/v2_terminal_test.py` 独立复现 V2 直连 matched（协议参考实现）。
+
+### 已知边界（列入 HANDOFF Next Steps）
+
+- **会话列表条目**：V2 host 用全新 Controller 通道（`subscribeControllerV4` +
+  `onDynamicControllerFrame`，`task.upserted` 增量）替代 V1 的 bootstrap tasks——App 首页列表
+  暂空（角标/会话流通道已就绪），Controller 通道适配为下一版本工作项。
+- **App 内 WebView 登录**：HyperOS + WebView 153 点登录按钮卡死（独立 bug，不阻塞协议链路；
+  登录可在系统浏览器完成）。Debug 构建可用 `DebugPairReceiver --es jwt` 注入验收。
+
+## v0.5.0-beta51（2026-10-25）· ZCode 3.16.3 V2 认证配对适配（协议双栈）
+
+> **一句话**：ZCode 桌面端 3.16.3 把远程控制凭据体系 V1→V2 重构（QR 去 hash、PC 删 passHash、
+> 账号登录 + relay token）。本版本完成**双侧逆向 + 中继实测 + App 双栈适配**：V1 配对照旧直连，
+> V2 新二维码走「WebView 登录配对」；**业务层（会话/审批/附件/RPC）经双侧 diff 确认零变化**。
+
+### 背景：3.11.2 → 3.16.3 协议面变化（全部实证，详见 PROTOCOL.md §11）
+
+- **不变**（双侧代码 diff）：zcode_type 17 种帧、zcode-agent 16 个 V4 RPC、envelope 命令
+  （resolveInteraction/sendText/stop）、帧上限（1MiB/16MiB/64 片）、附件常量、心跳 10s/30s、
+  中继端点与错误码——App 业务层零改动。
+- **重构**（认证配对层）：PC 端 V2 = 登录 JWT → `POST /api/v1/remote/token` → WS `?token=`
+  免 challenge；`POST /api/v1/remote/device` 注册绑定 userId；**主动删除 V1 passHash**；
+  QR 只带 `sid/mid/name/app_version`；官方 Web 无 hash 落地页即登录页（BigModel 互信
+  `bigmodel.cn/login?appId=zcode&…`）。
+- **中继实测**：terminal 带/不带 token **均收 auth_challenge**（token 免 proof 仅 device 角色）；
+  terminal token 接口对 JWT 开放（200）；device list 返回账号 PC 列表；官方 Web 登录态可
+  paired（桌面日志实证）。
+
+### 改动清单
+
+| 项 | 内容 |
+|---|---|
+| `storage/PairedDevice.kt` | `passHash` 改可空；`QrParser.parseResult()` 双路（`Ready` 直连 / `NeedsLogin` 走登录）；`DevicesCodec` 存储兼容旧数据 |
+| `relay/RelayClient.kt` | challenge 且无凭据 → `Failed(AUTH_FAILED)` 明确指引登录配对（不再算错误 proof）；心跳 30s→**10s** 对齐官方 §4.1 |
+| `ui/screens/LoginWebViewDialog.kt`（新增） | WebView 登录配对：跨域跳转全放行（BigModel 互信）、Cookie/localStorage 持久化；完成条件双兜底（回调 URL `hash=` 凭据补齐 / localStorage `zcodejwttoken` 出现） |
+| `storage/TokenStore.kt` | 新增 `zcode_jwt_enc` 键位（复用 CredentialCrypto AES-256-GCM + Keystore） |
+| `relay/V2AccountApi.kt`（新增） | `fetchRelayToken` / `listDevices`（`{code,msg,data}` 包络；data 兼容数组与 `{devices}` 两形态） |
+| `ui/screens/SettingsTab.kt` | 「ZCode 账号（新版协议）」卡片：登录态 + 账号设备列表（name/platform/version/online） |
+| `MainActivity` / `ScanScreen` | 相机扫码 / 手输链接 / 深链三条配对入口全部分流（V1→确认弹窗；V2→登录配对） |
+| `tools/probe.py` | 凭据双栈（V2 设置项优先 + `deviceMid` 自动推导 + `zcodejwttoken` 解密）；新命令 `token` / `devices` / `loginurl`；`open(token=)` 支持 |
+
+### 验证
+
+- JVM：编译 + 存量单测通过（工具链 gradle-8.7 + JDK17）。
+- 协议（本机 3.16.3 实测）：JWT→relay token HTTP 200；device list HTTP 200（账号 2 台）；
+  terminal 免 proof 连接收 challenge（与官方 Web 同行为，凭据由登录链路补齐）。
+- **待统一真机走查**（PROTOCOL.md §11.5）：WebView 登录全流程 → 回调 URL 凭据形态确认 →
+  原生直连配对 → 设置页账号卡片渲染。
+
 ## v0.5.0-beta50（2026-10-16）· 附件上传流水线重构（走查 5.1 清单最后一项 #2）
 
 > **一句话**：把附件上传从「递归回调金字塔 + 主线程整文件 IO」改为**顺序 suspend 流水线 +

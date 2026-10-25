@@ -3,13 +3,16 @@
 ZCode 远程控制协议探针（独立于 Android App，用于快速验证链路与 RPC 开发）。
 
 用法：
-    python tools/probe.py auth        # 仅验证中继认证（challenge/proof/auth_ack）
+    python tools/probe.py auth        # 仅验证中继认证（双栈：challenge→proof / auth_ack 直达）
     python tools/probe.py boot        # 认证 + bootstrap（拉会话列表）
     python tools/probe.py bridge      # 认证 + bootstrap + 开桥（等 ready）
     python tools/probe.py sub <会话ID前缀>   # 上述全都做 + 订阅该会话流
+    python tools/probe.py token       # [V2] JWT 换 relay token（POST /api/v1/remote/token）
+    python tools/probe.py devices     # [V2] 列账号绑定设备（GET /api/v1/remote/device）
+    python tools/probe.py loginurl    # [V2] 构造 BigModel 互信登录跳转 URL
 
-凭据来源：优先读本机 ZCode 凭据库（自动解密），也可用环境变量覆盖：
-    ZCODE_SID / ZCODE_HASH / ZCODE_MID
+凭据来源：优先读本机 ZCode 凭据库（自动解密，V2 ≥3.16 / V1 双栈），也可用环境变量覆盖：
+    ZCODE_SID / ZCODE_HASH / ZCODE_MID / ZCODE_JWT
 """
 import base64
 import hashlib
@@ -35,23 +38,67 @@ ROLE = "terminal"
 
 # ---------- 凭据 ----------
 
+def _credential_secret():
+    import getpass as _gp
+    return os.environ.get("ZCODE_CREDENTIAL_SECRET") or \
+        f"zcode-credential-fallback:{sys.platform if sys.platform!='win32' else 'win32'}:{os.path.expanduser('~')}:{_gp.getuser()}"
+
+
+def decrypt_credential(enc: str) -> str:
+    """解密 credentials.json 中 enc:v1:<iv>.<tag>.<ct> 格式的条目（AES-256-GCM）。"""
+    from cryptography.hazmat.primitives.ciphers.aead import AESGCM
+    key = hashlib.sha256(_credential_secret().encode()).digest()
+    d = lambda s: base64.urlsafe_b64decode(s + "=" * (-len(s) % 4))
+    iv_b, tag_b, ct_b = enc[len("enc:v1:"):].split(".")
+    return AESGCM(key).decrypt(d(iv_b), d(ct_b) + d(tag_b), None).decode()
+
+
+def load_device_mid():
+    """自动推导机器 ID：telemetry-state.json / onboarding-record.json 的 deviceMid。"""
+    for cand in ("~/.zcode/v2/telemetry-state.json", "~/.zcode/v2/onboarding-record.json"):
+        fp = os.path.expanduser(cand)
+        if os.path.exists(fp):
+            try:
+                mid = json.load(open(fp, encoding="utf-8")).get("deviceMid")
+                if mid:
+                    return mid
+            except Exception:
+                pass
+    return None
+
+
 def load_credentials():
+    """V2（ZCode ≥3.16）与 V1 双栈读取。
+
+    返回 (sid, pass_hash_or_None, mid, jwt_or_None)：
+    - sid：优先 V2 设置项 webRemoteControlRelayV2Device.deviceSid，回退 V1 旧键；
+    - pass_hash：V1 专属（3.16.3 起 PC 端已主动删除，通常为 None）；
+    - jwt：V2 登录态（解密 credentials.json 的 zcodejwttoken），用于 /api/v1/remote/*。
+    """
     sid = os.environ.get("ZCODE_SID")
     h = os.environ.get("ZCODE_HASH")
     mid = os.environ.get("ZCODE_MID")
     if sid and h:
-        return sid, h, mid
-    from cryptography.hazmat.primitives.ciphers.aead import AESGCM
+        return sid, h, mid, os.environ.get("ZCODE_JWT")
+
     cred_path = os.path.expanduser("~/.zcode/v2/credentials.json")
     data = json.load(open(cred_path, encoding="utf-8"))
-    # sid / mid 在设置里
-    enc = data["web-remote-control:external-relay:pass_hash"]
-    secret = os.environ.get("ZCODE_CREDENTIAL_SECRET") or \
-        f"zcode-credential-fallback:{sys.platform if sys.platform!='win32' else 'win32'}:{os.path.expanduser('~')}:{getpass.getuser()}"
-    key = hashlib.sha256(secret.encode()).digest()
-    d = lambda s: base64.urlsafe_b64decode(s + "=" * (-len(s) % 4))
-    iv_b, tag_b, ct_b = enc[len("enc:v1:"):].split(".")
-    plain = AESGCM(key).decrypt(d(iv_b), d(ct_b) + d(tag_b), None).decode()
+
+    # pass_hash（V1）：3.16.3 已删除该凭据，缺失时容忍
+    plain = None
+    enc = data.get("web-remote-control:external-relay:pass_hash")
+    if enc:
+        plain = decrypt_credential(enc)
+
+    # jwt（V2）：zcodejwttoken 同库加密存储
+    jwt = None
+    enc_jwt = data.get("zcodejwttoken")
+    if enc_jwt and enc_jwt.startswith("enc:v1:"):
+        try:
+            jwt = decrypt_credential(enc_jwt)
+        except Exception:
+            jwt = None
+
     dev_sid = None
     for cand in ("~/.zcode/v2/setting.json", "~/.zcode/v2/config.json"):
         fp = os.path.expanduser(cand)
@@ -60,13 +107,51 @@ def load_credentials():
                 cfg = json.load(open(fp, encoding="utf-8"))
             except Exception:
                 continue
+            # V2（≥3.16）：{deviceSid, userId, endpointOrigin}
+            dev = cfg.get("webRemoteControlRelayV2Device") or {}
+            if dev.get("deviceSid"):
+                dev_sid = dev["deviceSid"]
+                break
+            # V1（≤3.15）：{deviceSid, ...}
             dev = cfg.get("webRemoteControlExternalRelayDevice") or {}
             if dev.get("deviceSid"):
                 dev_sid = dev["deviceSid"]
                 break
     if mid is None:
-        mid = os.environ.get("ZCODE_MID")
-    return dev_sid, plain, mid
+        mid = load_device_mid()
+    return dev_sid, plain, mid, jwt
+
+
+# ---------- V2 HTTP 面（/api/v1/remote/*，Bearer JWT） ----------
+
+def v2_remote_api(path, method="GET", body=None, jwt=None, timeout=15):
+    """调 zcode.z.ai 的 V2 远程控制 HTTP API，返回解析后的 JSON（{code,msg,data} 包络）。"""
+    import urllib.request
+    url = f"https://zcode.z.ai{path}"
+    req = urllib.request.Request(url, method=method)
+    req.add_header("Authorization", f"Bearer {jwt}")
+    if body is not None:
+        req.add_header("Content-Type", "application/json")
+        req.data = json.dumps(body).encode()
+    with urllib.request.urlopen(req, timeout=timeout) as resp:
+        return json.loads(resp.read().decode())
+
+
+def v2_fetch_relay_token(jwt, role="terminal"):
+    """POST /api/v1/remote/token {role} → relay token（V2 device 侧用于 WS ?token=；terminal 侧实测仍收 challenge）。"""
+    r = v2_remote_api("/api/v1/remote/token", "POST", {"role": role}, jwt)
+    if r.get("code") != 0:
+        raise RuntimeError(f"token API code={r.get('code')} msg={r.get('msg')}")
+    return r["data"]["token"]
+
+
+def v2_list_devices(jwt):
+    """GET /api/v1/remote/device → 账号绑定设备列表（App 多设备管理的数据源）。"""
+    r = v2_remote_api("/api/v1/remote/device", "GET", None, jwt)
+    if r.get("code") != 0:
+        raise RuntimeError(f"device list code={r.get('code')} msg={r.get('msg')}")
+    return r["data"]
+
 
 # ---------- Vql 编解码（对应 FRAME-CODEC.md §3.3） ----------
 
@@ -173,9 +258,12 @@ class Probe:
         print("[probe]", *a, flush=True)
 
     # --- ws ---
-    def open(self):
+    def open(self, token=None):
         url = RELAY + (f"?mid={self.mid}" if self.mid else "")
-        self.log("connecting", url)
+        if token:
+            # V2：URL 携带 relay token（PC 端 ≥3.16 实证免 challenge；terminal 侧中继仍下发 challenge）
+            url += (("&" if "?" in url else "?") + f"token={token}")
+        self.log("connecting", url.split("token=")[0] + ("token=***" if token else ""))
         try:
             # websockets 17：`proxy` 默认 True = 读「操作系统代理」（Windows 注册表）。
             # 本机系统代理指向已关闭的 Clash 端口 → ConnectionRefused；
@@ -232,6 +320,9 @@ class Probe:
                 return False
             t = f.get("type")
             if t == "auth_challenge":
+                if not self.phash:
+                    self.log("收到 auth_challenge 但无 passHash（3.16.3 起 PC 端已删除 V1 凭据）——V1 proof 路径不可用")
+                    return False
                 nonce = f["nonce"]
                 msg = f"{nonce}|{ROLE}|{self.sid}".encode()
                 proof = base64.urlsafe_b64encode(
@@ -437,11 +528,47 @@ def probe_channels(p, candidates=None):
 def main():
     mode = sys.argv[1] if len(sys.argv) > 1 else "auth"
     session_prefix = sys.argv[2] if len(sys.argv) > 2 else None
-    sid, phash, mid = load_credentials()
-    print("sid =", sid, "| hash len =", len(phash or ""), "| mid =", mid)
-    if not sid or not phash:
-        print("缺凭据：设置 ZCODE_SID/ZCODE_HASH 或确保本机 ZCode 已配对")
+    sid, phash, mid, jwt = load_credentials()
+    print("sid =", sid, "| hash len =", len(phash or ""), "| mid =", mid, "| jwt =", "有" if jwt else "无")
+
+    # ---- V2 专属子命令（纯 HTTP，不连 WS） ----
+    if mode == "token":
+        if not jwt:
+            print("缺 JWT：credentials.json 无 zcodejwttoken（需 ZCode ≥3.16 且已登录）")
+            return 2
+        tok = v2_fetch_relay_token(jwt, "terminal")
+        print("terminal relay token:", tok[:6] + "***", f"(len={len(tok)})")
+        return 0
+    if mode == "devices":
+        if not jwt:
+            print("缺 JWT：credentials.json 无 zcodejwttoken")
+            return 2
+        data = v2_list_devices(jwt)
+        items = data.get("devices") if isinstance(data, dict) else data
+        if not isinstance(items, list):
+            print("device list data 形态：", json.dumps(data, ensure_ascii=False)[:400])
+            return 0
+        for dev in items:
+            print(" ", json.dumps(dev, ensure_ascii=False)[:220])
+        return 0
+    if mode == "loginurl":
+        # 构造 BigModel 互信登录跳转（与官方 web 登录页「连接 BigModel」按钮同形）
+        import urllib.parse
+        target = f"https://zcode.z.ai/remote/v4?sid={sid}&mid={mid}&app_version=probe"
+        state = base64.urlsafe_b64encode(json.dumps({
+            "nonce": str(uuid.uuid4()),
+            "app_return_to": target,
+        }).encode()).decode().rstrip("=")
+        print("https://bigmodel.cn/login?" + urllib.parse.urlencode({
+            "redirect": target, "appId": "zcode", "state": state,
+        }))
+        return 0
+
+    if not sid:
+        print("缺 sid：设置 ZCODE_SID 或确保本机 ZCode 已开启远程控制")
         return 2
+    if not phash:
+        print("（V2 模式：无 passHash。若中继下发 challenge 将无法应答——官方 web 端由登录链路提供凭据）")
 
     p = Probe(sid, phash, mid)
     p.open()

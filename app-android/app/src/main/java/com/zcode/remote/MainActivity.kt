@@ -30,6 +30,7 @@ import com.zcode.remote.relay.SessionItem
 import com.zcode.remote.relay.approvalsForSession
 import com.zcode.remote.relay.elicitationsForSession
 import com.zcode.remote.storage.PairedDevice
+import com.zcode.remote.storage.QrParseResult
 import com.zcode.remote.storage.QrParser
 import com.zcode.remote.ui.screens.*
 import com.zcode.remote.ui.theme.ZCodeTheme
@@ -45,6 +46,12 @@ class MainActivity : ComponentActivity() {
      */
     private var pendingPair by mutableStateOf<PairedDevice?>(null)
 
+    /**
+     * V2（ZCode ≥3.16）登录配对中的设备：新版二维码无 hash，凭据由登录链路下发
+     * （PROTOCOL.md §11）。非空时渲染 [LoginWebViewDialog]。
+     */
+    private var pendingLogin by mutableStateOf<PairedDevice?>(null)
+
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
         setIntent(intent)
@@ -58,6 +65,10 @@ class MainActivity : ComponentActivity() {
             val vm: AppViewModel = viewModel()
             appVm = vm
             LaunchedEffect(Unit) {
+                // 等首帧布局完成再处理深链/分享：冷启动 + 深链同时发生时（重装后 am start），
+                // 立即弹出 Compose Dialog 会导致 Dialog window 内容整体不渲染（真机实证 2026-10-25：
+                // 整窗纯背景色，连标题文字都不上屏）。
+                androidx.compose.runtime.withFrameNanos { }
                 handleShareIntent(intent)
                 handleDeepLink(intent)
             }
@@ -108,8 +119,9 @@ class MainActivity : ComponentActivity() {
                     }
 
                     // 全局物理返回键拦截（防止直接退出应用）
-                    BackHandler(enabled = openedTaskId != null || showGuide || scanning) {
+                    BackHandler(enabled = openedTaskId != null || showGuide || scanning || pendingLogin != null) {
                         when {
+                            pendingLogin != null -> pendingLogin = null
                             openedTaskId != null -> closeSession()
                             showGuide -> showGuide = false
                             scanning && vm.device != null -> scanning = false
@@ -145,6 +157,24 @@ class MainActivity : ComponentActivity() {
                         )
                     }
 
+                    // V2（≥3.16）登录配对：新版二维码无 hash，WebView 走官方登录链路补凭据
+                    pendingLogin?.let { dev ->
+                        LoginWebViewDialog(
+                            device = dev,
+                            onDismiss = { pendingLogin = null },
+                            onLoggedIn = { completed ->
+                                pendingLogin = null
+                                vm.pair(completed)
+                                android.widget.Toast
+                                    .makeText(
+                                        this@MainActivity,
+                                        "登录完成，正在连接：${completed.deviceName ?: completed.deviceSid}",
+                                        android.widget.Toast.LENGTH_SHORT,
+                                    ).show()
+                            },
+                        )
+                    }
+
                     // 旋转/进程重建后 openedItem 为空：按 taskId 从列表回查（拿标题等元数据）
                     val target =
                         openedItem
@@ -158,6 +188,10 @@ class MainActivity : ComponentActivity() {
                             ScanScreen(
                                 onPaired = {
                                     vm.pair(it)
+                                    scanning = false
+                                },
+                                onNeedsLogin = {
+                                    pendingLogin = it
                                     scanning = false
                                 },
                             )
@@ -456,10 +490,12 @@ class MainActivity : ComponentActivity() {
         if (intent == null || intent.action != Intent.ACTION_VIEW) return
         val uri = intent.data ?: return
         val rawUrl = uri.toString()
-        val dev = QrParser.parse(rawUrl)
-        if (dev != null) {
+        when (val r = QrParser.parseResult(rawUrl)) {
             // C-10：不再直接配对——先弹确认弹窗（见 pendingPair 的渲染处）
-            pendingPair = dev
+            is QrParseResult.Ready -> pendingPair = r.device
+            // V2 新版二维码无 hash：进入登录配对流程
+            is QrParseResult.NeedsLogin -> pendingLogin = r.device
+            null -> Unit
         }
     }
 }

@@ -17,11 +17,24 @@
   （Kotlin + Jetpack Compose）。逆向复用官方中继与配对协议，提供更强的通知、锁屏审批、
   流式会话与移动端操控体验。
 - **仓库**：<https://github.com/wjf1/zcode-remote-app>（owner：wjf1）
-- **当前版本**：`0.5.0-beta50`（versionCode 62），tag `v0.5.0-beta50`（本地已打，**未推送**——推送时本机代理 7900 无监听）；上一个发布 tag `v0.5.0-beta48`。
+- **当前版本**：`0.5.0-beta52`（versionCode 64，**本地未提交**——beta51/52 一并随发布提交）；上一个发布 tag `v0.5.0-beta50`。
 - **⚠️ 待推送（本地已提交+打 tag）**：`v0.5.0-beta49` 与 `v0.5.0-beta50` 两个 tag 已在本地产出，
   **因 GitHub 不可达（代理 7900 无监听、直连 github.com:443 被拒）未能推送**；恢复网络后
   `git push origin master && git push origin v0.5.0-beta49 && git push origin v0.5.0-beta50` 即可
   （见 §7「推送受阻」条）。
+- **✅ beta52（2026-10-25）**：**V2 直连打通（真机走查③）**——推翻 beta51 的「terminal token
+  仍收 challenge」误判（此前连的是 V1 端点 `/ws`）；**V2 中继端点是 `/api/v1/remote/ws2`**
+  （3.16.3 桌面端代码实证）。App 原生「JWT→relay token→ws2 直连」：auth_init 无 role 一帧
+  auth_ack matched（无 challenge、不需要 passHash）；他桥广播过滤 + V4 连接级握手前置 +
+  bootstrap V2 `workspaces[]` 解析。真机实证 paired → bridge-ready → RPC 正常（桌面日志
+  22:45:39 `paired`）。**凭据形态定案：登录回调 URL 不带 hash，凭据=localStorage JWT→token**
+  （expires_in 60s 现取现用）。会话列表条目在 V2 用全新 Controller 通道
+  （subscribeControllerV4），适配列入 §5 待办。详见 PROTOCOL.md §11.3/§11.5。
+- **✅ beta51（2026-10-25）**：**ZCode 3.16.3 V2 认证配对适配（协议双栈）**——桌面端 3.16.3 将
+  远程控制凭据体系 V1→V2 重构（QR 去 hash、删 passHash、账号登录 + relay token）。本版本完成
+  双侧逆向（3.16.3 asar + 官方 Web 新 bundle）+ 中继实测 + App 双栈适配（V1 直连保留；V2 新码
+  走 WebView 登录配对；JWT 加密存储；V2AccountApi + 设置页账号设备卡片；心跳 30s→10s）。
+  **业务层经双侧 diff 确认零变化**。协议全记录见 PROTOCOL.md **§11**；真机统一验证清单 §11.5。
 - **✅ beta50（2026-10-16）**：**附件上传流水线重构**（走查 5.1 清单**最后一项 #2**）——递归回调 →
   顺序 suspend 流水线 + 可定位（seekable）内容源（续传 O(1) 定位）+ 阻塞读下放 IO 线程；
   上传编排**首次进入 JVM 单测**（`AttachmentUploadPipelineTest` 11 项）。**5.1 清单至此全部闭环**。
@@ -93,6 +106,52 @@ app-android/app/src/main/java/com/zcode/remote/
 ## 4. 最近一轮变更与交付成果
 
 > 完整逐轮记录见 [CHANGELOG.md](CHANGELOG.md) 与 [HANDOVER.md](HANDOVER.md) 文首覆盖层。
+
+### v0.5.0-beta52：V2 直连打通（真机走查③，2026-10-25）
+
+**核心纠偏**：beta51 记录的「terminal token 仍收 challenge」是**连错端点**——`wss://zcode.z.ai/ws`
+是 V1 中继；**V2 中继端点是 `wss://<origin>/api/v1/remote/ws2`**（3.16.3 桌面端代码
+`relayWsUrl: ${origin}/api/v1/remote/ws2` 实证）。据此 App 原生 V2 直连全链路打通。
+
+| 模块 | 交付 |
+|---|---|
+| 协议实证 | PROTOCOL.md §11.2/§11.3 全面改写：登录回调 URL 无 hash（凭据=localStorage JWT→token，expires_in 60s）；ws2 握手帧样本（auth_init 无 role/秒级 ts → auth_ack 直达回 terminal_sid）；V2 zod strictObject schema（心跳无 device_sid）；`_tmp/v2_terminal_test.py` 参考实现；官方 Web bundle 按 app_version 版本化（`/remote/v4/<ver>/assets/`） |
+| `relay/RelayProtocol.kt` | `authInitV2`（无 role、client_ts 秒）、`heartbeatV2`（无 device_sid）、`v2RelayWsUrl`（origin→ws2） |
+| `relay/RelayClient.kt` | V2 分支：`jwtProvider`（构造注入）→ `acquireV2Token` → `?token=&mid=` 连 ws2；V2 收 challenge=PROTOCOL_MISMATCH；无 JWT 指引登录 |
+| `relay/RpcChannel.kt` | **他桥广播过滤**：桌面端把 `bridge-degraded{terminal-owner-ended}`（官方 web 关页后的旧桥）周期广播给所有 terminal，按 bridgeSessionId 过滤（`BridgeState.Opening` 携带 sid） |
+| `relay/SessionsIndexChannel.kt` | 订阅前补 V4 连接级握手（hello→initialize；V2 host 强制，实测 `fault.connection.handshakeRequired`） |
+| `service/ConnectionCoordinator.kt` | 注入 jwtProvider；`activeWorkspaceKeyOf` 支持 V2 `result.workspaces[]`（workspaceKey=workspacePath） |
+| `relay/V2AccountApi.kt` | `Envelope.data` 改 `JsonElement`（token 接口 data 为对象，String 声明解析失败——真机实测） |
+| `debug/DebugPairReceiver.kt` | `--es jwt` 注入（真机 V2 验收） |
+| 单测 | `V2HandshakeTest` 4 项；detekt 复杂度返工（connect/onBridgeFrame/ScanScreen/AccountDevicesSection 抽函数） |
+
+- **真机验证**（小米/HyperOS，无线调试）：走查②手机系统浏览器登录→URL 无 hash→官方 web 三次
+  paired；走查③ App 原生 V2 直连：`ws open v2=true` → auth_ack matched（桌面日志 22:45:39
+  paired）→ bootstrap → bridge-ready → sessions-index subscribed。门禁：单测+detekt+ktlint+lint 全绿。
+- **边界**：V2 会话列表条目走新 Controller 通道（`subscribeControllerV4`，`task.upserted` 增量），
+  App 首页列表暂空（通道已通、数据源适配列入 §5 待办）；App 内 WebView 登录在 HyperOS+WebView 153
+  卡死（独立 bug；系统浏览器登录可完成流程，Debug 构建可 `--es jwt` 注入验收）。
+
+### v0.5.0-beta51：ZCode 3.16.3 V2 认证配对适配（协议双栈，2026-10-25）
+
+**背景**：桌面端 3.16.3 把远程控制凭据体系 V1→V2 重构（新 QR 不带 hash、PC 删除 passHash、
+账号登录 + `/api/v1/remote/token`），旧配对链路在 3.16.3 上断裂。**业务层（§5/§6）双侧 diff
+确认零变化**——本版本只动认证配对层。
+
+| 模块 | 交付 |
+|---|---|
+| 协议逆向 | PROTOCOL.md **§11**：V2 全链路（设备注册 / token / QR 变更 / BigModel 互信登录跳转）+ 中继实测表（terminal 带/不带 token 均收 challenge；token 仅豁免 device 角色；device list 可用）。3.16.3 asar 提取件在 `_tmp/asar-3.16.3/`，官方 Web 新 bundle 在 `_tmp/web-*.js` |
+| `storage/PairedDevice.kt` | `passHash` 改可空；`QrParser.parseResult()` 双路（`Ready`/`NeedsLogin`）；`DevicesCodec` 存储兼容 |
+| `relay/RelayClient.kt` | challenge 无凭据 → `Failed(AUTH_FAILED)` 明确指引登录配对（不再算错误 proof）；心跳 30s→**10s** 对齐官方 §4.1 |
+| `ui/screens/LoginWebViewDialog.kt`（新增） | WebView 登录配对：跨域跳转全放行（BigModel 互信）、Cookie/localStorage 持久化；完成条件双兜底（回调 URL `hash=` / localStorage `zcodejwttoken`） |
+| `storage/TokenStore.kt` | `zcode_jwt_enc`（复用 CredentialCrypto AES-256-GCM + Keystore） |
+| `relay/V2AccountApi.kt`（新增） | `fetchRelayToken` / `listDevices`（`{code,msg,data}` 包络；data 兼容数组与 `{devices}` 两形态） |
+| `ui/screens/SettingsTab.kt` | 「ZCode 账号（新版协议）」卡片：登录态 + 账号设备列表（name/platform/version/online） |
+| `tools/probe.py` | 凭据双栈（V2 设置项 + mid 自动推导 + `zcodejwttoken` 解密）；新命令 `token` / `devices` / `loginurl`（**本机实测通过**：token 200、列出 2 台设备） |
+
+- **接线**：相机扫码 / 手输链接 / 深链三条配对入口全部分流（V1→确认弹窗直连；V2→登录配对）。
+- **验证状态**：JVM 编译 + 存量单测通过；协议层本机实测通过。**真机统一走查未做**
+  （清单见 PROTOCOL.md §11.5：WebView 登录全流程 → 回调凭据形态 → 原生直连 → 账号卡片渲染）。
 
 ### v0.5.0-beta50：附件上传流水线重构（走查 5.1 清单最后一项 #2，2026-10-16）
 
@@ -334,6 +393,16 @@ lint 双变体 0 error、detekt、ktlint 0 违规、assembleDebug/Release 通过
 
 ### 其他待办
 
+- **V2 会话列表 Controller 通道（beta52 遗留，下一版本主工作项）**：3.16.3 V2 host 用全新
+  Controller 通道承载任务/会话列表（`subscribeControllerV4` + `onDynamicControllerFrame`，
+  topic 订阅、`task.upserted`/`task.removed` 增量、`snapshot` 全量；web bundle 实证），
+  替代 V1 的 bootstrap `tasks[]`。App 现状：V2 直连后首页列表空（角标/会话流 RPC 通道已通）。
+  适配点：新 `ControllerChannel`（订阅/增量应用/重同步）→ 会话列表数据源切换 → 真机走查③收尾
+  （点开会话→流式输出）。参照：`_tmp/v3163/index-BsmXQHMM.js` 的
+  `windowControllerTaskListRegistry` 区段。
+- **App 内 WebView 登录卡死（独立 bug）**：HyperOS + WebView 153 点登录按钮无响应（进程存活、
+  无 ANR）。缓解：系统浏览器完成登录；Debug 构建 `DebugPairReceiver --es jwt` 注入。修复方向：
+  WebView 渲染竞态（Compose AndroidView 内嵌 WebView，5 轮修复未根治，见 beta51 记录）。
 - **最高优先（已闭环）**：通知权限、网络回调泄漏、旋转状态保持、草稿串会话、倒计时不动——
   均已完成；前四项已通过 beta42 真机走查，草稿隔离已通过 beta43 真机仪器化测试（3/3）。
 - **待补真机项（非阻塞）**：① 自适应图标在启动器内的观感（圆形/方形蒙版）；

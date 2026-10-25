@@ -59,6 +59,56 @@ object RelayProtocol {
             put("client_ts", System.currentTimeMillis())
         }
 
+    /**
+     * V2 握手（3.16+ `ws2` 中继，2026-10-25 probe 实测 matched）：
+     * 无 role 字段（strictObject 校验会拒未知字段）、client_ts 为**秒**
+     * （schema 上限 253402300799 是毫秒语义的 9999 年，毫秒值会超限）。
+     * 身份由 WS URL 的 `?token=`（JWT 换取的 relay token）决定。
+     */
+    fun authInitV2(
+        deviceSid: String,
+        appVersion: String,
+    ): JsonObject =
+        buildJsonObject {
+            put("type", "auth_init")
+            put("device_sid", deviceSid)
+            put(
+                "meta",
+                buildJsonObject {
+                    put("platform", "android")
+                    put("version", appVersion)
+                    put("name", "zcode-remote-app")
+                },
+            )
+            put("client_ts", System.currentTimeMillis() / 1000)
+        }
+
+    /** V2 心跳：官方 web/桌面端均为无 device_sid 的 `pair_status_query`（strictObject 不容多余字段）。 */
+    fun heartbeatV2(): JsonObject =
+        buildJsonObject {
+            put("type", "pair_status_query")
+            put("client_ts", System.currentTimeMillis() / 1000)
+        }
+
+    /**
+     * V2 中继 WS 端点（桌面端代码实证：`relayWsUrl: ${origin}/api/v1/remote/ws2`）。
+     * 由配对链接的 https origin 推导；V1 的 `/ws` 端点不认 token，会下发 challenge。
+     */
+    fun v2RelayWsUrl(remoteUrl: String): String {
+        val origin =
+            runCatching { java.net.URI(remoteUrl).let { "${it.scheme}://${it.host}" } }
+                .getOrNull()
+                ?.takeIf { it.startsWith("http") }
+                ?: "https://zcode.z.ai"
+        val wsOrigin =
+            if (origin.startsWith("https://")) {
+                "wss://" + origin.removePrefix("https://")
+            } else {
+                "ws://" + origin.removePrefix("http://")
+            }
+        return "$wsOrigin/api/v1/remote/ws2"
+    }
+
     fun nonceOf(obj: JsonObject): String? =
         obj["nonce"]?.let {
             runCatching { it.jsonPrimitive.content }.getOrNull()

@@ -36,7 +36,9 @@ class RpcChannel(
     sealed interface BridgeState {
         data object Closed : BridgeState
 
-        data object Opening : BridgeState
+        data class Opening(
+            val bridgeSessionId: String,
+        ) : BridgeState
 
         data class Ready(
             val bridgeSessionId: String,
@@ -203,7 +205,7 @@ class RpcChannel(
         bridgeOpenToken += 1
         val token = bridgeOpenToken
         val sid = "bridge-${UUID.randomUUID()}"
-        _bridge.value = BridgeState.Opening
+        _bridge.value = BridgeState.Opening(sid)
         val payload =
             buildJsonObject {
                 put("zcode_type", "workspace-bridge-open")
@@ -264,40 +266,68 @@ class RpcChannel(
     /** 由 AppViewModel 在收到 workspace-bridge-* 帧时调用。 */
     fun onBridgeFrame(payload: JsonObject) {
         when (BridgeFrames.zcodeTypeOf(payload)) {
-            "workspace-bridge-ready" -> {
-                val sid = payload["bridgeSessionId"]?.let { runCatching { it.jsonPrimitive.content }.getOrNull() }
-                readyPayload = payload
-                // 身份三元组以此为准（PC 端 enforces 全等匹配）
-                bridgeGeneration =
-                    payload["bridgeGeneration"]?.let {
-                        runCatching { it.jsonPrimitive.content.toIntOrNull() }.getOrNull()
-                    }
-                recoveryId = payload["recoveryId"]?.let { runCatching { it.jsonPrimitive.content }.getOrNull() }
-                ZLog.i(
-                    TAG,
-                    "bridge-ready sid=${LogRedactor.maskId(
-                        sid,
-                    )} gen=$bridgeGeneration payload=${LogRedactor.payloadLabel(payload.toString())}",
-                )
-                // §11.5.2：新桥 = 新 seq 空间。官方每条桥各自维护一套 seq（两侧从 1 起、
-                // 组装器 expectedPhysicalSeq 默认 1，见 research/FRAME-CODEC.md §6）——
-                // 若沿用旧 seq，PC 侧组装器会判 physicalGap（终态）；重置使两侧同起点。
-                bridgeEpoch += 1
-                nextPhysicalSeq = 1
-                nextMessageSeq = 1
-                lastAckedMessageSeq = 0
-                assembler.clear()
-                if (sid != null) {
-                    // 新桥 ack 序列空间全新：旧桥挂起请求立即失败收场，防止调用方状态卡死
-                    failPending("bridge re-established")
-                    _bridge.value = BridgeState.Ready(sid)
-                }
-            }
-            "workspace-bridge-error", "bridge-degraded" -> {
-                ZLog.w(TAG, "bridge error payload=${LogRedactor.payloadLabel(payload.toString())}")
-                _bridge.value = BridgeState.Failed(payload.toString().take(200))
-            }
+            "workspace-bridge-ready" -> onBridgeReady(payload)
+            "workspace-bridge-error", "bridge-degraded" -> onBridgeError(payload)
         }
+    }
+
+    /** `workspace-bridge-ready`：只认自己（开启中/已就绪）的桥；他桥 ready 直接忽略。 */
+    private fun onBridgeReady(payload: JsonObject) {
+        val sid = payload["bridgeSessionId"]?.let { runCatching { it.jsonPrimitive.content }.getOrNull() }
+        // 桌面端会把 ready/error 广播到所有 terminal 连接：只认自己开的桥
+        // （官方 web 同样按 bridgeSessionId===本端生成值过滤）。开启中的桥以
+        // Opening(sid) 为准，已就绪桥允许重放（recovery 场景）。
+        val openingSid = (_bridge.value as? BridgeState.Opening)?.bridgeSessionId
+        if (openingSid != null && sid != null && sid != openingSid) {
+            ZLog.i(TAG, "忽略他桥 ready sid=${LogRedactor.maskId(sid)}")
+            return
+        }
+        readyPayload = payload
+        // 身份三元组以此为准（PC 端 enforces 全等匹配）
+        bridgeGeneration =
+            payload["bridgeGeneration"]?.let {
+                runCatching { it.jsonPrimitive.content.toIntOrNull() }.getOrNull()
+            }
+        recoveryId = payload["recoveryId"]?.let { runCatching { it.jsonPrimitive.content }.getOrNull() }
+        ZLog.i(
+            TAG,
+            "bridge-ready sid=${LogRedactor.maskId(sid ?: "")} gen=$bridgeGeneration payload=${LogRedactor.payloadLabel(payload.toString())}",
+        )
+        // §11.5.2：新桥 = 新 seq 空间（两侧从 1 起，见 research/FRAME-CODEC.md §6）。
+        bridgeEpoch += 1
+        nextPhysicalSeq = 1
+        nextMessageSeq = 1
+        lastAckedMessageSeq = 0
+        assembler.clear()
+        if (sid != null) {
+            // 新桥 ack 序列空间全新：旧桥挂起请求立即失败收场，防止调用方状态卡死
+            failPending("bridge re-established")
+            _bridge.value = BridgeState.Ready(sid)
+        }
+    }
+
+    /**
+     * `workspace-bridge-error` / `bridge-degraded`：只处理自己桥的错误/降级。
+     * 桌面端会把 terminal-owner-ended 等旧桥事件广播给所有 terminal（真机实测
+     * 2026-10-25：官方 web 关页后旧桥 degraded 每 5s 重复推送），无桥/异桥时
+     * 纳入会让本端永不开桥。无 bridgeSessionId 的错误无法判定归属，保守按本端失败。
+     */
+    private fun onBridgeError(payload: JsonObject) {
+        // 错误诊断帧（bridgeSessionId/reason，不含会话正文/凭据）：debug 构建全文输出以定位链路问题
+        val detail = if (com.zcode.remote.BuildConfig.DEBUG) " " + payload.toString() else ""
+        val errSid = payload["bridgeSessionId"]?.let { runCatching { it.jsonPrimitive.content }.getOrNull() }
+        val mine =
+            when (val st = _bridge.value) {
+                is BridgeState.Opening -> st.bridgeSessionId
+                is BridgeState.Ready -> st.bridgeSessionId
+                else -> null
+            }
+        if (errSid != null && errSid != mine) {
+            ZLog.i(TAG, "忽略他桥 error/degraded sid=${LogRedactor.maskId(errSid)}")
+            return
+        }
+        ZLog.w(TAG, "bridge error payload=${LogRedactor.payloadLabel(payload.toString())}$detail")
+        _bridge.value = BridgeState.Failed(payload.toString().take(200))
     }
 
     // ---------- RPC ----------

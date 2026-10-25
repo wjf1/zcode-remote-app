@@ -159,6 +159,12 @@ class ConnectionCoordinator(
                 // B 组：自报真实版本号（原默认 0.1.0，上游按 app_version 做能力协商时是哑雷）
                 appVersion = BuildConfig.VERSION_NAME,
                 relayWsUrlOverride = host.hostRelayOverride(),
+                // V2 直连凭据源（PROTOCOL.md §11）：无 passHash 的配对经「JWT→token→ws2」连接
+                jwtProvider = {
+                    com.zcode.remote.storage
+                        .TokenStore(host.hostContext)
+                        .readZcodeJwt()
+                },
             )
         // B 组：网络感知重连 —— 常驻监控：断网立即断 socket 调度重连（attempt 归零），
         // 恢复即刻放行（不等 OkHttp 迟到的失败回调，真机实证其延迟到恢复才冒出）
@@ -497,7 +503,15 @@ class ConnectionCoordinator(
         ivs?.get("activeWorkspaceKey")?.let {
             runCatching { it.jsonPrimitive.content }.getOrNull()?.let { k -> if (k.isNotBlank()) return k }
         }
-        // 回退：取第一个会话的 workspacePath
+        // V2（≥3.16）：result.workspaces[]（probe 实测 2026-10-25）——workspaceKey 即
+        // workspacePath（官方 web 以 path 为 key 开桥）；取第一个可桥接工作区
+        result["workspaces"]?.let { runCatching { it.jsonArray }.getOrNull() }?.firstOrNull()?.let {
+            runCatching { it.jsonObject["workspacePath"]?.jsonPrimitive?.content }
+                .getOrNull()
+                ?.takeIf { k -> k.isNotBlank() }
+                ?.let { k -> return k }
+        }
+        // V1 回退：取第一个会话的 workspacePath
         val tasks = result["tasks"]?.let { runCatching { it.jsonArray }.getOrNull() } ?: return null
         return tasks.firstOrNull()?.let {
             runCatching { it.jsonObject["workspacePath"]?.jsonPrimitive?.content }.getOrNull()

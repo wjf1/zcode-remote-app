@@ -33,6 +33,7 @@ import com.zcode.remote.R
 import com.zcode.remote.notify.NotificationPermission
 import com.zcode.remote.relay.RelayState
 import com.zcode.remote.relay.RpcChannel
+import com.zcode.remote.relay.V2AccountApi
 import com.zcode.remote.repo.UpdateRepository
 import com.zcode.remote.storage.PairedDevice
 import com.zcode.remote.ui.theme.ZCodeTokens
@@ -41,6 +42,7 @@ import com.zcode.remote.util.UiText
 import com.zcode.remote.util.UiText.Companion.res
 import com.zcode.remote.util.asString
 import com.zcode.remote.util.resolve
+import kotlinx.coroutines.launch
 
 /**
  * 独立的系统与设备设置中心 (Settings Tab)
@@ -189,7 +191,10 @@ fun SettingsTab(
                 }
             }
 
-            // 2. 多机管理列表
+            // 2.5 ZCode 账号设备（V2，≥3.16）：登录后可见账号绑定PC（PROTOCOL.md §11）
+            item { AccountDevicesSection() }
+
+            // 3. 多机管理列表
             val otherDevices = devices.filter { it.deviceSid != activeSid }
             if (otherDevices.isNotEmpty()) {
                 item {
@@ -775,3 +780,120 @@ internal fun ghTokenPlaceholder(configured: Boolean): UiText =
 
 /** 走查 #10：保存 Token 的反馈文案——空草稿即清除。 */
 internal fun ghTokenSavedToast(draft: String): UiText = if (draft.isEmpty()) res(R.string.gh_token_cleared) else res(R.string.gh_token_saved)
+
+/**
+ * ZCode 账号设备（V2，ZCode ≥3.16）：显示登录态（JWT 是否就绪）与账号绑定的 PC 列表。
+ * 数据源 `GET /api/v1/remote/device`（PROTOCOL.md §11）。自包含拉取（TokenStore + V2AccountApi），
+ * 不侵入 SettingsTab 调用链。未登录时折叠为一行提示。
+ */
+@Composable
+private fun AccountDevicesSection() {
+    val context = LocalContext.current
+    val scope = rememberCoroutineScope()
+    var jwt by remember { mutableStateOf<String?>(null) }
+    var devices by remember { mutableStateOf<List<V2AccountApi.RemoteDevice>?>(null) }
+    var loading by remember { mutableStateOf(false) }
+    var error by remember { mutableStateOf<String?>(null) }
+
+    LaunchedEffect(Unit) {
+        jwt =
+            com.zcode.remote.storage
+                .TokenStore(context)
+                .readZcodeJwt()
+    }
+
+    Card(
+        shape = RoundedCornerShape(14.dp),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+        border = CardDefaults.outlinedCardBorder(),
+        modifier = Modifier.fillMaxWidth(),
+    ) {
+        Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
+                Text(
+                    text = "ZCode 账号（新版协议）",
+                    style = MaterialTheme.typography.titleSmall,
+                    modifier = Modifier.weight(1f),
+                )
+                if (jwt != null) {
+                    TextButton(
+                        onClick = {
+                            if (loading) return@TextButton
+                            loading = true
+                            error = null
+                            scope.launch {
+                                V2AccountApi
+                                    .listDevices(jwt!!)
+                                    .onSuccess { devices = it }
+                                    .onFailure { error = it.message }
+                                loading = false
+                            }
+                        },
+                        enabled = !loading,
+                    ) { Text(if (loading) "加载中…" else "刷新设备列表") }
+                }
+            }
+            if (jwt == null) {
+                Text(
+                    text = "未登录：使用 3.16+ 新版二维码配对时会在登录流程中自动获取账号凭据。",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            } else {
+                AccountDevicesBody(devices, error)
+            }
+        }
+    }
+}
+
+/** 设备列表状态区（从 [AccountDevicesSection] 抽出以控制圈复杂度）。 */
+@Composable
+private fun AccountDevicesBody(
+    devices: List<V2AccountApi.RemoteDevice>?,
+    error: String?,
+) {
+    val list = devices
+    when {
+        error != null ->
+            Text(
+                "获取失败：$error",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.error,
+            )
+        list == null ->
+            Text(
+                "已登录（凭据已加密存储）。点击「刷新设备列表」查看账号绑定的电脑。",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        list.isEmpty() ->
+            Text("账号下暂无绑定设备", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        else ->
+            list.forEach { d -> AccountDeviceRow(d) }
+    }
+}
+
+/** 单台绑定设备行。 */
+@Composable
+private fun AccountDeviceRow(d: V2AccountApi.RemoteDevice) {
+    Row(modifier = Modifier.fillMaxWidth().padding(vertical = 2.dp)) {
+        Column(Modifier.weight(1f)) {
+            Text(
+                d.meta?.name ?: d.deviceSid.take(16),
+                style = MaterialTheme.typography.bodyMedium,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+            Text(
+                "${d.meta?.platform ?: "?"} · ${d.meta?.version ?: "?"}",
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+        Text(
+            if (d.online) "在线" else "离线",
+            style = MaterialTheme.typography.labelMedium,
+            color = if (d.online) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+    }
+}

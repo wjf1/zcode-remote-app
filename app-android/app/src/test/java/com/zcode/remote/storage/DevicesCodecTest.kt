@@ -76,4 +76,34 @@ class DevicesCodecTest {
         assertEquals(emptyList<PairedDevice>(), decoded?.first)
         assertNull(decoded?.second)
     }
+
+    // ---- V2（ZCode ≥3.16，PROTOCOL.md §11）：passHash 可空 ----
+
+    @Test
+    fun roundTrip_v2DeviceWithoutPassHash() {
+        // V2 新版二维码无 hash：登录配对未补齐凭据前，设备以 passHash=null 持久化
+        val v2 =
+            PairedDevice(
+                deviceSid = "d_v2",
+                passHash = null,
+                deviceMid = "mid-v2",
+                deviceName = "DESKTOP-V2",
+                remoteUrl = "https://zcode.z.ai/remote/v4",
+                pairedAtMs = 1234567890L,
+            )
+        val decoded = DevicesCodec.decode(DevicesCodec.encode(listOf(v2), "d_v2"))
+        assertEquals(listOf(v2), decoded?.first)
+        assertEquals(true, decoded?.first?.first()?.needsLogin)
+    }
+
+    @Test
+    fun roundTrip_v1AndV2DevicesCoexist() {
+        // 老设备（带 hash）与新设备（无 hash）共存；老数据读取路径不受可空化影响
+        val v1 = device("d_v1")
+        val v2 = device("d_v2").copy(passHash = null)
+        val decoded = DevicesCodec.decode(DevicesCodec.encode(listOf(v1, v2), "d_v1"))
+        assertEquals(listOf(v1, v2), decoded?.first)
+        assertEquals(false, decoded?.first?.first()?.needsLogin)
+        assertEquals(true, decoded?.first?.get(1)?.needsLogin)
+    }
 }

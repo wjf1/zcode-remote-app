@@ -27,7 +27,8 @@ internal object DevicesCodec {
     @Serializable
     internal data class Entry(
         val sid: String,
-        val hash: String,
+        // V2（≥3.16）配对无 passHash（凭据由登录链路补齐），旧数据恒非空
+        val hash: String? = null,
         val mid: String? = null,
         val name: String? = null,
         val url: String,
@@ -80,7 +81,7 @@ internal object DevicesCodec {
                     if (line.isBlank()) return@mapNotNull null
                     val p = line.split("\u0001")
                     if (p.size < 5) return@mapNotNull null
-                    PairedDevice(p[0], p[1], p[2].ifEmpty { null }, p[3].ifEmpty { null }, p[4])
+                    PairedDevice(p[0], p[1].ifEmpty { null }, p[2].ifEmpty { null }, p[3].ifEmpty { null }, p[4])
                 }
             devices to active?.ifEmpty { null }
         }.getOrNull()

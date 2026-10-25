@@ -6,6 +6,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.intOrNull
 import kotlinx.serialization.json.jsonPrimitive
+import java.util.UUID
 
 /**
  * workspace 级 sessions-index 订阅（E-1 会话权威角标）：
@@ -32,6 +33,7 @@ class SessionsIndexChannel(
 
     private var listenId: Int? = null
     private var subscriptionId: String? = null
+    private val clientId = "android-index-${UUID.randomUUID()}"
 
     /** 开桥后按当前工作区订阅一次（会话切换无需重订，与 ConversationChannel 生命周期不同）。 */
     fun subscribe(
@@ -43,6 +45,41 @@ class SessionsIndexChannel(
                 put("workspacePath", workspacePath)
                 workspaceIdentity?.let { put("workspaceIdentity", it) }
             }
+        // V2 host（web-remote-replayable，≥3.16）对桥上 V4 RPC 强制连接级握手
+        // （实测 2026-10-25：跳过得 fault.connection.handshakeRequired）；与
+        // ConversationChannel 同序列 hello → initialize，服务端允许多次 initialize。
+        rpc.call(RpcChannel.CHANNEL_AGENT, "helloConversationV4") { hello ->
+            if (hello !is RpcChannel.RpcReply.Ok) {
+                ZLog.w(TAG, "sessions-index 前置握手 hello 失败: ${if (hello is RpcChannel.RpcReply.Err) hello.message else "?"}")
+                doSubscribe(target)
+                return@call
+            }
+            val pv =
+                (hello.data as? JsonObject)
+                    ?.get("protocolVersion")
+                    ?.let { runCatching { it.jsonPrimitive.intOrNull }.getOrNull() } ?: 3
+            rpc.call(
+                RpcChannel.CHANNEL_AGENT,
+                "initializeConversationV4",
+                listOf(
+                    mapOf(
+                        "kind" to "clientHello",
+                        "protocolVersion" to pv,
+                        "clientId" to clientId,
+                        "clientKind" to "mobileApp",
+                        "appVersion" to "1.0.0",
+                    ),
+                ),
+            ) { init ->
+                if (init !is RpcChannel.RpcReply.Ok) {
+                    ZLog.w(TAG, "sessions-index 前置握手 initialize 失败: ${if (init is RpcChannel.RpcReply.Err) init.message else "?"}")
+                }
+                doSubscribe(target)
+            }
+        }
+    }
+
+    private fun doSubscribe(target: Map<String, Any>) {
         listenId = rpc.listen(RpcChannel.CHANNEL_AGENT, "onDynamicSessionsIndexFrame", target)
         rpc.call(
             RpcChannel.CHANNEL_AGENT,

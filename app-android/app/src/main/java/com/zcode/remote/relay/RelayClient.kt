@@ -80,7 +80,14 @@ class RelayClient(
     private val appVersion: String = "0.1.0",
     /** 线路覆盖（设置里强制主线/备线/自建中继）；null=按配对二维码推断。 */
     private val relayWsUrlOverride: String? = null,
+    /**
+     * V2 直连凭据源（PROTOCOL.md §11）：返回登录 JWT，null = 未登录。
+     * V2 配对（无 passHash）必须注入，否则连接将失败并给出登录指引。
+     */
+    private val jwtProvider: (suspend () -> String?)? = null,
 ) {
+    /** V2 配对：凭据走「JWT → relay token → ws2?token=」链路（无 challenge/proof）。 */
+    private val v2Mode: Boolean = device.passHash.isNullOrBlank()
     private val client =
         HttpClientProvider
             .newBuilder()
@@ -214,8 +221,61 @@ class RelayClient(
         generation += 1
         val myGen = generation
         runCatching { socket?.cancel() }
+        io.launch {
+            // V2：先换 relay token（suspend HTTP），再开 WS；期间连接可能被显式作废
+            val v2Token = if (v2Mode) acquireV2Token(myGen) ?: return@launch else null
+            openSocket(myGen, v2Token)
+        }
+    }
+
+    /**
+     * V2 凭据获取：JWT → relay token。取不到（未登录/网络失败/连接已作废）返回 null
+     * 并在仍为本代次时置失败态。
+     */
+    private suspend fun acquireV2Token(myGen: Int): String? {
+        val jwt =
+            jwtProvider?.invoke().also {
+                if (it.isNullOrBlank()) ZLog.w(TAG, "v2: 无登录 JWT — 无法换取 relay token")
+            }
+        if (jwt.isNullOrBlank()) {
+            if (myGen == generation && !manuallyClosed) {
+                fail(
+                    FailureReason.AUTH_FAILED,
+                    "尚未登录 ZCode 账号：请在「设置 → ZCode 账号」完成登录后重试",
+                )
+            }
+            return null
+        }
+        val tok = V2AccountApi.fetchRelayToken(jwt, "terminal")
+        val token =
+            tok.getOrNull().also {
+                if (it == null) ZLog.w(TAG, "v2: relay token 换取失败 ${tok.exceptionOrNull()?.message}")
+            }
+        if (token == null) {
+            if (myGen == generation && !manuallyClosed) {
+                fail(FailureReason.NETWORK, "获取中继令牌失败：${tok.exceptionOrNull()?.message ?: "网络异常"}")
+            }
+            return null
+        }
+        if (myGen != generation || manuallyClosed) return null
+        return token
+    }
+
+    /**
+     * 建立 WS（V1/V2 汇合点）。[v2Token] 非空 = V2 token 直连（ws2 端点，auth_init 无 role）。
+     */
+    private fun openSocket(
+        myGen: Int,
+        v2Token: String?,
+    ) {
         // 官方终端会追加 mid 参数（PROTOCOL.md 3 节）；主机在线时中继强制校验，缺失直接 AUTH_FAILED
-        val rawWsUrl = relayWsUrlOverride ?: device.relayWsUrl
+        val rawWsUrl =
+            if (v2Token != null) {
+                // V2：端点固定为 origin 下的 /api/v1/remote/ws2（桌面端代码实证；V1 的 /ws 不认 token）
+                RelayProtocol.v2RelayWsUrl(relayWsUrlOverride ?: device.remoteUrl)
+            } else {
+                relayWsUrlOverride ?: device.relayWsUrl
+            }
         // P0 传输止血（任务书 §11.3.1）：Release 只接受绝对 wss://；ws:// 仅 debug 放行。
         // 校验失败一律拒绝连接，绝不降级重试（旧实现 relayOverride 用 startsWith("ws") 放过了明文）。
         val wsUrl =
@@ -230,7 +290,8 @@ class RelayClient(
             }
         val url =
             wsUrl +
-                (device.deviceMid?.takeIf { it.isNotBlank() }?.let { "?mid=$it" } ?: "")
+                (if (v2Token != null) "?token=$v2Token" else "") +
+                (device.deviceMid?.takeIf { it.isNotBlank() }?.let { "${if (v2Token != null) "&" else "?"}mid=$it" } ?: "")
         // 中继校验 Origin 与线路一致性：从 ws 地址推导同源 https 地址（wss://host/ws → https://host）
         val secure = wsUrl.startsWith("wss://", ignoreCase = true)
         val host = wsUrl.substringAfter("//").substringBefore('/')
@@ -295,9 +356,15 @@ class RelayClient(
                 response: Response,
             ) {
                 if (stale()) return
-                ZLog.i(TAG, "ws open http=${response.code}")
+                ZLog.i(TAG, "ws open http=${response.code} v2=$v2Mode")
                 _state.value = RelayState.Authenticating
-                send(RelayProtocol.authInit(device.deviceSid, appVersion))
+                val init =
+                    if (v2Mode) {
+                        RelayProtocol.authInitV2(device.deviceSid, appVersion)
+                    } else {
+                        RelayProtocol.authInit(device.deviceSid, appVersion)
+                    }
+                send(init)
             }
 
             override fun onMessage(
@@ -310,16 +377,34 @@ class RelayClient(
                 val frame = runCatching { RelayProtocol.parse(text) }.getOrNull() ?: return
                 when (RelayProtocol.typeOf(frame)) {
                     "auth_challenge" -> {
+                        if (v2Mode) {
+                            // V2（ws2 + token）设计上无 challenge；收到即协议异常（端点/版本错乱）
+                            ZLog.w(TAG, "v2: unexpected auth_challenge — protocol mismatch")
+                            fail(
+                                FailureReason.PROTOCOL_MISMATCH,
+                                "V2 直连收到 challenge（协议异常）：请更新 App 或反馈",
+                            )
+                            return
+                        }
+                        val hash = device.passHash?.takeIf { it.isNotBlank() }
+                        if (hash == null) {
+                            ZLog.w(TAG, "auth_challenge but no passHash (V2 pairing) — login flow required")
+                            fail(
+                                FailureReason.AUTH_FAILED,
+                                "新版协议配对缺少凭据：请在会话页重新进入配对，完成账号登录后重试",
+                            )
+                            return
+                        }
                         val nonce = RelayProtocol.nonceOf(frame) ?: return
                         val proof =
                             RelayProtocol.calculateProof(
-                                device.passHash,
+                                hash,
                                 nonce,
                                 RelayProtocol.ROLE_TERMINAL,
                                 device.deviceSid,
                             )
                         // P0-C：proof 与 sid 是握手凭据，绝不能进日志（这里只记 SID 长度，连前缀都不留）
-                        ZLog.i(TAG, "auth proof computed sid=${LogRedactor.maskId(device.deviceSid)} hashLen=${device.passHash.length}")
+                        ZLog.i(TAG, "auth proof computed sid=${LogRedactor.maskId(device.deviceSid)} hashLen=${hash.length}")
                         send(RelayProtocol.authResponse(device.deviceSid, proof))
                     }
                     "auth_ack", "pair_status_ack" -> {
@@ -433,8 +518,13 @@ class RelayClient(
         heartbeatJob =
             io.launch {
                 while (isActive && !manuallyClosed) {
-                    runCatching { send(RelayProtocol.heartbeat(device.deviceSid)) }
-                    delay(30_000)
+                    // V2 帧为无 device_sid 的 pair_status_query（strictObject 拒多余字段）
+                    runCatching {
+                        send(if (v2Mode) RelayProtocol.heartbeatV2() else RelayProtocol.heartbeat(device.deviceSid))
+                    }
+                    // 官方两侧一致为 10s（PROTOCOL.md §4.1）；ack 超时 30s 由服务端判定，
+                    // 旧实现固定 30s 虽在窗口内可用，但会拉长失活检测，对齐官方取值
+                    delay(10_000)
                 }
             }
     }

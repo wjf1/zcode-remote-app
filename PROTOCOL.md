@@ -350,7 +350,10 @@ python tools/probe.py sub <会话ID前缀> [帧落盘路径]   # + 完整会话�
 
 ## 9. 版本基线
 
-PC：ZCode 3.11.2 win-x64（`@zcodedesktop-updater`）。手机端：`index-nOVzQNKW.js`（2026-09-13 拉取）。升级后需 diff：`research/` 内留存了两侧原始 bundle 供比对。
+PC：ZCode 3.11.2 win-x64（`@zcodedesktop-updater`）。手机端：`index-nOVzQNKW.js`（2026-09-13 拉取）。
+**2026-10-25 增补**：已对照 **ZCode 3.16.3**（本机升级版）与官方 Web 新 bundle（`index-B-ilXaCQ.js`，多 chunk 拆分），
+认证配对层发生 V1→V2 重构（§11），业务层（§5/§6）经双侧代码 diff 确认**零变化**。
+升级后需 diff：`research/` 内留存了两侧原始 bundle 供比对（3.16.3 提取件在 `_tmp/asar-3.16.3/`）。
 
 ## 10. 远程可达 RPC 面（2026-10-05 探测 · Sprint 3 第二步前置）
 
@@ -399,3 +402,106 @@ Repo Wiki ignore 过滤（`getIgnorePatterns`，命中报「文件被 Repo Wiki 
 - ⏳ **四问动态实测改由 App 侧覆盖**：问题 1（readTextFile 可用性）由「最近文件」面板功能验收
   直接实证；沙箱边界以 §10.2 静态推论 + provider_config 先例定案；问题 2/3（readdir / git 通道
   归属）**留待 App 侧新增探测功能或受控抓包**（probe 路线已证不可行）。
+
+## 11. V2 认证配对体系（ZCode ≥3.16，2026-10-25 逆向 + 实测）
+
+> 背景：本机 ZCode 升级至 3.16.3（win-x64）后，远程控制凭据体系从 V1（QR 共享密钥 + HMAC proof）
+> 重构为 V2（账号登录 + relay token）。本节固化双侧静态分析与中继实测结论；§5/§6 业务层经
+> 3.11.2 ↔ 3.16.3 双侧代码 diff 确认**零变化**（zcode_type 17 种、V4 RPC 16 个、envelope 命令、
+> 帧上限/附件常量/心跳间隔全部一致），本节只描述认证配对层。
+
+### 11.1 PC 端（device 侧）V2 流程 [静态 + 桌面日志实证]
+
+1. **设备注册**：`POST /api/v1/remote/device`，body `{device_mid}`，Bearer 登录 JWT →
+   `{device_sid, device_mid, online, created_at, meta}`；设备**绑定账号 userId**。
+   设置项从 `webRemoteControlExternalRelayDevice` 迁移为 `webRemoteControlRelayV2Device`
+   `= {deviceSid, userId, endpointOrigin}`（本机实测形态）。
+2. **换 relay token**：`POST /api/v1/remote/token`，body `{role:"device"|"terminal"}` → `{token}`
+   （22 字符短串）。JWT 来源：credentials.json 的 `zcodejwttoken`（`enc:v1:` AES-256-GCM 加密，
+   解密后 204 字符标准 JWT；probe.py `decrypt_credential` 可解）。
+3. **连接**：`wss://<origin>/api/v1/remote/ws2?token=<t>&mid=<mid>` → `auth_init`
+   （**无 role 字段、无 proof**，`client_ts` 为**秒**）→ 直接 `auth_ack`。PC 端 V2 入站解析（zod
+   strictObject）**没有 auth_challenge 分支**——token 连接免 challenge。
+   ⚠️ `wss://zcode.z.ai/ws` 是 **V1 中继端点**（challenge/proof），不认 token；V2 端点
+   `/api/v1/remote/ws2` 由桌面端代码实证（`relayWsUrl: ${origin}/api/v1/remote/ws2`）。
+4. **V1 凭据清除**：升级时主动删除凭据库 `web-remote-control:external-relay:pass_hash`
+   （`deleteLegacyCredential`），旧设置项清空。**V1 proof 链路在 PC ≥3.16 上不可再生。**
+5. 其他 API：`GET /api/v1/remote/device`（账号设备列表）、`POST /api/v1/remote/device/delete`
+   `{device_sid}`。响应统一包络 `{code:0, msg, data, logid}`。
+6. 桌面端日志时间线（本机 3.16.3）：`V2 device token acquired → authenticating → waiting_terminal
+   → paired（terminal 接入）`。
+
+### 11.2 QR 与官方手机端 [静态 + 浏览器实测]
+
+- **新 QR（3.16+）只带 `sid/mid/name/app_version`**，`hash` 与 `t` 被显式删除
+  （`buildWebRemoteControlExternalQrUrl`：`searchParams.delete("hash")/delete("t")`）。
+- 官方 Web bundle **按 app_version 版本化**：`/remote/v4/<ver>/assets/index-*.js`（`latest/` 为
+  旧兼容壳，其 QR 解析 `pO` 要求 `sid+hash+t` 齐备，仅服务旧 PC 的 V1 QR）。**3.16.3 版 bundle
+  的入口状态机是「登录态 → 设备列表 → 连接」三分支，不存在 hash 解析**——V2 时代终端凭据
+  只来自登录。
+- 无登录态 → **登录页**（实测标题 "Web Remote Control Sign In"）：
+  「连接 Z.ai（全球）/ 连接 BigModel（中国）」，要求**与电脑端相同的登录平台与同一账号**。
+- BigModel 互信跳转（实测）：`https://bigmodel.cn/login?redirect=<落地页URL>&appId=zcode
+  &state=<base64url({"nonce":uuid,"app_return_to":...})>`；Z.ai 走 `chat.z.ai/api/oauth/authorize`
+  + `POST /api/v1/oauth/token`（web bundle 实证 `VITE_ZAI_OAUTH_CLIENT_ID=client_P8X5CMWmlaRO9gyO-KSqtg`）。
+- **登录回调 URL 不带 `hash=`**（2026-10-25 真机走查②实证：登录后跳回 URL 仍只有
+  `sid/mid/name/app_version`，桌面日志三次 paired）——terminal 凭据**只存于 web storage**
+  （`localStorage["zcodejwttoken"]`），连接时经 `POST /api/v1/remote/token {role:"terminal"}`
+  现换 relay token（bundle `oer` 函数：Bearer JWT + 包络 `data.token`），不做 proof。
+
+### 11.3 中继行为实测（2026-10-25，本机 3.16.3 + V2 sid）
+
+⚠️ 早前「terminal 带 token 仍 challenge」的记录是**连错端点**（V1 `/ws`）所致，已纠正；
+下表为按官方实现修正后的复测（`tools/../_tmp/v2_terminal_test.py`，probe 同逻辑）。
+
+| 场景 | 端点 | 结果 |
+|---|---|---|
+| terminal 无 token（仅 mid） | `/ws`（V1） | `auth_challenge`（V1 proof 链，PC ≥3.16 已无 passHash，链路断裂） |
+| terminal 带 token + auth_init 带 `role` | `/ws`（V1） | `error WRONG_PARAM`（V1 端点不认 token；role 为 V2 schema 未知字段） |
+| **terminal token + auth_init 无 role（client_ts 秒）** | **`/api/v1/remote/ws2`** | **`auth_ack` 直达，`pair_status=matched`，回 `terminal_sid=t_*`** ✅ |
+| 官方 Web 端（手机浏览器登录态） | `/api/v1/remote/ws2` | 22:13/22:20/22:21 三次 paired（桌面日志 mobile diagnostic 实证） |
+| `POST /api/v1/remote/token {role:terminal}` + 本机 JWT | HTTP | 200 code:0，token 22 字符 |
+| `GET /api/v1/remote/device` + JWT | HTTP | 账号绑定 PC 列表（2 台：sid/mid/online/created_at/meta{name,platform,version}，**无凭据字段**） |
+
+**V2 握手帧实测样本**（无 challenge，一帧直达）：
+
+```json
+→ {"type":"auth_init","device_sid":"d_...","meta":{"platform":"web","version":"3.16.3","name":"mobile-browser"},"client_ts":1792939013}
+← {"type":"auth_ack","server_ts":1792939014,"device_sid":"d_...","terminal_sid":"t_...","pair_status":"matched"}
+```
+
+V2 schema（桌面端 zod strictObject）：出站帧 `auth_init{device_sid,meta?,client_ts?}` /
+`pair_status_query{client_ts?}`（**无 device_sid**）/ `data`；入站 `auth_ack{device_sid,
+terminal_sid?,pair_status:waiting|matched,server_ts?}` / `pair_status_ack` / `error{code}`。
+`client_ts` 上限 253402300799 = **秒**语义（毫秒会超限）。
+
+### 11.4 App 适配实现（本仓库，2026-10-25）
+
+- **QrParser 双路**：`parseResult()` 返回 `Ready`（带 hash，V1 直连）或 `NeedsLogin`
+  （仅 sid，V2 走登录）；`PairedDevice.passHash` 改可空，`DevicesCodec` 兼容存储。
+- **RelayClient 双栈**（2026-10-25 V2 直连实测后定型）：
+  - V1 设备（passHash 非空）：`wss://…/ws` + `auth_init{role}` + challenge→proof（原有路径不动）；
+  - **V2 设备（passHash 空）**：构造注入 `jwtProvider`（ConnectionCoordinator 接 TokenStore）→
+    `V2AccountApi.fetchRelayToken(jwt,"terminal")` → **`wss://<origin>/api/v1/remote/ws2?token=&mid=`**
+    + `authInitV2`（无 role、client_ts 秒）→ auth_ack 直达；心跳用无 device_sid 的
+    `heartbeatV2`；V2 下收到 challenge 视为协议异常（PROTOCOL_MISMATCH）；
+    无 JWT → `Failed(AUTH_FAILED)` 指引「设置 → ZCode 账号」登录。
+- **LoginWebViewDialog**：WebView 打开官方落地页（跨域跳转全放行，Cookie/localStorage 持久化），
+  双完成条件：① 回调 URL 带 `hash=`（V1 形态兜底，实测 V2 不走此路）；② localStorage 出现
+  `zcodejwttoken`（JWT 加密入 TokenStore → RelayClient V2 直连）。完成即 `pair()`。
+- **V2AccountApi**（OkHttp）：`fetchRelayToken` / `listDevices`；设置页新增「ZCode 账号」卡片
+  （登录态 + 账号设备列表刷新）。
+- **probe.py 升级**：`load_credentials` 双栈（V2 设置项 + 自动 mid 推导 + JWT 解密）；
+  新命令 `token` / `devices` / `loginurl`；`_tmp/v2_terminal_test.py` 为 ws2 直连参考实现。
+- **单测**：`V2HandshakeTest`（auth_init 无 role/秒级 ts、心跳无 device_sid、ws2 推导、V1 帧回归）。
+
+### 11.5 统一验证结论（2026-10-25 真机走查）
+
+1. ✅ **登录回调 URL 不带 `hash`**：手机浏览器登录后跳回 URL 仅 `sid/mid/name/app_version`；
+   terminal 凭据 = localStorage JWT → relay token（§11.2/§11.3）。
+2. ✅ **V2 直连成立**：token + ws2 + 无 role auth_init → `auth_ack matched`（probe 复测 +
+   官方 web 三次 paired 对照）；App RelayClient 已按此实现。
+3. ✅ **多设备 API**：`GET /api/v1/remote/device` 返回设备数组（无凭据字段，纯展示数据）。
+4. ⏳ App 原生 V2 直连端到端（token 换取→ws2→paired→bootstrap→会话流）：真机走查中。
+5. 归属确认：`?remote=<id>`/`remoteControlToken` 路径为**桌面端内嵌面板本地同源连接**
+   （G4t：`/api/remote-control/windows/bootstrap/{token}` HTTP API + 独立 WS），与手机配对无关。

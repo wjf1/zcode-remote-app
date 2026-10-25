@@ -43,8 +43,39 @@ class TokenStore(
             .remove(KEY_IV)
             .apply()
 
+    // ---- ZCode 账号 JWT（V2 远程控制，PROTOCOL.md §11）----
+
+    fun readZcodeJwt(): String? {
+        val iv = prefs.getString(JWT_IV, null) ?: return null
+        val data = prefs.getString(JWT, null) ?: return null
+        return crypto.decrypt(iv, data)
+    }
+
+    fun writeZcodeJwt(jwt: String) {
+        val t = jwt.trim()
+        if (t.isEmpty()) {
+            clearZcodeJwt()
+            return
+        }
+        val (iv, data) = crypto.encrypt(t)
+        prefs
+            .edit()
+            .putString(JWT, data)
+            .putString(JWT_IV, iv)
+            .apply()
+    }
+
+    fun clearZcodeJwt() =
+        prefs
+            .edit()
+            .remove(JWT)
+            .remove(JWT_IV)
+            .apply()
+
     private companion object {
         const val KEY = "github_token_enc"
         const val KEY_IV = "github_token_enc_iv"
+        const val JWT = "zcode_jwt_enc"
+        const val JWT_IV = "zcode_jwt_enc_iv"
     }
 }

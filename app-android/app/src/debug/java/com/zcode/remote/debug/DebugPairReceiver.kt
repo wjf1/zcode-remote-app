@@ -5,6 +5,7 @@ import android.content.Context
 import android.content.Intent
 import com.zcode.remote.storage.MultiDeviceStore
 import com.zcode.remote.storage.PairedDevice
+import com.zcode.remote.storage.TokenStore
 
 /**
  * 仅 debug 构建存在：注入配对凭据，跳过扫码/粘贴链接（真机验收用，
@@ -13,7 +14,11 @@ import com.zcode.remote.storage.PairedDevice
  *
  *   adb shell am broadcast -n com.zcode.remote/.debug.DebugPairReceiver \
  *        -a com.zcode.remote.action.DEBUG_PAIR --es dbg_token <token> \
- *        --es sid <deviceSid> --es hash <passHash> --es mid <deviceMid> [--es name <名>] [--es url <配对链接前缀>]
+ *        --es sid <deviceSid> [--es hash <passHash> | --es jwt <登录JWT>] \
+ *        --es mid <deviceMid> [--es name <名>] [--es url <配对链接前缀>]
+ *
+ * hash（V1 proof 凭据）与 jwt（V2 登录凭据，写入 TokenStore）二选一；
+ * 均不带 hash → V2 设备（RelayClient 走 JWT→token→ws2 直连，PROTOCOL.md §11）。
  *
  * 安全门（任务书 §11.3.2）：必须携带 DebugInjectionGuard 令牌，否则丢弃。
  */
@@ -24,15 +29,17 @@ class DebugPairReceiver : BroadcastReceiver() {
     ) {
         if (!DebugInjectionGuard.allow(context, intent, setOf(ACTION))) return
         val sid = intent.getStringExtra(EXTRA_SID)?.takeIf { it.isNotBlank() } ?: return
-        val hash = intent.getStringExtra(EXTRA_HASH)?.takeIf { it.isNotBlank() } ?: return
         val dev =
             PairedDevice(
                 deviceSid = sid,
-                passHash = hash,
+                passHash = intent.getStringExtra(EXTRA_HASH)?.takeIf { it.isNotBlank() },
                 deviceMid = intent.getStringExtra(EXTRA_MID),
                 deviceName = intent.getStringExtra(EXTRA_NAME) ?: "Debug注入",
                 remoteUrl = intent.getStringExtra(EXTRA_URL) ?: "https://zcode.z.ai/remote/v4",
             )
+        intent.getStringExtra(EXTRA_JWT)?.takeIf { it.isNotBlank() }?.let {
+            TokenStore(context).writeZcodeJwt(it)
+        }
         MultiDeviceStore(context).upsertActive(dev)
     }
 
@@ -43,5 +50,6 @@ class DebugPairReceiver : BroadcastReceiver() {
         const val EXTRA_MID = "mid"
         const val EXTRA_NAME = "name"
         const val EXTRA_URL = "url"
+        const val EXTRA_JWT = "jwt"
     }
 }
