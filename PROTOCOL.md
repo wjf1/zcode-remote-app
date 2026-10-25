@@ -502,6 +502,27 @@ terminal_sid?,pair_status:waiting|matched,server_ts?}` / `pair_status_ack` / `er
 2. ✅ **V2 直连成立**：token + ws2 + 无 role auth_init → `auth_ack matched`（probe 复测 +
    官方 web 三次 paired 对照）；App RelayClient 已按此实现。
 3. ✅ **多设备 API**：`GET /api/v1/remote/device` 返回设备数组（无凭据字段，纯展示数据）。
-4. ⏳ App 原生 V2 直连端到端（token 换取→ws2→paired→bootstrap→会话流）：真机走查中。
+4. ✅ **App 原生 V2 直连端到端**（beta52，真机）：token 换取 → ws2 → auth_ack matched →
+   bootstrap → workspace-bridge-ready → hello/initialize → subscribeSessionsIndexV4 →
+   账号设备列表渲染，全链路通过（桌面日志 22:45:39 paired 实证）。**遗留**：会话列表条目
+   数据源（§11.6 Controller 通道）。
 5. 归属确认：`?remote=<id>`/`remoteControlToken` 路径为**桌面端内嵌面板本地同源连接**
    （G4t：`/api/remote-control/windows/bootstrap/{token}` HTTP API + 独立 WS），与手机配对无关。
+
+### 11.6 V2 业务层差异：Controller 通道（会话列表，待适配，beta53）
+
+V2 host（web-remote-replayable）的**任务/会话列表不再由 bootstrap `tasks[]` 提供**（V2 的
+bootstrap `result` 只有 `workspaces[]/mobileViewState/desktopAppVersion/windowControlSessionId`），
+改用 **Controller 通道**（桌面端 host 代码 + web bundle 双侧实证）：
+
+- **RPC**：`subscribeControllerV4({topic, visibility:"foreground"})` → `{ack:{subscriptionId}}`；
+  `unsubscribeControllerV4({subscriptionId})`；失同步用 `resyncControllerV4({subscriptionId, base})`。
+- **topic 枚举**（zod 常量，桌面端 host `out/host/index.js`）：`controller/workspaces` 与
+  `controller/tasks-index`（web 端任务列表两个 topic 同时订阅）。
+- **事件**：`onDynamicControllerFrame` 推 `{subscriptionId, payload}`，payload `kind:"snapshot"`
+  全量（`tasks[]`/workspaces）或增量 op（`task.upserted`（带完整 task）/`task.removed`），
+  携带 `logEpoch` 供重同步比对。
+- **task 地址模型**（strict schema）：`{sourceServerId?, remoteSessionId?, workspacePath,
+  workspaceIdentity?, taskId}`；task 含 `address/membership/sourceAvailability/title/displayStatus`。
+- **App 适配点**：新 `ControllerChannel`（订阅/快照+增量应用/`logEpoch` 重同步）→ 会话列表
+  数据源从 bootstrap tasks 切换 → 真机走查③收尾（点开会话 → 流式输出）。
