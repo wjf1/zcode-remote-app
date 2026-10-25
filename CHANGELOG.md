@@ -1,6 +1,6 @@
 # 变更记录 / Changelog
 
-## v0.5.0-beta52（2026-10-25）· V2 直连打通（真机走查③）：ws2 中继 + token 直连
+## v0.5.0-beta52（2026-10-25）· V2 直连打通——ws2 中继端点实证与 App 原生 token 直连（真机 paired/bridge-ready 全通）
 
 > **一句话**：推翻 beta51 的「terminal token 仍收 challenge」误判——此前连的是 V1 端点 `/ws`。
 > **V2 中继端点是 `/api/v1/remote/ws2`**（桌面端代码实证）。本版本 App 原生实现

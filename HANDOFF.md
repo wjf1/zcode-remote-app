@@ -17,11 +17,10 @@
   （Kotlin + Jetpack Compose）。逆向复用官方中继与配对协议，提供更强的通知、锁屏审批、
   流式会话与移动端操控体验。
 - **仓库**：<https://github.com/wjf1/zcode-remote-app>（owner：wjf1）
-- **当前版本**：`0.5.0-beta52`（versionCode 64，**本地未提交**——beta51/52 一并随发布提交）；上一个发布 tag `v0.5.0-beta50`。
-- **⚠️ 待推送（本地已提交+打 tag）**：`v0.5.0-beta49` 与 `v0.5.0-beta50` 两个 tag 已在本地产出，
-  **因 GitHub 不可达（代理 7900 无监听、直连 github.com:443 被拒）未能推送**；恢复网络后
-  `git push origin master && git push origin v0.5.0-beta49 && git push origin v0.5.0-beta50` 即可
-  （见 §7「推送受阻」条）。
+- **当前版本**：`0.5.0-beta52`（versionCode 64，**已发布**：commit fcd6fbb，tag `v0.5.0-beta52`，Release 含签名 APK/SHA256SUMS/证书指纹/SBOM，prerelease）。
+- **✅ 推送已恢复（2026-10-25）**：GitHub 代理 7900 恢复监听，`v0.5.0-beta49/50/52` 三个 tag
+  与 master（含 beta51+52 合并 commit）已全部推送；`v0.5.0-beta52` 的 Release 由 CI 发布链
+  自动产出并经人工核验（标题与 tag subject 一致、正文与 CHANGELOG 对齐、prerelease、四资产齐全）。
 - **✅ beta52（2026-10-25）**：**V2 直连打通（真机走查③）**——推翻 beta51 的「terminal token
   仍收 challenge」误判（此前连的是 V1 端点 `/ws`）；**V2 中继端点是 `/api/v1/remote/ws2`**
   （3.16.3 桌面端代码实证）。App 原生「JWT→relay token→ws2 直连」：auth_init 无 role 一帧
