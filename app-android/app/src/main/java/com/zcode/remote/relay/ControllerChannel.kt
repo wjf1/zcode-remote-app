@@ -69,14 +69,20 @@ class ControllerChannel(
                     mapOf(
                         "kind" to "clientHello",
                         "protocolVersion" to pv,
-                        "clientId" to clientId,
+                        "clientId" to rpc.v4ClientId,
                         "clientKind" to "mobileApp",
                         "appVersion" to "1.0.0",
                     ),
                 ),
             ) { init ->
+                // 连接级握手每桥只认一个 clientId：SessionsIndex/Conversation 先到者赢，
+                // 后到的 initialize 报 fault.connection.clientChanged —— 预期且无害
+                // （握手已由先到者完成），照常继续订阅（真机实证 2026-10-26）。
                 if (init !is RpcChannel.RpcReply.Ok) {
-                    ZLog.w(TAG, "controller 前置握手 initialize 失败: ${(init as? RpcChannel.RpcReply.Err)?.message ?: "?"}")
+                    val msg = (init as? RpcChannel.RpcReply.Err)?.message ?: "?"
+                    if (!msg.contains("clientChanged")) {
+                        ZLog.w(TAG, "controller 前置握手 initialize 失败: $msg")
+                    }
                 }
                 doSubscribe(visibility)
             }
@@ -84,11 +90,15 @@ class ControllerChannel(
     }
 
     private fun doSubscribe(visibility: String) {
-        // 两个 topic 共用一个 listen，帧按 subscriptionId 分流（PROTOCOL.md §11.6 默认假设）
-        listenId = rpc.listen(RpcChannel.CHANNEL_AGENT, ControllerChannel.EVENT_NAME, null)
+        // Controller 服务注册在 window-controller 通道（桌面端 host：services[WindowController] =
+        // createAttachmentService()，内含 subscribe/resync/unsubscribe/onDynamicControllerFrame；
+        // 官方 web 端注册表即 windowControllerTaskListRegistry）。
+        // 真机实证 2026-10-26：zcode-agent 与 zcode-task 上调用均报 Method not found。
+        // 两个 topic 共用一个 listen，帧按 subscriptionId 分流。
+        listenId = rpc.listen(RpcChannel.CHANNEL_WINDOW_CONTROLLER, ControllerChannel.EVENT_NAME, null)
         for (topic in CONTROLLER_TOPICS) {
             rpc.call(
-                RpcChannel.CHANNEL_AGENT,
+                RpcChannel.CHANNEL_WINDOW_CONTROLLER,
                 "subscribeControllerV4",
                 listOf(mapOf("topic" to topic, "visibility" to visibility)),
             ) { reply ->
@@ -143,16 +153,18 @@ class ControllerChannel(
             val s = subscriptionByTopic[t] ?: continue
             val wm = reducer.watermarkOf(t)
             rpc.call(
-                RpcChannel.CHANNEL_AGENT,
+                RpcChannel.CHANNEL_WINDOW_CONTROLLER,
                 "resyncControllerV4",
                 listOf(
                     mapOf(
                         "subscriptionId" to s,
+                        // 形状对齐官方 web 端：base:{logEpoch, seq} + forceSnapshot
                         "base" to
                             mapOf(
                                 "logEpoch" to (wm?.logEpoch ?: ""),
-                                "toSeq" to (wm?.toSeq ?: 0L),
+                                "seq" to (wm?.toSeq ?: 0L),
                             ),
+                        "forceSnapshot" to true,
                     ),
                 ),
             ) { reply ->
@@ -169,9 +181,9 @@ class ControllerChannel(
 
     private fun resubscribe(topic: String) {
         val sub = subscriptionByTopic.remove(topic) ?: return
-        rpc.call(RpcChannel.CHANNEL_AGENT, "unsubscribeControllerV4", listOf(mapOf("subscriptionId" to sub)))
+        rpc.call(RpcChannel.CHANNEL_WINDOW_CONTROLLER, "unsubscribeControllerV4", listOf(mapOf("subscriptionId" to sub)))
         rpc.call(
-            RpcChannel.CHANNEL_AGENT,
+            RpcChannel.CHANNEL_WINDOW_CONTROLLER,
             "subscribeControllerV4",
             listOf(mapOf("topic" to topic, "visibility" to VISIBILITY_FOREGROUND)),
         ) { reply ->
@@ -189,7 +201,7 @@ class ControllerChannel(
     /** 断开前退订（失败只记日志，不阻塞调用方）。 */
     fun unsubscribe() {
         for ((topic, sub) in subscriptionByTopic) {
-            rpc.call(RpcChannel.CHANNEL_AGENT, "unsubscribeControllerV4", listOf(mapOf("subscriptionId" to sub))) { r ->
+            rpc.call(RpcChannel.CHANNEL_WINDOW_CONTROLLER, "unsubscribeControllerV4", listOf(mapOf("subscriptionId" to sub))) { r ->
                 if (r is RpcChannel.RpcReply.Err) ZLog.w(TAG, "controller 退订失败 topic=$topic: ${r.message}")
             }
         }
@@ -211,8 +223,6 @@ class ControllerChannel(
 
         /** Controller 通道的两个 topic（桌面端 zod 常量，§11.6）。 */
         val CONTROLLER_TOPICS = listOf(ControllerReducer.TOPIC_TASKS, ControllerReducer.TOPIC_WORKSPACES)
-
-        private val clientId = "android-controller-${java.util.UUID.randomUUID()}"
 
         /**
          * 该设备是否由 Controller 通道接管会话列表。
@@ -536,15 +546,21 @@ internal class ControllerReducer(
         )
     }
 
+    /**
+     * 失同步判定（对齐官方 web 端 `Uue`）：
+     * - **快照帧不判**——快照本身就是全量权威，照常刷新水位（官方端 Uue 只对非 snapshot 判）；
+     * - deltas 帧：`fromSeq` 必须等于上一次 `toSeq`（任何不匹配——缺口或回退——都算失同步），
+     *   或 `logEpoch` 变化。
+     */
     private fun checkSync(frame: ControllerFrame): ReduceOutcome {
         val prev = watermarks[frame.topic]
         val toSeq = frame.toSeq ?: prev?.toSeq ?: 0L
         watermarks[frame.topic] = ControllerWatermark(logEpoch = frame.logEpoch, toSeq = toSeq)
-        if (prev == null) return ReduceOutcome.Applied
+        if (prev == null || frame.payloadKind == "snapshot") return ReduceOutcome.Applied
         val epochChanged =
             prev.logEpoch.isNotEmpty() && frame.logEpoch.isNotEmpty() && prev.logEpoch != frame.logEpoch
         val fromSeq = frame.fromSeq
-        val seqGap = fromSeq != null && prev.toSeq > 0L && fromSeq > prev.toSeq
+        val seqMismatch = fromSeq != null && fromSeq != prev.toSeq
         return when {
             epochChanged ->
                 ReduceOutcome.Desync(
@@ -552,10 +568,10 @@ internal class ControllerReducer(
                     "logEpoch",
                     "prev=${prev.logEpoch} now=${frame.logEpoch}",
                 )
-            seqGap ->
+            seqMismatch ->
                 ReduceOutcome.Desync(
                     frame.topic,
-                    "seq-gap",
+                    "seq-mismatch",
                     "prevToSeq=${prev.toSeq} fromSeq=$fromSeq",
                 )
             else -> ReduceOutcome.Applied

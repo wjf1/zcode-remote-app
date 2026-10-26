@@ -191,7 +191,7 @@ class ControllerChannelTest {
         // 期望 fromSeq=4，实际 9 → 中间 5 帧丢失
         val out = apply(r, deltasFrame(listOf(upsert(task("t1"))), fromSeq = 9, toSeq = 10))
         assertTrue("缺口必须报失同步，实际 $out", out is ReduceOutcome.Desync)
-        assertEquals("seq-gap", (out as ReduceOutcome.Desync).reason)
+        assertEquals("seq-mismatch", (out as ReduceOutcome.Desync).reason)
     }
 
     // ---------- 6. 连续推进不误触发 ----------
@@ -206,6 +206,31 @@ class ControllerChannelTest {
         assertEquals(ReduceOutcome.Applied, b)
     }
 
+    @Test
+    fun `fromSeq 回退（重叠）同样触发失同步`() {
+        // 对齐官方 web 端 Uue：fromSeq 必须恰好等于上次 toSeq，缺口与回退都算失同步
+        val r = reducer()
+        apply(r, snapshotFrame(listOf(task("t1")), toSeq = 5))
+        val out = apply(r, deltasFrame(listOf(upsert(task("t1"))), fromSeq = 3, toSeq = 4))
+        assertTrue("回退必须报失同步，实际 $out", out is ReduceOutcome.Desync)
+        assertEquals("seq-mismatch", (out as ReduceOutcome.Desync).reason)
+    }
+
+    @Test
+    fun `快照帧不做缺口检查且刷新水位`() {
+        // 官方端对 snapshot 跳过 Uue 检查：快照本身就是全量权威
+        val r = reducer()
+        apply(r, snapshotFrame(listOf(task("t1")), toSeq = 3))
+        // 一帧 deltas 推进到 4
+        apply(r, deltasFrame(listOf(upsert(task("t1"))), fromSeq = 3, toSeq = 4))
+        // 中途来一份快照（fromSeq=0 是快照的固定形态）——不得触发失同步
+        val out = apply(r, snapshotFrame(listOf(task("t1"), task("t2")), toSeq = 4))
+        assertEquals(ReduceOutcome.Applied, out)
+        // 快照后的下一帧 deltas 从 4 继续
+        val nxt = apply(r, deltasFrame(listOf(upsert(task("t2"))), fromSeq = 4, toSeq = 5))
+        assertEquals(ReduceOutcome.Applied, nxt)
+    }
+
     // ---------- 7. 未知 op 宽容忽略 ----------
 
     @Test
@@ -217,7 +242,8 @@ class ControllerChannelTest {
                 put("op", "task.someFutureOp")
                 putJsonObject("task") { put("taskId", "tx") }
             }
-        val out = apply(r, deltasFrame(listOf(unknown, upsert(task("t2")))))
+        // 快照水位 toSeq=0，服务器下一帧 delta 的 fromSeq 应为 0（对齐 host 序列语义）
+        val out = apply(r, deltasFrame(listOf(unknown, upsert(task("t2"))), fromSeq = 0, toSeq = 1))
         assertEquals(ReduceOutcome.Applied, out)
         // 未识别 op 不得动状态；同帧内的合法 op 仍生效
         assertEquals(setOf("t1", "t2"), r.tasks.value.keys)
@@ -234,8 +260,8 @@ class ControllerChannelTest {
                 put("topic", ControllerReducer.TOPIC_TASKS)
                 put("subscriptionId", "sub-1")
                 put("logEpoch", "epoch-1")
-                put("fromSeq", 1)
-                put("toSeq", 2)
+                put("fromSeq", 0)
+                put("toSeq", 1)
                 putJsonObject("payload") { put("kind", "telemetry.ping") }
             }
         val out = apply(r, weird)

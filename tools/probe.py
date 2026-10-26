@@ -597,13 +597,13 @@ def run_ctrl(p, max_frames=50, out_path=None):
     p.pump(3)
 
     print("[ctrl] 3) listen onDynamicControllerFrame")
-    listen_rid = p.listen("zcode-agent", "onDynamicControllerFrame", None)
+    listen_rid = p.listen("window-controller", "onDynamicControllerFrame", None)
     p.pump(2)
 
     ack_by_topic = {}
     for topic in (CTRL_TOPIC_TASKS, CTRL_TOPIC_WORKSPACES):
         print(f"[ctrl] 4) subscribeControllerV4 topic={topic}")
-        rid = p.call("zcode-agent", "subscribeControllerV4",
+        rid = p.call("window-controller", "subscribeControllerV4",
                      [{"topic": topic, "visibility": "foreground"}])
         p.pump(3)
         ack = p.last_result(rid) or {}

@@ -103,6 +103,17 @@ class RpcChannel(
     var onSequenceGap: (() -> Unit)? = null
 
     /**
+     * V4 连接级握手（helloConversationV4 → initializeConversationV4）的**每连接共享 clientId**。
+     *
+     * V2 host（≥3.16）对每个桥连接只绑定一个 client 身份：先到的 initialize 赢，
+     * 后到的带不同 clientId 会报 fault.connection.clientChanged（真机实证 2026-10-26）。
+     * 且命令信封（resolveInteraction 等）的 clientId 必须与连接绑定的一致——
+     * 故会话/索引/控制器三个通道必须共用同一个 clientId，全部经此取值。
+     * RpcChannel 每次 connect() 新建实例，即天然「每连接一份」。
+     */
+    val v4ClientId: String = "android-" + java.util.UUID.randomUUID()
+
+    /**
      * §11.5.2：协议违例回调（分片顺序/CRC/长度/超限/解码失败等固定错误码）。
      * 与 [onSequenceGap] 同一语义——上层须进入重同步（重订阅权威快照）；实现方自行节流。
      * 身份不匹配（旧桥迟到帧）**不**走此回调：那是丢弃即可的正常竞态，不构成失同步。
@@ -750,6 +761,12 @@ class RpcChannel(
         const val CHANNEL_AGENT = "zcode-agent" // ← 会话/对话方法都在这个通道上
         const val CHANNEL_SESSION = "zcode-session" // 仅 createSession 等会话管理方法
         const val CHANNEL_TASK = "zcode-task"
+
+        // Controller 服务（任务列表订阅 subscribeControllerV4 / onDynamicControllerFrame 等）。
+        // 真机实证 2026-10-26：zcode-agent / zcode-task 上调用均报 Method not found，
+        // 桌面端 host 把 createAttachmentService（含 controller 方法族）注册在 window-controller 通道
+        // （官方 web 端注册表即 windowControllerTaskListRegistry）。
+        const val CHANNEL_WINDOW_CONTROLLER = "window-controller"
         const val CHANNEL_WORKSPACE = "workspace"
         const val CHANNEL_MODEL_PROVIDER = "model-provider" // 模型供应商目录（getAllCached/getAll）
         const val CHANNEL_FILE = "file" // 文件系统服务（resolvePath/readTextFile）

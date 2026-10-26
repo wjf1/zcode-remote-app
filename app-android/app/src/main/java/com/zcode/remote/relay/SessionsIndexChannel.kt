@@ -6,7 +6,6 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.intOrNull
 import kotlinx.serialization.json.jsonPrimitive
-import java.util.UUID
 
 /**
  * workspace 级 sessions-index 订阅（E-1 会话权威角标）：
@@ -33,7 +32,9 @@ class SessionsIndexChannel(
 
     private var listenId: Int? = null
     private var subscriptionId: String? = null
-    private val clientId = "android-index-${UUID.randomUUID()}"
+    // clientId 必须与连接绑定的一致（V2 host 单 client 身份，见 RpcChannel.v4ClientId）
+
+    private val clientId: String get() = rpc.v4ClientId
 
     /** 开桥后按当前工作区订阅一次（会话切换无需重订，与 ConversationChannel 生命周期不同）。 */
     fun subscribe(
@@ -72,7 +73,11 @@ class SessionsIndexChannel(
                 ),
             ) { init ->
                 if (init !is RpcChannel.RpcReply.Ok) {
-                    ZLog.w(TAG, "sessions-index 前置握手 initialize 失败: ${if (init is RpcChannel.RpcReply.Err) init.message else "?"}")
+                    val msg = if (init is RpcChannel.RpcReply.Err) init.message else "?"
+                    // clientChanged = 连接已由其它通道以同一 clientId 初始化，握手已满足，继续订阅
+                    if (!msg.contains("clientChanged")) {
+                        ZLog.w(TAG, "sessions-index 前置握手 initialize 失败: $msg")
+                    }
                 }
                 doSubscribe(target)
             }

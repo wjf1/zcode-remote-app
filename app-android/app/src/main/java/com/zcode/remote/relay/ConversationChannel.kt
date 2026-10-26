@@ -149,7 +149,8 @@ class ConversationChannel(
         val revision: Long = 0L,
     )
 
-    private val clientId = "android-${UUID.randomUUID()}"
+    // clientId 必须与连接绑定的一致（V2 host 单 client 身份，见 RpcChannel.v4ClientId）
+    private val clientId: String get() = rpc.v4ClientId
     private var listenId: Int? = null
     private var subscriptionId: String? = null
     private var sessionId: String? = null
@@ -279,13 +280,20 @@ class ConversationChannel(
         ) { reply ->
             if (isStaleReply(gen, generation)) return@call
             if (reply is RpcChannel.RpcReply.Err) {
-                ZLog.w(TAG, "initialize 失败: ${reply.message}")
-                _status.value =
-                    Status.Failed(
-                        handshakeFailureReason("初始化", reply.message),
-                        retryable = isTransientHandshakeError(reply.message),
-                    )
-                return@call
+                // V2 host 连接级握手每桥只认一个 clientId：其它通道先到时本通道的
+                // initialize 报 clientChanged——握手其实已完成，照常继续订阅
+                // （真机实证 2026-10-26；此前直接置 Failed 会让会话页永远「同步失败」）。
+                if (reply.message.contains("clientChanged")) {
+                    ZLog.i(TAG, "initialize clientChanged（连接已由同 clientId 初始化）——继续订阅")
+                } else {
+                    ZLog.w(TAG, "initialize 失败: ${reply.message}")
+                    _status.value =
+                        Status.Failed(
+                            handshakeFailureReason("初始化", reply.message),
+                            retryable = isTransientHandshakeError(reply.message),
+                        )
+                    return@call
+                }
             }
             _status.value = Status.Initialized
 
