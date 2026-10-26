@@ -7,9 +7,14 @@ ZCode 远程控制协议探针（独立于 Android App，用于快速验证链�
     python tools/probe.py boot        # 认证 + bootstrap（拉会话列表）
     python tools/probe.py bridge      # 认证 + bootstrap + 开桥（等 ready）
     python tools/probe.py sub <会话ID前缀>   # 上述全都做 + 订阅该会话流
+    python tools/probe.py ctrl [秒数]  # [V2] Controller 通道落帧（会话列表权威数据源，T1）
     python tools/probe.py token       # [V2] JWT 换 relay token（POST /api/v1/remote/token）
     python tools/probe.py devices     # [V2] 列账号绑定设备（GET /api/v1/remote/device）
     python tools/probe.py loginurl    # [V2] 构造 BigModel 互信登录跳转 URL
+
+`ctrl` 子命令把 `onDynamicControllerFrame` 的前 N 帧（默认 50）落到
+`_tmp/ctrl_frames.json`，再用 `python tools/_dump_frame.py _tmp/ctrl_frames.json`
+看结构骨架。PROTOCOL.md §11.6 的字段表以该落盘结果为准（标注「实测」）。
 
 凭据来源：优先读本机 ZCode 凭据库（自动解密，V2 ≥3.16 / V1 双栈），也可用环境变量覆盖：
     ZCODE_SID / ZCODE_HASH / ZCODE_MID / ZCODE_JWT
@@ -33,8 +38,13 @@ except ImportError:
     from wsclient import connect  # 自带标准库实现（环境无法 pip 安装）
 
 RELAY = "wss://zcode.z.ai/ws"
+V2_RELAY = "wss://zcode.z.ai/api/v1/remote/ws2"
 ORIGIN = "https://zcode.z.ai"
 ROLE = "terminal"
+
+# Controller 通道（PROTOCOL.md §11.6）：V2 host 的会话列表/工作区权威数据源
+CTRL_TOPIC_TASKS = "controller/tasks-index"
+CTRL_TOPIC_WORKSPACES = "controller/workspaces"
 
 # ---------- 凭据 ----------
 
@@ -239,8 +249,9 @@ def crc32hex(b: bytes) -> str:
 
 
 class Probe:
-    def __init__(self, sid, phash, mid=None):
+    def __init__(self, sid, phash, mid=None, jwt=None):
         self.sid, self.phash, self.mid = sid, phash, mid
+        self.jwt = jwt
         self.ws = None
         self.bridge_sid = None
         self.bridge_gen = None
@@ -273,6 +284,22 @@ class Probe:
             # 自带 wsclient（标准库实现）无 proxy 参数
             self.ws = connect(url, open_timeout=15)
         self.log("ws open")
+
+    def open_v2(self):
+        """V2 直连：JWT → relay token → `wss://<origin>/api/v1/remote/ws2?token=&mid=`（PROTOCOL.md §11.3）。"""
+        if not self.jwt:
+            raise RuntimeError("V2 直连需要 JWT（credentials.json 的 zcodejwttoken）")
+        token = v2_fetch_relay_token(self.jwt, ROLE)
+        url = f"{V2_RELAY}?token={token}"
+        if self.mid:
+            url += f"&mid={self.mid}"
+        self.log("connecting (v2/ws2)")
+        try:
+            self.ws = connect(url, open_timeout=15, proxy=None)
+        except TypeError:
+            self.ws = connect(url, open_timeout=15)
+        self.log("ws open (v2)")
+        return token
 
     def send_payload(self, payload):
         msg = {"type": "data", "payload": payload, "client_ts": int(time.time() * 1000)}
@@ -307,12 +334,20 @@ class Probe:
             return None
 
     # --- auth ---
-    def auth(self):
-        self.ws.send(json.dumps({
-            "type": "auth_init", "role": ROLE, "device_sid": self.sid,
-            "meta": {"platform": "web", "version": "web", "name": "mobile-browser"},
-            "client_ts": int(time.time() * 1000),
-        }))
+    def auth(self, v2=False):
+        if v2:
+            # V2（3.16+）：auth_init 无 role、client_ts 为秒；strictObject 拒未知字段
+            self.ws.send(json.dumps({
+                "type": "auth_init", "device_sid": self.sid,
+                "meta": {"platform": "web", "version": "3.16.3", "name": "probe-v2"},
+                "client_ts": int(time.time()),
+            }))
+        else:
+            self.ws.send(json.dumps({
+                "type": "auth_init", "role": ROLE, "device_sid": self.sid,
+                "meta": {"platform": "web", "version": "web", "name": "mobile-browser"},
+                "client_ts": int(time.time() * 1000),
+            }))
         while True:
             f = self.recv()
             if f is None:
@@ -507,6 +542,117 @@ class Probe:
             self.log("ws recv", json.dumps(p, ensure_ascii=False)[:300])
 
 
+def run_ctrl(p, max_frames=50, out_path=None):
+    """[T1] Controller 通道落帧（V2 直连）。
+
+    流程：JWT → relay token → ws2 → auth_init（无 role、秒级 ts）→ bootstrap 取工作区 →
+    开桥 → V4 连接级握手（helloConversationV4 → initializeConversationV4）→
+    listen `onDynamicControllerFrame` → 对 controller/tasks-index 与 controller/workspaces
+    各发 `subscribeControllerV4({topic, visibility:"foreground"})` → 收到 max_frames 帧或
+    超时后落盘。
+
+    落盘格式与既有 `sub` 子命令一致（`### type=204 id=<listenId>` + JSON），
+    便于 `tools/_dump_frame.py` 复用同一骨架解析。
+    """
+    out_path = out_path or os.path.join("_tmp", "ctrl_frames.json")
+    os.makedirs(os.path.dirname(out_path) or ".", exist_ok=True)
+    try:
+        p.open_v2()
+    except Exception as e:
+        print("V2 直连失败：", e)
+        return 1
+    if not p.auth(v2=True):
+        print("V2 认证未完成（PC 端「移动端远程控制」未开启？）")
+        return 1
+    print(">>> V2 auth ok, pair_status =", getattr(p, "pair_status", "?"))
+
+    boot = p.bootstrap()
+    if not boot:
+        return 1
+    result = boot.get("result") or {}
+    ws_key = ((result.get("initialViewState") or {}).get("activeWorkspaceKey")
+              or next((w.get("workspacePath") for w in (result.get("workspaces") or [])
+                       if w.get("workspacePath")), None))
+    if not ws_key:
+        print("bootstrap 未给出可用工作区")
+        return 1
+    print("workspace =", ws_key)
+    if not p.open_bridge(ws_key):
+        return 1
+    p.pump(4)  # 收 RPC 通道 Initialize(200)
+
+    print("[ctrl] 1) V4 连接级握手 hello")
+    hello_rid = p.call("zcode-agent", "helloConversationV4", [])
+    p.pump(3)
+    hello = p.last_result(hello_rid) or {}
+    print("[ctrl]    hello ->", json.dumps(hello, ensure_ascii=False)[:200])
+    print("[ctrl] 2) initializeConversationV4")
+    p.call("zcode-agent", "initializeConversationV4", [{
+        "kind": "clientHello",
+        "protocolVersion": hello.get("protocolVersion", 3),
+        "clientId": f"probe-ctrl-{uuid.uuid4()}",
+        "clientKind": "mobileApp",
+        "appVersion": "1.0.0",
+    }])
+    p.pump(3)
+
+    print("[ctrl] 3) listen onDynamicControllerFrame")
+    listen_rid = p.listen("zcode-agent", "onDynamicControllerFrame", None)
+    p.pump(2)
+
+    ack_by_topic = {}
+    for topic in (CTRL_TOPIC_TASKS, CTRL_TOPIC_WORKSPACES):
+        print(f"[ctrl] 4) subscribeControllerV4 topic={topic}")
+        rid = p.call("zcode-agent", "subscribeControllerV4",
+                     [{"topic": topic, "visibility": "foreground"}])
+        p.pump(3)
+        ack = p.last_result(rid) or {}
+        ack_by_topic[topic] = ack
+        print(f"[ctrl]    ack -> {json.dumps(_jsonable(ack), ensure_ascii=False)[:300]}")
+
+    # 收帧：直到达到 max_frames 或 60s 空闲
+    print(f"[ctrl] 5) 收帧（目标 {max_frames} 帧）")
+    deadline = time.time() + 300
+    idle_deadline = time.time() + 60
+    got = 0
+    while len(p.frames) < max_frames and time.time() < deadline and time.time() < idle_deadline:
+        before = len(p.frames)
+        p.pump(5)
+        if len(p.frames) > before:
+            idle_deadline = time.time() + 60
+            got = len(p.frames)
+            print(f"[ctrl]    已收 {got} 帧")
+
+    frames = p.frames[:max_frames]
+    with open(out_path, "w", encoding="utf-8") as fh:
+        for typ, rid, body in frames:
+            fh.write(f"### type={typ} id={rid}\n")
+            fh.write(json.dumps(_jsonable(body), ensure_ascii=False, indent=1))
+            fh.write("\n")
+    print(f"[ctrl] 落盘 {len(frames)} 帧 → {out_path}")
+
+    # 统计：snapshot / 增量 op 计数，供验收口径（≥20 帧含 ≥1 snapshot + ≥3 upserted）
+    kinds, ops = {}, {}
+    for typ, rid, body in frames:
+        if typ != 204:
+            continue
+        snap = (body or {}).get("payload") or {} if isinstance(body, dict) else {}
+        kind = snap.get("kind")
+        if kind:
+            kinds[kind] = kinds.get(kind, 0) + 1
+        for d in (snap.get("deltas") or []):
+            op = d.get("op") if isinstance(d, dict) else None
+            if op:
+                ops[op] = ops.get(op, 0) + 1
+    print("[ctrl] payload kind 分布:", kinds)
+    print("[ctrl] delta op 分布:", ops)
+    if kinds.get("snapshot", 0) >= 1 and ops.get("task.upserted", 0) >= 3 and len(frames) >= 20:
+        print("[ctrl] ✅ 验收口径满足：≥20 帧 / ≥1 snapshot / ≥3 task.upserted")
+    else:
+        print("[ctrl] ⚠️ 验收口径未满足（需 PC 端手工新建/改动任务触发增量）")
+    return 0
+
+
 def probe_channels(p, candidates=None):
     """在候选通道上各打一发无参的 helloConversationV4，谁回 201 谁就是对话门面所在通道。
 
@@ -570,7 +716,11 @@ def main():
     if not phash:
         print("（V2 模式：无 passHash。若中继下发 challenge 将无法应答——官方 web 端由登录链路提供凭据）")
 
-    p = Probe(sid, phash, mid)
+    p = Probe(sid, phash, mid, jwt=jwt)
+    if mode == "ctrl":
+        # T1：V2 直连 → 开桥 → V4 握手 → 订阅 controller 双 topic → 落帧
+        return run_ctrl(p, int(sys.argv[2]) if len(sys.argv) > 2 and sys.argv[2].isdigit() else 50,
+                        sys.argv[3] if len(sys.argv) > 3 else None)
     p.open()
     if not p.auth():
         print("认证未完成（PC 端远程控制可能未开启）")
