@@ -1,6 +1,7 @@
 package com.zcode.remote.relay
 
 import com.zcode.remote.BuildConfig
+import com.zcode.remote.storage.ProtocolStack
 import com.zcode.remote.util.HttpClientProvider
 import com.zcode.remote.util.LogRedactor
 import com.zcode.remote.util.ZLog
@@ -87,7 +88,7 @@ class RelayClient(
     private val jwtProvider: (suspend () -> String?)? = null,
 ) {
     /** V2 配对：凭据走「JWT → relay token → ws2?token=」链路（无 challenge/proof）。 */
-    private val v2Mode: Boolean = device.passHash.isNullOrBlank()
+    private val v2Mode: Boolean = device.protocolStack == ProtocolStack.V2
     private val client =
         HttpClientProvider
             .newBuilder()
