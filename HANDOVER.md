@@ -24,8 +24,8 @@
 >
 > - **门禁状态**：`testDebugUnitTest` / `lintDebug` / `lintRelease` / `detekt` / `ktlintCheck` /
 >   `assembleDebug` / `assembleRelease` 全绿（toolchain gradle-8.7 + JDK17，`--offline`）。
->   单测数量见 `tools/check_test_count.py` 输出（本轮新增 31 项：Controller 16 / 会话快照 6 /
->   首页三态 9，另有 ProtocolStack 6 项）。
+>   单测：声明 364 = 实际执行 400（本轮新增 37 项：Controller 16 / 首页三态 9 /
+>   会话快照 6 / ProtocolStack 6），`tools/check_test_count.py --min 358` 通过。
 >
 > - **下一轮入口**：① 补 T1 落帧 + T3 真机验收（上两条）；② 按任务书顺序进入 beta54
 >   —— T8 登录迁移独立 WebViewActivity / T9 设置页粘贴令牌入口 / T10 fetchRelayToken 401 区分 /

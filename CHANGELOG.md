@@ -1,6 +1,6 @@
 # 变更记录 / Changelog
 
-## v0.5.0-beta53（2026-10-26）· V2 Controller 通道适配收官——会话列表权威源切换与列表并发安全
+## v0.5.0-beta53（2026-10-26）· V2 Controller 通道适配（代码完成，真机验收待做）——会话列表权威源切换与列表并发安全
 
 > **一句话**：ZCode ≥3.16 的 bootstrap 不再下发 `tasks[]`，会话列表改由 Controller 通道提供。
 > 本版本新增 `ControllerChannel`（快照/增量/`logEpoch` 重同步），并把会话列表从原位可变列表
@@ -47,8 +47,9 @@ App 需要同样的通道。
 
 ### 验证
 
-- **JVM 单测**：新增 31 项（`ControllerChannelTest` 16 / `SessionListSnapshotTest` 6 /
-  `HomeEmptyStateTest` 9 …含 `ProtocolStackTest` 6 项另计），全绿。
+- **JVM 单测**：新增 37 项（`ControllerChannelTest` 16 / `HomeEmptyStateTest` 9 /
+  `SessionListSnapshotTest` 6 / `ProtocolStackTest` 6），全量 400 项全执行且全绿
+  （`tools/check_test_count.py`：声明 364 = 实际执行 400，含既有参数化用例展开）。
 - `lintDebug` / `lintRelease` 0 error；`detekt` 0 issue；`ktlintCheck` 0 违规；
   `assembleDebug` / `assembleRelease` BUILD SUCCESSFUL。
 - `tools/probe.py ctrl` 已实现但**真机落帧未完成**：PC 端「移动端远程控制」面板需处于开启状态
