@@ -15,6 +15,7 @@ import com.zcode.remote.notify.ElicitationBridge
 import com.zcode.remote.notify.ElicitationNotifier
 import com.zcode.remote.notify.TerminalNotifier
 import com.zcode.remote.relay.ApprovalOption
+import com.zcode.remote.relay.ControllerChannel
 import com.zcode.remote.relay.ConversationChannel
 import com.zcode.remote.relay.ConversationFrames
 import com.zcode.remote.relay.ConversationRow
@@ -49,6 +50,8 @@ import com.zcode.remote.util.UiText
 import com.zcode.remote.util.UiText.Companion.res
 import com.zcode.remote.util.ZLog
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.launch
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.jsonArray
@@ -142,7 +145,28 @@ class AppViewModel(
             relayState = value
         }
     override val hostEvents: MutableList<TaskEvent> get() = events
-    override val hostSessions: MutableList<SessionItem> get() = sessions
+    override val hostSessions: List<SessionItem> get() = sessions
+
+    override fun hostReplaceSessions(next: List<SessionItem>) {
+        _sessions.value = next
+    }
+
+    override fun hostUpdateSessions(transform: (SessionItem) -> SessionItem?) {
+        val cur = _sessions.value
+        var changed = false
+        val next =
+            cur.map { item ->
+                val updated = transform(item)
+                if (updated == null) {
+                    item
+                } else {
+                    changed = true
+                    updated
+                }
+            }
+        if (changed) _sessions.value = next
+    }
+
     override var hostBridgeState: RpcChannel.BridgeState
         get() = bridgeState
         set(value) {
@@ -159,6 +183,10 @@ class AppViewModel(
         set(value) {
             sessionModeOverride = value
         }
+
+    override fun hostMarkControllerSynced() = markControllerSynced()
+
+    override fun hostResetControllerSynced() = resetControllerSynced()
 
     override fun hostRetrySubscribe() = retrySubscribe()
 
@@ -228,7 +256,40 @@ class AppViewModel(
         private set
 
     val events = mutableStateListOf<TaskEvent>()
-    val sessions = mutableStateListOf<SessionItem>()
+
+    /**
+     * 会话列表的**唯一写入源**（T3）：`StateFlow` 不可变快照，替换此前的原位可变列表。
+     *
+     * 为什么改：collector（Controller 通道 / 任务事件流）跑在进程级后台作用域，而 UI 读列表
+     * 在主线程；原位 `MutableList` 的读写之间没有屏障，可能出现「读到半个列表」或丢失更新。
+     * 改为整体替换不可变 List 后，读写各自看到完整的一代（[ConnectionHost] 的写入 API 随之收敛）。
+     */
+    private val _sessions = MutableStateFlow<List<SessionItem>>(emptyList())
+
+    /** 观察入口（Compose 侧经 collectAsState 消费）。 */
+    val sessionsFlow: StateFlow<List<SessionItem>> = _sessions
+
+    /** 兼容既有同步读取点（UI 首帧、首会话工作区派生、按 taskId 回查）。 */
+    val sessions: List<SessionItem> get() = _sessions.value
+
+    /**
+     * 是否已收到过至少一份权威快照（T5 三态判定用）。
+     *
+     * V2 下会话列表来自 Controller 订阅，配对上到首份快照之间是真实空窗——首页据此显示
+     * 骨架态而不是「暂无会话」；V1 的列表来自 bootstrap，配对即完成，恒为 true。
+     */
+    var controllerSynced by mutableStateOf(true)
+        private set
+
+    /** Controller 通道交来首份快照（ConnectionCoordinator 调用）。 */
+    fun markControllerSynced() {
+        if (!controllerSynced) controllerSynced = true
+    }
+
+    /** 重连/换设备时复位（V1 的列表来自 bootstrap，配对即完成，不需要同步窗口）。 */
+    fun resetControllerSynced() {
+        controllerSynced = device?.protocolStack != com.zcode.remote.storage.ProtocolStack.V2
+    }
 
     // ---- 会话桥 / RPC ----
     var bridgeState by mutableStateOf<RpcChannel.BridgeState>(RpcChannel.BridgeState.Closed)
@@ -474,12 +535,17 @@ class AppViewModel(
         set(value) {
             ConnectionScope.workspaceConfig = value
         }
+    private var controller: ControllerChannel?
+        get() = ConnectionScope.controller
+        set(value) {
+            ConnectionScope.controller = value
+        }
 
     init {
         // Sprint 5 离线缓存秒开：冷启动时立即同步读取本地持久化会话列表
         val cached = SessionCacheStore.load(app)
         if (cached.isNotEmpty()) {
-            sessions.addAll(cached)
+            _sessions.value = cached
         }
         if (device != null) connect()
     }
@@ -733,8 +799,8 @@ class AppViewModel(
                             )
                         // 若列表里尚未有该会话，前插到首位
                         if (sessions.none { it.taskId == newSid }) {
-                            sessions.add(0, item)
-                            viewModelScope.launch { SessionCacheStore.save(getApplication(), sessions.toList()) }
+                            _sessions.value = listOf(item) + sessions
+                            viewModelScope.launch { SessionCacheStore.save(getApplication(), sessions) }
                         }
                         // 首轮指令已随 createSession 的 firstInput 发出，输入框保持空白
                         convRepo.clearPromptDraft()
@@ -814,9 +880,9 @@ class AppViewModel(
                     is RpcChannel.RpcReply.Ok -> {
                         ZLog.i(TAG, "deleteTask 成功: ${item.taskId.take(20)}…")
                         // 本地列表同步移除并写回持久化缓存；C-7：同步清理该会话的行缓存文件
-                        sessions.removeAll { it.taskId == item.taskId }
+                        _sessions.value = sessions.filterNot { it.taskId == item.taskId }
                         SessionCacheStore.deleteRows(getApplication(), item.taskId)
-                        viewModelScope.launch { SessionCacheStore.save(getApplication(), sessions.toList()) }
+                        viewModelScope.launch { SessionCacheStore.save(getApplication(), sessions) }
                         // 若删除的是当前订阅中的会话，复位订阅与草稿状态
                         if (convRepo.subscribedSessionId == item.taskId) {
                             convRepo.subscribedSessionId = null
@@ -865,6 +931,7 @@ class AppViewModel(
         conversation?.reset()
         sessionsIndex?.reset()
         workspaceConfig?.reset()
+        controller?.unsubscribe()
         // 注销网络回调：断开后不再需要感知网络变化，且下次 connect() 会新建闸门（防累积）
         RemoteConnectionManager.releaseGate()
         client = null
@@ -872,6 +939,7 @@ class AppViewModel(
         conversation = null
         sessionsIndex = null
         workspaceConfig = null
+        controller = null
         // A-2：连接没了，作废在途的握手自动重订与桥重开调度（含预算归零）
         connectionCoordinator.cancelResilienceJobs()
         convRepo.subscribedSession = null
@@ -895,7 +963,7 @@ class AppViewModel(
         multiStore.clear()
         device = null
         events.clear()
-        sessions.clear()
+        _sessions.value = emptyList()
         rpcEvents.clear()
         convRepo.rows.clear()
         convRepo.subscribedSessionId = null

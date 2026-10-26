@@ -9,6 +9,8 @@ import com.zcode.remote.notify.ApprovalBridge
 import com.zcode.remote.notify.ElicitationBridge
 import com.zcode.remote.notify.TerminalNotifier
 import com.zcode.remote.relay.BridgeFrames
+import com.zcode.remote.relay.ControllerChannel
+import com.zcode.remote.relay.ControllerReducer
 import com.zcode.remote.relay.ConversationChannel
 import com.zcode.remote.relay.FailureReason
 import com.zcode.remote.relay.NetworkGate
@@ -28,6 +30,7 @@ import com.zcode.remote.repo.ConversationRepository
 import com.zcode.remote.repo.ModelConfigRepository
 import com.zcode.remote.repo.NotificationCoordinator
 import com.zcode.remote.storage.PairedDevice
+import com.zcode.remote.storage.ProtocolStack
 import com.zcode.remote.storage.SessionCacheStore
 import com.zcode.remote.util.LogRedactor
 import com.zcode.remote.util.ZLog
@@ -39,6 +42,7 @@ import kotlinx.coroutines.launch
 import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
+import java.util.concurrent.atomic.AtomicBoolean
 
 /**
  * 连接编排器（§11.7 结构性拆分：自 `AppViewModel.connect()` 原样搬出，只移动不改行为）。
@@ -67,11 +71,37 @@ class ConnectionCoordinator(
 
         var hostRelayState: RelayState
         val hostEvents: MutableList<TaskEvent>
-        val hostSessions: MutableList<SessionItem>
+
+        /**
+         * 会话列表读取视图（T3：不可变快照）。
+         *
+         * 写入一律走 [hostReplaceSessions] / [hostUpdateSessions]，**不得**在原列表上原位改：
+         * collector 在后台线程、UI 在主线程，原位 MutableList 的读写之间无屏障。
+         */
+        val hostSessions: List<SessionItem>
+
+        /** 整表替换（快照语义：bootstrap tasks / Controller 通道 / 本地新建删除）。 */
+        fun hostReplaceSessions(next: List<SessionItem>)
+
+        /**
+         * 按键局部更新（任务事件流回写 displayStatus / 会话快照回填 lastError）。
+         * [transform] 返回 null 表示该条不变，避免无谓的列表复制与重组。
+         */
+        fun hostUpdateSessions(transform: (SessionItem) -> SessionItem?)
+
         var hostBridgeState: RpcChannel.BridgeState
         var hostActiveWorkspaceKey: String?
         val hostRpcEvents: MutableList<String>
         var hostSessionModeOverride: String?
+
+        /**
+         * Controller 首份快照已到（T5 三态：V2 的「已连接未同步」骨架态据此结束）。
+         * V1 不受影响（没有 Controller 订阅）。
+         */
+        fun hostMarkControllerSynced()
+
+        /** 新一轮连接：重新进入「已连接未同步」窗口（T5）。 */
+        fun hostResetControllerSynced()
 
         fun hostRetrySubscribe()
     }
@@ -139,6 +169,8 @@ class ConnectionCoordinator(
         // §11.8：进程内首次连接时记一次启动事件（版本/版本码，供导出与排障对齐时间线）
         Diagnostics.recordAppStart(BuildConfig.VERSION_NAME, BuildConfig.VERSION_CODE)
         ConnectionScope.manuallyDisconnected = false
+        // 新一轮连接重新经历「同步中」窗口（V2）；V1 侧该标志无意义
+        host.hostResetControllerSynced()
         // P0-A：前台服务保住进程 —— App 在后台/锁屏时连接与审批通知才可达（招牌功能的性命）
         ConnectionService.start(host.hostContext)
         // §11.4 阶段②：重建连接栈前先取消旧 collector —— 否则重连会叠加旧流，
@@ -206,9 +238,8 @@ class ConnectionCoordinator(
         // 会话级错误原因回填首页列表：bootstrap 的 tasks[] 形状不含 lastError（PROTOCOL.md 实测样本），
         // 只有打开过的会话能从快照 control.lastError 拿到原因——聊胜于无，完整原因在会话页横幅。
         conv.onSessionError = { sid, err ->
-            val idx = host.hostSessions.indexOfFirst { it.taskId == sid }
-            if (idx >= 0 && host.hostSessions[idx].lastError != err) {
-                host.hostSessions[idx] = host.hostSessions[idx].copy(lastError = err)
+            host.hostUpdateSessions { item ->
+                if (item.taskId == sid && item.lastError != err) item.copy(lastError = err) else null
             }
         }
         // 会话相位回填首页列表：列表的 displayStatus 只在配对成功时的 bootstrap 取一次快照，
@@ -216,19 +247,30 @@ class ConnectionCoordinator(
         conv.onSessionPhase = { sid, phase ->
             val mapped = displayStatusForPhase(phase)
             if (mapped != null) {
-                val idx = host.hostSessions.indexOfFirst { it.taskId == sid }
-                if (idx >= 0 && host.hostSessions[idx].displayStatus != mapped) {
-                    host.hostSessions[idx] = host.hostSessions[idx].copy(displayStatus = mapped)
+                host.hostUpdateSessions { item ->
+                    if (item.taskId == sid && item.displayStatus != mapped) {
+                        item.copy(displayStatus = mapped)
+                    } else {
+                        null
+                    }
                 }
             }
         }
         val sidx = SessionsIndexChannel(ch)
         val wcfg = WorkspaceConfigChannel(ch)
+        // V2（≥3.16）会话列表权威源：bootstrap 不再下发 tasks[]，改由 Controller 通道提供（§11.6）。
+        // 接管判据以 **bootstrap 实际下发内容** 为准（见 bootstrap-response 分支），此处先按协议栈预置；
+        // V1 恒为 false，V2 在收到 bootstrap 后按 tasks[] 有无最终确认。
+        val ctrl = ControllerChannel(ch)
+        val isV2Device = dev.protocolStack == ProtocolStack.V2
+        // 由 inbound collector（进程级 scope 线程）写、其它 collector 读：用原子量保证可见性
+        val controllerOwns = AtomicBoolean(false)
         ConnectionScope.client = c
         ConnectionScope.channel = ch
         ConnectionScope.conversation = conv
         ConnectionScope.sessionsIndex = sidx
         ConnectionScope.workspaceConfig = wcfg
+        ConnectionScope.controller = ctrl
         c.connect()
 
         // §11.4 阶段③：relay 状态流迁入进程级作用域 —— 终态通知（KICKED/配对失效等）是
@@ -268,9 +310,14 @@ class ConnectionCoordinator(
                 when (BridgeFrames.zcodeTypeOf(payload)) {
                     "bootstrap-response" -> {
                         val list = parseBootstrapSessions(payload)
+                        // T4/T3 数据源分流：V2 且 bootstrap 无 tasks[] → Controller 通道接管列表；
+                        // 否则沿用 bootstrap tasks（V1 语义与 beta52 逐项一致）。
+                        if (isV2Device) {
+                            controllerOwns.set(ControllerChannel.shouldTakeOver(ProtocolStack.V2, list.size))
+                            Diagnostics.record(DiagEventCode.CONTROLLER_LIST, "takeover=${controllerOwns.get()} bootstrap=${list.size}")
+                        }
                         if (list.isNotEmpty()) {
-                            host.hostSessions.clear()
-                            host.hostSessions.addAll(list)
+                            host.hostReplaceSessions(list)
                             host.hostScope.launch { SessionCacheStore.save(host.hostContext, list) }
                         }
                         // 取活动工作区 → 开桥（会话流前置条件）
@@ -324,10 +371,15 @@ class ConnectionCoordinator(
                             // 退回主界面仍显示已完成」。映射规则见 displayStatusForTaskEvent。
                             ev.taskId?.let { tid ->
                                 val mapped = displayStatusForTaskEvent(ev.type)
-                                if (mapped != null) {
-                                    val idx = host.hostSessions.indexOfFirst { it.taskId == tid }
-                                    if (idx >= 0 && host.hostSessions[idx].displayStatus != mapped) {
-                                        host.hostSessions[idx] = host.hostSessions[idx].copy(displayStatus = mapped)
+                                // V2：displayStatus 以 Controller 通道的快照/增量为权威，
+                                // 任务事件流回写只保留在 V1（否则两路互炒，状态来回跳）。
+                                if (mapped != null && !controllerOwns.get()) {
+                                    host.hostUpdateSessions { item ->
+                                        if (item.taskId == tid && item.displayStatus != mapped) {
+                                            item.copy(displayStatus = mapped)
+                                        } else {
+                                            null
+                                        }
                                     }
                                 }
                             }
@@ -359,6 +411,10 @@ class ConnectionCoordinator(
                     bridgeReopenJob = null
                     // E-1：workspace 级 sessions-index 订阅（权威角标，一次订阅覆盖全部会话）
                     host.hostActiveWorkspaceKey?.let { sidx.subscribe(it, null) }
+                    // V2：会话列表/工作区改由 Controller 通道提供（§11.6），桥就绪即可订阅。
+                    // 订阅本身无副作用（只是拿快照），列表是否采用由 bootstrap 裁决的
+                    // `controllerOwnsList` 控制，避免「bootstrap 带了 tasks 却仍被覆盖」。
+                    if (isV2Device) ctrl.subscribe()
                     // 从 PC 端 ~/.zcode/v2/provider_config.json 预加载已配置模型目录
                     modelRepo.loadModelsFromConfigFile()
                     // 模型注册表：各模型的合法思考档位（createSession/switchModelConfig 必需）
@@ -381,6 +437,7 @@ class ConnectionCoordinator(
                 conv.onEvent(ev, convRepo.rowStore)
                 sidx.onEvent(ev)
                 wcfg.onEvent(ev)
+                ctrl.onEvent(ev)
                 // C-5①：观测面板只在 debug 构建保留——release 不再为**每个 delta** 做一次
                 // `ev.data.toString()`（全量 JSON 序列化，主线程 collector 内）与 4000 字符拷贝。
                 // ZLog.d 本身在 release 已被 R8 剥离（proguard -assumenosideeffects），但实参求值
@@ -433,6 +490,21 @@ class ConnectionCoordinator(
         }
         RemoteConnectionManager.launchCollector {
             sidx.summaries.collect { notifyCoordinator.recomputeSessionPending() }
+        }
+        // V2：Controller 通道 → 会话列表（唯一写入口，整表替换保证读者看到完整一代）
+        RemoteConnectionManager.launchCollector {
+            ctrl.tasks.collect { tasks ->
+                if (!controllerOwns.get()) return@collect
+                val next = ControllerReducer.visibleSessions(tasks)
+                // 内容未变则不打扰 UI（StateFlow 对 equals 相同的值本就不会重发，这里省掉映射成本）
+                val cur = host.hostSessions
+                // 首份快照无论条数都结束「同步中」态（空列表也是同步完成的结论）
+                host.hostMarkControllerSynced()
+                if (cur == next) return@collect
+                Diagnostics.record(DiagEventCode.CONTROLLER_LIST, "count=${next.size} archived=${tasks.size - next.size}")
+                host.hostReplaceSessions(next)
+                host.hostScope.launch { SessionCacheStore.save(host.hostContext, next) }
+            }
         }
         // 通知按钮 → 应答（连接只活在这里，所以桥必须在连接建立时挂上）
         ApprovalBridge.handler = { interactionId, optionId -> approvalRepo.resolveById(interactionId, optionId) }

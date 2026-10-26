@@ -64,6 +64,9 @@ class MainActivity : ComponentActivity() {
         setContent {
             val vm: AppViewModel = viewModel()
             appVm = vm
+            // T3：会话列表是 StateFlow 不可变快照（后台 collector 写入），Compose 侧订阅
+            // 才可能在后台线程更新时重组——直接读 vm.sessions 只在重组时取一次值。
+            val sessions by vm.sessionsFlow.collectAsState()
             LaunchedEffect(Unit) {
                 // 等首帧布局完成再处理深链/分享：冷启动 + 深链同时发生时（重装后 am start），
                 // 立即弹出 Compose Dialog 会导致 Dialog window 内容整体不渲染（真机实证 2026-10-25：
@@ -178,7 +181,7 @@ class MainActivity : ComponentActivity() {
                     // 旋转/进程重建后 openedItem 为空：按 taskId 从列表回查（拿标题等元数据）
                     val target =
                         openedItem
-                            ?: openedTaskId?.let { id -> vm.sessions.firstOrNull { it.taskId == id } }
+                            ?: openedTaskId?.let { id -> sessions.firstOrNull { it.taskId == id } }
                     when {
                         // 1. 保活指引全屏页
                         showGuide -> KeepAliveGuideScreen(onBack = { showGuide = false })
@@ -355,7 +358,7 @@ class MainActivity : ComponentActivity() {
                                             HomeScreen(
                                                 deviceName = vm.device?.deviceName ?: "",
                                                 state = vm.relayState,
-                                                sessions = vm.sessions.toList(),
+                                                sessions = sessions,
                                                 sessionPending = vm.sessionPending,
                                                 query = vm.sessionQuery,
                                                 onQueryChange = { vm.updateSessionQuery(it) },
@@ -366,6 +369,8 @@ class MainActivity : ComponentActivity() {
                                                     openSession(s)
                                                 },
                                                 onNavigateToSettings = { selectedTab = 2 },
+                                                protocolStack = vm.device?.protocolStack ?: com.zcode.remote.storage.ProtocolStack.V1,
+                                                controllerSynced = vm.controllerSynced,
                                                 modelState = vm.workspaceModelState,
                                                 modelsLoading = vm.modelStateLoading,
                                                 onLoadModels = { vm.loadWorkspaceModels() },
@@ -397,7 +402,7 @@ class MainActivity : ComponentActivity() {
                                             ApprovalsTab(
                                                 approvals = vm.approvals,
                                                 elicitations = vm.elicitations,
-                                                sessions = vm.sessions.toList(),
+                                                sessions = sessions,
                                                 sessionPending = vm.sessionPending,
                                                 subscribedSessionId = vm.subscribedSessionId,
                                                 feedback = vm.commandFeedback,

@@ -1,5 +1,6 @@
 package com.zcode.remote.service
 
+import com.zcode.remote.relay.ControllerChannel
 import com.zcode.remote.relay.ConversationChannel
 import com.zcode.remote.relay.NetworkGate
 import com.zcode.remote.relay.RelayClient
@@ -39,6 +40,7 @@ object RemoteConnectionManager {
     var conversation: ConversationChannel? = null
     var sessionsIndex: SessionsIndexChannel? = null
     var workspaceConfig: WorkspaceConfigChannel? = null
+    var controller: ControllerChannel? = null
 
     /**
      * 当前连接栈的网络闸门。每次 connect() 会新建并注册系统网络回调，
@@ -88,12 +90,14 @@ object RemoteConnectionManager {
     fun shutdown() {
         runCatching { client?.close() }
         runCatching { channel?.reset() }
+        runCatching { controller?.reset() }
         releaseGate()
         client = null
         channel = null
         conversation = null
         sessionsIndex = null
         workspaceConfig = null
+        controller = null
         scope.cancel()
         scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
     }

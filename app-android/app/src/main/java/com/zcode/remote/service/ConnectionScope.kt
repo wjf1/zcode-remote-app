@@ -1,5 +1,6 @@
 package com.zcode.remote.service
 
+import com.zcode.remote.relay.ControllerChannel
 import com.zcode.remote.relay.ConversationChannel
 import com.zcode.remote.relay.RelayClient
 import com.zcode.remote.relay.RpcChannel
@@ -38,6 +39,11 @@ object ConnectionScope {
         get() = RemoteConnectionManager.workspaceConfig
         set(value) {
             RemoteConnectionManager.workspaceConfig = value
+        }
+    var controller: ControllerChannel?
+        get() = RemoteConnectionManager.controller
+        set(value) {
+            RemoteConnectionManager.controller = value
         }
 
     /** 用户主动断开（首页「断开」/移除设备/忘记配对）：此后服务重启不得自动重连。 */
