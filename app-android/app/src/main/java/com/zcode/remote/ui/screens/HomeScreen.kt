@@ -72,6 +72,10 @@ fun HomeScreen(
     modelReasoningLevels: Map<String, List<String>> = emptyMap(),
     /** 长按会话卡片触发删除（closeSession + deleteTask）。 */
     onSessionDelete: (SessionItem) -> Unit = {},
+    /** 当前设备协议栈（T5：V2 的列表要等 Controller 首份快照，空窗期显示骨架而非「暂无会话」）。 */
+    protocolStack: com.zcode.remote.storage.ProtocolStack = com.zcode.remote.storage.ProtocolStack.V1,
+    /** 是否已收到过至少一份 Controller 快照（V2 有效；V1 恒 true）。 */
+    controllerSynced: Boolean = true,
     onCreateSession: (
         prompt: String,
         modelConfig: com.zcode.remote.relay.WorkspaceConfigChannel.ModelOption?,
@@ -84,22 +88,19 @@ fun HomeScreen(
 
     val filteredSessions =
         remember(sessions, query, filterOnlyRunning, filterOnlyPending, sessionPending) {
-            var list = sessions
-            val q = query.trim()
-            if (q.isNotEmpty()) {
-                list =
-                    list.filter {
-                        it.title.contains(q, ignoreCase = true) ||
-                            (it.workspacePath ?: "").contains(q, ignoreCase = true)
-                    }
-            }
-            if (filterOnlyRunning) {
-                list = list.filter { it.isRunning }
-            }
-            if (filterOnlyPending) {
-                list = list.filter { (sessionPending[it.taskId] ?: 0) > 0 }
-            }
-            list
+            homeVisibleSessions(
+                sessions = sessions,
+                query = query,
+                onlyRunning = filterOnlyRunning,
+                onlyPending = filterOnlyPending,
+                pendingOf = { id -> sessionPending[id] ?: 0 },
+            )
+        }
+
+    // T5：三态空列表（未连接 / 已连接未同步 / 已同步且确实为空）
+    val emptyState =
+        remember(state, sessions.size, protocolStack, controllerSynced) {
+            homeEmptyState(state, sessions.size, protocolStack, controllerSynced)
         }
 
     Column(
@@ -223,86 +224,34 @@ fun HomeScreen(
                 ),
         )
 
-        // 快捷筛选 Chip
-        Row(
-            modifier =
-                Modifier
-                    .fillMaxWidth()
-                    .padding(bottom = 10.dp),
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
-        ) {
-            val runningCount = sessions.count { it.isRunning }
-            val pendingCount = sessions.count { (sessionPending[it.taskId] ?: 0) > 0 }
+        // 快捷筛选 Chip（抽成独立 Composable：三个条件渲染分支留在主组合里会顶穿圈复杂度阈值）
+        SessionFilterRow(
+            sessions = sessions,
+            sessionPending = sessionPending,
+            filterOnlyRunning = filterOnlyRunning,
+            filterOnlyPending = filterOnlyPending,
+            onSelectAll = {
+                filterOnlyRunning = false
+                filterOnlyPending = false
+            },
+            onToggleRunning = {
+                filterOnlyRunning = !filterOnlyRunning
+                if (filterOnlyRunning) filterOnlyPending = false
+            },
+            onTogglePending = {
+                filterOnlyPending = !filterOnlyPending
+                if (filterOnlyPending) filterOnlyRunning = false
+            },
+        )
 
-            FilterChip(
-                selected = !filterOnlyRunning && !filterOnlyPending,
-                onClick = {
-                    filterOnlyRunning = false
-                    filterOnlyPending = false
-                },
-                label = { Text(stringResource(R.string.home_filter_all, sessions.size), style = MaterialTheme.typography.labelSmall) },
-                shape = RoundedCornerShape(8.dp),
-            )
-
-            if (runningCount > 0) {
-                FilterChip(
-                    selected = filterOnlyRunning,
-                    onClick = {
-                        filterOnlyRunning = !filterOnlyRunning
-                        if (filterOnlyRunning) filterOnlyPending = false
-                    },
-                    label = { Text(stringResource(R.string.home_filter_running, runningCount), style = MaterialTheme.typography.labelSmall) },
-                    shape = RoundedCornerShape(8.dp),
-                )
-            }
-
-            if (pendingCount > 0) {
-                FilterChip(
-                    selected = filterOnlyPending,
-                    onClick = {
-                        filterOnlyPending = !filterOnlyPending
-                        if (filterOnlyPending) filterOnlyRunning = false
-                    },
-                    label = { Text(stringResource(R.string.home_filter_pending, pendingCount), style = MaterialTheme.typography.labelSmall) },
-                    shape = RoundedCornerShape(8.dp),
-                )
-            }
-        }
-
-        // 4. 会话列表
+        // 4. 会话列表（T5：空列表按三态渲染——未连接 / 已连接未同步 / 已同步且确实为空）
         if (sessions.isEmpty()) {
-            Box(
-                modifier =
-                    Modifier
-                        .fillMaxSize()
-                        .padding(bottom = 60.dp),
-                contentAlignment = Alignment.Center,
-            ) {
-                Column(
-                    horizontalAlignment = Alignment.CenterHorizontally,
-                    verticalArrangement = Arrangement.spacedBy(12.dp),
-                    modifier = Modifier.padding(horizontal = 24.dp),
-                ) {
-                    Text(
-                        text = connectionEmptyStateText(state).asString(),
-                        style = MaterialTheme.typography.bodyMedium,
-                        color =
-                            if (state is RelayState.Failed) {
-                                MaterialTheme.colorScheme.error
-                            } else {
-                                MaterialTheme.colorScheme.onSurfaceVariant
-                            },
-                        textAlign = androidx.compose.ui.text.style.TextAlign.Center,
-                    )
-                    // 终态失败（KICKED/AUTH_FAILED/PROTOCOL_MISMATCH/INVALID_ENDPOINT）不会自动重连，
-                    // 给出「前往设置」引导，避免用户对着永不成功的「正在连接」干等。
-                    if (isTerminalFailure(state)) {
-                        TextButton(onClick = onNavigateToSettings) {
-                            Text(stringResource(R.string.home_go_settings), style = MaterialTheme.typography.labelMedium)
-                        }
-                    }
-                }
-            }
+            HomeEmptyContent(
+                emptyState = emptyState,
+                state = state,
+                onCreate = { showCreateDialog = true },
+                onNavigateToSettings = onNavigateToSettings,
+            )
         } else {
             LazyColumn(
                 modifier = Modifier.fillMaxSize(),
@@ -312,7 +261,7 @@ fun HomeScreen(
                 if (filteredSessions.isEmpty()) {
                     item {
                         Text(
-                            text = stringResource(R.string.home_no_match),
+                            text = homeFilteredEmptyText(sessions.size).asString(),
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                             modifier = Modifier.padding(vertical = 16.dp),
@@ -962,4 +911,118 @@ private fun CreateSessionDialog(
             }
         },
     )
+}
+
+/**
+ * 空列表内容区（T5 三态）：同步中给骨架屏，未连接/真空给文案 + 相应引导。
+ *
+ * 抽成独立 Composable 是为了让 [HomeScreen] 的圈复杂度留在 detekt 阈值内
+ * （三态各带自己的分支与按钮，留在主组合里会直接把复杂度顶穿）。
+ */
+@Composable
+private fun HomeEmptyContent(
+    emptyState: HomeEmptyState,
+    state: RelayState,
+    onCreate: () -> Unit,
+    onNavigateToSettings: () -> Unit,
+) {
+    if (emptyState == HomeEmptyState.Syncing) {
+        HomeSyncingSkeleton()
+        return
+    }
+    Box(
+        modifier =
+            Modifier
+                .fillMaxSize()
+                .padding(bottom = 60.dp),
+        contentAlignment = Alignment.Center,
+    ) {
+        Column(
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.spacedBy(12.dp),
+            modifier = Modifier.padding(horizontal = 24.dp),
+        ) {
+            Text(
+                text = homeEmptyStateText(emptyState, state).asString(),
+                style = MaterialTheme.typography.bodyMedium,
+                color =
+                    if (state is RelayState.Failed) {
+                        MaterialTheme.colorScheme.error
+                    } else {
+                        MaterialTheme.colorScheme.onSurfaceVariant
+                    },
+                textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+            )
+            // 终态失败（KICKED/AUTH_FAILED/PROTOCOL_MISMATCH/INVALID_ENDPOINT）不会自动重连，
+            // 给出「前往设置」引导，避免用户对着永不成功的「正在连接」干等。
+            if (isTerminalFailure(state)) {
+                TextButton(onClick = onNavigateToSettings) {
+                    Text(stringResource(R.string.home_go_settings), style = MaterialTheme.typography.labelMedium)
+                }
+            }
+            // T5：已同步且确实没有会话 → 给「新建」与「去设置」两条出路
+            if (emptyState == HomeEmptyState.Empty) {
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy(4.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    TextButton(onClick = onCreate) {
+                        Text(stringResource(R.string.home_empty_create), style = MaterialTheme.typography.labelMedium)
+                    }
+                    TextButton(onClick = onNavigateToSettings) {
+                        Text(stringResource(R.string.home_go_settings), style = MaterialTheme.typography.labelMedium)
+                    }
+                }
+            }
+        }
+    }
+}
+
+/** 快捷筛选行：全部 / 仅运行中 / 仅待处理（计数为 0 的筛选不出现）。 */
+@Composable
+private fun SessionFilterRow(
+    sessions: List<SessionItem>,
+    sessionPending: Map<String, Int>,
+    filterOnlyRunning: Boolean,
+    filterOnlyPending: Boolean,
+    onSelectAll: () -> Unit,
+    onToggleRunning: () -> Unit,
+    onTogglePending: () -> Unit,
+) {
+    val runningCount = sessions.count { it.isRunning }
+    val pendingCount = sessions.count { (sessionPending[it.taskId] ?: 0) > 0 }
+    Row(
+        modifier =
+            Modifier
+                .fillMaxWidth()
+                .padding(bottom = 10.dp),
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        FilterChip(
+            selected = !filterOnlyRunning && !filterOnlyPending,
+            onClick = onSelectAll,
+            label = { Text(stringResource(R.string.home_filter_all, sessions.size), style = MaterialTheme.typography.labelSmall) },
+            shape = RoundedCornerShape(8.dp),
+        )
+        if (runningCount > 0) {
+            FilterChip(
+                selected = filterOnlyRunning,
+                onClick = onToggleRunning,
+                label = {
+                    Text(stringResource(R.string.home_filter_running, runningCount), style = MaterialTheme.typography.labelSmall)
+                },
+                shape = RoundedCornerShape(8.dp),
+            )
+        }
+        if (pendingCount > 0) {
+            FilterChip(
+                selected = filterOnlyPending,
+                onClick = onTogglePending,
+                label = {
+                    Text(stringResource(R.string.home_filter_pending, pendingCount), style = MaterialTheme.typography.labelSmall)
+                },
+                shape = RoundedCornerShape(8.dp),
+            )
+        }
+    }
 }
