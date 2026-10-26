@@ -608,17 +608,43 @@ sourceAvailability:"online"|"offline", connectionState:"connecting"|"online"|"cl
 - `storage/PairedDevice.kt`：`protocolStack`（V1/V2）是全仓唯一的 passHash 判据，连接层（`RelayClient.v2Mode`）、
   bootstrap 分流、QR 配对入口（Ready/NeedsLogin）都读它。
 
-#### 11.6.7 待实测项（T1 落帧，`tools/probe.py ctrl`）
+#### 11.6.7 真机实测结论（2026-10-26，T1 落帧 + App 真机走查）
 
-以下结论目前是**静态**（bundle/zod），尚未真机落帧复核，标注为【待实测】：
+落帧命令：`python tools/probe.py ctrl [帧数]` → `_tmp/ctrl_frames.json`
+（本机实测：50 帧 = 2 snapshot + 43 deltas，`tools/_dump_frame.py` 看骨架）。
+⚠️ 与 App / 官方 Web 三方互踢（同 deviceSid 单 terminal 槽），探测前先停 App；
+PC 端必须已打开「移动端远程控制」面板（否则 `pair_status=waiting`）。
 
-1. 裸帧 vs 信封：订阅 ack 后推送的帧是否就是 11.6.3 的裸形态（本仓库已双形态兼容）；
-2. 两个 topic 是否共用一个 listen（当前实现共用；若实测否定则改为每 topic 一个 listenId）；
-3. `resyncControllerV4` 的 `base` 精确形状（当前发 `{subscriptionId, base:{logEpoch, toSeq}}`）；
-4. 归档任务是否仍在 snapshot `tasks[]` 里（当前按 `membership.archived` 过滤，缺省 false）。
+**四项原【待实测】逐条定案：**
 
-落帧命令：`python tools/probe.py ctrl [帧数] [输出路径]`（默认 `_tmp/ctrl_frames.json`），
-骨架用 `python tools/_dump_frame.py _tmp/ctrl_frames.json` 查看。⚠️ 与 App / 官方 Web 三方互踢
-（同 deviceSid 单 terminal 槽），探测前先停 App；PC 端必须已打开「移动端远程控制」面板
-（否则 `pair_status=waiting`，probe 会停在认证阶段）。
+1. **裸帧 vs 信封 → 实测裸帧**：订阅 ack 后推送的就是
+   `{topic, subscriptionId, logEpoch, fromSeq, toSeq, sentAt, payload}` 裸形态，
+   **没有** conversation 的 204 逻辑帧信封。App 端 `ControllerFrames.parse` 保留双形态兼容。
+2. **双 topic 共用一个 listen → 实测是**：`controller/tasks-index` 与 `controller/workspaces`
+   的帧全部挂同一 listen id，按帧内 `subscriptionId` 分流（与桌面端 host 单例事件一致）。
+3. **归档任务在快照里 → 实测是**：snapshot `tasks[]` 共 221 条，其中
+   `membership.archived=true` 101 条；App 过滤后可见 120 条，与手机首页「全部 (120)」**完全对账**；
+   liveStatus 分布 running:3 / completed:209 / idle:1 / error:8，与手机「运行中 (3)」一致。
+4. **resync 形状 → 官方 web bundle 静态实证**（本机 seq 严格连续未自然触发）：
+   `resyncControllerV4({subscriptionId, base:{logEpoch, seq}, forceSnapshot:true})`；
+   失同步判定（web `Uue`）：deltas 帧 `fromSeq !== 上次 toSeq`（缺口与回退都算）或 `logEpoch` 变化；
+   **快照帧不做检查**（本身即全量权威）。App 已按此实现。
 
+**新增实测发现（都已在 App 侧修复）：**
+
+5. **Controller 通道 = `window-controller`**：真机实测在 `zcode-agent` 与 `zcode-task` 上调用
+   `subscribeControllerV4` 均报 `Method not found`；桌面端 host 把
+   createAttachmentService（含 controller 方法族与 listTaskList/mutateTask）注册在
+   **WindowController** 通道（官方 web 端注册表即 `windowControllerTaskListRegistry`）。
+6. **连接级握手每桥只认一个 clientId**：先到的 `initializeConversationV4` 赢，后到的带
+   不同 clientId 报 `fault.connection.clientChanged`（V1 时代允许任意多次 initialize）。
+   且命令信封（resolveInteraction 等）的 `clientId` 必须与连接绑定的一致——
+   故 App 三个通道统一改用 `RpcChannel.v4ClientId`（每连接一份），并容忍 clientChanged
+   （视为握手已满足，照常订阅）。
+7. **seq 语义实测**：delta 帧 `fromSeq == 上一帧 toSeq` 严格连续
+   （probe 实测 2097→2098→2099…，无跳号）；快照帧 `fromSeq` 恒为 0。
+8. **增量实时性实测**：运行中任务的 meta（updatedAt/liveStatus）变化即推
+   `task.upserted`（probe 窗口内 43 条，≈每秒级）；App 侧同链路下手机列表
+   120→122、运行中 3→4 实时反映（PC 端其它会话新建任务）。
+9. **快照/增量数据源对账**：手机首页列表条目数、运行态计数与 probe 落盘快照逐项一致
+   （见 §11.5 走查③收尾）。

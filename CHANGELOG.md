@@ -1,6 +1,6 @@
 # 变更记录 / Changelog
 
-## v0.5.0-beta53（2026-10-26）· V2 Controller 通道适配（代码完成，真机验收待做）——会话列表权威源切换与列表并发安全
+## v0.5.0-beta53（2026-10-26）· V2 Controller 通道适配——会话列表权威源切换与列表并发安全（真机验收通过）
 
 > **一句话**：ZCode ≥3.16 的 bootstrap 不再下发 `tasks[]`，会话列表改由 Controller 通道提供。
 > 本版本新增 `ControllerChannel`（快照/增量/`logEpoch` 重同步），并把会话列表从原位可变列表
@@ -47,21 +47,45 @@ App 需要同样的通道。
 
 ### 验证
 
-- **JVM 单测**：新增 37 项（`ControllerChannelTest` 16 / `HomeEmptyStateTest` 9 /
-  `SessionListSnapshotTest` 6 / `ProtocolStackTest` 6），全量 400 项全执行且全绿
-  （`tools/check_test_count.py`：声明 364 = 实际执行 400，含既有参数化用例展开）。
+- **JVM 单测**：新增 39 项（`ControllerChannelTest` 18 / `HomeEmptyStateTest` 9 /
+  `SessionListSnapshotTest` 6 / `ProtocolStackTest` 6），全量声明 364 = 实际执行 402 全绿。
 - `lintDebug` / `lintRelease` 0 error；`detekt` 0 issue；`ktlintCheck` 0 违规；
   `assembleDebug` / `assembleRelease` BUILD SUCCESSFUL。
-- `tools/probe.py ctrl` 已实现但**真机落帧未完成**：PC 端「移动端远程控制」面板需处于开启状态
-  （否则 `pair_status=waiting`，probe 停在认证阶段）；本机实测当时面板未开启，该项留待下一轮补录，
-  PROTOCOL.md §11.6.7 已列明待实测四项。
 
-### 未完成 / 下一轮入口
+### 真机验证（2026-10-26/27，小米 15 Pro / HyperOS + 桌面端 3.16.3 面板在线；证据 `_tmp/ctrl_frames.json` + uiautomator 文本断言）
 
-1. **T1 真机落帧**：在 PC 面板开启状态下跑 `python tools/probe.py ctrl`，把 §11.6.7 的四项
-   【待实测】逐条改成「实测」，必要时修正 App 解析。
-2. **T3 真机验收矩阵六项**（条目数一致 / 增删 3s 内反映 / 运行态实时变化 / PC 重启后自动重同步
-   不清空 / 杀进程秒开 / V1 回归逐项一致）整体待做——本机无连接设备。
+初版真机首跑暴露两处协议误判，均已修复并复测：
+
+1. **Controller 通道不在 `zcode-agent`**：真机 `Method not found: subscribeControllerV4` →
+   依桌面端 host 产物定位为 **`window-controller`** 通道（官方 web 端注册表
+   `windowControllerTaskListRegistry` 同名佐证）。
+2. **连接级握手单 clientId**：三通道各自 initialize 互踢（`fault.connection.clientChanged`），
+   会话通道被拒后中止订阅 → 会话页「同步失败」。修复 = 三通道统一共用
+   `RpcChannel.v4ClientId`（每连接一份）+ 容忍 clientChanged（握手已满足照常订阅）。
+   该修复同时保障了审批命令信封的 clientId 与连接绑定一致（锁屏审批前置条件）。
+3. **resync 形状对齐官方 web 端**：`{subscriptionId, base:{logEpoch, seq}, forceSnapshot:true}`；
+   失同步判定改为 deltas 帧 `fromSeq !== 上次 toSeq`（缺口与回退都算）、快照帧不检查。
+
+修复后复测（probe 落帧 50 帧 + App 真机走查）：
+
+- **T1 验收口径满足**：≥20 帧 / ≥1 snapshot / ≥3 task.upserted（实测 50 帧 = 2 snapshot + 43 deltas）；
+  裸帧结构、双 topic 共用 listen、seq 严格连续（2097→2098→…）、归档任务在快照内全部实测定案
+  （PROTOCOL.md §11.6.7）。
+- **T3 验收矩阵**：① 列表对账——快照 221 条（archived 101）→ 可见 120 = 手机「全部 (120)」、
+  running 3 = 「运行中 (3)」逐项一致；② PC→手机增量——其它会话新建任务，手机列表
+  120→122、运行中 3→4 实时反映；③ 运行态实时——运行中会话正确标「运行中 / 正在查看」；
+  ⑤ 杀进程重启后列表恢复（120 一致）；⑥ V1 路径以 protocolStack 判定隔离，行为零改动
+  （无 V1 设备实机，代码级回归 + 单测覆盖）。④ PC 重启（logEpoch 变化）重同步未实测
+  （需重启桌面端，影响在线会话），由单测 + web 端同语义实现覆盖。
+- **会话流（走查③收尾）**：点开会话正常渲染 612 行实时流式输出（工具行 / 思考块 / 快捷操作），
+  无 FATAL / 协议违例。截图留档 `_tmp/beta53_home_list.png` / `beta53_conv_live.png`。
+
+### 遗留（不阻塞发版）
+
+1. **PC 重启（logEpoch 变化）重同步**未真机实测——需重启桌面端、影响在线会话；单测与
+   web 端同语义实现覆盖，后续 PC 端自然重启时顺带核对。
+2. **审批链路（resolveInteraction）在 V2 下未实测**——本轮无待审批交互；clientId 统一修复
+   恰好消除了其信封 clientId 不匹配的隐患，下一次真实审批时顺带核对。
 3. T8–T21（beta54 起的认证层健壮化、性能、结构拆分）按任务书顺序推进。
 
 ## v0.5.0-beta52（2026-10-25）· V2 直连打通——ws2 中继端点实证与 App 原生 token 直连（真机 paired/bridge-ready 全通）

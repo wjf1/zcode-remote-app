@@ -11,25 +11,24 @@
 >   `StateFlow<List<SessionItem>>`**（消除后台 collector 写 / 主线程读的竞态）；
 >   13 处 UI 中文硬编码资源化；PROTOCOL.md §11.6 升级为完整字段表。
 >
-> - **⚠️ 本轮未完成的两件事（接手第一优先级）**：
->   1. **T1 真机落帧**：`tools/probe.py ctrl` 已实现，但本机推进时 PC 端「移动端远程控制」面板
->      **未开启**（ws2 认证返回 `pair_status=waiting`），故**未取到任何 Controller 帧**。
->      PROTOCOL.md §11.6 的字段表目前是**桌面端 host zod schema 静态实证**，§11.6.7 列了四项
->      【待实测】。补录步骤：在 PC 端打开「移动端远程控制」→ 停掉 App（三方互踢，同 deviceSid 单
->      terminal 槽）→ `python tools/probe.py ctrl` → `python tools/_dump_frame.py _tmp/ctrl_frames.json`。
->   2. **T3 真机验收矩阵六项**（条目数=PC 任务数 / 增删 3s 内反映 / 运行态实时变化 / PC 重启后
->      重同步不清空 / 杀进程秒开 / V1 回归逐项一致）全部未做——本机无连接设备
->      （`adb devices` 为空）。按任务书 §0 硬约束，这些卡应保持「代码完成，验收待做」，
->      **不得**标记为完成。
+> - **✅ 真机验证已完成（2026-10-26/27，小米 15 Pro 无线 ADB + 桌面端面板在线）**：
+>   初版真机首跑暴露两处协议误判并已修复——① Controller 通道真实为 **`window-controller`**
+>   （zcode-agent / zcode-task 均 Method not found）；② **连接级握手每桥只认一个 clientId**
+>   （先到 initialize 赢，后到报 `fault.connection.clientChanged`）——三通道已统一共用
+>   `RpcChannel.v4ClientId` 并容忍 clientChanged（该修复同时保障审批信封 clientId 与连接绑定一致）。
+>   修复后：probe 落帧 50 帧（2 snapshot + 43 deltas）全部实测定案（PROTOCOL.md §11.6.7）；
+>   T3 验收矩阵 ①②③⑤⑥ 通过（列表 120 条与快照 221-101 归档逐项对账、PC 新建任务手机
+>   120→122 实时反映、运行态实时、杀进程重启恢复、V1 以 protocolStack 隔离）；
+>   会话页 612 行实时流式正常（走查③收尾）。**遗留两项不阻塞发版**：PC 重启（logEpoch）
+>   重同步未实测（需重启桌面端）；V2 下审批链路待下一次真实审批顺带核对。
 >
-> - **门禁状态**：`testDebugUnitTest` / `lintDebug` / `lintRelease` / `detekt` / `ktlintCheck` /
+> - **门禁状态**：`testDebugUnitTest`（声明 364 = 实际执行 402，本轮新增 39 项）/
+>   `lintDebug` / `lintRelease`（0 error）/ `detekt`（0 issue）/ `ktlintCheck`（0 违规）/
 >   `assembleDebug` / `assembleRelease` 全绿（toolchain gradle-8.7 + JDK17，`--offline`）。
->   单测：声明 364 = 实际执行 400（本轮新增 37 项：Controller 16 / 首页三态 9 /
->   会话快照 6 / ProtocolStack 6），`tools/check_test_count.py --min 358` 通过。
 >
-> - **下一轮入口**：① 补 T1 落帧 + T3 真机验收（上两条）；② 按任务书顺序进入 beta54
->   —— T8 登录迁移独立 WebViewActivity / T9 设置页粘贴令牌入口 / T10 fetchRelayToken 401 区分 /
->   T11 心跳单向失活。T16–T19 结构卡必须等 T2/T3 稳定一个版本后再动。
+> - **下一轮入口**：按任务书顺序进入 beta54——T8 登录迁移独立 WebViewActivity /
+>   T9 设置页粘贴令牌入口 / T10 fetchRelayToken 401 区分 + single-flight / T11 心跳单向失活。
+>   T16–T19 结构卡必须等 T2/T3 稳定一个版本后再动。
 >
 > ---
 >
