@@ -26,8 +26,10 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
+import com.zcode.remote.R
 import com.zcode.remote.storage.PairedDevice
 import com.zcode.remote.storage.TokenStore
 import com.zcode.remote.util.ZLog
@@ -69,7 +71,11 @@ fun LoginWebViewDialog(
                     verticalAlignment = androidx.compose.ui.Alignment.CenterVertically,
                 ) {
                     Text(
-                        text = "登录配对 · ${device.deviceName ?: "ZCode"}",
+                        text =
+                            stringResource(
+                                R.string.login_pairing_title,
+                                device.deviceName ?: stringResource(R.string.login_pairing_default_device),
+                            ),
                         style = MaterialTheme.typography.titleMedium,
                         modifier =
                             Modifier
@@ -78,11 +84,11 @@ fun LoginWebViewDialog(
                         color = MaterialTheme.colorScheme.onBackground,
                     )
                     IconButton(onClick = onDismiss) {
-                        Icon(Icons.Filled.Close, contentDescription = "关闭")
+                        Icon(Icons.Filled.Close, contentDescription = stringResource(R.string.login_pairing_close))
                     }
                 }
                 Text(
-                    text = "请选择与电脑端相同的登录平台，并使用同一账号完成登录。",
+                    text = stringResource(R.string.login_pairing_hint),
                     style = MaterialTheme.typography.bodySmall,
                     modifier = Modifier.padding(start = 16.dp, bottom = 8.dp),
                     color = MaterialTheme.colorScheme.onSurfaceVariant,

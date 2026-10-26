@@ -217,6 +217,9 @@
     <string name="home_filter_pending">待处理 (%1$d)</string>
     <string name="home_go_settings">前往设置</string>
     <string name="home_no_match">没有找到匹配的会话</string>
+    <string name="home_syncing_sessions">已连接 PC，正在同步会话列表…</string>
+    <string name="home_no_sessions">暂无会话，从 PC 端或点「新建」开始</string>
+    <string name="home_empty_create">新建会话</string>
     <string name="home_badge_active">正在查看</string>
     <string name="home_badge_desktop_focus">PC焦点</string>
     <string name="home_pending_hint">⏳ %1$d 项待决议 (请前往「待办」处理)</string>
@@ -540,6 +543,24 @@
     <string name="conn_service_channel">ZCode 连接</string>
     <string name="conn_service_title">ZCode Remote</string>
     <string name="conn_service_text">保持与 PC 的连接</string>
+
+    <!-- ZCode 账号卡片与设备列表（V2 认证，PROTOCOL.md §11） -->
+    <string name="account_section_title">ZCode 账号（新版协议）</string>
+    <string name="account_refresh_devices">刷新设备列表</string>
+    <string name="account_loading">加载中…</string>
+    <string name="account_not_logged_in">未登录：使用 3.16+ 新版二维码配对时会在登录流程中自动获取账号凭据。</string>
+    <string name="account_devices_fetch_failed">获取失败：%1$s</string>
+    <string name="account_logged_in_hint">已登录（凭据已加密存储）。点击「刷新设备列表」查看账号绑定的电脑。</string>
+    <string name="account_no_devices">账号下暂无绑定设备</string>
+    <string name="account_device_online">在线</string>
+    <string name="account_device_offline">离线</string>
+    <string name="account_device_meta">%1$s · %2$s</string>
+
+    <!-- 登录配对页（LoginWebViewDialog / LoginWebViewActivity） -->
+    <string name="login_pairing_title">登录配对 · %1$s</string>
+    <string name="login_pairing_close">关闭</string>
+    <string name="login_pairing_hint">请选择与电脑端相同的登录平台，并使用同一账号完成登录。</string>
+    <string name="login_pairing_default_device">ZCode</string>
 
 
 </resources>

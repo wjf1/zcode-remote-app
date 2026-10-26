@@ -319,7 +319,10 @@ fun SettingsTab(
                                             )
                                             Spacer(Modifier.height(2.dp))
                                             Text(
-                                                text = customRelayUrl.ifBlank { "未设置 · 点击右侧「编辑」填写 wss:// 地址" },
+                                                text =
+                                                    customRelayUrl.ifBlank {
+                                                        stringResource(R.string.settings_custom_relay_unset)
+                                                    },
                                                 style =
                                                     MaterialTheme.typography.bodySmall.copy(
                                                         fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace,
@@ -811,7 +814,7 @@ private fun AccountDevicesSection() {
         Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
                 Text(
-                    text = "ZCode 账号（新版协议）",
+                    text = stringResource(R.string.account_section_title),
                     style = MaterialTheme.typography.titleSmall,
                     modifier = Modifier.weight(1f),
                 )
@@ -830,12 +833,20 @@ private fun AccountDevicesSection() {
                             }
                         },
                         enabled = !loading,
-                    ) { Text(if (loading) "加载中…" else "刷新设备列表") }
+                    ) {
+                        Text(
+                            if (loading) {
+                                stringResource(R.string.account_loading)
+                            } else {
+                                stringResource(R.string.account_refresh_devices)
+                            },
+                        )
+                    }
                 }
             }
             if (jwt == null) {
                 Text(
-                    text = "未登录：使用 3.16+ 新版二维码配对时会在登录流程中自动获取账号凭据。",
+                    text = stringResource(R.string.account_not_logged_in),
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
@@ -856,18 +867,22 @@ private fun AccountDevicesBody(
     when {
         error != null ->
             Text(
-                "获取失败：$error",
+                stringResource(R.string.account_devices_fetch_failed, error),
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.error,
             )
         list == null ->
             Text(
-                "已登录（凭据已加密存储）。点击「刷新设备列表」查看账号绑定的电脑。",
+                stringResource(R.string.account_logged_in_hint),
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
         list.isEmpty() ->
-            Text("账号下暂无绑定设备", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Text(
+                stringResource(R.string.account_no_devices),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
         else ->
             list.forEach { d -> AccountDeviceRow(d) }
     }
@@ -885,13 +900,19 @@ private fun AccountDeviceRow(d: V2AccountApi.RemoteDevice) {
                 overflow = TextOverflow.Ellipsis,
             )
             Text(
-                "${d.meta?.platform ?: "?"} · ${d.meta?.version ?: "?"}",
+                stringResource(
+                    R.string.account_device_meta,
+                    d.meta?.platform ?: "?",
+                    d.meta?.version ?: "?",
+                ),
                 style = MaterialTheme.typography.labelSmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
         }
         Text(
-            if (d.online) "在线" else "离线",
+            stringResource(
+                if (d.online) R.string.account_device_online else R.string.account_device_offline,
+            ),
             style = MaterialTheme.typography.labelMedium,
             color = if (d.online) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
         )
