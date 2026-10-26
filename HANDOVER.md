@@ -1,5 +1,40 @@
 # 交接开发计划（HANDOVER）
 
+> ## ✅ 当前项目状态（2026-10-26，权威覆盖层）
+>
+> - **当前版本**：`0.5.0-beta53`（versionCode 65）。基线提交 `6ea8622`（beta52）+ 本轮 beta53 改动。
+> - **本轮（beta53）做了什么**：按《zcode-remote-app-开发任务书》推进 **T1–T6**，落地 **V2 Controller 通道**
+>   ——ZCode ≥3.16 的 bootstrap 不再下发 `tasks[]`，会话列表改由 `controller/tasks-index` 权威提供。
+>   新增 `relay/ControllerChannel.kt`（含无 IO 的 `ControllerReducer` 纯状态机 16 项单测）、
+>   `storage/PairedDevice.ProtocolStack`（全仓唯一 passHash 判据）、`ui/screens/HomeEmptyState.kt`
+>   （首页空列表三态 + 骨架屏）；**会话列表由原位 `MutableList` 改为不可变快照
+>   `StateFlow<List<SessionItem>>`**（消除后台 collector 写 / 主线程读的竞态）；
+>   13 处 UI 中文硬编码资源化；PROTOCOL.md §11.6 升级为完整字段表。
+>
+> - **⚠️ 本轮未完成的两件事（接手第一优先级）**：
+>   1. **T1 真机落帧**：`tools/probe.py ctrl` 已实现，但本机推进时 PC 端「移动端远程控制」面板
+>      **未开启**（ws2 认证返回 `pair_status=waiting`），故**未取到任何 Controller 帧**。
+>      PROTOCOL.md §11.6 的字段表目前是**桌面端 host zod schema 静态实证**，§11.6.7 列了四项
+>      【待实测】。补录步骤：在 PC 端打开「移动端远程控制」→ 停掉 App（三方互踢，同 deviceSid 单
+>      terminal 槽）→ `python tools/probe.py ctrl` → `python tools/_dump_frame.py _tmp/ctrl_frames.json`。
+>   2. **T3 真机验收矩阵六项**（条目数=PC 任务数 / 增删 3s 内反映 / 运行态实时变化 / PC 重启后
+>      重同步不清空 / 杀进程秒开 / V1 回归逐项一致）全部未做——本机无连接设备
+>      （`adb devices` 为空）。按任务书 §0 硬约束，这些卡应保持「代码完成，验收待做」，
+>      **不得**标记为完成。
+>
+> - **门禁状态**：`testDebugUnitTest` / `lintDebug` / `lintRelease` / `detekt` / `ktlintCheck` /
+>   `assembleDebug` / `assembleRelease` 全绿（toolchain gradle-8.7 + JDK17，`--offline`）。
+>   单测数量见 `tools/check_test_count.py` 输出（本轮新增 31 项：Controller 16 / 会话快照 6 /
+>   首页三态 9，另有 ProtocolStack 6 项）。
+>
+> - **下一轮入口**：① 补 T1 落帧 + T3 真机验收（上两条）；② 按任务书顺序进入 beta54
+>   —— T8 登录迁移独立 WebViewActivity / T9 设置页粘贴令牌入口 / T10 fetchRelayToken 401 区分 /
+>   T11 心跳单向失活。T16–T19 结构卡必须等 T2/T3 稳定一个版本后再动。
+>
+> ---
+>
+> 以下为 2026-10-15 的 beta46 权威覆盖层与更早的 beta41/beta38 状态块，保留作历史证据。
+
 > ## ✅ 当前项目状态（2026-10-15，权威覆盖层）
 >
 > - **当前主干**：`master`；远端已推进至 `v0.5.0-beta46` 系列。**⚠️ 本机工作副本此前落后远端 50 个提交**（`git status` 因未 fetch 曾误显「领先 15」）；已于 2026-10-15 `git rebase origin/master` 对齐。**教训：任何文档/版本号判断前先 `git fetch`。**

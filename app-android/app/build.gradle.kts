@@ -109,8 +109,11 @@ android {
         // versionCode 64：beta52 —— V2 直连打通（真机走查③）：RelayClient token→ws2 直连
         //                           （auth_init 无 role）+ 他桥广播过滤 + V4 连接级握手前置 +
         //                           bootstrap V2 workspaces 解析；paired/bridge-ready 实证
-        versionCode = 64
-        versionName = "0.5.0-beta52"
+        // versionCode 65：beta53 —— V2 Controller 通道适配收官：ControllerChannel（快照/增量/
+        //                            logEpoch 重同步）+ hostSessions StateFlow 快照语义 +
+        //                            protocolStack 公共判定 + 首页三态空列表 + i18n 硬编码清零
+        versionCode = 65
+        versionName = "0.5.0-beta53"
         // 仪器化渲染回归网（src/androidTest）用 androidx.test 默认 runner。
         // 只在模拟器/真机上跑；CI runner 无设备，故 ci.yml 不接（见 HANDOVER §6.1 回归网）。
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"

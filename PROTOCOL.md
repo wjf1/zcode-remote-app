@@ -509,20 +509,116 @@ terminal_sid?,pair_status:waiting|matched,server_ts?}` / `pair_status_ack` / `er
 5. 归属确认：`?remote=<id>`/`remoteControlToken` 路径为**桌面端内嵌面板本地同源连接**
    （G4t：`/api/remote-control/windows/bootstrap/{token}` HTTP API + 独立 WS），与手机配对无关。
 
-### 11.6 V2 业务层差异：Controller 通道（会话列表，待适配，beta53）
+### 11.6 V2 业务层差异：Controller 通道（会话列表，beta53 已适配）
 
 V2 host（web-remote-replayable）的**任务/会话列表不再由 bootstrap `tasks[]` 提供**（V2 的
 bootstrap `result` 只有 `workspaces[]/mobileViewState/desktopAppVersion/windowControlSessionId`），
-改用 **Controller 通道**（桌面端 host 代码 + web bundle 双侧实证）：
+改用 **Controller 通道**（桌面端 host 代码 + web bundle 双侧实证）。
 
-- **RPC**：`subscribeControllerV4({topic, visibility:"foreground"})` → `{ack:{subscriptionId}}`；
-  `unsubscribeControllerV4({subscriptionId})`；失同步用 `resyncControllerV4({subscriptionId, base})`。
-- **topic 枚举**（zod 常量，桌面端 host `out/host/index.js`）：`controller/workspaces` 与
-  `controller/tasks-index`（web 端任务列表两个 topic 同时订阅）。
-- **事件**：`onDynamicControllerFrame` 推 `{subscriptionId, payload}`，payload `kind:"snapshot"`
-  全量（`tasks[]`/workspaces）或增量 op（`task.upserted`（带完整 task）/`task.removed`），
-  携带 `logEpoch` 供重同步比对。
-- **task 地址模型**（strict schema）：`{sourceServerId?, remoteSessionId?, workspacePath,
-  workspaceIdentity?, taskId}`；task 含 `address/membership/sourceAvailability/title/displayStatus`。
-- **App 适配点**：新 `ControllerChannel`（订阅/快照+增量应用/`logEpoch` 重同步）→ 会话列表
-  数据源从 bootstrap tasks 切换 → 真机走查③收尾（点开会话 → 流式输出）。
+#### 11.6.1 RPC 面 [静态：桌面端 host `out/host/index.js` 反编译]
+
+| 方法 | 入参 | 返回 |
+|---|---|---|
+| `subscribeControllerV4` | `{topic, visibility:"foreground"}` | `{ack:{subscriptionId}}` |
+| `unsubscribeControllerV4` | `{subscriptionId}` | `{ack}`（`dispose()` 后从订阅表删除） |
+| `resyncControllerV4` | `{subscriptionId, base}` | `{ack}`（`base` 断点由服务端决定重放起点） |
+
+桌面端实现（`createControllerService`）：`subscribeControllerV4` 内部
+`t.subscribe({topic, onFrame})` 后把返回的 `subscriptionId` 记入 Map，
+`onDynamicControllerFrame` 是**单例事件**（`D.event`），所有 topic 共用一条事件流，
+帧内按 `subscriptionId` 区分归属 —— 与本仓库「一个 listen + 按 subscriptionId 分流」一致。
+
+#### 11.6.2 topic 枚举 [静态：`chunk-BG4MS6RN.js` zod 常量]
+
+```js
+var Wr = "controller/workspaces", Fr = "controller/tasks-index", sn = e.enum([Wr, Fr]);
+```
+
+#### 11.6.3 帧结构 [静态：`chunk-BG4MS6RN.js` 的 `Dr(topic, snapshotSchema, deltaSchema)`]
+
+```jsonc
+{
+  "topic": "controller/tasks-index",
+  "subscriptionId": "…",
+  "logEpoch": "…",          // 服务端 createId()，日志重置/进程重启会变
+  "fromSeq": 0, "toSeq": 3,  // 单调推进；toSeq < fromSeq 被 schema 拒绝
+  "sentAt": 1793024957000,
+  "payload": {
+    "kind": "snapshot",     // 或 "deltas"
+    "snapshot": { "protocolVersion": 1, "logEpoch": "…", "tasks": [ /* Or */ ] }
+    // deltas 时：{ "kind":"deltas", "deltas":[ /* mn */ ] }
+  }
+}
+```
+
+⚠️ **这是裸帧**，没有 conversation 的 204 逻辑帧信封（无 `kind=complete` / 无嵌套 `frame`）。
+`ControllerFrames.parse` 同时容忍两种形态，以裸帧优先。
+
+#### 11.6.4 snapshot 结构 [静态：zod strict，`protocolVersion: literal(1)`]
+
+- `controller/tasks-index`：`{protocolVersion:1, logEpoch, tasks: Task[]}`
+- `controller/workspaces`：`{protocolVersion:1, logEpoch, workspaces: WorkspaceFact[]}`
+
+**Task（`Or`）字段表**：
+
+| 字段 | 类型 | 说明 |
+|---|---|---|
+| `address` | `TaskAddress`（strict） | `{workspacePath:必填, taskId:必填, workspaceIdentity?, remoteSessionId?}`；有 `remoteSessionId` 时 `workspaceIdentity` 必填 |
+| `meta` | `TaskMeta` | 含 `taskId/title/workspacePath/createdAt/updatedAt/mode/status?/provider?/lastError?/…` |
+| `membership` | `{pinned:boolean, archived:boolean, active:boolean}`（strict） | **归档标志在这里**，不在顶层 |
+| `sourceAvailability` | `"online" \| "offline"` | 远端 source 断链为 offline |
+| `liveStatus` | `"idle" \| "running" \| "waiting" \| "completed" \| "error"` | 会话列表的实时状态（**列表显示用它**） |
+| `activity` | 可选 `{phase, lastActivityAt, hasBackgroundWork, pendingInteractions?}` | 未用于本 App |
+| `searchSnippets` | 可选 `string[]` | 未用于本 App |
+
+schema 级约束：`address.taskId == meta.taskId`、`address.workspacePath == meta.workspacePath`、
+`address.workspaceIdentity == meta.workspaceIdentity`（不一致整帧被拒）。
+
+**WorkspaceFact（`Br`）**：`{workspacePath:必填, workspaceIdentity?, remoteSessionId?,
+sourceAvailability:"online"|"offline", connectionState:"connecting"|"online"|"closing"|
+"failed"|"disconnected"|"reconnecting"}`；约束 `offline` 只能配 `disconnected`/`failed`。
+
+#### 11.6.5 增量 op [静态：`chunk-BG4MS6RN.js` 的 `mn` / `ln` 判别联合]
+
+- `controller/tasks-index`：`{op:"task.upserted", task: Task}`（完整 task）／
+  `{op:"task.removed", address: TaskAddress}`（**只带 address，不带完整 task**）。
+- `controller/workspaces`：`{op:"workspace.upserted", workspace: WorkspaceFact}`／
+  `{op:"workspace.removed", workspacePath:必填, workspaceIdentity?, remoteSessionId?}`。
+
+#### 11.6.6 App 适配实现（本仓库，beta53）
+
+- `relay/ControllerChannel.kt`：
+  - 纯状态机 `ControllerReducer`（无 IO，JVM 单测 16 项全绿）：快照**全量替换**、
+    `task.upserted` 按 `taskId` 覆盖、`task.removed` 按 `address.taskId` 删除、
+    未知 op / 未知 payload kind 宽容忽略；
+  - 失同步判定：`logEpoch` 变化 **或** `fromSeq > 上次 toSeq` → `resyncControllerV4`，
+    节流复用 `ResyncThrottle`（5s，与 ConversationChannel 同参）；`resync` 失败退化为
+    `unsubscribeControllerV4` → 重新 `subscribeControllerV4`；
+  - 订阅前先走 V4 连接级握手（hello → initialize），与 `SessionsIndexChannel` 同序列；
+  - `toSessionItem` / `visibleSessions` 纯函数：`taskId/workspacePath/title/updatedAt` 直取，
+    `displayStatus = liveStatus ?: meta.status ?: "unknown"`，`archived` 取自
+    `membership.archived` 并过滤（与 V1 bootstrap 的归档过滤语义一致），列表按
+    `updatedAt` 降序、同值按 `taskId` 稳定排序。
+- `service/ConnectionCoordinator.kt`：
+  - `ctrl.onEvent` 与 conv/sidx/wcfg 并列分发；
+  - `ctrl.tasks` → `visibleSessions` → `host.hostSessions`（**StateFlow 不可变快照**）→ `SessionCacheStore.save`；
+  - 数据源分流：bootstrap 收到后按「协议栈 == V2 且 `tasks[]` 为空」裁决 `controllerOwnsList`；
+    V2 下 displayStatus 以 Controller 为权威，任务事件流回写只在 V1 生效；
+  - bootstrap 仍负责 `workspaces[]` → 开桥。
+- `storage/PairedDevice.kt`：`protocolStack`（V1/V2）是全仓唯一的 passHash 判据，连接层（`RelayClient.v2Mode`）、
+  bootstrap 分流、QR 配对入口（Ready/NeedsLogin）都读它。
+
+#### 11.6.7 待实测项（T1 落帧，`tools/probe.py ctrl`）
+
+以下结论目前是**静态**（bundle/zod），尚未真机落帧复核，标注为【待实测】：
+
+1. 裸帧 vs 信封：订阅 ack 后推送的帧是否就是 11.6.3 的裸形态（本仓库已双形态兼容）；
+2. 两个 topic 是否共用一个 listen（当前实现共用；若实测否定则改为每 topic 一个 listenId）；
+3. `resyncControllerV4` 的 `base` 精确形状（当前发 `{subscriptionId, base:{logEpoch, toSeq}}`）；
+4. 归档任务是否仍在 snapshot `tasks[]` 里（当前按 `membership.archived` 过滤，缺省 false）。
+
+落帧命令：`python tools/probe.py ctrl [帧数] [输出路径]`（默认 `_tmp/ctrl_frames.json`），
+骨架用 `python tools/_dump_frame.py _tmp/ctrl_frames.json` 查看。⚠️ 与 App / 官方 Web 三方互踢
+（同 deviceSid 单 terminal 槽），探测前先停 App；PC 端必须已打开「移动端远程控制」面板
+（否则 `pair_status=waiting`，probe 会停在认证阶段）。
+

@@ -1,5 +1,68 @@
 # 变更记录 / Changelog
 
+## v0.5.0-beta53（2026-10-26）· V2 Controller 通道适配收官——会话列表权威源切换与列表并发安全
+
+> **一句话**：ZCode ≥3.16 的 bootstrap 不再下发 `tasks[]`，会话列表改由 Controller 通道提供。
+> 本版本新增 `ControllerChannel`（快照/增量/`logEpoch` 重同步），并把会话列表从原位可变列表
+> 改成不可变快照（`StateFlow<List<SessionItem>>`），同时补齐协议栈公共判定、首页三态空列表
+> 与 i18n 硬编码清零。
+
+### 背景（PROTOCOL.md §11.6）
+
+beta52 打通了 V2 直连（token → ws2 → auth_ack → bootstrap → bridge-ready → V4 握手），
+但**会话列表仍是空的**：V2 host 的 `bootstrap.result` 只有
+`workspaces[] / mobileViewState / desktopAppVersion / windowControlSessionId`，没有 `tasks[]`。
+桌面端 web 端的任务列表订阅 `controller/tasks-index` 与 `controller/workspaces` 两个 topic，
+App 需要同样的通道。
+
+### 改动清单
+
+| 卡 | 项 | 内容 |
+|---|---|---|
+| T1 | `tools/probe.py` | 新增 `ctrl` 子命令：JWT → relay token → ws2 直连 → V4 握手 → 订阅双 topic → 落帧 `_tmp/ctrl_frames.json`（含 snapshot/upserted 计数验收口径）；`Probe` 支持 `open_v2`/`auth(v2=True)` |
+| T2 | `relay/ControllerChannel.kt`（新） | 订阅编排（hello → initialize → listen → 两次 subscribe）+ 重同步节流 + 退订重订兜底 |
+| T2 | `relay/ControllerChannel.kt` 的 `ControllerReducer` | 无 IO 纯状态机：快照全量替换、`task.upserted` 覆盖、`task.removed` 删除、未知 op 宽容忽略、失效判定 |
+| T3 | `service/ConnectionCoordinator.kt` | `ctrl.onEvent` 与 conv/sidx/wcfg 并列；`ctrl.tasks` → `visibleSessions` → 会话列表 → 离线缓存；数据源按「V2 且 bootstrap 无 tasks」裁决 |
+| T3 | `AppViewModel` / `ConnectionHost` | `hostSessions` 由 `MutableList` 改为**不可变快照**：新增 `hostReplaceSessions` / `hostUpdateSessions`，消除后台 collector 写 / 主线程读的竞态 |
+| T4 | `storage/PairedDevice.kt` | 新增 `ProtocolStack`（V1/V2）与 `protocolStack` / `usesControllerChannel`；`RelayClient.v2Mode`、bootstrap 分流、QR 配对入口统一读它（全仓唯一的 passHash 判据） |
+| T5 | `ui/screens/HomeEmptyState.kt`（新） | 空列表三态（未连接 / 已连接未同步 / 已同步且为空）+ 6 张静态骨架卡 + 「新建 / 去设置」引导 |
+| T6 | `SettingsTab.kt` / `LoginWebViewDialog.kt` / `strings.xml` | 13 处中文硬编码抽入资源（账号卡片、设备列表、自定义中继未设置、登录配对页） |
+| — | `util/diag/DiagnosticsRing.kt` | 新增 `CONTROLLER_LIST` 诊断码（只记条数与接管判定，不记标题/路径） |
+| — | `PROTOCOL.md` §11.6 | 由「协议要点」升级为完整实测/静态分节：RPC 面、topic 枚举、帧结构、Task/WorkspaceFact 字段表、增量 op、App 实现、待实测项 |
+
+### 关键设计
+
+- **裸帧 vs 信封**：Controller 帧是裸形态
+  `{topic, subscriptionId, logEpoch, fromSeq, toSeq, payload}`，**没有** conversation 的 204
+  逻辑帧信封（无 `kind=complete`、无嵌套 `frame`）。`ControllerFrames.parse` 两种形态都接受，
+  以裸帧优先（待 T1 落帧复核）。
+- **归档标志位置**：在 `membership.archived`，**不在顶层**。桌面端 zod strict schema 实证；
+  schema 缺省 false 与 V1 bootstrap 的归档过滤语义一致。
+- **列表状态字段**：`liveStatus`（idle/running/waiting/completed/error）优先于
+  `meta.status`，都缺省时 `unknown`；V2 下任务事件流**不再**回写 `displayStatus`
+  （否则两路互炒，状态来回跳），该路径仅 V1 保留。
+- **重同步**：`logEpoch` 变化或 `fromSeq > 上次 toSeq` → `resyncControllerV4`，节流复用
+  `ResyncThrottle`（5s）；节流窗内被抑制的 topic 汇总，窗口过后的下一次触发一并补发；
+  `resync` 失败退化为 `unsubscribeControllerV4` → 重新订阅。
+
+### 验证
+
+- **JVM 单测**：新增 31 项（`ControllerChannelTest` 16 / `SessionListSnapshotTest` 6 /
+  `HomeEmptyStateTest` 9 …含 `ProtocolStackTest` 6 项另计），全绿。
+- `lintDebug` / `lintRelease` 0 error；`detekt` 0 issue；`ktlintCheck` 0 违规；
+  `assembleDebug` / `assembleRelease` BUILD SUCCESSFUL。
+- `tools/probe.py ctrl` 已实现但**真机落帧未完成**：PC 端「移动端远程控制」面板需处于开启状态
+  （否则 `pair_status=waiting`，probe 停在认证阶段）；本机实测当时面板未开启，该项留待下一轮补录，
+  PROTOCOL.md §11.6.7 已列明待实测四项。
+
+### 未完成 / 下一轮入口
+
+1. **T1 真机落帧**：在 PC 面板开启状态下跑 `python tools/probe.py ctrl`，把 §11.6.7 的四项
+   【待实测】逐条改成「实测」，必要时修正 App 解析。
+2. **T3 真机验收矩阵六项**（条目数一致 / 增删 3s 内反映 / 运行态实时变化 / PC 重启后自动重同步
+   不清空 / 杀进程秒开 / V1 回归逐项一致）整体待做——本机无连接设备。
+3. T8–T21（beta54 起的认证层健壮化、性能、结构拆分）按任务书顺序推进。
+
 ## v0.5.0-beta52（2026-10-25）· V2 直连打通——ws2 中继端点实证与 App 原生 token 直连（真机 paired/bridge-ready 全通）
 
 > **一句话**：推翻 beta51 的「terminal token 仍收 challenge」误判——此前连的是 V1 端点 `/ws`。
