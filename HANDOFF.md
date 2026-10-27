@@ -17,10 +17,23 @@
   （Kotlin + Jetpack Compose）。逆向复用官方中继与配对协议，提供更强的通知、锁屏审批、
   流式会话与移动端操控体验。
 - **仓库**：<https://github.com/wjf1/zcode-remote-app>（owner：wjf1）
-- **当前版本**：`0.5.0-beta52`（versionCode 64，**已发布**：commit fcd6fbb，tag `v0.5.0-beta52`，Release 含签名 APK/SHA256SUMS/证书指纹/SBOM，prerelease）。
-- **✅ 推送已恢复（2026-10-25）**：GitHub 代理 7900 恢复监听，`v0.5.0-beta49/50/52` 三个 tag
-  与 master（含 beta51+52 合并 commit）已全部推送；`v0.5.0-beta52` 的 Release 由 CI 发布链
-  自动产出并经人工核验（标题与 tag subject 一致、正文与 CHANGELOG 对齐、prerelease、四资产齐全）。
+- **当前版本**：`0.5.0-beta53`（versionCode 65，**已发布**：commit `7ec3e6c`，tag `v0.5.0-beta53`，
+  Release 含签名 APK/SHA256SUMS/证书指纹/SBOM，prerelease；CI/CodeQL/Release 三工作流该提交全绿）。
+- **✅ 推送已恢复（2026-10-25）**：GitHub 代理 7900 恢复监听，`v0.5.0-beta49/50/52/53` 各 tag
+  与 master 已全部推送；Release 由 CI 发布链自动产出并经人工核验（标题与 tag subject 一致、
+  正文与 CHANGELOG 对齐、prerelease、四资产齐全）。
+- **✅ beta53（2026-10-26/27）**：**V2 Controller 通道适配——会话列表权威源切换（真机验收通过）**。
+  ZCode ≥3.16 的 bootstrap 不再下发 `tasks[]`，会话列表改由 `controller/tasks-index` +
+  `controller/workspaces` 双 topic 提供。新增 `relay/ControllerChannel.kt`（含无 IO 的
+  `ControllerReducer` 纯状态机）、`storage/PairedDevice.ProtocolStack`（全仓唯一 passHash 判据）、
+  `ui/screens/HomeEmptyState.kt`（空列表三态 + 6 张骨架卡）；**会话列表由原位 `MutableList`
+  改为不可变快照 `StateFlow<List<SessionItem>>`**（消除后台 collector 写 / 主线程读的竞态）。
+  真机首跑暴露并修复两处协议误判：Controller 通道实为 **`window-controller`**（非 zcode-agent）、
+  **连接级握手每桥只认一个 clientId**（三通道统一共用 `RpcChannel.v4ClientId`）。
+  复测：probe 落帧 50 帧（2 snapshot + 43 deltas）实测定案；T3 验收矩阵 ①②③⑤⑥ 通过
+  （列表 120 条与快照 221-101 逐项对账、PC 新建任务 120→122 实时反映、杀进程重启恢复、
+  V1 以 protocolStack 隔离）；会话页 612 行实时流式正常。单测声明 364 = 执行 402 全绿。
+  详见 PROTOCOL.md §11.6/§11.6.7、CHANGELOG beta53 条目。
 - **✅ beta52（2026-10-25）**：**V2 直连打通（真机走查③）**——推翻 beta51 的「terminal token
   仍收 challenge」误判（此前连的是 V1 端点 `/ws`）；**V2 中继端点是 `/api/v1/remote/ws2`**
   （3.16.3 桌面端代码实证）。App 原生「JWT→relay token→ws2 直连」：auth_init 无 role 一帧
@@ -105,6 +118,36 @@ app-android/app/src/main/java/com/zcode/remote/
 ## 4. 最近一轮变更与交付成果
 
 > 完整逐轮记录见 [CHANGELOG.md](CHANGELOG.md) 与 [HANDOVER.md](HANDOVER.md) 文首覆盖层。
+
+### v0.5.0-beta53：V2 Controller 通道适配（真机验收通过，2026-10-26/27）
+
+**背景**：beta52 打通 V2 直连后会话列表仍为空——V2 host 的 `bootstrap.result` 只有
+`workspaces[] / mobileViewState / desktopAppVersion / windowControlSessionId`，**没有 `tasks[]`**。
+桌面端 web 端订阅 `controller/tasks-index` 与 `controller/workspaces` 两个 topic，App 需同通道。
+
+| 卡 | 交付 |
+|---|---|
+| T1 | `tools/probe.py` 新增 `ctrl` 子命令：JWT → relay token → ws2 → V4 握手 → 订阅双 topic → 落帧 `_tmp/ctrl_frames.json`（实测 50 帧 = 2 snapshot + 43 deltas） |
+| T2 | `relay/ControllerChannel.kt`（新）：订阅编排（hello → initialize → listen → 两次 subscribe）+ `ResyncThrottle` 节流 + 退订重订兜底；`ControllerReducer` 无 IO 纯状态机（快照全量替换 / upserted 覆盖 / removed 删除 / 未知 op 宽容） |
+| T3 | `service/ConnectionCoordinator.kt`：`ctrl.onEvent` 与 conv/sidx/wcfg 并列；`ctrl.tasks` → `visibleSessions` → 列表 → 离线缓存。`AppViewModel`/`ConnectionHost` 的 `hostSessions` 改**不可变快照**（`hostReplaceSessions`/`hostUpdateSessions`），消除写读竞态 |
+| T4 | `storage/PairedDevice.kt` 新增 `ProtocolStack`（V1/V2）+ `protocolStack`/`usesControllerChannel`，作为**全仓唯一 passHash 判据** |
+| T5 | `ui/screens/HomeEmptyState.kt`（新）：空列表三态（未连接 / 已连接未同步 / 已同步且为空）+ 6 张骨架卡 + 引导 |
+| T6 | 13 处 UI 中文硬编码资源化（账号卡片、设备列表、自定义中继、登录配对页） |
+| — | `util/diag/DiagnosticsRing.kt` 新增 `CONTROLLER_LIST` 诊断码；`PROTOCOL.md` §11.6 升级为完整字段表 |
+
+**真机首跑暴露并修复的两处协议误判**（值得记住）：
+
+1. **Controller 通道在 `window-controller`**，不在 `zcode-agent` / `zcode-task`（后两者均
+   `Method not found`）。官方 web 端 `windowControllerTaskListRegistry` 同名佐证。
+2. **连接级握手每桥只认一个 clientId**：三通道各自 initialize 互踢（`fault.connection.clientChanged`），
+   会话通道被拒后中止订阅 → 会话页「同步失败」。修复 = 三通道统一共用 `RpcChannel.v4ClientId`
+   （每连接一份）+ 容忍 clientChanged。**该修复同时保障审批命令信封的 clientId 与连接绑定一致。**
+3. resync 形状对齐官方 web 端：`{subscriptionId, base:{logEpoch, seq}, forceSnapshot:true}`；
+   失同步判定改为 deltas 帧 `fromSeq !== 上次 toSeq`（缺口与回退都算），快照帧不检查。
+
+**验收矩阵**：① 列表对账（快照 221 条 / archived 101 → 可见 120 = 手机「全部 (120)」，
+running 3 = 「运行中 (3)」）② PC→手机增量 120→122 实时 ③ 运行态实时 ⑤ 杀进程重启恢复
+⑥ V1 路径以 protocolStack 隔离零改动。④（PC 重启 logEpoch 重同步）未实测，见 §5 遗留。
 
 ### v0.5.0-beta52：V2 直连打通（真机走查③，2026-10-25）
 
@@ -392,13 +435,21 @@ lint 双变体 0 error、detekt、ktlint 0 违规、assembleDebug/Release 通过
 
 ### 其他待办
 
-- **V2 会话列表 Controller 通道（beta52 遗留，下一版本主工作项）**：3.16.3 V2 host 用全新
-  Controller 通道承载任务/会话列表（`subscribeControllerV4` + `onDynamicControllerFrame`，
-  topic 订阅、`task.upserted`/`task.removed` 增量、`snapshot` 全量；web bundle 实证），
-  替代 V1 的 bootstrap `tasks[]`。App 现状：V2 直连后首页列表空（角标/会话流 RPC 通道已通）。
-  适配点：新 `ControllerChannel`（订阅/增量应用/重同步）→ 会话列表数据源切换 → 真机走查③收尾
-  （点开会话→流式输出）。参照：`_tmp/v3163/index-BsmXQHMM.js` 的
-  `windowControllerTaskListRegistry` 区段。
+- **✅ V2 会话列表 Controller 通道（已于 beta53 完成并真机验收）**：原「beta52 遗留、下一版本
+  主工作项」已于 beta53 落地（`relay/ControllerChannel.kt` + `ControllerReducer` + 三通道 clientId
+  统一 + T5 空列表三态）。验收矩阵 ①②③⑤⑥ 通过，会话页 612 行实时流式正常。**勿再按「未做」处理。**
+  详情见 §4 beta53 与 PROTOCOL.md §11.6/§11.6.7。
+- **beta54 主线（按任务书顺序）**：T8 登录迁移独立 `WebViewActivity`（现为
+  `LoginWebViewDialog.kt` 内全屏 `Surface` 临时替代）/ T9 设置页「粘贴令牌」入口 /
+  T10 `fetchRelayToken` 区分 401 与网络失败 + single-flight 合并并发取 token /
+  T11 心跳「单向失活」检测（发了 heartbeat 但长时间收不到 `pair_status_ack` 即判失联）。
+  **T16–T19 结构卡必须等 T2/T3 稳定一个版本后再动。**
+- **beta53 遗留的两项真机验证（不阻塞发版）**：① PC 重启（`logEpoch` 变化）后的重同步未实测
+  ——需重启桌面端、会打断在线会话，后续 PC 自然重启时顺带核对；② V2 下审批链路
+  （`resolveInteraction`）未实测——本轮无待审批交互，下一次真实审批时顺带核对。
+- **CI 覆盖缺口**：`androidTest` 在 beta53 未新增任何用例，Controller 通道「订阅 → 快照 →
+  增量 → resync」全链路目前只靠 `tools/probe.py ctrl` + 真机人工走查；T5 空列表三态
+  （`HomeEmptyStateTest` 10 项纯函数）亦无仪器化取证。CI 单测下限仍写 `--min 260`，实际已 402。
 - **App 内 WebView 登录卡死（独立 bug）**：HyperOS + WebView 153 点登录按钮无响应（进程存活、
   无 ANR）。缓解：系统浏览器完成登录；Debug 构建 `DebugPairReceiver --es jwt` 注入。修复方向：
   WebView 渲染竞态（Compose AndroidView 内嵌 WebView，5 轮修复未根治，见 beta51 记录）。
@@ -452,11 +503,13 @@ lint 双变体 0 error、detekt、ktlint 0 违规、assembleDebug/Release 通过
   2. **出站大 RPC 物理分片**——同硬门（官方算法已实证，App 现为本地拒绝超限帧）；
   3. **§11.10 `1.0.0` 发布门**——依赖上述两项 + 连续两个 Beta 周期无严重回归。
 - **未做（历史用户决策）**：C-5⑥⑦、Sprint 7 生物识别/自建中继 E2EE、P2-3 余项。
-- **工程债（随手可清，非阻塞）**：`detekt-baseline.xml` 105 条存量告警；`tools/` 下 11 个 `_` 前缀一次性脚本。
+- **工程债（随手可清，非阻塞）**：`detekt-baseline.xml` 存量告警（HANDOFF 旧文写 105 条，
+  实测 90 条 `<ID>`）；`tools/` 下 11 个 `_` 前缀一次性脚本；CI 单测下限 `--min 260` 偏松（实际 402）；
+  `release.yml` 建议加 `gh release view ... && exit 0` 幂等短路（同一 tag 触发两个 Release 工作流时后者必失败）。
   ~~会话正文缓存明文~~（beta44 已加密）、~~全库 0 个 `@Preview`~~（beta45 已补 debug 源集预览）、
   ~~界面文案硬编码中文、无 `strings.xml`~~（**i18n 资源化 6 批已全部完成并随 beta47 发布**，见上方「已完成」段）。
-- **若其他会话接手**：先读本文件 → `HANDOVER.md` 文首覆盖层 → `CHANGELOG.md` 最新条目（beta49），
-  再按「§2 核心命令」跑一次 `testDebugUnitTest` 建立基线（当前应为 **347/347**）。
+- **若其他会话接手**：先读本文件 → `HANDOVER.md` 文首覆盖层 → `CHANGELOG.md` 最新条目（beta53），
+  再按「§2 核心命令」跑一次 `testDebugUnitTest` 建立基线（当前应为**声明 364 / 实际执行 402**）。
 
 ### 5.1 外部分析待办清单（2026-10-14 第三方全仓走查）
 
