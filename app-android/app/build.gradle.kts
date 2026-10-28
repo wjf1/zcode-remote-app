@@ -115,8 +115,10 @@ android {
         // versionCode 66：beta54 —— 连接层韧性：T10 令牌失败分层（401/403 → AUTH_FAILED，
         //                           single-flight 合并并发取 token）+ T11 心跳单向失活检测
         //                           （发心跳但 30s 无 ack → 判连接失效并重连）
-        versionCode = 66
-        versionName = "0.5.0-beta54"
+        // versionCode 67：beta55 —— T9 设置页「粘贴令牌」入口（绕过 App 内 WebView 登录
+        //                           在 HyperOS + WebView 153 上点不动的问题）
+        versionCode = 67
+        versionName = "0.5.0-beta55"
         // 仪器化渲染回归网（src/androidTest）用 androidx.test 默认 runner。
         // 只在模拟器/真机上跑；CI runner 无设备，故 ci.yml 不接（见 HANDOVER §6.1 回归网）。
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"

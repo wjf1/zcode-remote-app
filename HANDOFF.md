@@ -17,9 +17,9 @@
   （Kotlin + Jetpack Compose）。逆向复用官方中继与配对协议，提供更强的通知、锁屏审批、
   流式会话与移动端操控体验。
 - **仓库**：<https://github.com/wjf1/zcode-remote-app>（owner：wjf1）
-- **当前版本**：`0.5.0-beta54`（versionCode 66，**开发完成、门禁全绿，待发布**：T10 令牌失败分层 +
-  T11 心跳单向失活，累计单测声明 374 / 实际执行 412）。
-- **上一发布版**：`0.5.0-beta53`（versionCode 65，commit `7ec3e6c`，tag `v0.5.0-beta53`，
+- **当前版本**：`0.5.0-beta55`（versionCode 67，T9 设置页「粘贴令牌」入口，单测声明 383 / 执行 421）。
+- **上一发布版**：`0.5.0-beta54`（versionCode 66，T10 令牌失败分层 + T11 心跳单向失活）。
+- **更早发布版**：`0.5.0-beta53`（versionCode 65，commit `7ec3e6c`，tag `v0.5.0-beta53`，
   Release 含签名 APK/SHA256SUMS/证书指纹/SBOM，prerelease；CI/CodeQL/Release 三工作流该提交全绿）。
 - **✅ 推送已恢复（2026-10-25）**：GitHub 代理 7900 恢复监听，`v0.5.0-beta49/50/52/53` 各 tag
   与 master 已全部推送；Release 由 CI 发布链自动产出并经人工核验（标题与 tag subject 一致、
@@ -34,7 +34,7 @@
   **连接级握手每桥只认一个 clientId**（三通道统一共用 `RpcChannel.v4ClientId`）。
   复测：probe 落帧 50 帧（2 snapshot + 43 deltas）实测定案；T3 验收矩阵 ①②③⑤⑥ 通过
   （列表 120 条与快照 221-101 逐项对账、PC 新建任务 120→122 实时反映、杀进程重启恢复、
-  V1 以 protocolStack 隔离）；会话页 612 行实时流式正常。单测声明 374 = 执行 412 全绿。
+  V1 以 protocolStack 隔离）；会话页 612 行实时流式正常。单测声明 383 = 执行 421 全绿。
   详见 PROTOCOL.md §11.6/§11.6.7、CHANGELOG beta53 条目。
 - **✅ beta52（2026-10-25）**：**V2 直连打通（真机走查③）**——推翻 beta51 的「terminal token
   仍收 challenge」误判（此前连的是 V1 端点 `/ws`）；**V2 中继端点是 `/api/v1/remote/ws2`**
@@ -120,6 +120,26 @@ app-android/app/src/main/java/com/zcode/remote/
 ## 4. 最近一轮变更与交付成果
 
 > 完整逐轮记录见 [CHANGELOG.md](CHANGELOG.md) 与 [HANDOVER.md](HANDOVER.md) 文首覆盖层。
+
+### v0.5.0-beta55：设置页「粘贴令牌」入口（T9，2026-10-28）
+
+**背景**：App 内 WebView 登录在 HyperOS + WebView 153 上点「登录」无响应（beta51 起记录、
+5 轮未根治）。用户在配对阶段就彻底卡死——连不上后面的功能全不可用。修复方向（WebView 渲染
+竞态）风险高，故先给旁路。
+
+| 交付 | 内容 |
+|---|---|
+| `ui/screens/SettingsTab.kt` | 「ZCode 账号」卡片未登录态新增 `PasteTokenEntry`：折叠按钮 → 说明 + 多行输入 + 保存/取消；保存后切已登录态、清设备缓存、Toast 提示 |
+| `ui/screens/SettingsTab.kt` | `normalizePastedJwt` 纯函数：去 BOM / trim / 剥成对引号 / 剥 `Bearer ` / 去换行空格。**刻意不按 `a.b.c` 分段校验**（JWT 形态由服务端定义） |
+| `ui/screens/SettingsTab.kt` | `pastedJwtRejection` 纯函数：只判非空 + 长度 ≥ 16；`isQuoted` 独立函数压 detekt ComplexCondition |
+| `res/values/strings.xml` | 新增 8 条 `account_token_paste_*` |
+
+**顺带**：`AccountDevicesSection` 内两处 `TokenStore(context)` 收敛为一个 `remember` 实例。
+
+**测试**：新增 `PastedJwtTest`（9 项）；单测 **声明 383 / 执行 421** 全绿；
+红-绿反证：下限 16 临时改 5 → `tooShort_isRejected` 立即失败（已恢复）。
+
+**未做**：T8 登录迁移独立 `WebViewActivity`（架构改动 + 需真机验收，单独一轮）。
 
 ### v0.5.0-beta54：连接层韧性（T10 令牌失败分层 + T11 心跳单向失活，2026-10-28）
 
@@ -476,15 +496,20 @@ lint 双变体 0 error、detekt、ktlint 0 违规、assembleDebug/Release 通过
     误判）即 `fail(NETWORK)` 触发退避重连。判据抽为纯函数 `isHeartbeatStale(sentAtMs, nowMs, staleMs)`；
     `startHeartbeat` 入口清零，避免继承上一条连接的「未 ack」残留而秒判失活。
     测试 `HeartbeatStaleTest` 6 项（含阈值边界；已做红-绿反证：把 `>=` 改 `>` 即失败）。
+  - **T9 设置页「粘贴令牌」入口** —— ✅ **已完成（2026-10-28，随 beta55 交付）**：
+    「ZCode 账号」卡片未登录态新增折叠式粘贴入口，`normalizePastedJwt` / `pastedJwtRejection`
+    纯函数做清理与下限校验；测试 `PastedJwtTest` 9 项。绕过 App 内 WebView 登录在
+    HyperOS + WebView 153 上点不动的问题。
   - **未做**：T8 登录迁移独立 `WebViewActivity`（现为 `LoginWebViewDialog.kt` 内全屏
-    `Surface` 临时替代）/ T9 设置页「粘贴令牌」入口。
+    `Surface` 临时替代）。属架构改动（把内嵌 WebView 从 Compose 布局拆成独立 Activity，
+    从结构上消除渲染竞态），需真机验收，单独一轮做。
   **T16–T19 结构卡必须等 T2/T3 稳定一个版本后再动。**
 - **beta53 遗留的两项真机验证（不阻塞发版）**：① PC 重启（`logEpoch` 变化）后的重同步未实测
   ——需重启桌面端、会打断在线会话，后续 PC 自然重启时顺带核对；② V2 下审批链路
   （`resolveInteraction`）未实测——本轮无待审批交互，下一次真实审批时顺带核对。
 - **CI 覆盖缺口**：`androidTest` 在 beta53 未新增任何用例，Controller 通道「订阅 → 快照 →
   增量 → resync」全链路目前只靠 `tools/probe.py ctrl` + 真机人工走查；T5 空列表三态
-  （`HomeEmptyStateTest` 10 项纯函数）亦无仪器化取证。CI 单测下限原写 `--min 260`，**beta54 已上调至 410**（实测 412）。
+  （`HomeEmptyStateTest` 10 项纯函数）亦无仪器化取证。CI 单测下限原写 `--min 260`，**beta54 已上调至 410**（beta55 实测 421）。
 - **App 内 WebView 登录卡死（独立 bug）**：HyperOS + WebView 153 点登录按钮无响应（进程存活、
   无 ANR）。缓解：系统浏览器完成登录；Debug 构建 `DebugPairReceiver --es jwt` 注入。修复方向：
   WebView 渲染竞态（Compose AndroidView 内嵌 WebView，5 轮修复未根治，见 beta51 记录）。
@@ -544,7 +569,7 @@ lint 双变体 0 error、detekt、ktlint 0 违规、assembleDebug/Release 通过
   ~~会话正文缓存明文~~（beta44 已加密）、~~全库 0 个 `@Preview`~~（beta45 已补 debug 源集预览）、
   ~~界面文案硬编码中文、无 `strings.xml`~~（**i18n 资源化 6 批已全部完成并随 beta47 发布**，见上方「已完成」段）。
 - **若其他会话接手**：先读本文件 → `HANDOVER.md` 文首覆盖层 → `CHANGELOG.md` 最新条目（beta53），
-  再按「§2 核心命令」跑一次 `testDebugUnitTest` 建立基线（当前应为**声明 374 / 实际执行 412**）。
+  再按「§2 核心命令」跑一次 `testDebugUnitTest` 建立基线（当前应为**声明 383 / 实际执行 421**）。
 
 ### 5.1 外部分析待办清单（2026-10-14 第三方全仓走查）
 

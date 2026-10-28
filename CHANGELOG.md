@@ -1,5 +1,50 @@
 # 变更记录 / Changelog
 
+## v0.5.0-beta55（2026-10-28）· 设置页「粘贴令牌」入口——绕过 App 内 WebView 登录失效
+
+> **一句话**：给 App 内无法完成登录的用户一条旁路——从浏览器复制 JWT 粘进来即可，
+> 不必依赖内嵌 WebView。
+
+### 背景（beta54 任务书 T9）
+
+App 内 WebView 登录在 **HyperOS + WebView 153** 上点「登录」按钮无响应（进程存活、无 ANR），
+这是 beta51 起就记录在案、**5 轮修复未根治**的缺陷。修复方向（WebView 渲染竞态）风险高、
+收益不确定，而用户在这一步会彻底卡死——连配对都完成不了，后面所有功能都不可用。
+
+绕行方案：用户改在电脑或系统浏览器登录 `zcode.z.ai`，把 `localStorage` 里的
+`zcodejwttoken` 复制出来粘进 App。`TokenStore` 本就有 `writeZcodeJwt`（AES-256-GCM +
+Keystore 加密存储），缺的只是一个入口。
+
+### 改动清单
+
+| 文件 | 内容 |
+|---|---|
+| `ui/screens/SettingsTab.kt` | 「ZCode 账号」卡片在**未登录**状态下新增 `PasteTokenEntry`：折叠态是一个 `TextButton`（「无法在 App 内登录？手动粘贴令牌」），展开后是说明文字 + 多行输入框 + 保存/取消。保存成功后直接切到已登录态并清空设备缓存，`Toast` 提示「令牌已保存」 |
+| `ui/screens/SettingsTab.kt` | `normalizePastedJwt`（纯函数）：去 BOM、`trim`、剥**成对**引号、剥 `Bearer ` 前缀、去掉所有换行/制表/空格。**刻意不按 `a.b.c` 分段校验**——JWT 形态由服务端定义，客户端硬编码结构判据会在服务端变更时误拒合法令牌 |
+| `ui/screens/SettingsTab.kt` | `pastedJwtRejection`（纯函数）：只做下限判断（非空、长度 ≥ 16），返回错误资源 id 或 null |
+| `ui/screens/SettingsTab.kt` | 顺带把 `AccountDevicesSection` 内两处 `TokenStore(context)` 构造收敛为一个 `remember` 实例 |
+| `res/values/strings.xml` | 新增 8 条 `account_token_paste_*` 文案 |
+
+### 为什么做成折叠而非常驻输入框
+
+正常路径（WebView 登录成功）用户永远不需要看到它。常驻会让设置页显得像在要求用户手动配置
+凭据，反而降低对自动登录的信任。
+
+### 测试
+
+- 新增 `ui/screens/PastedJwtTest`（9 项）：原样透传、去空白/换行/制表、剥成对引号
+  （单边引号不剥）、剥 `Bearer `/`bearer ` 前缀、去 BOM、组合噪声、空值拒绝、过短拒绝、
+  合理长度接受。
+- 单测 **声明 383 / 实际执行 421** 全绿（beta54 为 374/412）。
+- **红-绿反证**：把下限 `16` 临时改成 `5`，`tooShort_isRejected` 立即失败（已恢复）。
+- 门禁：`ktlintCheck` / `detekt` 0 issue、`lintDebug` 0 error、
+  `assembleDebug` + `assembleRelease` 双变体通过。
+
+### 未做（同属 beta54 主线）
+
+T8 登录迁移独立 `WebViewActivity`（把内嵌 WebView 从 Compose 布局里拆成独立 Activity，
+从结构上消除渲染竞态）。该项属架构改动、需真机验收，单独一轮做。
+
 ## v0.5.0-beta54（2026-10-28）· 连接层韧性：令牌失败分层与心跳单向失活检测
 
 > **一句话**：修掉两个「静默失效」——登录态过期被当成网络抖动导致无限重连转圈；

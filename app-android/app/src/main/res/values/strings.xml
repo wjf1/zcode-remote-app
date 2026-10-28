@@ -549,6 +549,15 @@
     <string name="account_refresh_devices">刷新设备列表</string>
     <string name="account_loading">加载中…</string>
     <string name="account_not_logged_in">未登录：使用 3.16+ 新版二维码配对时会在登录流程中自动获取账号凭据。</string>
+    <!-- T9：粘贴令牌旁路（App 内 WebView 登录在部分机型点不动时的备用入口） -->
+    <string name="account_token_paste_action">无法在 App 内登录？手动粘贴令牌</string>
+    <string name="account_token_paste_hint">在电脑或系统浏览器登录 zcode.z.ai 后，从浏览器开发者工具的应用存储中复制 zcodejwttoken 的值粘贴到下方。</string>
+    <string name="account_token_paste_field">令牌（JWT）</string>
+    <string name="account_token_paste_save">保存</string>
+    <string name="account_token_paste_cancel">取消</string>
+    <string name="account_token_paste_saved">令牌已保存</string>
+    <string name="account_token_paste_empty">请先粘贴令牌</string>
+    <string name="account_token_paste_too_short">令牌长度不足，请确认复制完整</string>
     <string name="account_devices_fetch_failed">获取失败：%1$s</string>
     <string name="account_logged_in_hint">已登录（凭据已加密存储）。点击「刷新设备列表」查看账号绑定的电脑。</string>
     <string name="account_no_devices">账号下暂无绑定设备</string>

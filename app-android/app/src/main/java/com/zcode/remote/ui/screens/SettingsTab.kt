@@ -36,6 +36,7 @@ import com.zcode.remote.relay.RpcChannel
 import com.zcode.remote.relay.V2AccountApi
 import com.zcode.remote.repo.UpdateRepository
 import com.zcode.remote.storage.PairedDevice
+import com.zcode.remote.storage.TokenStore
 import com.zcode.remote.ui.theme.ZCodeTokens
 import com.zcode.remote.ui.theme.statusPendingTone
 import com.zcode.remote.util.UiText
@@ -793,16 +794,14 @@ internal fun ghTokenSavedToast(draft: String): UiText = if (draft.isEmpty()) res
 private fun AccountDevicesSection() {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
+    val tokenStore = remember(context) { TokenStore(context) }
     var jwt by remember { mutableStateOf<String?>(null) }
     var devices by remember { mutableStateOf<List<V2AccountApi.RemoteDevice>?>(null) }
     var loading by remember { mutableStateOf(false) }
     var error by remember { mutableStateOf<String?>(null) }
 
     LaunchedEffect(Unit) {
-        jwt =
-            com.zcode.remote.storage
-                .TokenStore(context)
-                .readZcodeJwt()
+        jwt = tokenStore.readZcodeJwt()
     }
 
     Card(
@@ -849,6 +848,17 @@ private fun AccountDevicesSection() {
                     text = stringResource(R.string.account_not_logged_in),
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                // T9：WebView 登录在部分机型（HyperOS + WebView 153）点登录按钮无响应，
+                // 粘贴令牌是绕开内嵌 WebView 的旁路入口。
+                PasteTokenEntry(
+                    onSaved = { newJwt ->
+                        // 复用已有 tokenStore 实例（setup 阶段已 remember）
+                        tokenStore.writeZcodeJwt(newJwt)
+                        jwt = newJwt
+                        devices = null
+                        error = null
+                    },
                 )
             } else {
                 AccountDevicesBody(devices, error)
@@ -916,5 +926,132 @@ private fun AccountDeviceRow(d: V2AccountApi.RemoteDevice) {
             style = MaterialTheme.typography.labelMedium,
             color = if (d.online) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
         )
+    }
+}
+
+// ---- T9：粘贴令牌入口（绕过 App 内 WebView 登录的旁路）----
+//
+// 动机：HyperOS + WebView 153 点登录按钮无响应是**已知未根治**的缺陷（beta51 记录，
+// 5 轮修复未解决），用户会彻底卡在登录这一步。粘贴令牌让用户从系统浏览器/PC 登录后
+// 把 JWT 带回来，不依赖内嵌 WebView。
+
+/**
+ * 规整用户粘贴的 JWT（纯函数，JVM 可测）。
+ *
+ * 用户从浏览器复制时常带上前缀/引号/换行，直接写入会得到一个永远换不到 token 的垃圾值。
+ * 这里做最小必要清理：去 BOM、trim、剥成对引号、剥 `Bearer ` 前缀、去掉所有换行与空格。
+ * **不做合法性猜测**（如按 `xxx.yyy.zzz` 分段校验）——JWT 形态由服务端定义，
+ * 客户端硬编码结构判据会在服务端变更时误拒合法令牌。
+ */
+internal fun normalizePastedJwt(raw: String): String {
+    var s = raw.removePrefix("\uFEFF").trim()
+    if (isQuoted(s)) {
+        s = s.substring(1, s.length - 1).trim()
+    }
+    if (s.startsWith("Bearer ", ignoreCase = true)) {
+        s = s.substring("Bearer ".length).trim()
+    }
+    return s.filterNot { it == '\n' || it == '\r' || it == ' ' || it == '\t' }
+}
+
+/** 是否被成对引号包裹（抽成独立函数以压住 detekt ComplexCondition 阈值）。 */
+private fun isQuoted(s: String): Boolean {
+    if (s.length < 2) return false
+    val first = s.first()
+    return (first == '"' || first == '\'') && s.last() == first
+}
+
+/**
+ * 粘贴令牌的可提交性判定（纯函数）。
+ *
+ * 只做**下限**判断：非空且长度足够（JWT 至少是 `header.payload.signature` 三段，
+ * 极短字符串必然是误粘贴）。返回 null = 可提交，否则返回错误资源 id。
+ */
+internal fun pastedJwtRejection(normalized: String): UiText? =
+    when {
+        normalized.isEmpty() -> res(R.string.account_token_paste_empty)
+        normalized.length < 16 -> res(R.string.account_token_paste_too_short)
+        else -> null
+    }
+
+/**
+ * T9 粘贴令牌入口：折叠态是一个按钮，展开后是输入框 + 保存。
+ *
+ * 刻意做成**折叠**而非常驻输入框：正常路径（WebView 登录成功）用户永远不需要看到它，
+ * 常驻会让设置页显得像在要求手动配置凭据。
+ */
+@Composable
+private fun PasteTokenEntry(onSaved: (String) -> Unit) {
+    var expanded by remember { mutableStateOf(false) }
+    var draft by remember { mutableStateOf("") }
+    var rejection by remember { mutableStateOf<UiText?>(null) }
+    val context = LocalContext.current
+
+    if (!expanded) {
+        TextButton(onClick = { expanded = true }) {
+            Text(stringResource(R.string.account_token_paste_action))
+        }
+        return
+    }
+
+    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+        Text(
+            text = stringResource(R.string.account_token_paste_hint),
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        OutlinedTextField(
+            value = draft,
+            onValueChange = {
+                draft = it
+                rejection = null
+            },
+            label = { Text(stringResource(R.string.account_token_paste_field)) },
+            singleLine = false,
+            minLines = 2,
+            maxLines = 4,
+            isError = rejection != null,
+            modifier = Modifier.fillMaxWidth(),
+        )
+        rejection?.let {
+            Text(
+                text = it.asString(),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.error,
+            )
+        }
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            Button(
+                onClick = {
+                    val normalized = normalizePastedJwt(draft)
+                    val why = pastedJwtRejection(normalized)
+                    if (why != null) {
+                        rejection = why
+                        return@Button
+                    }
+                    onSaved(normalized)
+                    draft = ""
+                    rejection = null
+                    expanded = false
+                    Toast
+                        .makeText(
+                            context,
+                            context.getString(R.string.account_token_paste_saved),
+                            Toast.LENGTH_SHORT,
+                        ).show()
+                },
+            ) {
+                Text(stringResource(R.string.account_token_paste_save))
+            }
+            TextButton(
+                onClick = {
+                    draft = ""
+                    rejection = null
+                    expanded = false
+                },
+            ) {
+                Text(stringResource(R.string.account_token_paste_cancel))
+            }
+        }
     }
 }
