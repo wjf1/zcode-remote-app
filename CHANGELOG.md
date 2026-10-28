@@ -1,5 +1,52 @@
 # 变更记录 / Changelog
 
+## v0.5.0-beta54（2026-10-28）· 连接层韧性：令牌失败分层与心跳单向失活检测
+
+> **一句话**：修掉两个「静默失效」——登录态过期被当成网络抖动导致无限重连转圈；
+> WS 半死（连着但收不到 ack）时状态停在「已连接」且不自动重连。
+
+### 背景（beta54 任务书 T10 / T11）
+
+beta53 完成 V2 Controller 通道适配后，beta54 主线转入**连接层可靠性**。这两项都属于
+「用户能直接感知、但日志里看起来一切正常」的缺陷：
+
+- **T10**：`fetchRelayToken` 用 `check(resp.code == 200)` 把所有非 200 压成同一个
+  `IllegalStateException("HTTP 401")`，`acquireV2Token` 又一律报 `FailureReason.NETWORK`。
+  于是**登录态失效（401）被当作网络抖动**反复重连，用户看到的是永远转圈而不是「请重新登录」。
+- **T11**：心跳只发不收。中间盒静默丢包、或对端进程已死而 socket 未及时 FIN 时，
+  `send()` 不报错、`_state` 一直停在 `Paired`，用户以为连着却什么都收不到，**且不会重连**。
+
+### 改动清单
+
+| 卡 | 文件 | 内容 |
+|---|---|---|
+| T10 | `relay/V2AccountApi.kt` | 401/403 抛具名 `TokenAuthException`（携带 `httpCode`），与网络异常区分 |
+| T10 | `relay/V2AccountApi.kt` | 新增 `fetchRelayTokenSingleFlight`：按 `baseUrl|role|jwt` 键控，`async(start = LAZY)` + `ConcurrentHashMap` 共享同一次网络往返；**失败不进缓存**（下个调用方立即重试）、**jwt 变更不复用旧 in-flight**（避免把过期 token 交给新连接）；进程级 scope 保证调用方取消不连坐他人 |
+| T10 | `relay/RelayClient.kt` | `acquireV2Token` 改走单飞；新增纯函数 `isAuthFailure(err)`：`TokenAuthException` 与业务码拒绝（`IllegalStateException` 含 `api code=`）→ `AUTH_FAILED`（终态、不自动重连、指引重新登录）；其余 → `NETWORK`（可重连）。抽 `reportTokenFailure` 压住 detekt 圈复杂度 |
+| T11 | `relay/RelayClient.kt` | `startHeartbeat` 记录「首次发出但未被 ack 覆盖」的时刻（`@Volatile heartbeatSentAtMs`）；`pair_status_ack`/`auth_ack` 分支 `markHeartbeatAcked()` 清零；超阈值 `fail(NETWORK)` 并退出心跳协程。新增 `HEARTBEAT_STALE_MS = 30_000`（3 个心跳周期，对齐 PROTOCOL.md §4.1 服务端 ack 超时，**刻意不抢在服务端判定前误判**）；判据抽纯函数 `isHeartbeatStale(sentAtMs, nowMs, staleMs)`；`startHeartbeat` 入口清零，防继承上一条连接的未 ack 残留 |
+
+### 为什么阈值取 30s 而不是 10s
+
+一个心跳周期（10s）内没回很常见（偶发丢包、短暂抖动），立刻断连会造成「网络稍抖就重连」的
+体验退化。30s = 连续 3 个周期未回，属确定性失活；同时与官方 ack 超时口径一致，
+不会出现「App 判死但服务端还没判」的口径冲突。
+
+### 测试
+
+- 新增 `relay/V2TokenAuthTest`（4 项）：401/403 判鉴权失败、业务码拒绝判鉴权失败、
+  DNS/超时/连接重置不判鉴权、null 与非 api code 的异常不误判。
+- 新增 `relay/HeartbeatStaleTest`（6 项）：未发心跳永不判、阈值内不判、**恰好阈值判**、
+  远超阈值判、自定义阈值生效、默认阈值钉死 30s。
+- 单测 **声明 374 / 实际执行 412** 全绿（beta53 为 364/402）。
+- **红-绿反证**：把 `isHeartbeatStale` 的 `>=` 临时改 `>`，`exactlyAtThreshold_isStale`
+  立即失败 —— 证明用例真能捕获边界缺陷（验证后已恢复）。
+- 门禁：`ktlintCheck` / `detekt` 0 issue、`lintDebug` 0 error、
+  `assembleDebug` + `assembleRelease` 双变体通过。
+
+### 未做（同属 beta54）
+
+T8 登录迁移独立 `WebViewActivity`、T9 设置页「粘贴令牌」入口。
+
 ## v0.5.0-beta53（2026-10-26）· V2 Controller 通道适配——会话列表权威源切换与列表并发安全（真机验收通过）
 
 > **一句话**：ZCode ≥3.16 的 bootstrap 不再下发 `tasks[]`，会话列表改由 Controller 通道提供。

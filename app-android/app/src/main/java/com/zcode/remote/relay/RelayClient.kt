@@ -101,6 +101,14 @@ class RelayClient(
     private var reconnectJob: Job? = null
     private var pumpJob: Job? = null
 
+    /** T11 心跳单向失活：首次「发出但尚未被 ack 覆盖」的心跳时刻；0 = 无待确认心跳。 */
+    @Volatile
+    private var heartbeatSentAtMs: Long = 0L
+
+    /** 最近一次成功发出心跳的时刻（诊断用，不参与失活判定）。 */
+    @Volatile
+    private var lastHeartbeatSentAtMs: Long = 0L
+
     /** 重连前的挂起点（B 组）：默认纯退避延迟；App 侧注入 [NetworkGate] 后无网时等待网络恢复。 */
     @Volatile
     var networkWait: suspend (Long) -> Unit = { delayMs -> delay(delayMs) }
@@ -232,6 +240,11 @@ class RelayClient(
     /**
      * V2 凭据获取：JWT → relay token。取不到（未登录/网络失败/连接已作废）返回 null
      * 并在仍为本代次时置失败态。
+     *
+     * 失败分两层（T10）：
+     * - **401/403 / 业务码拒绝** → [FailureReason.AUTH_FAILED]（终态、不自动重连，指引重新登录）。
+     *   此前一律报 NETWORK，界面会无限重连转圈而用户不知道要重新登录。
+     * - **其余（DNS/超时/连接重置）** → [FailureReason.NETWORK]（可重连）。
      */
     private suspend fun acquireV2Token(myGen: Int): String? {
         val jwt =
@@ -247,20 +260,46 @@ class RelayClient(
             }
             return null
         }
-        val tok = V2AccountApi.fetchRelayToken(jwt, "terminal")
+        val tok = V2AccountApi.fetchRelayTokenSingleFlight(jwt, "terminal")
         val token =
             tok.getOrNull().also {
                 if (it == null) ZLog.w(TAG, "v2: relay token 换取失败 ${tok.exceptionOrNull()?.message}")
             }
         if (token == null) {
             if (myGen == generation && !manuallyClosed) {
-                fail(FailureReason.NETWORK, "获取中继令牌失败：${tok.exceptionOrNull()?.message ?: "网络异常"}")
+                reportTokenFailure(tok.exceptionOrNull())
             }
             return null
         }
         if (myGen != generation || manuallyClosed) return null
         return token
     }
+
+    /** 取 token 失败时按「鉴权 vs 网络」分类上报（抽成独立函数以压住 detekt 圈复杂度）。 */
+    private fun reportTokenFailure(err: Throwable?) {
+        if (isAuthFailure(err)) {
+            fail(
+                FailureReason.AUTH_FAILED,
+                "登录态已失效：请在「设置 → ZCode 账号」重新登录后重试",
+            )
+        } else {
+            fail(FailureReason.NETWORK, "获取中继令牌失败：${err?.message ?: "网络异常"}")
+        }
+    }
+
+    /**
+     * 取 token 失败是否属于「鉴权问题」（重试无意义）而非「网络问题」（值得重试）。
+     * 纯函数，便于 JVM 单测钉住分类口径。
+     */
+    internal fun isAuthFailure(err: Throwable?): Boolean =
+        when (err) {
+            null -> false
+            is V2AccountApi.TokenAuthException -> true
+            // 业务码拒绝（code != 0）由 check() 抛 IllegalStateException，文案含 "api code="；
+            // 服务端用它表示「该 JWT 无权换 token」，与网络无关。
+            is IllegalStateException -> err.message?.contains("api code=") == true
+            else -> false
+        }
 
     /**
      * 建立 WS（V1/V2 汇合点）。[v2Token] 非空 = V2 token 直连（ws2 端点，auth_init 无 role）。
@@ -409,6 +448,8 @@ class RelayClient(
                         send(RelayProtocol.authResponse(device.deviceSid, proof))
                     }
                     "auth_ack", "pair_status_ack" -> {
+                        // T11：任何 ack 都证明链路双向可用，清空单向失活计时
+                        markHeartbeatAcked()
                         when (val st = RelayProtocol.pairStatusOf(frame)) {
                             "waiting" -> {
                                 _state.value = RelayState.WaitingPeer
@@ -494,6 +535,15 @@ class RelayClient(
 
     companion object {
         private const val TAG = "RelayClient"
+
+        /**
+         * T11 心跳单向失活阈值：30s。
+         *
+         * 取 30s 而非 10s（一个心跳周期）：官方 ack 超时口径即为 30s（PROTOCOL.md §4.1），
+         * 与之一致的目的是**不抢在服务端判定之前误判**——偶发一次丢包不该立刻断连。
+         * 30s = 3 个心跳周期未回，属确定性失活。
+         */
+        internal const val HEARTBEAT_STALE_MS: Long = 30_000L
     }
 
     private fun fail(
@@ -516,12 +566,26 @@ class RelayClient(
 
     private fun startHeartbeat() {
         if (heartbeatJob?.isActive == true) return
+        // T11：新一轮心跳从零计时——上一条连接的「未 ack」残留不得继承（否则新连接会秒判失活）
+        heartbeatSentAtMs = 0L
         heartbeatJob =
             io.launch {
                 while (isActive && !manuallyClosed) {
                     // V2 帧为无 device_sid 的 pair_status_query（strictObject 拒多余字段）
-                    runCatching {
-                        send(if (v2Mode) RelayProtocol.heartbeatV2() else RelayProtocol.heartbeat(device.deviceSid))
+                    val sentAtMs = System.currentTimeMillis()
+                    val sent =
+                        runCatching {
+                            send(if (v2Mode) RelayProtocol.heartbeatV2() else RelayProtocol.heartbeat(device.deviceSid))
+                        }.isSuccess
+                    if (sent) markHeartbeatSent(sentAtMs)
+                    // T11：发出后一直收不到 ack = 单向失活 → 主动判网络失败并重连
+                    if (isHeartbeatStale(heartbeatSentAtMs, System.currentTimeMillis())) {
+                        ZLog.w(
+                            TAG,
+                            "heartbeat 单向失活：已发心跳但 ${HEARTBEAT_STALE_MS}ms 内无任何 ack — 判定连接失效并重连",
+                        )
+                        fail(FailureReason.NETWORK, "连接已失去响应，正在重连…")
+                        return@launch
                     }
                     // 官方两侧一致为 10s（PROTOCOL.md §4.1）；ack 超时 30s 由服务端判定，
                     // 旧实现固定 30s 虽在窗口内可用，但会拉长失活检测，对齐官方取值
@@ -529,6 +593,42 @@ class RelayClient(
                 }
             }
     }
+
+    /**
+     * T11：心跳「单向失活」检测。
+     *
+     * 场景：TCP/WS 仍连着（写 `send` 不报错），但**收不到任何 ack**——典型是中间盒静默丢包、
+     * 或对端进程已死而 socket 未及时 FIN。此时 `_state` 会一直停在 `Paired`，用户看到
+     * 「已连接」却什么都收不到，且不会自动重连（业务帧无超时兜底）。
+     *
+     * 判据（纯函数 [isHeartbeatStale]）：最近一次心跳发出后超过 [HEARTBEAT_STALE_MS]
+     * **仍未收到任何 pair_status_ack**，且期间确实发出过心跳（[heartbeatSentAtMs] != 0）。
+     * 命中即 `fail(NETWORK)`——`NETWORK` 不是终态，会自动进入指数退避重连，符合「单向失活值得重试」。
+     *
+     * 注意只在「发了但没回」时判：单纯没发（如刚连上）不判。
+     */
+    private fun markHeartbeatSent(atMs: Long) {
+        lastHeartbeatSentAtMs = atMs
+        if (heartbeatSentAtMs == 0L) heartbeatSentAtMs = atMs
+    }
+
+    /** 收到任意 ack：单向失活计时清零（连续发心跳期间只要有一帧回来就不算失活）。 */
+    private fun markHeartbeatAcked() {
+        heartbeatSentAtMs = 0L
+    }
+
+    /**
+     * 心跳是否已单向失活（纯函数，JVM 可测）。
+     *
+     * @param sentAtMs 本轮「尚未被 ack 覆盖」的首次心跳发出时刻；0 = 无待确认心跳
+     * @param nowMs    当前时刻
+     * @param staleMs  失活阈值（默认 [HEARTBEAT_STALE_MS]）
+     */
+    internal fun isHeartbeatStale(
+        sentAtMs: Long,
+        nowMs: Long,
+        staleMs: Long = HEARTBEAT_STALE_MS,
+    ): Boolean = sentAtMs > 0L && nowMs - sentAtMs >= staleMs
 
     private fun stopHeartbeat() {
         heartbeatJob?.cancel()

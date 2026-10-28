@@ -2,7 +2,12 @@ package com.zcode.remote.relay
 
 import com.zcode.remote.util.HttpClientProvider
 import com.zcode.remote.util.ZLog
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.CoroutineStart
+import kotlinx.coroutines.Deferred
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.async
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
@@ -15,6 +20,8 @@ import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.RequestBody.Companion.toRequestBody
+import java.io.IOException
+import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.TimeUnit
 
 /**
@@ -84,6 +91,11 @@ object V2AccountApi {
                         .post(body)
                         .build()
                 client.newCall(req).execute().use { resp ->
+                    // 401/403 是「登录态失效」，与网络故障必须区分：前者重试多少次都不会好，
+                    // 重连反而会把终态失败误报成 NETWORK，界面反复转圈（beta54/T10）。
+                    if (resp.code == 401 || resp.code == 403) {
+                        throw TokenAuthException(resp.code)
+                    }
                     check(resp.code == 200) { "HTTP ${resp.code}" }
                     val env = json.decodeFromString(Envelope.serializer(), resp.body?.string().orEmpty())
                     check(env.code == 0) { "api code=${env.code} msg=${env.msg}" }
@@ -94,6 +106,48 @@ object V2AccountApi {
                 }
             }.onFailure { ZLog.w(TAG, "fetchRelayToken failed: ${it.message}") }
         }
+
+    /**
+     * 单飞取 token（T10）：并发调用方共享同一次网络往返，避免多窗口/重连风暴各打一次。
+     *
+     * 复用判据是 **(jwt, role, baseUrl)** 三元组——jwt 换了说明登录态已变，必须重新取，
+     * 不能复用旧 in-flight 结果（那会把过期 token 交给新连接）。
+     * 失败不进缓存：下一个调用方应立即重试而不是共享一次失败的 Result。
+     */
+    suspend fun fetchRelayTokenSingleFlight(
+        jwt: String,
+        role: String = "terminal",
+        baseUrl: String = DEFAULT_BASE_URL,
+        client: OkHttpClient = defaultClient(),
+    ): Result<String> {
+        val key = "$baseUrl|$role|$jwt"
+        val flight =
+            synchronized(inFlight) {
+                // 已完成的（异常/正常都算结束）先清掉，避免拿到上一次的陈旧结果
+                inFlight[key]?.takeIf { it.isActive } ?: run {
+                    inFlight[key] =
+                        singleFlightScope.async(start = CoroutineStart.LAZY) {
+                            try {
+                                fetchRelayToken(jwt, role, baseUrl, client)
+                            } finally {
+                                synchronized(inFlight) { inFlight.remove(key) }
+                            }
+                        }
+                    inFlight[key]!!
+                }
+            }
+        flight.start()
+        return flight.await()
+    }
+
+    /** token 接口鉴权失败（401/403）——语义上等同「需要重新登录」。 */
+    class TokenAuthException(
+        val httpCode: Int,
+    ) : IOException("token 接口鉴权失败 HTTP $httpCode")
+
+    // 单飞状态：key → 进行中的取 token 任务。进程级 scope 保证调用方协程取消不会连坐他人。
+    private val inFlight = ConcurrentHashMap<String, Deferred<Result<String>>>()
+    private val singleFlightScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
     /** 账号绑定的设备列表（多设备管理）。 */
     suspend fun listDevices(
