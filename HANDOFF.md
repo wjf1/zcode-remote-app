@@ -728,6 +728,47 @@ lint 双变体 0 error、detekt、ktlint 0 违规、assembleDebug/Release 通过
 
 ## 6. 关键避坑与运行约束
 
+### ⚠️ 仓库有一个历史遗留的坏文件名（2026-10-28 发现，未修）
+
+远端 `tree` 里有两个文件的名字被存成**字面引号 + 八进制转义**，而不是真正的中文名：
+
+- `"ZCodeè¿...APPæ¹æ¡.md"`（本应是 `ZCode远程控制安卓APP方案.md`）
+- `"ä½éª...任务书-v2.md"`（本应是 `体验提升任务书-v2.md`）
+
+**症状**：任何 `git checkout` / `git reset --hard` / `git read-tree` 都会报
+`error: invalid path ...` 并整体失败（Windows 无法创建该路径）。`git status` 里会看到
+这两个文件被标成 `R`（重命名），但那是索引自动修复的假象。
+
+**影响**：不影响读写其他文件、不影响提交与推送；但**会让 `git reset --hard origin/master`
+无法完成**，本地引用更新只能靠 `git update-ref` 或 `git fetch` 后手工处理。
+
+**本次（beta55）的处理**：改用 GitHub REST API 推送（见下），远端 `master` =
+`d0fd2cb`，本地 `master` = `f2eab25`。两者 **7 个变更文件的 blob 哈希逐一比对完全相同**，
+差异仅在于本地提交把这两个坏路径文件"改名"成了正确中文名（远端没有这一步）。
+即：**内容一致、提交 SHA 不同**。下次会话若发现 `git log` 与远端对不上，属此已知偏差。
+
+**根治方案（待做）**：用 `git filter-branch` / `filter-repo` 把这两个路径改成正常中文名，
+或直接改成 ASCII 名（如 `docs/zcode-remote-app-plan.md`）。需重写历史、所有协作者重新克隆，
+故未在本轮做。
+
+### HTTPS 推送通道不稳定（2026-10-28 实测）
+
+本机 `http.proxy=127.0.0.1:7900` 的 Clash 未监听、SSH key 无权限、HTTPS 直连
+`Recv failure: Connection was reset`（git 自带 schannel 与 openssl 后端均失败，
+重试 3–4 次全红）。但 **`gh` 走 `api.github.com` 稳定可用**。
+
+**推送路径**：用 REST API 手工建提交 —— `POST /git/blobs`（base64 内容）→
+`POST /git/trees`（`base_tree` + 条目）→ `POST /git/commits`（parents 指向远端当前 head）→
+`PATCH /git/refs/heads/master`。打 tag 用 `POST /git/tags`（annotated）+
+`POST /git/refs`（`refs/tags/vX.Y.Z`）。**注意**：必须用 `POST /git/tags` 建 annotated tag
+对象再指向它，直接 `POST /git/refs` 指向 commit 会得到轻量 tag，不符合发布规范。
+
+**读侧兜底**：`git fetch` 偶尔能成功（间隔性），失败时用
+`gh api repos/<owner>/<repo>/compare/<a>...<b>` 核对提交内容，或用
+`gh api .../contents/<path>?ref=<sha> --jq .sha` 比对 blob 哈希验证一致性。
+
+
+
 - **不要裸跑后台进程**：`adb`/`gradle`/模拟器/logcat 跟随一律后台模式，阻塞式探测包硬超时（详见 `AGENTS.md`）。
 - **构建产物体积/工具链**：`toolchain/` 与 `keystore.properties`、`*.keystore` 均被 gitignore，**不入库**；
   `local.properties` 指向本机 SDK，不可提交。
