@@ -13,8 +13,10 @@ ZCode 远程控制协议探针（独立于 Android App，用于快速验证链�
     python tools/probe.py loginurl    # [V2] 构造 BigModel 互信登录跳转 URL
 
 `ctrl` 子命令把 `onDynamicControllerFrame` 的前 N 帧（默认 50）落到
-`_tmp/ctrl_frames.json`，再用 `python tools/_dump_frame.py _tmp/ctrl_frames.json`
-看结构骨架。PROTOCOL.md §11.6 的字段表以该落盘结果为准（标注「实测」）。
+`_tmp/ctrl_frames.json`，再解析结构骨架。骨架解析脚本 `tools/_dump_frame.py`
+已于 2026-10-31 归档至 git 历史（引入提交 f4af4c6），需要时
+`git show f4af4c6:tools/_dump_frame.py` 取回后 `python _dump_frame.py _tmp/ctrl_frames.json`。
+PROTOCOL.md §11.6 的字段表以该落盘结果为准（标注「实测」）。
 
 凭据来源：优先读本机 ZCode 凭据库（自动解密，V2 ≥3.16 / V1 双栈），也可用环境变量覆盖：
     ZCODE_SID / ZCODE_HASH / ZCODE_MID / ZCODE_JWT
@@ -552,7 +554,7 @@ def run_ctrl(p, max_frames=50, out_path=None):
     超时后落盘。
 
     落盘格式与既有 `sub` 子命令一致（`### type=204 id=<listenId>` + JSON），
-    便于 `tools/_dump_frame.py` 复用同一骨架解析。
+    便于复用同一骨架解析（原配套脚本 `tools/_dump_frame.py` 已归档于 git 历史）。
     """
     out_path = out_path or os.path.join("_tmp", "ctrl_frames.json")
     os.makedirs(os.path.dirname(out_path) or ".", exist_ok=True)

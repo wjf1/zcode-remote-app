@@ -14,7 +14,7 @@ import kotlinx.serialization.json.jsonPrimitive
  * 服务端按会话维护 `pendingInteractionSummary {permissionCount, userInputCount}`：
  * snapshot（`sessions[]` 全量，键 `sessionId`）与增量（`session.upserted` / `session.removed`）
  * 双路更新。相比任务事件流推导的角标——这是服务端权威统计：覆盖全部会话、消解即清零、
- * 不怕事件流漏帧。协议实证见 PROTOCOL.md §6.7（tools/_e1_verify.py）。
+ * 不怕事件流漏帧。协议实证见 PROTOCOL.md §6.7（实证脚本 tools/_e1_verify.py 已归档于 git 历史）。
  */
 class SessionsIndexChannel(
     private val rpc: RpcChannel,

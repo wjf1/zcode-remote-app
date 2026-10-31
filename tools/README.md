@@ -1,10 +1,20 @@
 # tools/ 脚本索引
 
-本目录是仓库的**辅助脚本区**，分两类。约定：**`_` 前缀 = 历史一次性验证/取证脚本**（保留作证据链，不再日常使用）；无前缀 = **当前仍在用**（CI 门禁、构建辅助、协议探针）。
+本目录是仓库的**辅助脚本区**，只保留**当前仍在用**的脚本（CI 门禁、构建辅助、协议探针）。
 
-> 为什么要分类而不是删除：`_` 前缀脚本被 `CHANGELOG.md` / `HANDOVER.md` 作为**历史验收证据**引用
-> （如「经 `tools/_16k_check.py` 核实」「`tools/_p13_send_verify.py` 对照实测」），物理移动或删除会
-> 破坏这些引用链。故**就地保留 + 本文索引**，新会话不必再逐个猜用途。
+> 一次性验证/取证脚本的去向：2026-10-31 已把 11 个 `_` 前缀一次性脚本从工作区删除
+> （`_16k_check.py` / `_apk_cert_fp.py` / `_dump_frame.py` / `_e1_verify.py` / `_e2e_send.py` /
+> `_e2e_tap_approve.py` / `_p01_async.py` / `_p11_probe.py` / `_p11_verify.py` / `_p13_probe.py` /
+> `_p13_send_verify.py`，均引入于提交 f4af4c6）。它们作为各里程碑（M1–M3 / P0–P3 / E-1 等）
+> 的验收证据**归档于 git 历史**，按需追溯：
+>
+> ```bash
+> git log --follow -- tools/_<name>.py        # 找到脚本的增删轨迹
+> git show f4af4c6:tools/_<name>.py           # 取回脚本内容
+> ```
+>
+> `CHANGELOG.md` / `HANDOVER.md` / `PROTOCOL.md` 中「经 `tools/_xxx.py` 核实」类引用指的正是
+> 这些归档脚本，含义不变；正文与 Kotlin 源码中的活引用已同步改为指向 git 历史。
 
 ## 当前使用（CI / 日常）
 
@@ -23,23 +33,12 @@
 | `net_recover_test.sh` | 断网恢复耗时实测（beta15 验收脚本） | 人工 |
 | `t0_sample.sh` | T0 冷启动握手耗时采样 | 人工 |
 
-## 历史一次性验证脚本（`_` 前缀，保留作证据）
+## 仍在工作区的历史一次性脚本
 
-这些是各里程碑（M1–M3 / P0–P3 / E-1 等）当时的端到端验收与取证脚本，**依赖当时的设备/凭据/环境，现在不再日常运行**；保留是因为 `CHANGELOG.md` 直接引用了它们作为实测证据。
+以下三个是一次性用途但**未被本轮清理删除**（引用少 / 偶发重跑），暂留工作区：
 
 | 脚本 | 当时的用途 |
 |---|---|
-| `_16k_check.py` | 核实 zip 条目层 16 KB 页对齐（Android 15 兼容性） |
-| `_apk_cert_fp.py` | 从 APK Signing Block 解析签名证书指纹 |
-| `_dump_frame.py` | dump 一条 rpc-frame 原始内容（早期协议侦查） |
-| `_e1_verify.py` | E-1 会话级权威角标端到端验收 |
-| `_e2e_send.py` | 以手机端身份向会话发送排队消息（发送链路验收） |
-| `_e2e_tap_approve.py` | 端到端：等审批通知 → 解锁 → 点「允许」 |
-| `_p01_async.py` | P0-1 协议层端到端验收（asyncio + websockets） |
-| `_p11_probe.py` | P1-1 预研：触发 `AskUserQuestion` 观测帧 |
-| `_p11_verify.py` | P1-1 elicitation（表单类交互）应答验收 |
-| `_p13_probe.py` | P1-3 附件协议实证（begin/chunk/commit/abort） |
-| `_p13_send_verify.py` | P1-3 附件「发送侧」协议层验收 |
 | `t0_analyze.py` | 解析 `_tmp/t0_samples.txt`，输出握手耗时与快照落地时延 |
 | `render_screenshots.py` | 生成 README 用截图（一次性渲染） |
 | `wsclient.py` | 早期临时 WebSocket 客户端（被 `probe.py` 取代） |
@@ -47,4 +46,5 @@
 ## 备注
 
 - `__pycache__/` 已被 `.gitignore` 忽略，不入库。
-- 新增辅助脚本请遵循同一约定：**长期使用的去 `_` 前缀并登记到「当前使用」表**；一次性取证的加 `_` 前缀。
+- 新增辅助脚本约定：**长期使用的直接登记到「当前使用」表**；一次性取证脚本**不再入工作区**
+  ——跑完即弃、结论写入文档，需要留证据时由 git 历史承载。

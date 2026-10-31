@@ -811,7 +811,8 @@ class ConversationChannel(
      * `sendConversationCommandV4` envelope `type:'sendText'`，payload = `{text, attachments?}`，
      * 元素 = [AttachmentRef.toWire]（`{ref, fileName, mime, bytes}`）。
      *
-     * 实证（tools/_p13_send_verify.py）：旧路径 RPC `sendPrompt` 的 args schema 只有
+     * 实证脚本（tools/_p13_send_verify.py，2026-10-31 已归档于 git 历史，引入提交 f4af4c6）：
+     * 旧路径 RPC `sendPrompt` 的 args schema 只有
      * `{workspacePath, sessionId, inputId, content}`，多传的 attachments 被 zod strip——
      * 201 accepted 但附件不到模型侧；sendText envelope 附件随消息 materialize，
      * ack `result={type:"inputAccepted", delivery:"startNow"}`，userInput 行回显 attachments。

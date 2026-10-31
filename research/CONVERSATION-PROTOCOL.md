@@ -234,6 +234,6 @@ bridgeSessionId === 期望 && bridgeGeneration === 期望 && recoveryId === 期�
 
 ```bash
 ZCODE_MID="<机器ID>" python tools/probe.py sub <会话ID前缀> [帧落盘路径]
-# 帧结构分析
-python tools/_dump_frame.py <帧落盘路径> [骨架输出路径]
+# 帧结构分析：配套脚本 tools/_dump_frame.py 已归档于 git 历史（2026-10-31，引入提交 f4af4c6），
+# 取回后运行：git show f4af4c6:tools/_dump_frame.py > _dump_frame.py && python _dump_frame.py <帧落盘路径> [骨架输出路径]
 ```
