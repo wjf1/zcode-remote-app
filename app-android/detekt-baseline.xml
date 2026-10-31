@@ -13,7 +13,6 @@
     <ID>CyclomaticComplexMethod:ConversationChannel.kt$ConversationChannel$fun createSession( workspacePath: String, workspaceIdentity: String? = null, firstInputText: String? = null, attachments: List&lt;AttachmentRef> = emptyList(), modelConfig: ModelConfig? = null, onResult: (Result&lt;String>) -> Unit, )</ID>
     <ID>CyclomaticComplexMethod:ConversationChannel.kt$ConversationChannel$fun loadEarlier( store: RowStore, onResult: (Result&lt;Int>) -> Unit, )</ID>
     <ID>CyclomaticComplexMethod:ConversationChannel.kt$ConversationChannel$fun onEvent( event: RpcChannel.RpcEvent, store: RowStore, )</ID>
-    <ID>CyclomaticComplexMethod:ConversationChannel.kt$ConversationChannel$fun uploadAttachment( /** C-1：调用方持有并复用的上传 id。重试必须复用同一 id（服务端按 uploadId 幂等， * 随机新 id 会让已上传的分片全部作废、整文件重传）。 */ uploadId: String, fileName: String, mime: String, totalBytes: Long, openStream: () -> java.io.InputStream, onProgress: ((uploaded: Long, total: Long) -> Unit)? = null, onResult: (Result&lt;AttachmentRef>) -> Unit, ): UploadHandle</ID>
     <ID>CyclomaticComplexMethod:ConversationChannel.kt$ConversationChannel$private fun parseWorkspaceState(root: JsonObject?): WorkspaceState?</ID>
     <ID>CyclomaticComplexMethod:ConversationFrames.kt$ConversationFrames$fun parseDeltas(payload: JsonObject): List&lt;Delta></ID>
     <ID>CyclomaticComplexMethod:ConversationPendingCards.kt$@Composable internal fun ElicitationCard( el: PendingElicitation, onAccept: (Map&lt;Int, List&lt;String>>) -> Unit, onDecline: () -> Unit, onFreeText: (String) -> Unit, )</ID>
@@ -24,7 +23,6 @@
     <ID>CyclomaticComplexMethod:DiffView.kt$@Composable fun DiffBlock( diff: ToolDiff, modifier: Modifier = Modifier, )</ID>
     <ID>CyclomaticComplexMethod:DiffView.kt$ToolDiffParser$fun diffLines( old: List&lt;String>, new: List&lt;String>, ): List&lt;DiffLine></ID>
     <ID>CyclomaticComplexMethod:DiffView.kt$ToolDiffParser$fun parse( toolName: String?, inputText: String?, ): ToolDiff?</ID>
-    <ID>CyclomaticComplexMethod:HomeScreen.kt$@Composable fun HomeScreen( deviceName: String, state: RelayState, sessions: List&lt;SessionItem>, sessionPending: Map&lt;String, Int> = emptyMap(), query: String = "", onQueryChange: (String) -> Unit = {}, subscribedSessionId: String? = null, desktopActiveTaskId: String? = null, onSessionClick: (SessionItem) -> Unit, onNavigateToSettings: () -> Unit = {}, /** 工作区模型目录（新建会话弹窗的模型选择数据源，可为空=加载中/不可用）。 */ modelState: com.zcode.remote.relay.WorkspaceConfigChannel.WorkspaceState? = null, modelsLoading: Boolean = false, onLoadModels: () -> Unit = {}, /** PC 端当前会话快照里的模型（弹窗展示与 provider 继承用，可为空）。 */ currentModel: String? = null, currentProvider: String? = null, availableModels: List&lt;com.zcode.remote.relay.WorkspaceConfigChannel.ModelOption> = emptyList(), /** 各模型合法思考档位：key = "providerId/modelId"。 */ modelReasoningLevels: Map&lt;String, List&lt;String>> = emptyMap(), /** 长按会话卡片触发删除（closeSession + deleteTask）。 */ onSessionDelete: (SessionItem) -> Unit = {}, onCreateSession: ( prompt: String, modelConfig: com.zcode.remote.relay.WorkspaceConfigChannel.ModelOption?, execMode: String, ) -> Unit = { _, _, _ -> }, )</ID>
     <ID>CyclomaticComplexMethod:HomeScreen.kt$@Composable private fun CreateSessionDialog( modelState: com.zcode.remote.relay.WorkspaceConfigChannel.WorkspaceState?, availableModels: List&lt;com.zcode.remote.relay.WorkspaceConfigChannel.ModelOption> = emptyList(), modelsLoading: Boolean, onLoadModels: () -> Unit, currentModel: String?, currentProvider: String?, /** 各模型合法思考档位：key = "providerId/modelId"。 */ modelReasoningLevels: Map&lt;String, List&lt;String>> = emptyMap(), onDismiss: () -> Unit, onConfirm: (prompt: String, modelConfig: com.zcode.remote.relay.WorkspaceConfigChannel.ModelOption?, execMode: String) -> Unit, )</ID>
     <ID>CyclomaticComplexMethod:HomeScreen.kt$@OptIn(androidx.compose.foundation.ExperimentalFoundationApi::class) @Composable private fun SessionItemCard( s: SessionItem, pending: Int, isActive: Boolean, desktopActive: Boolean, onClick: () -> Unit, onDelete: () -> Unit = {}, )</ID>
     <ID>CyclomaticComplexMethod:Interactions.kt$PendingElicitation.Companion$fun from( o: JsonObject, sessionId: String? = null, ): PendingElicitation?</ID>
@@ -54,7 +52,6 @@
     <ID>NestedBlockDepth:NotificationCoordinator.kt$NotificationCoordinator$fun recomputeSessionPending()</ID>
     <ID>NestedBlockDepth:SessionsIndexChannel.kt$SessionsIndexChannel$fun onEvent(event: RpcChannel.RpcEvent)</ID>
     <ID>SwallowedException:ScanScreen.kt$e: Exception</ID>
-    <ID>TooGenericExceptionCaught:ConversationChannel.kt$ConversationChannel$e: Exception</ID>
     <ID>TooGenericExceptionCaught:RpcChannel.kt$RpcChannel$t: Throwable</ID>
     <ID>TooGenericExceptionCaught:ScanScreen.kt$e: Exception</ID>
     <ID>UnusedParameter:ConversationAttachmentTray.kt$onPick: () -> Unit</ID>
@@ -66,7 +63,6 @@
     <ID>UnusedPrivateProperty:BridgeFrames.kt$ApprovalClassifier$private val allowOnce = setOf("allow", "allow once", "approve")</ID>
     <ID>UnusedPrivateProperty:BridgeFrames.kt$ApprovalClassifier$private val rejectAlways = setOf("always deny", "deny always", "always reject", "always reject")</ID>
     <ID>UnusedPrivateProperty:BridgeFrames.kt$ApprovalClassifier$private val rejectOnce = setOf("deny", "deny once", "reject", "reject once")</ID>
-    <ID>UseCheckOrError:AttachmentUploader.kt$AttachmentUploader$throw IllegalStateException("无法打开所选文件（可能已被移动或删除）")</ID>
     <ID>WildcardImport:ApprovalsTab.kt$import androidx.compose.foundation.layout.*</ID>
     <ID>WildcardImport:ApprovalsTab.kt$import androidx.compose.material3.*</ID>
     <ID>WildcardImport:ApprovalsTab.kt$import androidx.compose.runtime.*</ID>
