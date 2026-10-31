@@ -1,5 +1,41 @@
 # 变更记录 / Changelog
 
+## [Unreleased]
+
+> 2026-10-31 工程债清理轮（未发版）：tools 一次性脚本清理 + detekt 基线清理 + P0 附件上传
+> 重构复验。无功能性变更，不新增版本号。
+
+### 移除
+
+- **删除 `tools/` 下 11 个 `_` 前缀一次性取证脚本**：`_16k_check.py` / `_apk_cert_fp.py` /
+  `_dump_frame.py` / `_e1_verify.py` / `_e2e_send.py` / `_e2e_tap_approve.py` / `_p01_async.py` /
+  `_p11_probe.py` / `_p11_verify.py` / `_p13_probe.py` / `_p13_send_verify.py`（均引入于提交
+  `f4af4c6`）。它们作为 M1–M3 / P0–P3 / E-1 各里程碑的验收证据**归档于 git 历史**，追溯方式：
+  `git log --follow -- tools/_<name>.py`（取回内容 `git show f4af4c6:tools/_<name>.py`）。
+  同步处理引用面：`tools/README.md` 索引重写（登记追溯方式、保留仍在工作区的三个历史脚本）；
+  `tools/probe.py` 文档字符串两处 `_dump_frame` 引用改指 git 历史；
+  `research/CONVERSATION-PROTOCOL.md` 参考实现的骨架解析命令改注明归档与取回命令；
+  Kotlin 注释实证引用（`ConversationChannel.kt` / `SessionsIndexChannel.kt`）改注明归档。
+  `PROTOCOL.md` / `HANDOVER.md` / 体验提升任务书等**历史记录文档按约定不改**。
+  全库 grep 复核：除历史记录文档外无 `tools/_*.py` 死链。
+
+### 变更
+
+- **detekt 基线清理：90 → 86 条**。`detektBaseline` 重新生成对照当前真实告警，删除 4 条已
+  不再报告的陈旧条目（对应代码经 beta50 附件上传流水线重构等演进后签名漂移）：
+  `CyclomaticComplexMethod:ConversationChannel.kt$uploadAttachment(...)`（编排已拆至
+  `AttachmentUploadPipeline`）、`CyclomaticComplexMethod:HomeScreen.kt$HomeScreen(...)`（签名
+  演进）、`TooGenericExceptionCaught:ConversationChannel.kt$e: Exception`（移入 pipeline 并
+  显式 `@Suppress`）、`UseCheckOrError:AttachmentUploader.kt$throw IllegalStateException(...)`
+  （异常路径已不存在）。纯删除、零新增；`detekt` / `ktlintCheck` 0 issue。
+- **P0 附件上传流水线重构复验（无代码改动）**：该项已于 **v0.5.0-beta50 完成**（递归回调 →
+  顺序 suspend 流水线 + `openAt(offset)` 可定位内容源，重试不重传已确认分片，协议行为——
+  分片大小、RPC 方法名、重试/超时语义、进度上报事件——保持不变）。本轮核对测试覆盖：
+  `AttachmentUploadPipelineTest` 11 项覆盖分片顺序（`happyPath_sendsBeginChunksCommitInOrder`）、
+  失败重试不重复上传已确认片（`resumeOpensSourceAtOffsetAndSendsOnlyRemainingChunks`）、
+  取消传播（`cancellationSendsAbortEvenUnderCancellation`）；重跑 `:app:testDebugUnitTest`
+  **421 用例全绿**（声明/执行集合比对通过，≥ CI 下限 410），`ktlint` / `detekt` 0 issue。
+
 ## v0.5.0-beta55（2026-10-28）· 设置页「粘贴令牌」入口——绕过 App 内 WebView 登录失效
 
 > **一句话**：给 App 内无法完成登录的用户一条旁路——从浏览器复制 JWT 粘进来即可，

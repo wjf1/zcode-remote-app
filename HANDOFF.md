@@ -121,6 +121,29 @@ app-android/app/src/main/java/com/zcode/remote/
 
 > 完整逐轮记录见 [CHANGELOG.md](CHANGELOG.md) 与 [HANDOVER.md](HANDOVER.md) 文首覆盖层。
 
+### 2026-10-31：工程债清理轮（未发版）
+
+**背景**：外部分析遗留的三组工程债——tools/ 一次性脚本堆积、detekt 基线陈旧条目、
+P0 附件上传重构验收收尾——本轮集中清偿。无功能性变更，不发版、不打 tag。
+
+| 交付 | 内容 |
+|---|---|
+| `tools/`（11 文件删除） | 删除 `_16k_check` / `_apk_cert_fp` / `_dump_frame` / `_e1_verify` / `_e2e_send` / `_e2e_tap_approve` / `_p01_async` / `_p11_probe` / `_p11_verify` / `_p13_probe` / `_p13_send_verify`，验收证据归档 git 历史（引入提交 `f4af4c6`），追溯：`git log --follow -- tools/_<name>.py` |
+| `tools/README.md` | 索引重写：移除已删条目、登记 git 追溯方式；仍在工作区的三个历史脚本（`t0_analyze` / `render_screenshots` / `wsclient`）单列表述；新增约定「一次性取证脚本不再入工作区」 |
+| `tools/probe.py` / `research/CONVERSATION-PROTOCOL.md` | `_dump_frame` 活引用改指 git 历史（含 `git show f4af4c6:...` 取回命令） |
+| `ConversationChannel.kt` / `SessionsIndexChannel.kt` | 注释里的「实证（tools/_xxx.py）」改为注明脚本已归档（注释级改动，无逻辑变更） |
+| `app-android/detekt-baseline.xml` | 基线清理 **90 → 86**：`detektBaseline` 重新生成，删 4 条陈旧条目（均为 beta50 重构后签名漂移），纯删除零新增 |
+
+**P0 附件上传流水线复验**：走查 5.1 #2 已于 **beta50 完成**（递归回调 → 顺序 suspend +
+`openAt(offset)` 定位流），本轮**无代码改动**，仅核对测试覆盖（`AttachmentUploadPipelineTest`
+11 项：分片顺序 / 续传不重传已确认片 / 取消传播）并重跑门禁。
+
+**门禁**：`detekt` / `ktlintCheck` 0 issue；`:app:testDebugUnitTest` **421 用例全绿**；
+`check_test_count.py --min 410` 声明/执行集合比对通过（421 ≥ 410）。
+构建环境备注：本机无 gradle，本轮经 `toolchain/gradle-8.7`（gitignore 内）+ JDK 17
+（`F:\Android\jdk-17`）+ 阿里云镜像 init script（`toolchain/mirror-init.gradle`，-I 注入，
+maven.google.com 直连不通）完成全部构建验证；未跑 assembleRelease / lintRelease / 仪器化测试。
+
 ### v0.5.0-beta55：设置页「粘贴令牌」入口（T9，2026-10-28）
 
 **背景**：App 内 WebView 登录在 HyperOS + WebView 153 上点「登录」无响应（beta51 起记录、
@@ -716,7 +739,7 @@ lint 双变体 0 error、detekt、ktlint 0 违规、assembleDebug/Release 通过
 
 | 项 | 状态 |
 |---|---|
-| #2 附件上传流水线重构（递归回调 → suspend/flow） | ✅ **已完成**（beta50）：顺序 suspend 流水线 + 可定位源（O(1) 续传）+ 阻塞读下放 IO 线程 + 11 项 JVM 单测。**真机按协议层验收**（SAF 开流路径待补，见 §4 beta50） |
+| #2 附件上传流水线重构（递归回调 → suspend/flow） | ✅ **已完成**（beta50）：顺序 suspend 流水线 + 可定位源（O(1) 续传）+ 阻塞读下放 IO 线程 + 11 项 JVM 单测。**真机按协议层验收**（SAF 开流路径待补，见 §4 beta50）。**2026-10-31 复验**：测试覆盖核对 + 门禁重跑全绿（detekt/ktlint 0 issue，单测 421 全绿），无代码改动 |
 | #12 无障碍 | ✅ 已修（`8725bad`）：会话卡语义 / `StatusDot` / 设置入口 Role |
 | #13 Markdown 图片兜底 | ✅ 已修（`c7862fd` 首次；**beta48 版本实为死代码，`beta49` 重修为真修**）：复制链接 / 打开（**原判「库 API 不可达」不成立**——URL 可得，不可达的是 alt 文本）。**beta49 更正**：兜底改挂段落/引用块级（`components.image` 在库中永不触发），URL 取自 AST 节点 |
 | #14 会话流日期分隔 | ✅ 已修（`2a9efdd`）：按本地时区日历日（**原判「协议无绝对时间戳」用错字段**——`createdAt` 是行级绝对时间戳） |
