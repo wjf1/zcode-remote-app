@@ -98,6 +98,11 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
+          # 幂等短路：同一 tag 触发两个 Release 工作流时，后者会因 Release 已存在而必失败——先查再建
+          if gh release view "${GITHUB_REF_NAME}" --repo "${GITHUB_REPOSITORY}" > /dev/null 2>&1; then
+            echo "Release ${GITHUB_REF_NAME} 已存在，跳过创建"
+            exit 0
+          fi
           gh release create "${GITHUB_REF_NAME}" \
             --prerelease --verify-tag \
             --title "$(cat _release_meta/title.txt)" \
