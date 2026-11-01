@@ -77,6 +77,13 @@
             </intent-filter>
         </activity>
 
+        <!-- T8：V2 登录配对 WebView 宿主——从 Compose AndroidView 内嵌拆为独立 Activity，
+             结构性消除 HyperOS + WebView 153 的渲染竞态（内嵌形态登录按钮点不动）。 -->
+        <activity
+            android:name=".WebViewActivity"
+            android:exported="false"
+            android:windowSoftInputMode="adjustResize" />
+
         <!-- P0-A：中继连接保活前台服务（specialUse 不受 Android 15 dataSync 6h/24h 超时限制） -->
         <service
             android:name=".service.ConnectionService"

@@ -20,6 +20,7 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
@@ -48,7 +49,8 @@ class MainActivity : ComponentActivity() {
 
     /**
      * V2（ZCode ≥3.16）登录配对中的设备：新版二维码无 hash，凭据由登录链路下发
-     * （PROTOCOL.md §11）。非空时渲染 [LoginWebViewDialog]。
+     * （PROTOCOL.md §11）。非空时启动 [WebViewActivity]（T8：WebView 宿主从 Compose
+     * 布局拆为独立 Activity），结果经 ActivityResult 回传——仅作瞬时启动标记。
      */
     private var pendingLogin by mutableStateOf<PairedDevice?>(null)
 
@@ -121,10 +123,10 @@ class MainActivity : ComponentActivity() {
                         }
                     }
 
-                    // 全局物理返回键拦截（防止直接退出应用）
-                    BackHandler(enabled = openedTaskId != null || showGuide || scanning || pendingLogin != null) {
+                    // 全局物理返回键拦截（防止直接退出应用）。pendingLogin 不再在内：登录
+                    // WebView 已是独立 Activity（T8），返回键由它自行处理，pendingLogin 仅瞬时启动标记。
+                    BackHandler(enabled = openedTaskId != null || showGuide || scanning) {
                         when {
-                            pendingLogin != null -> pendingLogin = null
                             openedTaskId != null -> closeSession()
                             showGuide -> showGuide = false
                             scanning && vm.device != null -> scanning = false
@@ -160,22 +162,31 @@ class MainActivity : ComponentActivity() {
                         )
                     }
 
-                    // V2（≥3.16）登录配对：新版二维码无 hash，WebView 走官方登录链路补凭据
-                    pendingLogin?.let { dev ->
-                        LoginWebViewDialog(
-                            device = dev,
-                            onDismiss = { pendingLogin = null },
-                            onLoggedIn = { completed ->
-                                pendingLogin = null
+                    // V2（≥3.16）登录配对：WebView 宿主已拆为独立 WebViewActivity（T8 结构性修复——
+                    // 消除 Compose AndroidView 内嵌 WebView 在 HyperOS + WebView 153 上的渲染竞态），
+                    // pendingLogin 仅作瞬时启动标记，登录结果经 ActivityResult 回传后配对。
+                    val loginContext = LocalContext.current
+                    val loginLauncher =
+                        androidx.activity.compose.rememberLauncherForActivityResult(
+                            androidx.activity.result.contract.ActivityResultContracts
+                                .StartActivityForResult(),
+                        ) { result ->
+                            pendingLogin = null
+                            val completed = WebViewActivity.deviceFromIntent(result.data)
+                            if (result.resultCode == RESULT_OK && completed != null) {
                                 vm.pair(completed)
                                 android.widget.Toast
                                     .makeText(
-                                        this@MainActivity,
+                                        loginContext,
                                         "登录完成，正在连接：${completed.deviceName ?: completed.deviceSid}",
                                         android.widget.Toast.LENGTH_SHORT,
                                     ).show()
-                            },
-                        )
+                            }
+                        }
+                    pendingLogin?.let { dev ->
+                        LaunchedEffect(dev) {
+                            loginLauncher.launch(WebViewActivity.createIntent(loginContext, dev))
+                        }
                     }
 
                     // 旋转/进程重建后 openedItem 为空：按 taskId 从列表回查（拿标题等元数据）

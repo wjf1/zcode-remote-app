@@ -565,7 +565,7 @@
     <string name="account_device_offline">离线</string>
     <string name="account_device_meta">%1$s · %2$s</string>
 
-    <!-- 登录配对页（LoginWebViewDialog / LoginWebViewActivity） -->
+    <!-- 登录配对页（WebViewActivity，T8 起 WebView 宿主为独立 Activity） -->
     <string name="login_pairing_title">登录配对 · %1$s</string>
     <string name="login_pairing_close">关闭</string>
     <string name="login_pairing_hint">请选择与电脑端相同的登录平台，并使用同一账号完成登录。</string>

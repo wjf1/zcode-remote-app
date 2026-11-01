@@ -2,8 +2,9 @@
 
 ## [Unreleased]
 
-> 2026-10-31 工程债清理轮（未发版）：tools 一次性脚本清理 + detekt 基线清理 + P0 附件上传
-> 重构复验。无功能性变更，不新增版本号。
+> 2026-11-01 T8 登录 WebView 宿主独立 Activity 化（未发版）：结构性修复 HyperOS + WebView 153
+> 「登录点不动」，真机验收待做。另含 2026-10-31 工程债清理轮（tools 一次性脚本清理 + detekt
+> 基线清理 + P0 附件上传重构复验）。两轮均不新增版本号。
 
 ### 移除
 
@@ -21,6 +22,23 @@
 
 ### 变更
 
+- **T8：登录 WebView 宿主从 Compose 布局拆为独立 `WebViewActivity`（结构性修复「登录点不动」）**。
+  HyperOS + WebView 153 上，Compose `AndroidView` 内嵌 WebView 间歇性 attach 到无效
+  surface——进程存活、无 ANR，但整页内容不上屏、登录按钮点不动（beta51 起 5 轮渲染层修复
+  未根治）。本轮把 WebView 宿主改为传统 View 层级的独立 Activity（`WebViewActivity.kt` 新建，
+  `AndroidManifest` 注册 `exported=false`），WebView 自 `onCreate` 起处于稳定 View 树、
+  无 Compose 重组 / 窗口测量时序参与，该竞态面结构性消除。**登录行为契约不变**：回调 URL
+  `hash` 补齐凭据、`localStorage zcodejwttoken` 持久化 JWT、UA 去 `; wv` 标记、Cookie
+  持久化、不拦截导航，全部原样迁移；`MainActivity` 改经
+  `ActivityResultContracts.StartActivityForResult` 回传结果后配对（触发点不变：扫码
+  `NeedsLogin` 与深链）；T9「粘贴令牌」入口与 Debug 构建 `DebugPairReceiver --es jwt`
+  注入路径不受影响。顺带收口两个已知的 WebView 生命周期坑：onPause/onResume 跟随 Activity
+  转发（否则切后台回来整页白屏）、onDestroy flush Cookie 并 destroy WebView；进程被杀后由
+  intent extras 恢复 + Cookie 续登。纯逻辑（落地页 URL / 回调解析 / 完成守护）抽为
+  `WebViewLogin.kt`（android.net.Uri → java.net 等价实现，JVM 可测），新增 `WebViewLoginTest`
+  10 项（路由构造 / 回调解析含字面 `+` 凭据保真 / 完成守护状态机），单测 **421 → 431** 全绿。
+  `LoginWebViewDialog.kt` 已删除（唯一调用点迁移完成，grep 复核无代码死引用）。
+  **真机验收待做**：小米 15 Pro（HyperOS + WebView 153）扫码 → 登录 → 配对全链路走查。
 - **detekt 基线清理：90 → 86 条**。`detektBaseline` 重新生成对照当前真实告警，删除 4 条已
   不再报告的陈旧条目（对应代码经 beta50 附件上传流水线重构等演进后签名漂移）：
   `CyclomaticComplexMethod:ConversationChannel.kt$uploadAttachment(...)`（编排已拆至

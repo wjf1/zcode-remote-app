@@ -121,6 +121,39 @@ app-android/app/src/main/java/com/zcode/remote/
 
 > 完整逐轮记录见 [CHANGELOG.md](CHANGELOG.md) 与 [HANDOVER.md](HANDOVER.md) 文首覆盖层。
 
+### 2026-11-01：T8 登录 WebView 宿主独立 Activity 化（未发版）
+
+**背景**：beta54 主线卡 T8——HyperOS + WebView 153 上 Compose AndroidView 内嵌 WebView
+登录按钮点不动（beta51 起 5 轮渲染层修复未根治的结构性问题）。T9 粘贴令牌只是旁路，
+本轮从结构上根治：WebView 宿主脱离 Compose 布局，竞态面（attach 到无效 surface /
+窗口测量时序）不再存在。
+
+| 交付 | 内容 |
+|---|---|
+| `WebViewActivity.kt`（新） | 传统 View 层级登录页（编程构建标题栏 + 提示 + WebView，无 layout XML）：登录契约原样迁移（URL `hash` 回调补齐凭据 / `localStorage zcodejwttoken` 持久化 / UA 去 `; wv` / Cookie 持久化 / 不拦截导航）；onPageFinished 与 jwt 异步求值的完成守护抽为 `LoginCompletionGuard`；onPause/onResume/destroy 跟随 Activity 转发 + Cookie flush |
+| `WebViewLogin.kt`（新） | 纯逻辑层：`landingUrl` / `parseCallbackParams` / `augmentFromUrl`（android.net.Uri → java.net 等价实现，JVM 可测）+ `LoginCompletionGuard` 状态机 |
+| `MainActivity.kt` | `pendingLogin` 改瞬时启动标记：`StartActivityForResult` launcher 启动 WebViewActivity，RESULT_OK 回传设备 extras 后 `vm.pair`（Toast 文案不变）；BackHandler 移除 pendingLogin 分支（返回键由登录 Activity 自行处理）；触发点不变（扫码 `NeedsLogin` / 深链） |
+| `AndroidManifest.xml` | 注册 `.WebViewActivity`（`exported=false`，沿用应用主题 `Theme.ZCodeRemote`） |
+| `res/drawable/ic_close.xml`（新） | 传统 View 标题栏关闭按钮图标（原用 material-icons Compose 版） |
+| 删除 `ui/screens/LoginWebViewDialog.kt` | 唯一调用点（MainActivity）已迁移，全源码 grep 复核无代码死引用 |
+
+**登录行为契约不变**：JWT 校验链路（`normalizePastedJwt` / `pastedJwtRejection`，T9）、
+Debug 构建 `DebugPairReceiver --es jwt` 注入、relay/ 会话流与 Controller 通道均未触碰；
+结果回传为 `RESULT_OK` + 设备字段 extras（`PairedDevice` 非 @Serializable，逐字段
+Bundle 传输），取消路径 RESULT_CANCELED。进程被杀重建：intent extras 恢复 + Cookie 续登。
+
+**测试**：新增 `WebViewLoginTest` 10 项（路由构造 3 / 回调解析 5——含字面 `+` 凭据保真 /
+完成守护 2）。单测 **声明 393 / 执行 431** 全绿（421 → 431）。
+
+**门禁**：`ktlintFormat` + `ktlintCheck` 0 违规、`detekt` 0 issue、
+`assembleDebug` 通过（本轮未跑 assembleRelease / lintDebug / 仪器化测试——本机无设备）。
+构建环境同工程债轮：`toolchain/gradle-8.7` + JDK 17（`F:\Android\jdk-17`）+ 阿里云镜像
+init script（`-I toolchain/mirror-init.gradle`）。
+
+**真机验收待做（发版前必做）**：小米 15 Pro（HyperOS + WebView 153）扫码 → 登录 → 配对
+全链路走查：登录页可见可点击、OAuth 跳转正常、登录完成自动回连、切后台回来不白屏。
+通过后可在下方「App 内 WebView 登录卡死」条目闭环。
+
 ### 2026-10-31：工程债清理轮（未发版）
 
 **背景**：外部分析遗留的三组工程债——tools/ 一次性脚本堆积、detekt 基线陈旧条目、
@@ -523,9 +556,13 @@ lint 双变体 0 error、detekt、ktlint 0 违规、assembleDebug/Release 通过
     「ZCode 账号」卡片未登录态新增折叠式粘贴入口，`normalizePastedJwt` / `pastedJwtRejection`
     纯函数做清理与下限校验；测试 `PastedJwtTest` 9 项。绕过 App 内 WebView 登录在
     HyperOS + WebView 153 上点不动的问题。
-  - **未做**：T8 登录迁移独立 `WebViewActivity`（现为 `LoginWebViewDialog.kt` 内全屏
-    `Surface` 临时替代）。属架构改动（把内嵌 WebView 从 Compose 布局拆成独立 Activity，
-    从结构上消除渲染竞态），需真机验收，单独一轮做。
+  - **T8 登录迁移独立 `WebViewActivity`** —— ✅ **已完成（2026-11-01，未发版）**：
+    WebView 宿主从 Compose AndroidView 内嵌拆为传统 View 层级的独立 Activity，从结构上
+    消除渲染竞态（HyperOS + WebView 153 登录点不动的根治轮）；登录行为契约不变（hash 回补 /
+    zcodejwttoken 持久化 / Debug `--es jwt` 注入 / T9 粘贴令牌入口均保留）。纯逻辑抽
+    `WebViewLogin.kt` + `WebViewLoginTest` 10 项，单测 421 → 431 全绿。
+    **结构性修复已落地，待真机确认**：小米 15 Pro 扫码 → 登录 → 配对全链路走查（见模块 4
+    本轮条目的真机验收清单）。
   **T16–T19 结构卡必须等 T2/T3 稳定一个版本后再动。**
 - **beta53 遗留的两项真机验证（不阻塞发版）**：① PC 重启（`logEpoch` 变化）后的重同步未实测
   ——需重启桌面端、会打断在线会话，后续 PC 自然重启时顺带核对；② V2 下审批链路
@@ -534,14 +571,19 @@ lint 双变体 0 error、detekt、ktlint 0 违规、assembleDebug/Release 通过
   增量 → resync」全链路目前只靠 `tools/probe.py ctrl` + 真机人工走查；T5 空列表三态
   （`HomeEmptyStateTest` 10 项纯函数）亦无仪器化取证。CI 单测下限原写 `--min 260`，**beta54 已上调至 410**（beta55 实测 421）。
 - **App 内 WebView 登录卡死（独立 bug）**：HyperOS + WebView 153 点登录按钮无响应（进程存活、
-  无 ANR）。缓解：系统浏览器完成登录；Debug 构建 `DebugPairReceiver --es jwt` 注入。修复方向：
-  WebView 渲染竞态（Compose AndroidView 内嵌 WebView，5 轮修复未根治，见 beta51 记录）。
+  无 ANR）；根因为 Compose AndroidView 内嵌 WebView 的渲染竞态（5 轮渲染层修复未根治，
+  见 beta51 记录）。**结构性修复已落地（2026-11-01 T8）：WebView 宿主拆为独立
+  `WebViewActivity`，待真机确认**；过渡缓解（系统浏览器登录 / Debug `DebugPairReceiver
+  --es jwt` 注入 / T9 粘贴令牌入口）继续保留作为兜底。
 - **最高优先（已闭环）**：通知权限、网络回调泄漏、旋转状态保持、草稿串会话、倒计时不动——
   均已完成；前四项已通过 beta42 真机走查，草稿隔离已通过 beta43 真机仪器化测试（3/3）。
 - **待补真机项（非阻塞）**：① 自适应图标在启动器内的观感（圆形/方形蒙版）；
   ② 冷启动启动屏过渡帧观感（启动屏一闪而过，属预期的快速过渡）；
   ③ 倒计时组件在真机的可视刷新（真机 API 37 因 Espresso 限制跑不了 `createComposeRule` 用例，
-  由纯函数单测 + CI API 35 emulator 覆盖）。
+  由纯函数单测 + CI API 35 emulator 覆盖）；
+  ④ **T8 登录 `WebViewActivity` 全链路真机走查（发版前必做，清单见模块 4 本轮条目）**——
+  登录页渲染 / 可点击、OAuth 跳转、登录完成自动回连、切后台回来不白屏；通过后闭环
+  「App 内 WebView 登录卡死」条目。
 - **已知测试基建限制（既有）**：API 37（Android 17）真机上 Espresso/Compose 测试库
   的 `InputManager.getInstance()` 缺失 → 依赖 `createComposeRule` 的仪器化用例在该真机必失败
   （既有 `MarkdownRenderTest` 同样失败）；CI 的 API 35 emulator 不受影响。真机取证请改用不依赖
