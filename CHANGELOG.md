@@ -3,8 +3,26 @@
 ## [Unreleased]
 
 > 2026-11-01 T8 登录 WebView 宿主独立 Activity 化（未发版）：结构性修复 HyperOS + WebView 153
-> 「登录点不动」，真机验收待做。另含 2026-10-31 工程债清理轮（tools 一次性脚本清理 + detekt
-> 基线清理 + P0 附件上传重构复验）。两轮均不新增版本号。
+> 「登录点不动」，真机验收待做。另含同日 Controller 通道 androidTest 覆盖补齐（纯加测试，闭环
+> CI 覆盖缺口）与 2026-10-31 工程债清理轮（tools 一次性脚本清理 + detekt 基线清理 + P0 附件
+> 上传重构复验）。各轮均不新增版本号。
+
+### 新增
+
+- **补齐 Controller 通道 androidTest 仪器化覆盖（CI 覆盖缺口闭环）**：新增
+  `ControllerReducerFullChainInstrumentedTest` 4 项（① 订阅侧：V2 接管判据四组合 +
+  `subscribeControllerV4` ack 双形态解析；② 全链路场景：快照建基线 → 连续 deltas 推进 →
+  `logEpoch` 变化失同步 → 水位作 resync base → 恢复快照重建状态 → 增量回到 Applied 稳态；
+  ③ `seq` 缺口失同步与恢复；④ tasks/workspaces 双 topic 独立水位互不干扰）与
+  `HomeEmptyStateInstrumentedTest` 8 项（T5 空列表三态判定、三态文案映射、过滤语义与
+  `HomeEmptyStateTest` 同口径在仪器化环境复验，另加一项 JVM 做不到的增强取证：真实 APK
+  资源表解析 `home_syncing_sessions` / `home_no_sessions` 非空且可区分）。用例均为纯函数
+  驱动（假帧序列断言状态迁移，不触网、不依赖 Espresso 注入与 `createComposeRule`），可在
+  CI API 35 emulator 的 `connectedDebugAndroidTest` 直接执行；reducer 用例以默认构造走生产
+  `ZLog`（→ `android.util.Log`）日志路径——JVM 单测因无 android.util.Log 必须注入空日志器，
+  这是仪器化取证的真实差异点。纯加测试，`relay/` 生产代码零改动；`testDebugUnitTest` 431
+  全绿无增减，`ktlintCheck` / `detekt` 0 issue，`assembleDebug` + `assembleDebugAndroidTest`
+  通过（androidTest 源集经 AGP friend paths 直接访问 main internal，无需反射）。
 
 ### 移除
 

@@ -121,6 +121,29 @@ app-android/app/src/main/java/com/zcode/remote/
 
 > 完整逐轮记录见 [CHANGELOG.md](CHANGELOG.md) 与 [HANDOVER.md](HANDOVER.md) 文首覆盖层。
 
+### 2026-11-01：Controller 通道 androidTest 覆盖补齐（未发版，纯加测试）
+
+**背景**：模块 5「CI 覆盖缺口」项——Controller 通道「订阅 → 快照 → 增量 → resync」全链路
+此前只靠 `tools/probe.py ctrl` + 真机人工走查，T5 空列表三态无仪器化取证。本轮闭环该缺口，
+`relay/` 生产代码零改动。
+
+| 交付 | 内容 |
+|---|---|
+| `ControllerReducerFullChainInstrumentedTest.kt`（新，androidTest/relay） | 4 项：① 订阅侧（V2 接管判据四组合 + `subscribeControllerV4` ack 双形态解析）；② 全链路场景（快照建基线 → 连续 deltas 推进不误报 → `logEpoch` 变化失同步 → 水位作 resync base → 恢复快照重建状态 → 增量回到 Applied 稳态）；③ `seq` 缺口失同步与恢复；④ tasks/workspaces 双 topic 独立水位互不干扰 |
+| `HomeEmptyStateInstrumentedTest.kt`（新，androidTest/ui/screens） | 8 项：T5 三态判定 / 三态文案 / 过滤语义与 `HomeEmptyStateTest` 同口径复验；仪器化增强断言——真实 APK 资源表解析 `home_syncing_sessions` / `home_no_sessions` 非空且可区分（JVM 单测只有 R 常量，解析不了资源） |
+
+**取证差异点**：reducer 用例以**默认构造**走生产 `ZLog`（→ `android.util.Log`）日志路径
+（JVM 单测因无 android.util.Log 必须注入空日志器，仪器化环境补上这条真实路径的证据）。
+两文件均为纯函数驱动（假帧序列断言状态迁移，不触网），不依赖 Espresso 注入 /
+`createComposeRule`（规避 API 37 真机 Espresso 缺失），**CI API 35 emulator 的
+`connectedDebugAndroidTest` 直接执行**——真机取证不再必要，常态回归靠 CI emulator；
+`tools/probe.py ctrl` 保留作协议实测取证手段。
+
+**门禁**：`assembleDebugAndroidTest` 编译通过（androidTest 源集经 AGP friend paths 直接
+访问 main internal，无需反射）；`testDebugUnitTest` **431 全绿**（0 failures / 0 errors，
+无增减，≥ CI 下限 410）；`ktlintCheck` / `detekt` 0 issue；`assembleDebug` 通过。
+构建环境同 T8 轮：`toolchain/gradle-8.7` + JDK 17（`F:\Android\jdk-17`）。
+
 ### 2026-11-01：T8 登录 WebView 宿主独立 Activity 化（未发版）
 
 **背景**：beta54 主线卡 T8——HyperOS + WebView 153 上 Compose AndroidView 内嵌 WebView
@@ -567,9 +590,11 @@ lint 双变体 0 error、detekt、ktlint 0 违规、assembleDebug/Release 通过
 - **beta53 遗留的两项真机验证（不阻塞发版）**：① PC 重启（`logEpoch` 变化）后的重同步未实测
   ——需重启桌面端、会打断在线会话，后续 PC 自然重启时顺带核对；② V2 下审批链路
   （`resolveInteraction`）未实测——本轮无待审批交互，下一次真实审批时顺带核对。
-- **CI 覆盖缺口**：`androidTest` 在 beta53 未新增任何用例，Controller 通道「订阅 → 快照 →
-  增量 → resync」全链路目前只靠 `tools/probe.py ctrl` + 真机人工走查；T5 空列表三态
-  （`HomeEmptyStateTest` 10 项纯函数）亦无仪器化取证。CI 单测下限原写 `--min 260`，**beta54 已上调至 410**（beta55 实测 421）。
+- **CI 覆盖缺口（✅ 已闭环，2026-11-01，见模块 4 本轮条目）**：Controller 通道「订阅 → 快照 →
+  增量 → resync」与 T5 空列表三态的仪器化取证已补齐——`ControllerReducerFullChainInstrumentedTest`
+  4 项 + `HomeEmptyStateInstrumentedTest` 8 项（纯函数驱动、无 Espresso 依赖），由 CI API 35
+  emulator 的 `connectedDebugAndroidTest` 常态执行；`tools/probe.py ctrl` 保留作协议实测取证
+  手段。CI 单测下限原写 `--min 260`，**beta54 已上调至 410**（beta55 实测 421，2026-11-01 实测 431）。
 - **App 内 WebView 登录卡死（独立 bug）**：HyperOS + WebView 153 点登录按钮无响应（进程存活、
   无 ANR）；根因为 Compose AndroidView 内嵌 WebView 的渲染竞态（5 轮渲染层修复未根治，
   见 beta51 记录）。**结构性修复已落地（2026-11-01 T8）：WebView 宿主拆为独立
