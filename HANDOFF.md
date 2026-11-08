@@ -121,6 +121,12 @@ app-android/app/src/main/java/com/zcode/remote/
 
 > 完整逐轮记录见 [CHANGELOG.md](CHANGELOG.md) 与 [HANDOVER.md](HANDOVER.md) 文首覆盖层。
 
+### 2026-11-08：新增根目录 ARCHITECTURE.md（未发版，纯文档）
+
+按「代码超 1 万行必维护架构文档」规范补齐五要素（鸟瞰 / codemap / 架构不变量与刻意不做 /
+App↔ws2 中继↔宿主边界 / 横切关注点），139 行；SSOT 指向 `relay/ProtocolLimits.kt` 与
+`PROTOCOL.md`。本机同步快进 7 个提交至远端最新（`7d221d0`）。
+
 ### 2026-11-01：Controller 通道 androidTest 覆盖补齐（未发版，纯加测试）
 
 **背景**：模块 5「CI 覆盖缺口」项——Controller 通道「订阅 → 快照 → 增量 → resync」全链路
