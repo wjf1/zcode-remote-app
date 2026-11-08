@@ -4,7 +4,7 @@
 
 ### 变更
 
-- **依赖升级阶段 1（评估报告的最小风险批次，零语义改动）**：Gradle 8.7 → 8.13（CI setup-gradle 三处同步）；AGP 8.5.2 → 8.13.0（8.x 末代）；compileSdk 35 → 36（app + benchmark，`lifecycle` 2.11 / `activity` 1.13 的 AAR 元数据硬性要求）；androidx 系：activity-compose 1.9.2 → 1.13.0、lifecycle-runtime-ktx/viewmodel-compose/runtime-compose 2.8.6 → 2.11.0、uiautomator 2.4.0 → 2.4.1。Kotlin 保持 2.0.20（detekt 1.23.8 兼容上限内，见评估报告）；ktlint 全量格式化另行一轮。本机验证到 AGP 8.13 配置解析 + gradle help 通过；编译与五关卡门禁由 CI 完整验证。
+- **依赖升级阶段 1（评估报告的最小风险批次，零语义改动）**：Gradle 8.7 → 8.13（CI setup-gradle 三处同步）；AGP 8.5.2 → 8.13.0（8.x 末代）；compileSdk 35 → 36（app + benchmark，`lifecycle` 2.11 / `activity` 1.13 的 AAR 元数据硬性要求）；androidx 系：activity-compose 1.9.2 → 1.11.0、lifecycle-runtime-ktx/viewmodel-compose/runtime-compose 2.8.6 → 2.9.3（2.11.0 为 beta 口径，实际要求 compileSdk 37 + AGP 9.1，属阶段 3 组合，已回退）、uiautomator 2.4.0 → 2.4.1。Kotlin 保持 2.0.20（detekt 1.23.8 兼容上限内，见评估报告）；ktlint 全量格式化另行一轮。本机验证到 AGP 8.13 配置解析 + gradle help 通过；编译与五关卡门禁由 CI 完整验证。
 
 ## [v0.5.0-beta55]
 
