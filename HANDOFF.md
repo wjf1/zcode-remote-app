@@ -512,6 +512,12 @@ lint 双变体 0 error、detekt、ktlint 0 违规、assembleDebug/Release 通过
 
 ## 5. 接力开发指引与待办（Next Steps / Backlog）
 
+### 真机批次执行卡（2026-11-08 制定）
+
+- **环境变化（依赖升级阶段 1 已落地，CI 全绿 run 42490983989）**：Gradle 8.13 / AGP 8.13.0 / compileSdk 36 / lifecycle 2.9.3 / activity 1.11.0。本机构建：`JAVA_HOME=F:\Android\jdk-17` + gradle 8.13（`F:\AI\Zcode\_tmp\gradle-8.13\`），SDK 需 platforms/android-36（联网自动装，走代理 `-Dhttps.proxyHost=127.0.0.1 -Dhttps.proxyPort=7901`，端口会漂移以 netstat 为准）。
+- **步骤**：T8 WebViewActivity 登录迁移真机验收 + beta53 两项（PC 重启重同步、V2 审批链路）+ 阶段 1 升级后的回归走查（重点：连接链路 / 设置页 / 扫码 CameraX）→ 结果回写本 HANDOFF。
+- 完成后：评估 beta56 或 1.0.0 发布门进度（A-5 重组与大 RPC 分片仍为硬门，见 §6 既有决策）。
+
 ### ✅ 已完成：国际化资源化（6 批全部完成，2026-10-16）
 
 **目标**：把散落的中文字面量抽到 `res/values/strings.xml`，实现「文案集中管理 + 未来可翻译 +
