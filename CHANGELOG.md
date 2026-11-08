@@ -2,6 +2,12 @@
 
 ## [Unreleased]
 
+### 变更
+
+- **依赖升级阶段 1（评估报告的最小风险批次，零语义改动）**：Gradle 8.7 → 8.13（CI setup-gradle 三处同步）；AGP 8.5.2 → 8.13.0（8.x 末代）；compileSdk 35 → 36（app + benchmark，`lifecycle` 2.11 / `activity` 1.13 的 AAR 元数据硬性要求）；androidx 系：activity-compose 1.9.2 → 1.13.0、lifecycle-runtime-ktx/viewmodel-compose/runtime-compose 2.8.6 → 2.11.0、uiautomator 2.4.0 → 2.4.1。Kotlin 保持 2.0.20（detekt 1.23.8 兼容上限内，见评估报告）；ktlint 全量格式化另行一轮。本机验证到 AGP 8.13 配置解析 + gradle help 通过；编译与五关卡门禁由 CI 完整验证。
+
+## [v0.5.0-beta55]
+
 > 2026-11-01 T8 登录 WebView 宿主独立 Activity 化（未发版）：结构性修复 HyperOS + WebView 153
 > 「登录点不动」，真机验收待做。另含同日 Controller 通道 androidTest 覆盖补齐（纯加测试，闭环
 > CI 覆盖缺口）与 2026-10-31 工程债清理轮（tools 一次性脚本清理 + detekt 基线清理 + P0 附件

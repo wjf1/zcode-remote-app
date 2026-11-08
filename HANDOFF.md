@@ -118,6 +118,7 @@ app-android/app/src/main/java/com/zcode/remote/
   与 `research/FRAME-CODEC.md`、`research/CONVERSATION-PROTOCOL.md`。
 
 ## 4. 最近一轮变更与交付成果
+- **2026-11-08：依赖升级阶段 1 落地**——按评估报告（docs 评审结论）执行最小风险批次：Gradle 8.13 / AGP 8.13.0 / compileSdk 36 / activity 1.13 / lifecycle 2.11 / uiautomator 2.4.1 / CI gradle-version 三处同步。阶段 2（Kotlin 2.1.x + BOM/OkHttp/CameraX）与阶段 3（等 detekt 2.0 stable）按报告排期。
 
 > 完整逐轮记录见 [CHANGELOG.md](CHANGELOG.md) 与 [HANDOVER.md](HANDOVER.md) 文首覆盖层。
 
