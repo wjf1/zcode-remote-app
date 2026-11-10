@@ -49,7 +49,7 @@ sealed interface RelayState {
     ) : RelayState
 }
 
-enum class FailureReason { KICKED, AUTH_FAILED, DEVICE_OFFLINE, NETWORK, INTERNAL, PROTOCOL_MISMATCH, INVALID_ENDPOINT }
+enum class FailureReason { KICKED, AUTH_FAILED, DEVICE_OFFLINE, NETWORK, INTERNAL, PROTOCOL_MISMATCH, INVALID_ENDPOINT, DESKTOP_DISCONNECTED }
 
 /**
  * 重连退避（纯函数，便于 JVM 单测）：3s 起指数翻倍，48s 封顶。
@@ -204,6 +204,15 @@ class RelayClient(
     }
 
     private var socket: WebSocket? = null
+
+    /**
+     * DEVICE_OFFLINE 有界宽限（官方 2026-10-27「旧 SID 自动接续」配套，`recoverConnection(15_000)`）：
+     * 首次进入 WaitingPeer 起算 15s，窗口内保持既有退避重试（桌面可能只是重启间隙）；
+     * 超时升级为 [FailureReason.DESKTOP_DISCONNECTED]（可接续终态）交上层按 MID 自动接续。
+     * 重连再次遇 DEVICE_OFFLINE **不重置**起点——否则「退避重连→归零」会让总窗口永不到期。
+     */
+    @Volatile private var offlineGraceStartMs = 0L
+    private var offlineGraceJob: Job? = null
 
     @Volatile private var manuallyClosed = false
 
@@ -457,6 +466,7 @@ class RelayClient(
                             }
                             "matched" -> {
                                 reconnectAttempt = 0
+                                cancelOfflineGrace()
                                 _state.value = RelayState.Paired
                                 startHeartbeat()
                             }
@@ -501,7 +511,7 @@ class RelayClient(
                             ->
                                 fail(FailureReason.AUTH_FAILED, "配对失效，请重新扫码")
                             RelayProtocol.RelayError.DEVICE_OFFLINE -> {
-                                _state.value = RelayState.WaitingPeer
+                                enterOfflineGrace()
                                 scheduleReconnect()
                             }
                             else -> fail(FailureReason.INTERNAL, "中继内部错误")
@@ -544,6 +554,26 @@ class RelayClient(
          * 30s = 3 个心跳周期未回，属确定性失活。
          */
         internal const val HEARTBEAT_STALE_MS: Long = 30_000L
+
+        /**
+         * DEVICE_OFFLINE 宽限窗口：15s，对齐官方 `desktopOfflineGraceMs ?? 15_000`
+         * （官方仓库 webRemoteControlTransport.ts）。期间桌面重启回来则平滑恢复；
+         * 超时升级 [FailureReason.DESKTOP_DISCONNECTED]，由上层按 MID 自动接续新 SID。
+         */
+        internal const val DEVICE_OFFLINE_GRACE_MS: Long = 15_000L
+
+        /**
+         * 终态失败集合（不参与自动重连）：互踢 / 配对失效 / 协议不匹配 / 端点不安全 / 桌面端离线。
+         * 与 `ui/screens/HomeConnectionInfo.isTerminalFailure` 必须保持一致（后者决定「前往设置」引导）。
+         */
+        internal val TERMINAL_FAILURES =
+            setOf(
+                FailureReason.KICKED,
+                FailureReason.AUTH_FAILED,
+                FailureReason.PROTOCOL_MISMATCH,
+                FailureReason.INVALID_ENDPOINT,
+                FailureReason.DESKTOP_DISCONNECTED,
+            )
     }
 
     private fun fail(
@@ -551,17 +581,53 @@ class RelayClient(
         message: String?,
     ) {
         stopHeartbeat()
+        cancelOfflineGrace()
         // 终态失败不参与自动重连：重连会与占位的另一 terminal（官方 Web/桌面端面板内嵌页）
         // 形成 3s 级互踢死循环（2026-09-30 真机实测）。用户按横幅指引「断开→重新连接」恢复。
-        if (reason == FailureReason.KICKED ||
-            reason == FailureReason.AUTH_FAILED ||
-            reason == FailureReason.PROTOCOL_MISMATCH ||
-            reason == FailureReason.INVALID_ENDPOINT
-        ) {
+        // DESKTOP_DISCONNECTED 同为终态：宽限期内调度的退避重连到点会查 terminalFailed，
+        // 不列入会穿透终态、形成 15s 周期的「超时→重连→再超时」循环；自动恢复交上层按 MID 接续。
+        if (reason in TERMINAL_FAILURES) {
             terminalFailed = true
             reconnectAttempt = 0
         }
         _state.value = RelayState.Failed(reason, message)
+    }
+
+    /**
+     * DEVICE_OFFLINE → 有界宽限（详见 [offlineGraceStartMs] 注释）。
+     * 宽限内重连成功配对即取消归零；超时且仍停在 WaitingPeer 才升级终态。
+     *
+     * ⚠️ 这里**不能**调 `startHeartbeat()`：DEVICE_OFFLINE 意味着服务端已判定桌面端离线，
+     * 随后的心跳收不到任何 ack，会被 T11 单向失活逻辑在 30s 判成 `NETWORK`（非终态、无限重连），
+     * 抢在 15s 宽限之前把状态改掉——接续路径就永远等不到 DESKTOP_DISCONNECTED。
+     */
+    private fun enterOfflineGrace() {
+        // 已是终态就不再受理：宽限超时后 terminalFailed 置真，理论上不会再走到这里
+        // （终态时 socket 已不再收帧），但显式挡一层，防止万一的状态回退把终态覆盖回 WaitingPeer。
+        if (terminalFailed || manuallyClosed) return
+        _state.value = RelayState.WaitingPeer
+        if (offlineGraceStartMs == 0L) {
+            offlineGraceStartMs = System.currentTimeMillis()
+            offlineGraceJob =
+                io.launch {
+                    delay(DEVICE_OFFLINE_GRACE_MS)
+                    if (_state.value is RelayState.WaitingPeer && !manuallyClosed) {
+                        ZLog.w(TAG, "DEVICE_OFFLINE 宽限 ${DEVICE_OFFLINE_GRACE_MS / 1000}s 超时，升级为可接续终态")
+                        // 先摘掉自己的引用再进 fail()：否则 fail() 内的 cancelOfflineGrace()
+                        // 会 cancel 掉当前协程（虽然赋值是同步的、本次能跑完，但引用会残留成
+                        // 「已取消的 job」，后续 cancel 语义与排查都易误读）。
+                        offlineGraceJob = null
+                        offlineGraceStartMs = 0L
+                        fail(FailureReason.DESKTOP_DISCONNECTED, "桌面端长时间离线：等待自动接续或手动重连")
+                    }
+                }
+        }
+    }
+
+    private fun cancelOfflineGrace() {
+        offlineGraceJob?.cancel()
+        offlineGraceJob = null
+        offlineGraceStartMs = 0L
     }
 
     private fun startHeartbeat() {

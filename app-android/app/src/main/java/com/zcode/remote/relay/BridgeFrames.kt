@@ -45,6 +45,30 @@ object BridgeFrames {
             )
         }
 
+    /**
+     * 置顶/取消置顶任务（官方 2026-10-27 前后新增的动作位，schema 已核验：
+     * 官方 `validation.ts` `webRemoteControlTaskActionTargetShape` + `webRemoteControlActions.ts`
+     * `WebRemoteControlTaskPinRequestPayload`）。
+     * 请求：`{zcode_type:"task-pin-request", requestId, taskId, workspacePath, workspaceIdentity?, pinned}`。
+     * 应答：`{zcode_type:"task-pin-response", requestId, taskId, success, pinned|error}`——
+     * 不内嵌快照，列表纠偏走既有 Controller `task.upserted` 广播。
+     */
+    fun taskPinRequest(
+        requestId: String,
+        taskId: String,
+        workspacePath: String,
+        workspaceIdentity: String?,
+        pinned: Boolean,
+    ): JsonObject =
+        buildJsonObject {
+            put("zcode_type", "task-pin-request")
+            put("requestId", requestId)
+            put("taskId", taskId)
+            put("workspacePath", workspacePath)
+            workspaceIdentity?.takeIf { it.isNotBlank() }?.let { put("workspaceIdentity", it) }
+            put("pinned", pinned)
+        }
+
     fun zcodeTypeOf(payload: JsonObject): String? = payload["zcode_type"]?.let { runCatching { it.jsonPrimitive.content }.getOrNull() }
 
     fun requestIdOf(payload: JsonObject): String? = payload["requestId"]?.let { runCatching { it.jsonPrimitive.content }.getOrNull() }
@@ -68,6 +92,11 @@ data class SessionItem(
      * 原因需进会话页看快照 `control.lastError`，那里是协议保证存在的）。
      */
     val lastError: String? = null,
+    /**
+     * 置顶状态（V2 Controller 通道 `membership.pinned`；官方桌面侧栏同语义）。
+     * V1 bootstrap `tasks[]` 无该字段——宽容解析缺省 false；仅影响列表排序与徽标展示。
+     */
+    val pinned: Boolean = false,
 ) {
     val isRunning: Boolean get() = displayStatus == "running" || displayStatus == "streaming"
     val needsApproval: Boolean
@@ -87,6 +116,7 @@ data class SessionItem(
                 updatedAt = str("updatedAt")?.toLongOrNull(),
                 archived = str("archived") == "true",
                 lastError = errorText(obj["lastError"]),
+                pinned = false, // V1 bootstrap 无置顶语义（宽容解析；V2 由 Controller 通道提供）
             )
         }
 

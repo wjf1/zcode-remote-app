@@ -94,6 +94,7 @@
     <string name="home_conn_failed_auth">配对已失效，请前往设置重新扫码配对。</string>
     <string name="home_conn_failed_protocol">中继协议可能已升级，请更新 App 后重试。</string>
     <string name="home_conn_failed_endpoint">中继地址不安全，已拒绝连接（请检查线路设置）。</string>
+    <string name="home_conn_failed_desktop_offline">桌面端已长时间离线，自动接续未命中。请确认电脑状态后重连。</string>
     <string name="home_conn_failed_generic">连接失败，正在自动重试…</string>
 
     <!-- ========== 会话状态面板（StatusPanelLabels） ========== -->
@@ -219,9 +220,19 @@
     <string name="home_no_match">没有找到匹配的会话</string>
     <string name="home_syncing_sessions">已连接 PC，正在同步会话列表…</string>
     <string name="home_no_sessions">暂无会话，从 PC 端或点「新建」开始</string>
+    <!-- 连接过程分段进度（对标官方 webRemoteControlConnectingScreen 四段文案） -->
+    <string name="home_phase_relay">连接中转服务</string>
+    <string name="home_phase_auth">设备鉴权</string>
+    <string name="home_phase_pairing">等待桌面端配对</string>
+    <string name="home_phase_sync">同步工作区</string>
     <string name="home_empty_create">新建会话</string>
     <string name="home_badge_active">正在查看</string>
     <string name="home_badge_desktop_focus">PC焦点</string>
+    <string name="home_badge_pinned">📌 置顶</string>
+    <string name="session_menu_pin">置顶</string>
+    <string name="session_menu_unpin">取消置顶</string>
+    <string name="session_menu_delete">删除会话</string>
+    <string name="flash_pin_failed">置顶操作失败（未连接或桌面端拒绝）</string>
     <string name="home_pending_hint">⏳ %1$d 项待决议 (请前往「待办」处理)</string>
     <string name="home_delete_title">删除会话</string>
     <string name="home_delete_body">将删除「%1$s」并从 PC 端会话列表移除，PC 端同步生效。确定删除？</string>
@@ -230,7 +241,8 @@
     <!-- 无障碍（走查 #12）：TalkBack 需要知道纯视觉元素与自定义点击行的语义 -->
     <string name="a11y_connection_status">连接状态：%1$s</string>
     <string name="a11y_session_card">会话 %1$s，%2$s</string>
-    <string name="a11y_session_card_long_press_hint">长按可删除</string>
+    <string name="a11y_session_unread">有未读内容</string>
+    <string name="a11y_session_card_long_press_hint">长按可置顶或删除</string>
     <string name="a11y_open_settings">打开设置</string>
     <string name="a11y_timeline_item">会话消息</string>
     <!-- 会话状态 / 继电器状态 / 思考档位 / 执行模式标签（HomeScreen 内纯函数） -->
@@ -278,6 +290,7 @@
     <string name="settings_pair_new">配对新设备</string>
     <string name="settings_section_current_device">当前连接设备</string>
     <string name="settings_disconnect">断开</string>
+    <string name="settings_connect">连接</string>
     <string name="settings_connection_failed">连接失败</string>
     <string name="settings_section_other_devices">已配对的其他设备 (%1$d)</string>
     <string name="settings_switch_connection">切换连接</string>
@@ -522,6 +535,7 @@
     <string name="terminal_title_auth_failed">配对已失效，请重新扫码</string>
     <string name="terminal_title_protocol_mismatch">中继协议可能已升级</string>
     <string name="terminal_title_invalid_endpoint">中继地址不安全，已拒绝连接</string>
+    <string name="terminal_title_desktop_offline">桌面端已离线</string>
     <string name="terminal_title_generic">连接已终止</string>
     <string name="update_need_token">私有仓库需配置 GitHub Token 后拉取更新</string>
     <string name="update_no_release_or_token">未找到 Release 或 Token 无权限 (%1$d)</string>

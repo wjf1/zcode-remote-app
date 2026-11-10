@@ -390,6 +390,8 @@ class MainActivity : ComponentActivity() {
                                                 availableModels = vm.allAvailableModels,
                                                 modelReasoningLevels = vm.modelReasoningLevels,
                                                 onSessionDelete = { vm.deleteSession(it) },
+                                                onSessionTogglePin = { vm.pinSession(it, !it.pinned) },
+                                                unreadBySession = vm.unreadBySession,
                                                 onCreateSession = { prompt, modelOption, execMode ->
                                                     vm.createNewSession(
                                                         firstPrompt = prompt,
@@ -443,6 +445,7 @@ class MainActivity : ComponentActivity() {
                                                 onSwitchDevice = { vm.switchDevice(it) },
                                                 onRemoveDevice = { vm.removeDevice(it) },
                                                 onDisconnect = { vm.disconnect() },
+                                                onConnect = { vm.connect() },
                                                 onRescan = {
                                                     closeSession()
                                                     scanning = true

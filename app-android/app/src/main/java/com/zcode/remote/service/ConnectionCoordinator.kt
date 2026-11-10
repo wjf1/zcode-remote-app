@@ -20,7 +20,9 @@ import com.zcode.remote.relay.ResyncThrottle
 import com.zcode.remote.relay.RpcChannel
 import com.zcode.remote.relay.SessionItem
 import com.zcode.remote.relay.SessionsIndexChannel
+import com.zcode.remote.relay.SidContinuation
 import com.zcode.remote.relay.TaskEvent
+import com.zcode.remote.relay.V2AccountApi
 import com.zcode.remote.relay.WorkspaceConfigChannel
 import com.zcode.remote.relay.displayStatusForPhase
 import com.zcode.remote.relay.displayStatusForTaskEvent
@@ -32,6 +34,7 @@ import com.zcode.remote.repo.NotificationCoordinator
 import com.zcode.remote.storage.PairedDevice
 import com.zcode.remote.storage.ProtocolStack
 import com.zcode.remote.storage.SessionCacheStore
+import com.zcode.remote.storage.TokenStore
 import com.zcode.remote.util.LogRedactor
 import com.zcode.remote.util.ZLog
 import com.zcode.remote.util.diag.DiagEventCode
@@ -39,6 +42,7 @@ import com.zcode.remote.util.diag.Diagnostics
 import com.zcode.remote.util.resolve
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.launch
+import kotlinx.serialization.json.booleanOrNull
 import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
@@ -104,6 +108,28 @@ class ConnectionCoordinator(
         fun hostResetControllerSynced()
 
         fun hostRetrySubscribe()
+
+        /**
+         * 旧 SID 自动接续（官方 2026-10-27）：接续命中后以新 SID 覆盖存储与宿主激活设备。
+         * 宿主实现 = `MultiDeviceStore.upsertActive` + 刷新 `devices`/`device` 状态
+         * （等价 `pair()` 的存储部分，不触发 connect——由编排层随后统一发起）。
+         */
+        fun hostAdoptContinuationDevice(next: PairedDevice)
+
+        /**
+         * task-pin 应答（置顶动作收尾，官方 schema：`{requestId, taskId, success, pinned|error}`）。
+         * 宿主实现：ok=false 时回滚乐观更新并提示；ok=true 时以应答回显的 pinned 对齐
+         * （列表最终一致性由 Controller `task.upserted` 广播兜底）。
+         */
+        fun hostOnPinAck(
+            requestId: String,
+            taskId: String,
+            ok: Boolean,
+            pinned: Boolean,
+        )
+
+        /** 会话未读标记（任务事件流驱动；宿主自行跳过当前订阅会话）。 */
+        fun hostMarkUnread(taskId: String)
     }
 
     /**
@@ -120,8 +146,26 @@ class ConnectionCoordinator(
     private var bridgeReopenCount = 0
     private var bridgeReopenJob: kotlinx.coroutines.Job? = null
 
+    /**
+     * V2 未读检测基准：每个会话上一次已知的 `updatedAt`。
+     *
+     * 为什么需要：V2 协议下任务事件不走 `data` 层的 `TaskEvent` 流（真机实测：该分支零帧，
+     * 会话内容全部走 RPC 桥通道），故 V1 的「任务事件→未读」路径在 V2 不成立。改用 Controller
+     * 通道的全量快照比对：某会话 `updatedAt` 前进且非当前订阅会话 → 有新内容。
+     * 首份快照只建基准不标记（否则一进 App 全部会话都会被标未读）。
+     */
+    private val seenUpdatedAt = HashMap<String, Long>()
+
     /** 协议违例 → 重订阅的节流器（§11.5.2；见 [requestResync]）。 */
     private val resyncThrottle = ResyncThrottle()
+
+    /**
+     * 旧 SID 自动接续预算（官方 relay-v2-pairing.md §「旧 SID 自动接续」）：
+     * 接续出的连接在**配对成功前**再失败不再二次接续（有界，防止 JWT 失效等场景下
+     * 「接续→失败→再接续」风暴）；[RelayState.Paired] 到达即复位。
+     */
+    @Volatile
+    private var sidContinuationUsed = false
 
     /** A-2/删会话/断开共用：作废在途的握手自动重订并把预算归零。 */
     fun resetHandshakeRetry() {
@@ -171,6 +215,8 @@ class ConnectionCoordinator(
         ConnectionScope.manuallyDisconnected = false
         // 新一轮连接重新经历「同步中」窗口（V2）；V1 侧该标志无意义
         host.hostResetControllerSynced()
+        // 未读基准随连接重建清空：新连接的快照是全新基准，拿旧连接的时间戳对比会误标一片未读
+        seenUpdatedAt.clear()
         // P0-A：前台服务保住进程 —— App 在后台/锁屏时连接与审批通知才可达（招牌功能的性命）
         ConnectionService.start(host.hostContext)
         // §11.4 阶段②：重建连接栈前先取消旧 collector —— 否则重连会叠加旧流，
@@ -280,21 +326,21 @@ class ConnectionCoordinator(
                 host.hostRelayState = st
                 // §11.8 可观测性：只记状态名（不记 URL/SID）
                 Diagnostics.record(DiagEventCode.RELAY_STATE, "state=${st::class.simpleName}")
+                // 旧 SID 自动接续（官方 2026-10-27）：可接续终态先尝试按 MID 接到新 SID，
+                // 接管期间本条终态不落地（不发常驻通知）；未命中时在 trySidContinuation 内补发。
+                if (st is RelayState.Failed && trySidContinuation(st, dev)) return@collect
                 // Sprint 2 / A 组第 3 项：终态失败发常驻系统通知 —— 手机在兜里时不能
-                // 静默失去全部审批能力（KICKED/配对失效/协议升级用户都必须立刻知道）。
-                val terminal =
-                    (st as? RelayState.Failed)?.takeIf {
-                        it.reason == FailureReason.KICKED ||
-                            it.reason == FailureReason.AUTH_FAILED ||
-                            it.reason == FailureReason.PROTOCOL_MISMATCH ||
-                            it.reason == FailureReason.INVALID_ENDPOINT
-                    }
+                // 静默失去全部审批能力（KICKED/配对失效/协议升级/桌面离线用户都必须立刻知道）。
+                // 终态集合直接读 RelayClient.TERMINAL_FAILURES，避免与本文件/UI 层各写一份漂移。
+                val terminal = (st as? RelayState.Failed)?.takeIf { it.reason in RelayClient.TERMINAL_FAILURES }
                 if (terminal != null) {
                     TerminalNotifier.show(host.hostContext, NotificationCoordinator.terminalTitle(terminal.reason).resolve(host.hostContext), terminal.message)
                 } else {
                     TerminalNotifier.clear(host.hostContext)
                 }
                 if (st is RelayState.Paired) {
+                    // 接续预算复位（官方语义：配对成功后新一轮失败可再接续一次）
+                    sidContinuationUsed = false
                     ch.reset()
                     c.sendPayload(BridgeFrames.bootstrapRequest("boot-${System.currentTimeMillis()}"))
                     // 接管后立即上报视图状态（P1-2）：PC 端知道手机在看哪个工作区/会话
@@ -336,8 +382,31 @@ class ConnectionCoordinator(
                     "rpc-frame-ack" -> Unit
 
                     "workspace-list-response", "workspace-list-updated" -> Unit
+                    // 置顶应答（官方 schema：success=true 回显生效 pinned；false 带 error）。
+                    // 收尾交宿主：失败回滚乐观更新；列表纠偏走既有 task.upserted 广播。
+                    "task-pin-response" -> {
+                        val ok =
+                            payload["success"]?.let { runCatching { it.jsonPrimitive.booleanOrNull }.getOrNull() }
+                        val tid =
+                            payload["taskId"]?.let { runCatching { it.jsonPrimitive.content }.getOrNull() }
+                        val pinned =
+                            payload["pinned"]?.let { runCatching { it.jsonPrimitive.booleanOrNull }.getOrNull() }
+                        if (ok != null && tid != null) {
+                            host.hostOnPinAck(
+                                BridgeFrames.requestIdOf(payload) ?: "",
+                                tid,
+                                ok,
+                                pinned ?: false,
+                            )
+                        }
+                    }
                     null ->
                         TaskEvent.from(payload)?.let { ev ->
+                            // 未读标记（对标官方「未读蓝点」）：非当前订阅会话的实质活动即标记，
+                            // 进入会话（openSession）清除。permission/elicitation 走审批角标不重复计。
+                            if (ev.taskId != null && ev.type in UNREAD_EVENT_TYPES) {
+                                host.hostMarkUnread(ev.taskId)
+                            }
                             host.hostEvents.add(0, ev)
                             if (host.hostEvents.size > 200) host.hostEvents.removeAt(host.hostEvents.lastIndex)
                             // 审批推送走任务事件流（实测会话帧里没有 pendingInteractions）：
@@ -501,6 +570,18 @@ class ConnectionCoordinator(
                 // 首份快照无论条数都结束「同步中」态（空列表也是同步完成的结论）
                 host.hostMarkControllerSynced()
                 if (cur == next) return@collect
+                // 未读标记（V2 路径）：Controller 是全量会话的权威源，某会话 updatedAt 前进
+                // 且不是当前正在看的会话 → 标记未读。首份快照不参与（没有基准，会全标）。
+                if (seenUpdatedAt.isNotEmpty()) {
+                    val subscribed = convRepo.subscribedSessionId
+                    next.forEach { s ->
+                        if (isNewlyUpdated(seenUpdatedAt[s.taskId], s.updatedAt, s.taskId, subscribed)) {
+                            host.hostMarkUnread(s.taskId)
+                        }
+                    }
+                }
+                seenUpdatedAt.clear()
+                next.forEach { s -> s.updatedAt?.let { seenUpdatedAt[s.taskId] = it } }
                 Diagnostics.record(DiagEventCode.CONTROLLER_LIST, "count=${next.size} archived=${tasks.size - next.size}")
                 host.hostReplaceSessions(next)
                 host.hostScope.launch { SessionCacheStore.save(host.hostContext, next) }
@@ -511,6 +592,71 @@ class ConnectionCoordinator(
         ElicitationBridge.handler = { interactionId, answerJson ->
             approvalRepo.resolveElicitationById(interactionId, answerJson)
         }
+    }
+
+    /**
+     * 旧 SID 自动接续（官方 2026-10-27，relay-v2-pairing.md §「旧 SID 自动接续」）。
+     *
+     * 桌面端重注册（重启/重登）会换新 device_sid（MID 不变），旧 SID 从此连不上——此前 App
+     * 只能无限同 SID 重试或退回手动重扫码。现按官方手机端行为：可接续终态后用当前 JWT 查一次
+     * 设备列表，落点由纯函数 [SidContinuation.resolve] 裁决（旧 SID 在线→沿用；同 MID 恰好一个
+     * 其他在线 SID→切换；否则维持原终态）。
+     *
+     * 返回 true = 已接管本条终态（编排挂到进程级 scope，本 collector 即将随 connect() 的
+     * cancelCollectors 结束，不得在其协程内直接调 [connect]）；false = 原终态照常落地。
+     *
+     * 接续条件（全部满足才尝试）：可接续 reason（AUTH_FAILED / DESKTOP_DISCONNECTED）∧
+     * V2 设备（V1 无 JWT，passHash 语义不适用）∧ 预算未用 ∧ 读取到 JWT ∧ 设备 MID 可用。
+     */
+    private fun trySidContinuation(
+        failed: RelayState.Failed,
+        failedDevice: PairedDevice,
+    ): Boolean {
+        val continuable =
+            failed.reason == FailureReason.AUTH_FAILED || failed.reason == FailureReason.DESKTOP_DISCONNECTED
+        if (!continuable) return false
+        if (failedDevice.protocolStack != ProtocolStack.V2) return false
+        if (sidContinuationUsed) return false
+        val mid = failedDevice.deviceMid?.takeIf { it.isNotBlank() } ?: return false
+        val jwt =
+            runCatching { TokenStore(host.hostContext).readZcodeJwt() }.getOrNull()?.takeIf { it.isNotBlank() }
+                ?: return false
+        sidContinuationUsed = true
+        val oldSid = failedDevice.deviceSid
+        ZLog.w(TAG, "可接续终态 reason=${failed.reason}，按 MID 查询落点（旧 SID=${LogRedactor.maskId(oldSid)}）")
+        // 挂进程级 scope：connect() 会 cancelCollectors 取消当前 collector，接续必须在独立协程续命
+        RemoteConnectionManager.scope.launch {
+            val devices =
+                runCatching { V2AccountApi.listDevices(jwt).getOrDefault(emptyList()) }.getOrDefault(emptyList())
+            when (val outcome = SidContinuation.resolve(oldSid, mid, devices)) {
+                is SidContinuation.Outcome.KeepCurrent -> {
+                    Diagnostics.record(DiagEventCode.SID_CONTINUATION, "keep reason=${failed.reason}")
+                    ZLog.i(TAG, "接续落点=沿用旧 SID，重新建连")
+                    connect()
+                }
+                is SidContinuation.Outcome.Switch -> {
+                    val next =
+                        failedDevice.copy(deviceSid = outcome.sid, pairedAtMs = System.currentTimeMillis())
+                    host.hostAdoptContinuationDevice(next)
+                    Diagnostics.record(DiagEventCode.SID_CONTINUATION, "switch reason=${failed.reason}")
+                    ZLog.w(TAG, "接续命中：切换到新 SID=${LogRedactor.maskId(outcome.sid)} 并重建连接")
+                    connect()
+                }
+                SidContinuation.Outcome.None -> {
+                    // 接续未命中：落回原终态。host.hostRelayState 已写（collector 首行），
+                    // 这里只需补常驻通知与 Widget（本 collector 提前 return，未走 terminal 分支）。
+                    Diagnostics.record(DiagEventCode.SID_CONTINUATION, "missed reason=${failed.reason}")
+                    ZLog.w(TAG, "接续未命中（0 个或多个在线 SID），维持原终态")
+                    TerminalNotifier.show(
+                        host.hostContext,
+                        NotificationCoordinator.terminalTitle(failed.reason).resolve(host.hostContext),
+                        failed.message,
+                    )
+                    notifyCoordinator.syncWidget()
+                }
+            }
+        }
+        return true
     }
 
     /**
@@ -595,6 +741,13 @@ class ConnectionCoordinator(
         private const val MAX_HANDSHAKE_RETRIES = 1
 
         /**
+         * 触发未读标记的任务事件类型：实质「有新内容」的活动（含终态）。
+         * created（新会话）不标；permission/elicitation 已有审批角标语义，不重复计。
+         */
+        internal val UNREAD_EVENT_TYPES =
+            setOf("prompt_sent", "resumed", "streaming", "updated", "completed", "error")
+
+        /**
          * 桥自动重开的退避延迟（纯函数，单测覆盖）：第 1/2/3 次 → 1s/2s/4s；
          * 超出上限（默认 3）返回 null = 不再重开（停失败态，等 relay 重连或用户操作兜底）。
          */
@@ -602,5 +755,16 @@ class ConnectionCoordinator(
             nextAttempt: Int,
             maxAttempts: Int = 3,
         ): Long? = if (nextAttempt in 1..maxAttempts) 1_000L shl (nextAttempt - 1) else null
+
+        /**
+         * V2 未读判定（纯函数，单测覆盖）：`prev` 是上一次已知的 updatedAt（null = 新会话或首份快照，
+         * 不标），`now` 为本次值；只有时间戳**前进**且不是当前订阅会话才算「有新内容」。
+         */
+        internal fun isNewlyUpdated(
+            prev: Long?,
+            now: Long?,
+            taskId: String,
+            subscribedTaskId: String?,
+        ): Boolean = prev != null && now != null && now > prev && taskId != subscribedTaskId
     }
 }

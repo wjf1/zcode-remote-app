@@ -72,6 +72,10 @@ fun HomeScreen(
     modelReasoningLevels: Map<String, List<String>> = emptyMap(),
     /** 长按会话卡片触发删除（closeSession + deleteTask）。 */
     onSessionDelete: (SessionItem) -> Unit = {},
+    /** 置顶/取消置顶（task-pin 动作位；V2 Controller 通道提供 pinned 字段，V1 无置顶语义）。 */
+    onSessionTogglePin: (SessionItem) -> Unit = {},
+    /** 会话未读标记（taskId → true）：任务事件流标记、进入会话清除，对标官方「未读蓝点」。 */
+    unreadBySession: Map<String, Boolean> = emptyMap(),
     /** 当前设备协议栈（T5：V2 的列表要等 Controller 首份快照，空窗期显示骨架而非「暂无会话」）。 */
     protocolStack: com.zcode.remote.storage.ProtocolStack = com.zcode.remote.storage.ProtocolStack.V1,
     /** 是否已收到过至少一份 Controller 快照（V2 有效；V1 恒 true）。 */
@@ -249,6 +253,7 @@ fun HomeScreen(
             HomeEmptyContent(
                 emptyState = emptyState,
                 state = state,
+                phaseIndex = connectionPhaseIndex(state, protocolStack, controllerSynced),
                 onCreate = { showCreateDialog = true },
                 onNavigateToSettings = onNavigateToSettings,
             )
@@ -277,6 +282,8 @@ fun HomeScreen(
                         desktopActive = s.taskId == desktopActiveTaskId,
                         onClick = { onSessionClick(s) },
                         onDelete = { onSessionDelete(s) },
+                        onTogglePin = { onSessionTogglePin(s) },
+                        unread = unreadBySession[s.taskId] ?: false,
                     )
                 }
             }
@@ -314,8 +321,11 @@ private fun SessionItemCard(
     desktopActive: Boolean,
     onClick: () -> Unit,
     onDelete: () -> Unit = {},
+    onTogglePin: (() -> Unit)? = null,
+    unread: Boolean = false,
 ) {
     var showDeleteConfirm by remember { mutableStateOf(false) }
+    var showActionsMenu by remember { mutableStateOf(false) }
 
     // 无障碍（走查 #12）：卡片语义文案在 Composable 层拼好（semantics 块内不能调 stringResource）
     val a11yCardLabel =
@@ -323,7 +333,9 @@ private fun SessionItemCard(
             R.string.a11y_session_card,
             s.title.ifBlank { stringResource(R.string.common_unnamed_session) },
             statusText(s.displayStatus).asString(),
-        ) + "，" + stringResource(R.string.a11y_session_card_long_press_hint)
+        ) +
+            (if (unread) "，" + stringResource(R.string.a11y_session_unread) else "") +
+            "，" + stringResource(R.string.a11y_session_card_long_press_hint)
 
     Card(
         shape = RoundedCornerShape(12.dp),
@@ -362,7 +374,8 @@ private fun SessionItemCard(
                     contentDescription = a11yCardLabel
                 }.combinedClickable(
                     onClick = onClick,
-                    onLongClick = { showDeleteConfirm = true },
+                    // 长按 = 动作菜单（置顶 / 删除）；删除仍带二次确认
+                    onLongClick = { showActionsMenu = true },
                 ),
     ) {
         Row(
@@ -390,6 +403,17 @@ private fun SessionItemCard(
             Column(modifier = Modifier.weight(1f)) {
                 // 标题行与徽标
                 Row(verticalAlignment = Alignment.CenterVertically) {
+                    // 未读蓝点（对标官方任务行未读标记；纯视觉，语义并入卡片 a11y 文案）
+                    if (unread) {
+                        Box(
+                            modifier =
+                                Modifier
+                                    .padding(end = 6.dp)
+                                    .size(7.dp)
+                                    .clip(CircleShape)
+                                    .background(MaterialTheme.colorScheme.primary),
+                        )
+                    }
                     Text(
                         text = s.title.ifBlank { stringResource(R.string.common_unnamed_session) },
                         style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.SemiBold),
@@ -398,83 +422,30 @@ private fun SessionItemCard(
                         modifier = Modifier.weight(1f),
                     )
 
-                    if (isActive) {
-                        Spacer(Modifier.width(6.dp))
-                        Surface(
-                            color = MaterialTheme.colorScheme.primary,
-                            shape = RoundedCornerShape(4.dp),
-                        ) {
-                            Text(
-                                text = stringResource(R.string.home_badge_active),
-                                style =
-                                    MaterialTheme.typography.labelSmall.copy(
-                                        color = MaterialTheme.colorScheme.onPrimary,
-                                        fontSize = 10.sp,
-                                    ),
-                                modifier = Modifier.padding(horizontal = 5.dp, vertical = 1.dp),
-                            )
-                        }
-                    }
-
-                    if (desktopActive && !isActive) {
-                        Spacer(Modifier.width(6.dp))
-                        Surface(
-                            color = MaterialTheme.colorScheme.surfaceVariant,
-                            shape = RoundedCornerShape(4.dp),
-                        ) {
-                            Text(
-                                text = stringResource(R.string.home_badge_desktop_focus),
-                                style = MaterialTheme.typography.labelSmall.copy(fontSize = 10.sp),
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                modifier = Modifier.padding(horizontal = 5.dp, vertical = 1.dp),
-                            )
-                        }
-                    }
+                    SessionBadges(pinned = s.pinned, isActive = isActive, desktopActive = desktopActive)
                 }
 
-                Spacer(Modifier.height(4.dp))
-
-                // 工作区路径与模型元数据
-                Text(
-                    text =
-                        listOfNotNull(
-                            s.workspaceLabel ?: s.workspacePath?.substringAfterLast('/'),
-                            s.provider,
-                            statusText(s.displayStatus).asString(),
-                        ).joinToString(" · "),
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                )
-
-                // 异常原因（host 的 task meta.lastError / 会话快照 control.lastError 回填）。
-                // 数据源说明：bootstrap 的 tasks[] 形状不含该字段（PROTOCOL.md 实测样本），
-                // 故「没打开过的会话」可能只有「异常」二字——原因在会话页的快照里一定有。
-                val errorReason = s.lastError?.takeIf { it.isNotBlank() }
-                if (s.displayStatus == "error" && errorReason != null) {
-                    Spacer(Modifier.height(3.dp))
-                    Text(
-                        text = errorReason.lineSequence().lastOrNull { it.isNotBlank() } ?: errorReason,
-                        style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.error,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                    )
-                }
-
-                // 待处理提醒
-                if (pending > 0) {
-                    Spacer(Modifier.height(4.dp))
-                    Text(
-                        text = stringResource(R.string.home_pending_hint, pending),
-                        style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.SemiBold),
-                        color = statusPendingTone(),
-                    )
-                }
+                SessionSubtitle(s = s, pending = pending)
             }
         }
     }
+
+    // 长按动作菜单（置顶 / 删除）：删除仍走二次确认
+    SessionActionsMenu(
+        visible = showActionsMenu,
+        title = s.title,
+        pinned = s.pinned,
+        canPin = onTogglePin != null,
+        onDismiss = { showActionsMenu = false },
+        onTogglePin = {
+            showActionsMenu = false
+            onTogglePin?.invoke()
+        },
+        onDelete = {
+            showActionsMenu = false
+            showDeleteConfirm = true
+        },
+    )
 
     // 长按删除确认弹窗
     if (showDeleteConfirm) {
@@ -494,6 +465,203 @@ private fun SessionItemCard(
                 TextButton(onClick = { showDeleteConfirm = false }) { Text(stringResource(R.string.common_cancel)) }
             },
         )
+    }
+}
+
+/** 会话卡片长按动作菜单（置顶/取消置顶 + 删除），自 [SessionItemCard] 抽出以压 detekt 圈复杂度。 */
+@Composable
+private fun SessionActionsMenu(
+    visible: Boolean,
+    title: String,
+    pinned: Boolean,
+    canPin: Boolean,
+    onDismiss: () -> Unit,
+    onTogglePin: () -> Unit,
+    onDelete: () -> Unit,
+) {
+    if (!visible) return
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(title.ifBlank { stringResource(R.string.common_unnamed_session) }) },
+        text = {
+            Column {
+                if (canPin) {
+                    TextButton(onClick = onTogglePin) {
+                        Text(stringResource(if (pinned) R.string.session_menu_unpin else R.string.session_menu_pin))
+                    }
+                }
+                TextButton(onClick = onDelete) {
+                    Text(
+                        stringResource(R.string.session_menu_delete),
+                        color = MaterialTheme.colorScheme.error,
+                    )
+                }
+            }
+        },
+        confirmButton = {},
+        dismissButton = {
+            TextButton(onClick = onDismiss) { Text(stringResource(R.string.common_cancel)) }
+        },
+    )
+}
+
+/** 会话卡片次级内容（元数据行 / 异常原因 / 待处理提醒），自 [SessionItemCard] 抽出以压圈复杂度。 */
+@Composable
+private fun SessionSubtitle(
+    s: SessionItem,
+    pending: Int,
+) {
+    Spacer(Modifier.height(4.dp))
+
+    // 工作区路径与模型元数据
+    Text(
+        text =
+            listOfNotNull(
+                s.workspaceLabel ?: s.workspacePath?.substringAfterLast('/'),
+                s.provider,
+                statusText(s.displayStatus).asString(),
+            ).joinToString(" · "),
+        style = MaterialTheme.typography.bodySmall,
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
+        maxLines = 1,
+        overflow = TextOverflow.Ellipsis,
+    )
+
+    // 异常原因（host 的 task meta.lastError / 会话快照 control.lastError 回填）。
+    // 数据源说明：bootstrap 的 tasks[] 形状不含该字段（PROTOCOL.md 实测样本），
+    // 故「没打开过的会话」可能只有「异常」二字——原因在会话页的快照里一定有。
+    val errorReason = s.lastError?.takeIf { it.isNotBlank() }
+    if (s.displayStatus == "error" && errorReason != null) {
+        Spacer(Modifier.height(3.dp))
+        Text(
+            text = errorReason.lineSequence().lastOrNull { it.isNotBlank() } ?: errorReason,
+            style = MaterialTheme.typography.labelSmall,
+            color = MaterialTheme.colorScheme.error,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+        )
+    }
+
+    // 待处理提醒
+    if (pending > 0) {
+        Spacer(Modifier.height(4.dp))
+        Text(
+            text = stringResource(R.string.home_pending_hint, pending),
+            style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.SemiBold),
+            color = statusPendingTone(),
+        )
+    }
+}
+
+/** 会话卡片标题行徽标组（置顶 / 正在查看 / PC 焦点），自 [SessionItemCard] 抽出以压圈复杂度。 */
+@Composable
+private fun SessionBadges(
+    pinned: Boolean,
+    isActive: Boolean,
+    desktopActive: Boolean,
+) {
+    if (pinned) {
+        Spacer(Modifier.width(6.dp))
+        Surface(
+            color = MaterialTheme.colorScheme.secondaryContainer,
+            shape = RoundedCornerShape(4.dp),
+        ) {
+            Text(
+                text = stringResource(R.string.home_badge_pinned),
+                style =
+                    MaterialTheme.typography.labelSmall.copy(
+                        color = MaterialTheme.colorScheme.onSecondaryContainer,
+                        fontSize = 10.sp,
+                    ),
+                modifier = Modifier.padding(horizontal = 5.dp, vertical = 1.dp),
+            )
+        }
+    }
+    if (isActive) {
+        Spacer(Modifier.width(6.dp))
+        Surface(
+            color = MaterialTheme.colorScheme.primary,
+            shape = RoundedCornerShape(4.dp),
+        ) {
+            Text(
+                text = stringResource(R.string.home_badge_active),
+                style =
+                    MaterialTheme.typography.labelSmall.copy(
+                        color = MaterialTheme.colorScheme.onPrimary,
+                        fontSize = 10.sp,
+                    ),
+                modifier = Modifier.padding(horizontal = 5.dp, vertical = 1.dp),
+            )
+        }
+    }
+    if (desktopActive && !isActive) {
+        Spacer(Modifier.width(6.dp))
+        Surface(
+            color = MaterialTheme.colorScheme.surfaceVariant,
+            shape = RoundedCornerShape(4.dp),
+        ) {
+            Text(
+                text = stringResource(R.string.home_badge_desktop_focus),
+                style = MaterialTheme.typography.labelSmall.copy(fontSize = 10.sp),
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.padding(horizontal = 5.dp, vertical = 1.dp),
+            )
+        }
+    }
+}
+
+/**
+ * 连接过程 4 段进度条（对标官方 `webRemoteControlConnectingScreen`：8px 高圆角条，
+ * done/active/pending 三态，active 段文案高亮）。段文案与官方一致。
+ */
+@Composable
+private fun ConnectionPhasesBar(
+    activeIndex: Int,
+    modifier: Modifier = Modifier,
+) {
+    val labels =
+        listOf(
+            R.string.home_phase_relay,
+            R.string.home_phase_auth,
+            R.string.home_phase_pairing,
+            R.string.home_phase_sync,
+        )
+    Column(modifier = modifier, verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+            labels.forEachIndexed { i, _ ->
+                Box(
+                    modifier =
+                        Modifier
+                            .weight(1f)
+                            .height(6.dp)
+                            .clip(RoundedCornerShape(3.dp))
+                            .background(
+                                when {
+                                    i < activeIndex -> MaterialTheme.colorScheme.primary.copy(alpha = 0.5f)
+                                    i == activeIndex -> MaterialTheme.colorScheme.primary
+                                    else -> MaterialTheme.colorScheme.surfaceVariant
+                                },
+                            ),
+                )
+            }
+        }
+        Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+            labels.forEachIndexed { i, res ->
+                Text(
+                    text = stringResource(res),
+                    style = MaterialTheme.typography.labelSmall,
+                    color =
+                        when {
+                            i < activeIndex -> MaterialTheme.colorScheme.onSurfaceVariant
+                            i == activeIndex -> MaterialTheme.colorScheme.primary
+                            else -> MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.55f)
+                        },
+                    modifier = Modifier.weight(1f),
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
+        }
     }
 }
 
@@ -923,6 +1091,7 @@ private fun CreateSessionDialog(
 private fun HomeEmptyContent(
     emptyState: HomeEmptyState,
     state: RelayState,
+    phaseIndex: Int,
     onCreate: () -> Unit,
     onNavigateToSettings: () -> Unit,
 ) {
@@ -942,6 +1111,10 @@ private fun HomeEmptyContent(
             verticalArrangement = Arrangement.spacedBy(12.dp),
             modifier = Modifier.padding(horizontal = 24.dp),
         ) {
+            // 连接过程分段进度（对标官方 4 段条）：仅「进行中」显示；终态失败与全完成不显示
+            if (phaseIndex in 0..3) {
+                ConnectionPhasesBar(activeIndex = phaseIndex)
+            }
             Text(
                 text = homeEmptyStateText(emptyState, state).asString(),
                 style = MaterialTheme.typography.bodyMedium,

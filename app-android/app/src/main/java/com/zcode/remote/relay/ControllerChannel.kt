@@ -590,7 +590,7 @@ internal class ControllerReducer(
         const val TOPIC_TASKS = "controller/tasks-index"
         const val TOPIC_WORKSPACES = "controller/workspaces"
 
-        /** task → [SessionItem]（纯函数）：archived 直取 membership，title 缺省退 taskId。 */
+        /** task → [SessionItem]（纯函数）：archived/pinned 直取 membership，title 缺省退 taskId。 */
         fun toSessionItem(task: ControllerTask): SessionItem =
             SessionItem(
                 taskId = task.taskId,
@@ -602,18 +602,20 @@ internal class ControllerReducer(
                 updatedAt = task.updatedAt,
                 archived = task.archived,
                 lastError = task.lastError,
+                pinned = task.pinned,
             )
 
         /**
-         * 列表视图：过滤归档、按 updatedAt 降序（缺值垫底，同值按 taskId 稳定排序），
-         * 与 V1 bootstrap 的归档过滤 + 列表排序语义一致。
+         * 列表视图：过滤归档、置顶优先（官方桌面侧栏「置顶组在顶」同语义），组内按 updatedAt
+         * 降序（缺值垫底，同值按 taskId 稳定排序），与 V1 bootstrap 的归档过滤 + 排序语义一致。
          */
         fun visibleSessions(tasks: Map<String, ControllerTask>): List<SessionItem> =
             tasks.values
                 .filterNot { it.archived }
                 .map(::toSessionItem)
                 .sortedWith(
-                    compareByDescending<SessionItem> { it.updatedAt ?: Long.MIN_VALUE }
+                    compareByDescending<SessionItem> { it.pinned }
+                        .thenByDescending { it.updatedAt ?: Long.MIN_VALUE }
                         .thenBy { it.taskId },
                 )
     }

@@ -104,6 +104,7 @@ class NotificationCoordinator(
                 FailureReason.AUTH_FAILED -> res(R.string.terminal_title_auth_failed)
                 FailureReason.PROTOCOL_MISMATCH -> res(R.string.terminal_title_protocol_mismatch)
                 FailureReason.INVALID_ENDPOINT -> res(R.string.terminal_title_invalid_endpoint)
+                FailureReason.DESKTOP_DISCONNECTED -> res(R.string.terminal_title_desktop_offline)
                 else -> res(R.string.terminal_title_generic)
             }
     }

@@ -26,6 +26,7 @@ enum class DiagEventCode(
     CONV_HANDSHAKE_RETRY("conv.handshake_retry"),
     CONTROLLER_LIST("controller.list"),
     CONTROLLER_DESYNC("controller.desync"),
+    SID_CONTINUATION("sid.continuation"),
     DIAG_EXPORT_REQUESTED("diag.export_requested"),
     DIAG_EXPORT_WRITTEN("diag.export_written"),
     DIAG_EXPORT_FAILED("diag.export_failed"),

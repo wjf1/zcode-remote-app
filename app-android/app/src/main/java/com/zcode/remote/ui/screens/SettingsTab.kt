@@ -65,6 +65,8 @@ fun SettingsTab(
     onSwitchDevice: (String) -> Unit,
     onRemoveDevice: (String) -> Unit,
     onDisconnect: () -> Unit,
+    /** 连接（「连接」态按钮）：断开后从设置页手动重连，免回首页等自动重连。 */
+    onConnect: () -> Unit,
     onRescan: () -> Unit,
     onEndpointChange: (String, String?) -> Unit,
     onThemeChange: (String) -> Unit,
@@ -165,29 +167,22 @@ fun SettingsTab(
                                     )
                                 }
                             }
+                            // 按钮语义随连接态切换：已连接/连接中 → 「断开」；空闲/失败 → 「连接」。
+                            // 存量缺陷：原实现恒为「断开」，用户断开后无法从设置页重连（只能回首页
+                            // 等自动重连或重新配对），真机走查 2026-11-10 发现。
                             OutlinedButton(
-                                onClick = onDisconnect,
+                                onClick = if (isLiveConnection(state)) onDisconnect else onConnect,
                                 contentPadding = PaddingValues(horizontal = 10.dp, vertical = 0.dp),
                                 modifier = Modifier.height(32.dp),
                             ) {
-                                Text(stringResource(R.string.settings_disconnect), style = MaterialTheme.typography.labelSmall)
-                            }
-                        }
-
-                        if (state is RelayState.Failed) {
-                            Surface(
-                                color = MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.5f),
-                                shape = RoundedCornerShape(8.dp),
-                                modifier = Modifier.fillMaxWidth(),
-                            ) {
                                 Text(
-                                    text = state.message ?: stringResource(R.string.settings_connection_failed),
-                                    color = MaterialTheme.colorScheme.error,
-                                    style = MaterialTheme.typography.bodySmall,
-                                    modifier = Modifier.padding(8.dp),
+                                    stringResource(if (isLiveConnection(state)) R.string.settings_disconnect else R.string.settings_connect),
+                                    style = MaterialTheme.typography.labelSmall,
                                 )
                             }
                         }
+
+                        ConnectionFailureBanner(state)
                     }
                 }
             }
@@ -1053,5 +1048,37 @@ private fun PasteTokenEntry(onSaved: (String) -> Unit) {
                 Text(stringResource(R.string.account_token_paste_cancel))
             }
         }
+    }
+}
+
+/**
+ * 当前连接是否「活着」（已连接 / 正在连接）。纯函数，决定设置页主按钮语义：
+ * true → 「断开」，false → 「连接」。
+ *
+ * 存量缺陷修复（2026-11-10 真机走查发现）：按钮原恒为「断开」，用户在设置页断开后
+ * 无法从该页面重连（只能回首页等自动重连或重新配对）。
+ * `Idle`（已断开）与 `Failed`（终态失败）都算「未连接」，给「连接」入口。
+ */
+internal fun isLiveConnection(state: RelayState): Boolean =
+    when (state) {
+        RelayState.Idle, is RelayState.Failed -> false
+        RelayState.Connecting, RelayState.Authenticating, RelayState.WaitingPeer, RelayState.Paired -> true
+    }
+
+/** 连接失败原因条（自 `SettingsTab` 抽出以压 detekt 圈复杂度；仅 `Failed` 态渲染）。 */
+@Composable
+private fun ConnectionFailureBanner(state: RelayState) {
+    val failed = state as? RelayState.Failed ?: return
+    Surface(
+        color = MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.5f),
+        shape = RoundedCornerShape(8.dp),
+        modifier = Modifier.fillMaxWidth(),
+    ) {
+        Text(
+            text = failed.message ?: stringResource(R.string.settings_connection_failed),
+            color = MaterialTheme.colorScheme.error,
+            style = MaterialTheme.typography.bodySmall,
+            modifier = Modifier.padding(8.dp),
+        )
     }
 }

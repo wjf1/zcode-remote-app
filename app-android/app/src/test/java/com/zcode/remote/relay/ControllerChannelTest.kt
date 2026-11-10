@@ -305,6 +305,41 @@ class ControllerChannelTest {
         assertEquals(listOf("c", "a", "b"), ControllerReducer.visibleSessions(r.tasks.value).map { it.taskId })
     }
 
+    @Test
+    fun `置顶优先于 updatedAt 排序且组内仍按时间降序`() {
+        val r = reducer()
+        apply(
+            r,
+            snapshotFrame(
+                listOf(
+                    task("new", updatedAt = 900),
+                    task("pin_old", pinned = true, updatedAt = 100),
+                    task("pin_older", pinned = true, updatedAt = 50),
+                    task("mid", updatedAt = 400),
+                ),
+            ),
+        )
+        assertEquals(
+            "置顶组在顶（组内时间降序），未置顶按 updatedAt 降序",
+            listOf("pin_old", "pin_older", "new", "mid"),
+            ControllerReducer.visibleSessions(r.tasks.value).map { it.taskId },
+        )
+    }
+
+    @Test
+    fun `toSessionItem 透传 pinned 且缺省为 false`() {
+        val pinned =
+            ControllerReducer.toSessionItem(
+                ControllerTask(taskId = "t1", pinned = true),
+            )
+        val plain =
+            ControllerReducer.toSessionItem(
+                ControllerTask(taskId = "t2"),
+            )
+        assertTrue("membership.pinned 必须透传到 SessionItem", pinned.pinned)
+        assertFalse("未带 membership 的 task 免疫解析缺省 false", plain.pinned)
+    }
+
     // ---------- 10. task → SessionItem 映射 ----------
 
     @Test

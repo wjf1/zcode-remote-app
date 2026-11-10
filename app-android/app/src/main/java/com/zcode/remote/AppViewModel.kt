@@ -15,6 +15,7 @@ import com.zcode.remote.notify.ElicitationBridge
 import com.zcode.remote.notify.ElicitationNotifier
 import com.zcode.remote.notify.TerminalNotifier
 import com.zcode.remote.relay.ApprovalOption
+import com.zcode.remote.relay.BridgeFrames
 import com.zcode.remote.relay.ControllerChannel
 import com.zcode.remote.relay.ConversationChannel
 import com.zcode.remote.relay.ConversationFrames
@@ -189,6 +190,63 @@ class AppViewModel(
     override fun hostResetControllerSynced() = resetControllerSynced()
 
     override fun hostRetrySubscribe() = retrySubscribe()
+
+    /** 旧 SID 自动接续命中：以新 SID 覆盖存储与激活设备（等价 pair() 的存储部分，不触发连接）。 */
+    override fun hostAdoptContinuationDevice(next: PairedDevice) {
+        val snap = multiStore.upsertActive(next)
+        devices = snap.devices
+        device = next
+    }
+
+    /** task-pin 应答收尾：失败回滚乐观更新并提示；成功以应答回显的 pinned 对齐。 */
+    override fun hostOnPinAck(
+        requestId: String,
+        taskId: String,
+        ok: Boolean,
+        pinned: Boolean,
+    ) {
+        viewModelScope.launch {
+            val effective = if (ok) pinned else !pinned // !pinned = 发起请求前的乐观值，失败即回滚
+            _sessions.value = sessions.map { if (it.taskId == taskId) it.copy(pinned = effective) else it }
+            if (!ok) flash(res(R.string.flash_pin_failed), FlashKind.Failure)
+        }
+    }
+
+    /** 未读标记（进程级 collector 调用；当前正订阅的会话跳过——用户正在看）。 */
+    override fun hostMarkUnread(taskId: String) {
+        markSessionUnread(taskId)
+    }
+
+    /**
+     * 置顶/取消置顶（task-pin 动作位，官方 `WebRemoteControlTaskPinRequestPayload` schema）。
+     * 乐观更新 → data 信封直发（Paired 即可达，无需 RPC 桥）→ 应答/快照广播纠偏。
+     */
+    fun pinSession(
+        item: SessionItem,
+        pinned: Boolean,
+    ) {
+        val ws = item.workspacePath?.takeIf { it.isNotBlank() }
+        if (ws == null) {
+            flash(res(R.string.flash_pin_failed), FlashKind.Failure)
+            return
+        }
+        // 乐观更新（失败由 hostOnPinAck 回滚；最终一致性由 Controller task.upserted 兜底）
+        _sessions.value = sessions.map { if (it.taskId == item.taskId) it.copy(pinned = pinned) else it }
+        val sent =
+            client?.sendPayload(
+                BridgeFrames.taskPinRequest(
+                    "pin-${System.currentTimeMillis()}",
+                    item.taskId,
+                    ws,
+                    null, // workspaceIdentity 可选：远程任务缺省时桌面按路径解析（官方 schema 注释）
+                    pinned,
+                ),
+            ) ?: false
+        if (!sent) {
+            _sessions.value = sessions.map { if (it.taskId == item.taskId) it.copy(pinned = !pinned) else it }
+            flash(res(R.string.flash_pin_failed), FlashKind.Failure)
+        }
+    }
 
     /** 活跃设备（当前连接的这台）。 */
     var device by mutableStateOf(
@@ -723,8 +781,23 @@ class AppViewModel(
 
     // ---- 表单交互应答（P1-1，构造规则见 PROTOCOL.md §6.5）----
 
+    /** 会话未读标记（对标官方「未读蓝点」）：任务事件流标记，进入会话即清除。 */
+    var unreadBySession by mutableStateOf<Map<String, Boolean>>(emptyMap())
+        private set
+
+    /** 标记未读（进程级 collector 调用；当前正订阅的会话不标——用户正在看）。 */
+    fun markSessionUnread(taskId: String) {
+        if (taskId.isBlank() || taskId == convRepo.subscribedSessionId) return
+        if (unreadBySession[taskId] != true) unreadBySession = unreadBySession + (taskId to true)
+    }
+
+    private fun clearSessionUnread(taskId: String) {
+        if (unreadBySession.containsKey(taskId)) unreadBySession = unreadBySession - taskId
+    }
+
     /** 手动订阅指定会话（UI 点击会话卡片时调用）。 */
     fun openSession(s: SessionItem) {
+        clearSessionUnread(s.taskId)
         convRepo.subscribeConversation(s)
         reportViewState() // P1-2：切换会话即上报，PC 端可提示"手机正在看这个会话"
     }
@@ -942,6 +1015,8 @@ class AppViewModel(
         controller = null
         // A-2：连接没了，作废在途的握手自动重订与桥重开调度（含预算归零）
         connectionCoordinator.cancelResilienceJobs()
+        // 断开即清未读：重连后的事件是新一轮上下文，残留标记会误导「哪里有新内容」
+        unreadBySession = emptyMap()
         convRepo.subscribedSession = null
         // 连接没了就没人能应答：摘掉桥并撤掉通知，避免用户点了个"假批准"
         ApprovalBridge.handler = null
