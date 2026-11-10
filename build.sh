@@ -37,8 +37,19 @@ if [ ! -x "$ADB" ] && command -v adb >/dev/null 2>&1; then
   ADB=adb
 fi
 
-GRADLE="$TC/gradle-8.7/bin/gradle.bat"
-if [ ! -f "$GRADLE" ]; then
+# Gradle 发行版探测：优先 wrapper 声明的版本，回退 toolchain 内版本倒序。
+# 背景：build.sh 曾硬编码 8.7，依赖升级（Gradle 8.13 / AGP 8.13）后 8.7 加载新 AGP
+# 直接「Plugin not found」构建失败（2026-11-09 实证）——版本必须跟着 wrapper 走。
+WRAPPER_VERSION="$(sed -n 's/^distributionUrl=.*gradle-\([0-9][0-9.]*\)-.*zip$/\1/p' "$ROOT/app-android/gradle/wrapper/gradle-wrapper.properties" 2>/dev/null | head -1)"
+GRADLE=""
+for v in "$WRAPPER_VERSION" $(ls -d "$TC"/gradle-* 2>/dev/null | sed 's/.*gradle-//' | sort -rV); do
+  [ -n "$v" ] || continue
+  if [ -f "$TC/gradle-$v/bin/gradle.bat" ]; then
+    GRADLE="$TC/gradle-$v/bin/gradle.bat"
+    break
+  fi
+done
+if [ -z "$GRADLE" ]; then
   # 无仓库工具链（换机/CI）：走 PATH 里的 gradle
   GRADLE="$(command -v gradle.bat || command -v gradle)"
 fi

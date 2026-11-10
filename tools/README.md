@@ -32,6 +32,7 @@
 | `setmode.py` | 切换会话执行模式（plan/build/yolo）辅助 | 人工 |
 | `net_recover_test.sh` | 断网恢复耗时实测（beta15 验收脚本） | 人工 |
 | `t0_sample.sh` | T0 冷启动握手耗时采样 | 人工 |
+| `protocol_sync_check.py` | 官方 sync 协议契约 diff 跟踪（契约文件哈希 + zcode_type 集合对比，基线 `research/protocol-sync/snapshot.json`） | 人工（官方发版后例行） |
 
 ## 仍在工作区的历史一次性脚本
 

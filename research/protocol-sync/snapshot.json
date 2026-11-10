@@ -1,0 +1,21 @@
+{
+  "checked_at": "2026-11-09T00:05:55",
+  "git_head": "a9fe401eede6",
+  "files": {
+    "packages/shared/src/web-remote-relay/contract.ts": "8bd7be1bad061b571699f7a14fabfd527282eede17ce5f021321452999ba4ba6",
+    "packages/shared/src/web-remote-relay/domain/webRemoteControlActions.ts": "5c6bf9c52d027f61eac2e211d8d96f800d6199d99336c3df7ee8f1768f856b67",
+    "packages/shared/src/web-remote-relay/mobileLog.ts": "b59b2932c84495bfafa3f99bd452e8c973d3fa2df3a47171cf2d366fc0a0fc40",
+    "packages/shared/src/web-remote-control-rpc-transport.ts": "516c4759db989fe9b083f8e1b085a839798be961e7e913d0f435e9d7076996ca",
+    "packages/client/src/webRemoteControlAcknowledgedRelayProtocolTypes.ts": "5f01ef0fbe81341bb5db98084d0be400f8f9d0cd8a7da54000a9c0d37fff6ac7",
+    "packages/client/src/webRemoteControlAcknowledgedRelayProtocol.ts": "61db2fe344bbf05c21ce85e4c5510e46350d703e2a62564a5e85b20321ca5706",
+    "docs/web-remote-control/relay-v2-pairing.md": "9f881fda1a3c2a94df6f030120f4cac6927f3ed6d4bb176424fcbd79970f81a2",
+    "docs/web-remote-control/web-remote-control-architecture.md": "ee80064af5c52fdb6d4fba11216003fde279d74086deed1f0fca47dc7ac22e04",
+    "packages/web/src/web-remote-control/app/webRemoteControlEntry.ts": "9f7ae2fa430c432fc811ebf43bdee7bdcf99569ec521be716b5dc459368d70b9",
+    "packages/android/app/src/main/java/com/example/zcode_mobile/MainActivity.kt": "a49be18a76b4f9c559e24472b3be5a046ff0d2c49a124d922c4041a655e7ec6b",
+    "packages/android/app/src/main/java/com/example/zcode_mobile/remote/RemoteControlUrlPolicy.kt": "76a98be0e26e2ab2ca6f0f317c826c433ad830482015ac028460bc02f0d40ff4"
+  },
+  "zcode_types": [
+    "auth-required",
+    "relay-unavailable"
+  ]
+}
