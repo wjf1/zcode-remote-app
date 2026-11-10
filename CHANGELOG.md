@@ -2,9 +2,80 @@
 
 ## [Unreleased]
 
+### 新增
+
+- **旧 SID 自动接续（对标官方 2026-10-27 行为）**：桌面端重启/重登会换新 `device_sid`（MID 不变，
+  relay 服务端不做 old→new 映射），此前 App 只能「无限同 SID 重试」或「终态退回手动重扫码」。
+  现对齐官方手机端恢复策略：`DEVICE_OFFLINE` 先给 **15s 有界宽限**（官方
+  `desktopOfflineGraceMs ?? 15_000`，窗口内保持退避重试），超时升级为新的可接续终态
+  `DESKTOP_DISCONNECTED`；与 `AUTH_FAILED`（官方 `device-not-owned`）一起，在终态后**用当前 JWT
+  查一次** `GET /api/v1/remote/device`，按 MID 求落点：旧 SID 仍在线→沿用；同 MID 恰好一个其他
+  在线 SID→切到新 SID 并重建连；0 个/≥2 个（歧义）→维持原终态交回用户。接续出的连接配对成功
+  前再失败不再二次接续（`Paired` 复位预算），无定时器无轮询。V1 设备无 JWT，行为不变。
+  新增 `relay/SidContinuation.kt`（落点裁决纯函数，逐条对齐官方 `resolveAutoConnectSid`）与
+  `DiagEventCode.SID_CONTINUATION`；`ConnectionCoordinator.trySidContinuation` 挂进程级 scope
+  （collector 随即被 `connect()` 取消）。测试：`SidContinuationTest` 7 项（含 15s 常量钉死）。
+
+- **置顶任务（task-pin 动作位）**：接入官方 `task-pin-request/response`（schema 核验自
+  `validation.ts` `webRemoteControlTaskActionTargetShape` + `webRemoteControlActions.ts`）。
+  长按会话卡片 → 动作菜单（置顶/取消置顶 + 删除），乐观更新 → `data` 信封直发（`Paired` 即可达，
+  无需 RPC 桥）→ 应答回滚或以回显 `pinned` 对齐，列表纠偏走既有 Controller `task.upserted`
+  广播。`SessionItem` 新增 `pinned`（V2 `membership.pinned`，V1 宽容解析缺省 false）；
+  `ControllerReducer.visibleSessions` 改为**置顶组优先**，组内仍按 updatedAt 降序。卡片新增
+  「📌 置顶」徽标与动作菜单无障碍语义。测试：`ControllerChannelTest` 新增 2 项（置顶排序、
+  `toSessionItem` 透传）。
+
+- **会话未读标记（对标官方任务行未读蓝点）**：任务事件流（`prompt_sent`/`resumed`/`streaming`/
+  `updated`/`completed`/`error`）为非当前订阅会话打未读标记，进入会话（`openSession`）即清除；
+  `created` 不标、审批/表单走既有待办角标不重复计。状态放 `AppViewModel.unreadBySession`
+  （不塞 `SessionItem`——整表替换会冲掉标记），经 `ConnectionHost.hostMarkUnread` 从进程级
+  collector 写入；断开即清空。卡片显示 7dp 蓝点，TalkBack 语义追加「有未读内容」。
+  **真机实测修正（2026-11-10）**：V2 协议下任务事件**不走** `data` 层的 `TaskEvent` 流
+  （Xiaomi 15 Pro 实测：该分支 15s 内零帧，会话内容全部走 RPC 桥通道 id=4/10/12），故 V1 的
+  事件流方案在 V2 恒不触发。V2 改走 **Controller 通道 `updatedAt` 前进**检测：全量快照比对
+  每会话上次已知时间戳，前进且非当前订阅会话才算新内容；首份快照只建基准不标记（否则一进
+  App 全标）。基准随每次 `connect()` 清空。判定抽成纯函数 `isNewlyUpdated`（5 项单测）。
+
+- **连接过程分段进度（对标官方 4 段进度条）**：`connectionPhaseIndex()` 纯函数把 `RelayState`
+  映射到官方 `webRemoteControlConnectingScreen` 的 `STEP_INDEX`（connecting:0 / authenticating:1 /
+  waiting:2 / paired:3），第 4 段「同步工作区」完成信号复用 T5 的 `controllerSynced`；`Idle` 与
+  终态失败返回 `-1`（不高亮，对齐官方）。空态区新增 4 段条（6dp 圆角条 + 段文案 done/active/
+  pending 三态），段文案与官方中文一致。测试：`HomeConnectionPhasesTest` 4 项。
+
+- **官方 sync 协议契约 diff 跟踪**：新增 `tools/protocol_sync_check.py`——对官方镜像 11 个契约
+  文件做 SHA-256 对比 + `contract.ts` 的 `zcode_type` 集合 diff（移除=最高优先级排查，新增=评估
+  能力位），基线写 `research/protocol-sync/snapshot.json`。应对「官方快照式 sync、无 CHANGELOG、
+  服务端闭源、协议由官方单方面演进」的结构性风险，把变化收敛为可复核增量清单。
+
 ### 变更
 
 - **依赖升级阶段 1（评估报告的最小风险批次，零语义改动）**：Gradle 8.7 → 8.13（CI setup-gradle 三处同步）；AGP 8.5.2 → 8.13.0（8.x 末代）；compileSdk 35 → 36（app + benchmark，`lifecycle` 2.11 / `activity` 1.13 的 AAR 元数据硬性要求）；androidx 系：activity-compose 1.9.2 → 1.11.0、lifecycle-runtime-ktx/viewmodel-compose/runtime-compose 2.8.6 → 2.9.3（2.11.0 为 beta 口径，实际要求 compileSdk 37 + AGP 9.1，属阶段 3 组合，已回退）、uiautomator 2.4.0 → 2.4.1。Kotlin 保持 2.0.20（detekt 1.23.8 兼容上限内，见评估报告）；ktlint 全量格式化另行一轮。本机验证到 AGP 8.13 配置解析 + gradle help 通过；编译与五关卡门禁由 CI 完整验证。
+
+- **`build.sh` 的 Gradle 版本探测**：此前硬编码 `toolchain/gradle-8.7`，依赖升级到 Gradle 8.13 /
+  AGP 8.13.0 后 8.7 加载新 AGP 直接「Plugin not found」构建失败（2026-11-09 本机实证）。改为
+  优先读 wrapper `distributionUrl` 的版本、回退 `toolchain/gradle-*` 版本倒序探测。
+
+### 修复
+
+- **`DEVICE_OFFLINE` 无限同 SID 重试**：原实现无宽限上限（服务端一直回 DEVICE_OFFLINE 时永远
+  重试、永不落到用户可见终态）。现按官方 15s 有界宽限收敛，超时进可接续终态；宽限起点不因
+  重连归零（否则「退避重连→归零」使总窗口永不到期）。新增 `FailureReason.DESKTOP_DISCONNECTED`
+  并纳入 `RelayClient.fail()` 终态列表——不列入会穿透终态形成 15s 周期「超时→重连→再超时」循环。
+
+- **`AUTH_FAILED` 直接终态导致换 SID 后必须手动重扫码**：现先尝试按 MID 自动接续，未命中才落地
+  终态并补发常驻通知（接管路径提前 `return`，不会出现通知误报）。
+
+- **设置页主按钮恒为「断开」**（真机走查 2026-11-10 发现的存量缺陷）：用户在设置页断开后，
+  按钮仍是「断开」，无法从该页面重新连接——只能回首页等自动重连或重新扫码配对。现按状态切换：
+  已连接/连接中 → 「断开」；`Idle`/终态 `Failed` → 「连接」（新增 `onConnect` 回调与 `R.string.settings_connect`）。
+  判定抽成纯函数 `isLiveConnection`（2 项单测）。
+
+- **`DEVICE_OFFLINE` 宽限期加 `startHeartbeat()` 会自我否决**（本轮自测发现后立即修正）：
+  DEVICE_OFFLINE 时服务端已判定桌面离线，随后心跳收不到 ack，会被 T11 单向失活在 30s 判成
+  `NETWORK`（非终态、无限重连），**抢在 15s 宽限之前覆盖状态**，接续路径永远等不到
+  `DESKTOP_DISCONNECTED`。已移除该调用并补注释；另在 `enterOfflineGrace` 首行挡
+  `terminalFailed/manuallyClosed`（防终态被回退覆盖），宽限 job 触发前先自摘引用（避免
+  `fail()` 内 `cancelOfflineGrace()` 取消自身协程后留下已取消 job 引用）。
 
 ## [v0.5.0-beta55]
 

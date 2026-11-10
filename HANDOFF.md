@@ -118,9 +118,33 @@ app-android/app/src/main/java/com/zcode/remote/
   与 `research/FRAME-CODEC.md`、`research/CONVERSATION-PROTOCOL.md`。
 
 ## 4. 最近一轮变更与交付成果
+- **2026-11-09/10：全面对标官方 zai-org/ZCode v3.17.2，落地 P0 协议对齐 + P1 三项能力**——旧 SID 自动接续（含 DEVICE_OFFLINE 15s 有界宽限）、task-pin 置顶、会话未读标记、连接过程 4 段进度、官方协议契约 diff 跟踪脚本；`build.sh` Gradle 版本探测修复。**2026-11-10 真机实测（Xiaomi 15 Pro / USB）通过置顶与未读，并修出两处缺陷**：V2 下未读改走 Controller updatedAt（V1 事件流路径在 V2 无帧）、设置页主按钮恒「断开」无法重连。
 - **2026-11-08：依赖升级阶段 1 落地**——按评估报告（docs 评审结论）执行最小风险批次：Gradle 8.13 / AGP 8.13.0 / compileSdk 36 / activity 1.13 / lifecycle 2.11 / uiautomator 2.4.1 / CI gradle-version 三处同步。阶段 2（Kotlin 2.1.x + BOM/OkHttp/CameraX）与阶段 3（等 detekt 2.0 stable）按报告排期。
 
 > 完整逐轮记录见 [CHANGELOG.md](CHANGELOG.md) 与 [HANDOVER.md](HANDOVER.md) 文首覆盖层。
+
+### 2026-11-09：对标官方 v3.17.2 的协议对齐与新能力（未发版）
+
+**调研依据**：官方镜像 `git clone --depth 1` 到 `.tmp/zai-zcode-mirror`（main @ `a9fe401e`，v3.17.2）；
+官方远控契约为 `docs/web-remote-control/relay-v2-pairing.md` + `web-remote-control-architecture.md` +
+`packages/shared/src/web-remote-relay/{contract.ts,domain/webRemoteControlActions.ts}`。
+
+| 交付 | 内容 |
+|---|---|
+| **旧 SID 自动接续**（P0） | `relay/SidContinuation.kt`（新，落点纯函数，对齐官方 `resolveAutoConnectSid`：旧 SID 在线→keep／同 MID 唯一其他在线 SID→switch／0 或 ≥2→none）+ `ConnectionCoordinator.trySidContinuation`（挂进程级 scope、JWT 查一次设备列表、`sidContinuationUsed` 有界、`Paired` 复位）+ `RelayClient` 的 `DEVICE_OFFLINE_GRACE_MS=15_000` 与 `FailureReason.DESKTOP_DISCONNECTED` |
+| **task-pin 置顶**（P1） | `BridgeFrames.taskPinRequest`（schema 核验自官方 `validation.ts`）+ `SessionItem.pinned` + `ControllerReducer.visibleSessions` 置顶组优先 + 长按动作菜单/📌 徽标 + `hostOnPinAck` 回滚 |
+| **会话未读标记**（P1） | `AppViewModel.unreadBySession` + `ConnectionHost.hostMarkUnread`；任务事件流（prompt_sent/resumed/streaming/updated/completed/error）标记、`openSession` 清除、断开清空；卡片 7dp 蓝点 + TalkBack 语义 |
+| **连接分段进度**（P1） | `connectionPhaseIndex()` 纯函数映射官方 `STEP_INDEX`（0/1/2/3，Idle 与终态 -1）+ 空态区 4 段条（文案与官方中文一致） |
+| **协议契约 diff 跟踪** | `tools/protocol_sync_check.py`（11 个契约文件 SHA-256 + `zcode_type` 集合 diff，基线 `research/protocol-sync/snapshot.json`，首跑 `exit=0`）+ `tools/README.md` 登记 |
+| **构建修复** | `build.sh` 原硬编码 `toolchain/gradle-8.7`，升级后加载 AGP 8.13 直接「Plugin not found」（本机实证）；改为读 wrapper `distributionUrl` 版本 + `toolchain/gradle-*` 倒序回退 |
+
+**P0 免改结论（有据）**：官方 2026-10-27「重放缓存 8→32 MiB」是**发送端本地未确认重放缓存**的
+实现参数（`packages/client/src/webRemoteControlAcknowledgedRelayProtocolTypes.ts:13-16`，
+`2 * maxMessageBytes`），**不进 wire**；协议常量（1 MiB 物理帧 / 16 MiB 单消息 / 64 片 / 30s 组装）
+全部未变，App 的 `ProtocolLimits.kt` 精确对齐、且出站是 fire-and-forget 无重放缓存。
+
+**新增测试**：`SidContinuationTest`（7）、`HomeConnectionPhasesTest`（4）、`ControllerChannelTest`
+新增置顶排序与透传（2）。
 
 ### 2026-11-08：新增根目录 ARCHITECTURE.md（未发版，纯文档）
 
@@ -512,11 +536,68 @@ lint 双变体 0 error、detekt、ktlint 0 违规、assembleDebug/Release 通过
 
 ## 5. 接力开发指引与待办（Next Steps / Backlog）
 
+### 真机批次执行卡（2026-11-10 更新：本轮四项已走查三项）
+
+**2026-11-10 真机实测结果（Xiaomi 15 Pro / serial 9f6241b4 / USB）**：
+
+| 项 | 状态 | 实测证据 |
+|---|---|---|
+| **task-pin 置顶** | ✅ **通过** | 长按「检索主流PPT插件工具」→ 动作菜单（置顶/删除会话/取消）→ 点「置顶」→ 会话浮到列表**最顶部**且带「📌 置顶」徽标；**重启 App 后仍置顶**（Controller 快照回填） |
+| **未读蓝点** | ✅ **通过** | 两个运行中会话出现「有未读内容」语义（a11y 文案可断言）；置顶会话不误标；进入会话后返回，该会话未读已清除 |
+| **连接分段进度** | ⚠️ **代码级通过，可视化未验** | 纯函数 `HomeConnectionPhasesTest` 4 项通过。真机可视验证受阻：本机有 140 条离线缓存，`sessions.isEmpty()` 才渲染空态，进度条不出现；清缓存会丢登录凭据（代价过高）。**待有空闲设备或不介意重登时补验** |
+| **旧 SID 自动接续** | ⚠️ **未验** | 需桌面端重启换 SID 才能触发，本轮未构造该场景 |
+| **设置页连接/断开切换** | ✅ **通过**（本轮新修） | 断开后按钮变「连接」，点击可重连成功（140 会话恢复、置顶保持） |
+
+**同时发现并修复的两个缺陷**（详见 CHANGELOG 修复段）：
+1. **V2 未读检测路径错误**：V1 的任务事件流在 V2 下零帧（实测），改走 Controller `updatedAt` 前进检测。
+2. **设置页主按钮恒为「断开」**：断开后无法从设置页重连（存量缺陷）。
+
+**走查记录手法（可复用）**：`adb shell "cd /data/local/tmp && uiautomator dump ui.xml && cat ui.xml"` —— 直接把 XML 输出到 stdout 再解析（本机 uiautomator 版本会把绝对路径当相对路径，`adb pull` 取不到）；文本用 UTF-8 解码（Git Bash 默认 GBK 会乱码）。
+
+### 真机批次执行卡（2026-11-09 制定，以下为原计划）
+
+
+**本轮（2026-11-09）代码已全绿但**未真机验证**的项，接手请优先走查：
+
+| 项 | 走查路径 | 判定标准 |
+|---|---|---|
+| **旧 SID 自动接续** | 手机连上 → 桌面端重启 ZCode（换 SID）→ 观察手机 | 不弹「配对失效」终态，≤15s 宽限后自动重建连；`adb logcat -s RelayClient` 见「接续命中：切换到新 SID」 |
+| **task-pin 置顶** | 长按会话卡 → 置顶 → 返回列表 | 卡片出现「📌 置顶」徽标且浮到列表顶部；重启 App 后仍置顶（Controller 快照回填）；PC 端侧栏同步置顶 |
+| **未读蓝点** | 手机停在首页 → PC 端在某会话发消息/跑任务 | 该会话卡出现蓝点；进会话后蓝点消失；TalkBack 读「有未读内容」 |
+| **连接 4 段进度** | 冷启动 / 断网恢复 | 空态区显示 4 段条并按「中转→鉴权→配对→同步」推进；终态失败时不显示进度条 |
+
+> 若某台桌面端是 V1 协议（≤3.15），接续与置顶均不生效（V1 无 JWT / 无 pinned 字段）——属预期。
+
 ### 真机批次执行卡（2026-11-08 制定）
 
 - **环境变化（依赖升级阶段 1 已落地，CI 全绿 run 42490983989）**：Gradle 8.13 / AGP 8.13.0 / compileSdk 36 / lifecycle 2.9.3 / activity 1.11.0。本机构建：`JAVA_HOME=F:\Android\jdk-17` + gradle 8.13（`F:\AI\Zcode\_tmp\gradle-8.13\`），SDK 需 platforms/android-36（联网自动装，走代理 `-Dhttps.proxyHost=127.0.0.1 -Dhttps.proxyPort=7901`，端口会漂移以 netstat 为准）。
+  **2026-11-09 补充**：`build.sh` 已改为读 wrapper `distributionUrl` 版本（不再硬编码 8.7，见 CHANGELOG）；`toolchain/gradle-8.13` 与 `toolchain/android-sdk/platforms/android-36` 已就位，本机可直接 `./build.sh`。
 - **步骤**：T8 WebViewActivity 登录迁移真机验收 + beta53 两项（PC 重启重同步、V2 审批链路）+ 阶段 1 升级后的回归走查（重点：连接链路 / 设置页 / 扫码 CameraX）→ 结果回写本 HANDOFF。
 - 完成后：评估 beta56 或 1.0.0 发布门进度（A-5 重组与大 RPC 分片仍为硬门，见 §6 既有决策）。
+
+### 官方协议跟踪（2026-11-09 新增例行项）
+
+官方仓库是**快照式 sync**（无 CHANGELOG、中继服务端闭源、协议由官方单方面演进），每次官方发版后执行：
+
+```bash
+rm -rf ../.tmp/zai-zcode-mirror
+git clone --depth 1 https://github.com/zai-org/ZCode ../.tmp/zai-zcode-mirror
+python -I tools/protocol_sync_check.py        # exit 0=无变化，1=有增量，2=镜像缺失
+```
+
+有增量时按脚本输出逐项判断：`TYPE-REMOVED` 最高优先级（排查 App 是否在用）；`TYPE-ADDED` 评估
+能力位（当前官方契约里 App 尚未接入的还有 `workspace-create`、`mobile-log*`、`mobilePushEventSchema`
+推送事件）。复核通过后提交 `research/protocol-sync/snapshot.json` 作为新基线。
+
+### 后续可跟进（对标结论，按性价比排序）
+
+1. **会话内查找**（官方有独立查找 overlay，长会话价值高于桌面）
+2. **交互式终端**（App 现只有 `SessionStatusPanel` 只读展示；官方手机端可 create/输入/resize/dispose）
+3. **新建工作区**（`workspace-create-request/response`，官方固定根 `~/ZCodeProject`）
+4. **横屏/平板适配**（全库无 `WindowSizeClass`；官方宽屏有侧栏布局）
+5. **下拉刷新**（现依赖指数退避自动重连，无用户主动刷新）
+6. **推送唤醒**（官方 `mobilePushEventSchema` v1 五类事件已预留，接上后可去掉常驻 FGS 省电）
+
 
 ### ✅ 已完成：国际化资源化（6 批全部完成，2026-10-16）
 

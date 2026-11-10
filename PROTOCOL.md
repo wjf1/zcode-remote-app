@@ -89,9 +89,9 @@ python tools/probe.py sub <会话ID前缀> [帧落盘路径]   # + 完整会话�
 
 | code | 客户端行为 |
 |---|---|
-| `KICKED` | 终态：会话冲突（同 sid 重复连接被踢）→ 提示"已在别处打开" |
-| `DEVICE_OFFLINE` | 进入等待重连（desktop-offline 计时器）|
-| `AUTH_FAILED` / `WRONG_PARAM` | 终态：`invalid-mobile-connection`（二维码失效/错误） |
+| `KICKED` | 终态：会话冲突（同 sid 重复连接被踢）→ 提示"已在别处打开"（官方 `session-conflict`，不参与自动接续） |
+| `DEVICE_OFFLINE` | 有界宽限 15s（官方 2026-10-27 `recoverConnection(15_000)` 口径）：窗口内保持退避重试；超时升级为「桌面端离线」可接续终态（见 §11.8） |
+| `AUTH_FAILED` / `WRONG_PARAM` | 终态：`invalid-mobile-connection`（二维码失效/错误）；V2 设备视为官方 `device-not-owned`，可参与 SID 自动接续（§11.8） |
 | `INTERNAL` | 已配对过则回到 waiting 等设备回来，否则重连 |
 
 其他关闭/失败类别（PC 端枚举）：`disconnected`、`desktop-bootstrap-timeout`、`connection-recovery-timeout`、`relay-unavailable`、`unsupported-action`、`unexpected-error`。
@@ -134,6 +134,8 @@ python tools/probe.py sub <会话ID前缀> [帧落盘路径]   # + 完整会话�
 | `rpc-frame` / `rpc-frame-ack` | 双向 | 业务 RPC。字段（zod `.strict()`，缺一即拒）：`rpc-frame` = `{zcode_type, bridgeSessionId, bridgeGeneration?, recoveryId?, seq>0, messageSeq>0, fragmentIndex(0..63), fragmentCount(1..64), messageBytes, checksum{algorithm:"crc32",value:<hex8>}, dataBase64}`；`rpc-frame-ack` = `{zcode_type, bridgeSessionId, bridgeGeneration?, recoveryId?, ackMessageSeq}`。**身份三元组全等校验，任一身份键出现就必须三个都相等**——ack 漏 `bridgeGeneration` 会被静默丢弃并导致服务端无限重放（见 CONVERSATION-PROTOCOL.md §8） |
 | `mobile-view-state-update` | 手机→PC | 视图状态 + deviceInfo |
 | `mobile-diagnostic` | 手机→PC | 诊断上报（state/closeCode/online/visibilityState 等） |
+| `task-pin-request` / `task-pin-response` | 手机↔PC | 置顶/取消置顶（官方 `webRemoteControlActions.ts` schema 核验 2026-11-09）。请求 `{zcode_type, requestId, taskId, workspacePath, workspaceIdentity?, pinned}`；应答成功 `{…, success:true, pinned}`（回显生效态）/ 失败 `{…, success:false, error}`。**不内嵌快照**：列表纠偏走 Controller 通道 `task.upserted` 广播（置顶变化以整条 upserted 重发，无新 op）。renderer 动作超时 30s（官方 `WEB_REMOTE_CONTROL_RENDERER_ACTION_TIMEOUT_MS`） |
+| `task-archive-request/response` | 手机↔PC | 归档动作（同 target 形状；App 暂未接入，状态由 Controller `membership.archived` 承载） |
 | `app-error` / `bridge-degraded` | PC→手机 | 错误 / 桥降级 |
 
 **所有出站业务帧必须包 `data` 信封**：`{"type":"data","payload":{...},"client_ts":<ms>}`（3.1 节实测）。
@@ -648,3 +650,35 @@ PC 端必须已打开「移动端远程控制」面板（否则 `pair_status=wai
    120→122、运行中 3→4 实时反映（PC 端其它会话新建任务）。
 9. **快照/增量数据源对账**：手机首页列表条目数、运行态计数与 probe 落盘快照逐项一致
    （见 §11.5 走查③收尾）。
+
+## 12. 旧 SID 自动接续（官方 2026-10-27，2026-11-09 对齐实现）
+
+**官方行为**（`docs/web-remote-control/relay-v2-pairing.md` §「旧 SID 自动接续」，官方 Web 端
+`webRemoteControlEntry.ts` `LOST_TARGET_FAILURES` / `resolveAutoConnectSid`）：
+
+桌面每次重注册（重启/重登）产生新 `device_sid`，**MID 不变**；relay 服务端**不做** old→new SID
+映射（`relay-v2-pairing.md`:22「同 MID 每次注册都产生新 SID」、:63「数据只发给同 SID 的另一角色」）。
+接续是 **terminal（手机）端**的恢复策略：
+
+1. 可接续失败仅两类：`device-not-owned`（= auth_init 后 `AUTH_FAILED`）与
+   `desktop-disconnected`（= 首次 waiting 超时、**DEVICE_OFFLINE 宽限超时**、回前台恢复超时）。
+   `session-conflict`（KICKED）、`relay-unavailable` 等保持原行为。
+2. DEVICE_OFFLINE 先给 15s 宽限（官方 `desktopOfflineGraceMs ?? 15_000`），窗口内不停重试。
+3. 宽限超时/可接续失败后：bootstrap 释放连接 → 用当前 JWT 查**一次** `GET /api/v1/remote/device`
+   → 以失败 SID 的 MID 求落点：
+   - 旧 SID 仍在该 MID 在线集合 → 沿用旧 SID 重建连（`keep`）；
+   - 同 MID 的其他在线 SID **恰好 1 个** → 切到新 SID（`switch`）；
+   - 0 个 / ≥2 个（歧义）→ 无落点，维持原终态交回用户（`missed`）。
+4. 接续出的连接在**配对成功前**再失败 → 不再二次接续（有界）；`Paired` 到达即复位预算。
+5. 无定时器、无轮询；业务状态按 SID 隔离不迁移；旧 SID 条目**不删除**（官方语义）。
+
+**App 实现**（2026-11-09）：
+
+| 位置 | 实现 |
+|---|---|
+| `relay/RelayClient.kt` | `DEVICE_OFFLINE_GRACE_MS = 15_000`；`enterOfflineGrace()` 首次进入起算、不因重连归零；超时 → `FailureReason.DESKTOP_DISCONNECTED`（终态，进 `fail()` 终态列表防退避穿透） |
+| `relay/SidContinuation.kt` | 落点裁决**纯函数**（`KeepCurrent` / `Switch` / `None`），逐条对齐官方 `resolveAutoConnectSid` |
+| `service/ConnectionCoordinator.kt` | `trySidContinuation()`：可接续终态先接管（不发常驻通知）→ 挂**进程级 scope**（collector 随即被 `connect()` 取消）→ `V2AccountApi.listDevices` 一次 → 按落点 keep/switch/missed；`sidContinuationUsed` 保证只一次 |
+| `AppViewModel` | `hostAdoptContinuationDevice()`：`upsertActive` 覆盖新 SID 并刷新 `device`/`devices`（不自行 connect） |
+
+**边界**：V1 设备（`passHash` 非空）无 JWT，不参与接续，行为与改动前一致；无 JWT / 无 MID 时同样跳过。
