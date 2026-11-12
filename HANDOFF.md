@@ -118,6 +118,7 @@ app-android/app/src/main/java/com/zcode/remote/
   与 `research/FRAME-CODEC.md`、`research/CONVERSATION-PROTOCOL.md`。
 
 ## 4. 最近一轮变更与交付成果
+- **2026-11-13：1.0 发布硬门①②双双收官**——① 出站大 RPC 物理分片（RpcChannel，官方等长切分算法经入站对拍 fixture 实证，outboundSlices 纯函数 7 项单测）；② **A-5 逻辑分帧重组**（WireReassembler，**从官方镜像 wire-reassembly.ts 逐规则转译**——推翻「需等真实样本」的旧判断，官方发送端已开源可直接核对；15 项单测逐规则覆盖，错误码 proto.frameAssembly* 全对齐）。ConversationChannel 的 fragment 分支从「显式失同步死循环」改为正常重组，**根治大会话同步不上问题**。真机走查出站分片待 USB（传 >1MiB 附件）。门禁：单测 495 全绿。
 - **2026-11-12 发布 v0.5.0-beta56**（versionCode 68）——对标官方 v3.17.2 收官版本。含协议对齐（旧 SID 自动接续 / 终态 SSOT）+ 三项能力（置顶 / 未读 / 连接分段进度）+ 六项扩展（查找 / 刷新 / 工作区 / 平板双栏 / 终端 / 推送 schema）；真机走查通过并修出 3 处只在真机可见的布局缺陷。门禁：单测 473、ktlint 0、detekt 0、lint 0 error。
 - **2026-11-12：对标后续 6 项功能全落地**（未发版）——会话内查找 / 下拉刷新 / 新建工作区 / 平板双栏 / 交互式终端 / 推送 schema 固化。工程门禁：JVM 单测 **473 全绿**、ktlint 0 违规、detekt 0 issue、lint **0 error**、assembleDebug 通过。**6 项均未真机走查**（USB 未连接），走查卡见 §5。
 - **2026-11-09/10：全面对标官方 zai-org/ZCode v3.17.2，落地 P0 协议对齐 + P1 三项能力**——旧 SID 自动接续（含 DEVICE_OFFLINE 15s 有界宽限）、task-pin 置顶、会话未读标记、连接过程 4 段进度、官方协议契约 diff 跟踪脚本；`build.sh` Gradle 版本探测修复。**2026-11-10 真机实测（Xiaomi 15 Pro / USB）通过置顶与未读，并修出两处缺陷**：V2 下未读改走 Controller updatedAt（V1 事件流路径在 V2 无帧）、设置页主按钮恒「断开」无法重连。
