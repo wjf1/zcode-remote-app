@@ -73,7 +73,7 @@ object ConversationFrames {
         )
     }
 
-    private fun parseTopicFrame(o: JsonObject): TopicFrame? {
+    internal fun parseTopicFrame(o: JsonObject): TopicFrame? {
         val payload = o.obj("payload") ?: return null
         return TopicFrame(
             topic = o.str("topic") ?: "",

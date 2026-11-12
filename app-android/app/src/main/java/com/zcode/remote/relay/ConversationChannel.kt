@@ -5,6 +5,8 @@ import com.zcode.remote.util.LogRedactor
 import com.zcode.remote.util.UiText
 import com.zcode.remote.util.UiText.Companion.res
 import com.zcode.remote.util.ZLog
+import com.zcode.remote.util.diag.DiagEventCode
+import com.zcode.remote.util.diag.Diagnostics
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -152,6 +154,9 @@ class ConversationChannel(
     // clientId 必须与连接绑定的一致（V2 host 单 client 身份，见 RpcChannel.v4ClientId）
     private val clientId: String get() = rpc.v4ClientId
     private var listenId: Int? = null
+
+    /** A-5：conversation 逻辑分帧重组器（官方 wire-reassembly.ts 逐规则转译）。 */
+    private val reassembler = WireReassembler()
     private var subscriptionId: String? = null
     private var sessionId: String? = null
 
@@ -359,15 +364,48 @@ class ConversationChannel(
             ZLog.w(TAG, "无法解析逻辑帧 payload=${LogRedactor.payloadLabel(data.toString())}")
             return
         }
+        // A-5（1.0 硬门，2026-11-12 实现）：逻辑分帧重组——算法逐规则转译自官方
+        // `wire-reassembly.ts`（字段 schema 见官方 wire.ts，以官方源码为准而非猜测）。
+        // fragment 分片进入重组器 staging；收齐后产出逻辑帧 JSON，包装成 complete 语义的
+        // LogicalFrame 走下方与 complete 完全相同的处理路径。缺片 = Incomplete（等待补片，
+        // 不触发重同步）；协议违例 = 显式失同步（reasonCode 与官方 fault 口径一致）。
+        var effective: ConversationFrames.LogicalFrame? = lf.takeIf { it.kind != "fragment" }
         if (lf.kind == "fragment") {
-            // §11.5.3：逻辑帧重组（kind:"fragment"，官方 ≤1024 片 / 16 MiB）**无真实样本前不实现**
-            // （任务书硬门：不猜字段、不写伪实现）；但**不得静默返回**——未知 fragment = 失同步，
-            // 显式要求重订阅权威快照（旧实现只写一行 WARN，会话会停在旧状态）。
-            ZLog.w(TAG, "未知逻辑 fragment：显式失同步 → 重订阅 frameId=${LogRedactor.maskId(lf.logicalFrameId)}")
-            onDesync?.invoke("logical-fragment")
-            return
+            when (val r = reassembler.feed(data)) {
+                is WireReassembler.Outcome.Complete -> {
+                    val assembledFrame = ConversationFrames.parseTopicFrame(r.frame)
+                    if (assembledFrame == null) {
+                        ZLog.w(TAG, "逻辑分帧重组后的帧解析失败")
+                        onDesync?.invoke("logical-fragment-reassembled-parse-failed")
+                        return
+                    }
+                    effective =
+                        ConversationFrames.LogicalFrame(
+                            wireVersion = lf.wireVersion,
+                            kind = "complete",
+                            deliveryKind = r.deliveryKind,
+                            logicalFrameId = lf.logicalFrameId,
+                            ordinal = lf.ordinal,
+                            topic = lf.topic,
+                            subscriptionId = lf.subscriptionId,
+                            frame = assembledFrame,
+                        )
+                }
+                is WireReassembler.Outcome.Incomplete ->
+                    ZLog.i(
+                        TAG,
+                        "逻辑分帧等待补片 id=${LogRedactor.maskId(r.logicalFrameId)} missing=${r.missingIndexes.size}",
+                    )
+                is WireReassembler.Outcome.Rejected -> {
+                    ZLog.w(TAG, "逻辑分帧重组违例 ${r.reasonCode}")
+                    Diagnostics.record(DiagEventCode.CONV_DESYNC, "reason=${r.reasonCode}")
+                    onDesync?.invoke(r.reasonCode)
+                }
+                WireReassembler.Outcome.Ignored -> Unit
+            }
+            if (effective == null) return
         }
-        val frame = lf.frame ?: return
+        val frame = effective?.frame ?: return
         // topic + subscriptionId 双重匹配，丢弃旧订阅的迟到帧
         if (frame.topic != "conversation/$sessionId") return
         if (subscriptionId != null && frame.subscriptionId != subscriptionId) return
@@ -428,7 +466,7 @@ class ConversationChannel(
                 ZLog.i(
                     TAG,
                     "snapshot: ${snap.rows.size} 行（总 ${snap.totalCount}）" +
-                        "待审批=${snap.pendingInteractions.size} delivery=${lf.deliveryKind}" +
+                        "待审批=${snap.pendingInteractions.size} delivery=${effective.deliveryKind}" +
                         " canStop=${control?.canStop} stopState=${control?.stopState}",
                 )
             }
@@ -565,6 +603,8 @@ class ConversationChannel(
         listenId = null
         subscriptionId = null
         sessionId = null
+        // A-5：订阅重置即逻辑分帧 staging 作废（不同订阅的片不可混用）
+        reassembler.reset()
         subTarget = null
         foregroundExecutionId = null
         _interactions.value = emptyList()
