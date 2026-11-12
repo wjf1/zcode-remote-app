@@ -629,7 +629,18 @@ private fun TerminalPanel(
     var input by remember { mutableStateOf("") }
     val scroll = rememberScrollState()
     LaunchedEffect(out) { scroll.animateScrollTo(scroll.maxValue) }
-    Column(modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 8.dp)) {
+    // 高度与键盘策略（真机走查 2026-11-12 两轮修正）：
+    // ① 固定 340dp 在 ModalBottomSheet 内被压扁 → 改 weight 自适应；
+    // ② fillMaxHeight(0.85f) 会让总高超出可用空间，键盘弹出时输入框被推离屏幕 →
+    //    降到 0.62f 并加 imePadding，保证「输出区 + 输入框」整体在可见区域内。
+    Column(
+        modifier =
+            Modifier
+                .fillMaxWidth()
+                .fillMaxHeight(0.62f)
+                .imePadding()
+                .padding(horizontal = 12.dp, vertical = 8.dp),
+    ) {
         Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
             Text(
                 text = stringResource(if (ready) R.string.terminal_ready else R.string.terminal_starting),
@@ -640,11 +651,15 @@ private fun TerminalPanel(
             TextButton(onClick = onClose) { Text(stringResource(R.string.common_close)) }
         }
         Spacer(Modifier.height(6.dp))
+        // 输出区高度策略：不再用固定 340dp（在 ModalBottomSheet 里会被 sheet 最大高度约束
+        // 压扁、并把下方输入框挤出屏幕——真机走查 2026-11-12 实证：输出区仅约 30dp、输入框不可见）。
+        // 改为 fillMaxHeight(0.55f) + weight(1f)：占 sheet 可用高度的 55%，且允许输入框始终可见。
         Box(
             modifier =
                 Modifier
                     .fillMaxWidth()
-                    .height(340.dp)
+                    .weight(1f, fill = false)
+                    .heightIn(min = 120.dp, max = 260.dp)
                     .clip(RoundedCornerShape(8.dp))
                     .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)),
         ) {
@@ -656,7 +671,7 @@ private fun TerminalPanel(
                         fontSize = 11.sp,
                     ),
                 color = MaterialTheme.colorScheme.onSurface,
-                modifier = Modifier.fillMaxSize().verticalScroll(scroll).padding(8.dp),
+                modifier = Modifier.fillMaxWidth().verticalScroll(scroll).padding(8.dp),
             )
         }
         Spacer(Modifier.height(8.dp))

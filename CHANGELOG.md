@@ -96,6 +96,13 @@
 
 ### 修复
 
+- **交互式终端面板布局两处缺陷（F5 真机走查 2026-11-12 发现）**：① 输出区固定 `height(340.dp)`
+  在 `ModalBottomSheet` 内被 sheet 最大高度约束压扁到约 30dp，输入框被挤出屏幕 → 改
+  `weight(1f, fill=false)` + `heightIn(120..260dp)` 自适应；② `fillMaxHeight(0.85f)` 使总高
+  超出可用空间，软键盘弹出时输入框被推离可见区 → 降到 `0.62f` 并加 `imePadding()`。
+  两个缺陷都只有真机可见（编译与单测均通过），修复后输出区/输入框/状态行完整显示。
+
+
 - **`DEVICE_OFFLINE` 无限同 SID 重试**：原实现无宽限上限（服务端一直回 DEVICE_OFFLINE 时永远
   重试、永不落到用户可见终态）。现按官方 15s 有界宽限收敛，超时进可接续终态；宽限起点不因
   重连归零（否则「退避重连→归零」使总窗口永不到期）。新增 `FailureReason.DESKTOP_DISCONNECTED`
