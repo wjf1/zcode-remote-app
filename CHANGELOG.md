@@ -4,6 +4,45 @@
 
 ### 新增
 
+- **会话内查找（F1）**：顶部溢出菜单新增常驻「查找」入口（原溢出按钮只在有文件/状态时出现）。
+  面板为 query 输入 + 命中计数 + 上一个/下一个导航；命中行在消息流中滚动定位并以浅主色背景
+  高亮。检索覆盖行的全部可读正文（`text` / `inputText` / `outputText` / `summaryText` /
+  `errorText`），不区分大小写，结果按 rowId 升序（会话时间序）。判定逻辑为纯函数
+  `ConversationSearchPolicy`（6 项单测），无 Compose 依赖。
+
+- **下拉刷新（F2）**：首页会话列表包 `PullToRefreshBox`（material3 1.3.0 自带，无新增依赖）。
+  刷新动作 = V2 设备 Controller 双 topic 重订（服务端重推全量快照）+ bootstrap 重发 +
+  工作区模型目录 resync；V1 设备仅 bootstrap。`ControllerChannel.refresh()` 为显式用户动作、
+  不受 ResyncThrottle 节流约束；3s 超时兜底结束动画。
+
+- **新建工作区（F3）**：首页顶栏新增「新建工作区」图标入口与名称输入弹层。接入官方
+  `workspace-create-request/response`（schema 核验自 `webRemoteControlActions.ts` +
+  `validation.ts`），名称校验规则与官方 `normalizeWebRemoteControlWorkspaceName` 一致
+  （非空 / 不含 `/` `\` / 不等于 `.` `..`，纯函数 `WorkspaceNameValidator`）。成功后提示路径并
+  重发 bootstrap 刷新工作区；官方固定在 `~/ZCodeProject/<name>` 创建，同名目录直接复用。
+
+- **平板/横屏适配（F4）**：引入 `material3-window-size-class`，窗口宽度达到 Expanded
+  （≥840dp，平板/横屏）时会话页改为「左列表 | 右详情」双栏，手机保持原沉浸式全屏。双栏模式下
+  物理返回键不再关闭会话（列表常驻左侧，「返回」语义消失）。会话列表与详情渲染体抽为
+  `homePane` / `convPane` 两个共用 lambda，避免三份拷贝漂移。
+
+- **交互式终端（F5）**：新增 `TerminalChannel`（频道 `terminal`，官方 2026-10-22 恢复的手机端
+  allowlist）：`create` / `write` / `resize` / `dispose` + `onDynamicData` / `onDynamicExit`
+  事件流。会话页溢出菜单新增「终端」入口，弹层为输出区（Monospace、自动滚底）与单行输入。
+  **owner 认领链路对齐官方**：`RpcChannel.terminalClientSessionId` 同时写入 bootstrap 与
+  `workspace-bridge-open`（官方强校验两者一致，否则拒绝 "Terminal page session has ended"）。
+  输出经 `stripAnsi` 剥离 CSI/OSC/其它 ESC 序列（正则实现，纯函数 5 项单测）——MVP 丢配色保
+  正文，后续可换 terminal-emulator 渲染真 ANSI。连接断开时本地终端实例与缓冲一并复位
+  （桌面端 owner 已被 3s 宽限回收）。
+
+- **推送事件 schema 固化（F6，协议准备）**：新增 `MobilePushFrames`，逐字段移植官方
+  `mobilePushEventSchema`（五类 kind / event_id 去重键 / state open|resolved / occurred_at 秒级）
+  与通知 `data` Ext 的定位键（`open_target` / `conversation_id` / `run_id` / `workspace_id`）。
+  **端到端不可行**：官方推送走「桌面上报 → 官方通知服务 → agent-im inner-send」，凭据与设备
+  注册由官方部署方持有（`mobile_push.enabled` 默认关闭），第三方 App 无法自建。本类供未来官方
+  开放通道时直接消费，以及解析系统通知点击落地的前置（4 项单测）。
+
+
 - **旧 SID 自动接续（对标官方 2026-10-27 行为）**：桌面端重启/重登会换新 `device_sid`（MID 不变，
   relay 服务端不做 old→new 映射），此前 App 只能「无限同 SID 重试」或「终态退回手动重扫码」。
   现对齐官方手机端恢复策略：`DEVICE_OFFLINE` 先给 **15s 有界宽限**（官方

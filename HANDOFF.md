@@ -118,6 +118,7 @@ app-android/app/src/main/java/com/zcode/remote/
   与 `research/FRAME-CODEC.md`、`research/CONVERSATION-PROTOCOL.md`。
 
 ## 4. 最近一轮变更与交付成果
+- **2026-11-12：对标后续 6 项功能全落地**（未发版）——会话内查找 / 下拉刷新 / 新建工作区 / 平板双栏 / 交互式终端 / 推送 schema 固化。工程门禁：JVM 单测 **473 全绿**、ktlint 0 违规、detekt 0 issue、lint **0 error**、assembleDebug 通过。**6 项均未真机走查**（USB 未连接），走查卡见 §5。
 - **2026-11-09/10：全面对标官方 zai-org/ZCode v3.17.2，落地 P0 协议对齐 + P1 三项能力**——旧 SID 自动接续（含 DEVICE_OFFLINE 15s 有界宽限）、task-pin 置顶、会话未读标记、连接过程 4 段进度、官方协议契约 diff 跟踪脚本；`build.sh` Gradle 版本探测修复。**2026-11-10 真机实测（Xiaomi 15 Pro / USB）通过置顶与未读，并修出两处缺陷**：V2 下未读改走 Controller updatedAt（V1 事件流路径在 V2 无帧）、设置页主按钮恒「断开」无法重连。
 - **2026-11-08：依赖升级阶段 1 落地**——按评估报告（docs 评审结论）执行最小风险批次：Gradle 8.13 / AGP 8.13.0 / compileSdk 36 / activity 1.13 / lifecycle 2.11 / uiautomator 2.4.1 / CI gradle-version 三处同步。阶段 2（Kotlin 2.1.x + BOM/OkHttp/CameraX）与阶段 3（等 detekt 2.0 stable）按报告排期。
 
@@ -535,6 +536,17 @@ lint 双变体 0 error、detekt、ktlint 0 违规、assembleDebug/Release 通过
   故真机侧改用不依赖 Espresso 注入的仪器化测试（如 `ConversationDraftInstrumentedTest`）取证。
 
 ## 5. 接力开发指引与待办（Next Steps / Backlog）
+
+### 六项新功能真机走查卡（2026-11-12，均待验）
+
+| 项 | 走查路径 | 判定标准 |
+|---|---|---|
+| **F1 会话内查找** | 进会话 → 顶栏「⋮」→ 查找 → 输入会话里出现过的词 | 显示「第 N / M 处」；点「下一个」列表滚到命中行且该行有浅色高亮；无匹配显示「无匹配内容」 |
+| **F2 下拉刷新** | 首页列表下拉 | 出现刷新指示器；松手后约 1-3s 收尾；列表/状态更新（PC 端新建会话后可拉到） |
+| **F3 新建工作区** | 首页顶栏「新建文件夹」图标 → 输入名称 → 创建 | 非法名（空/含 `/`）本地即报错不发请求；合法名创建后提示路径，PC 端 `~/ZCodeProject/<name>` 出现目录 |
+| **F4 平板双栏** | 平板或横屏（≥840dp）打开会话 | 左列表右详情同屏；返回键不退出会话；手机竖屏行为不变（仍全屏） |
+| **F5 交互式终端** | 进会话 → 「⋮」→ 终端 → 输入 `dir` 或 `ls` 回车 | 面板显示输出正文（无 ANSI 乱码）；状态行显示「终端已就绪」；关闭面板后 PC 端无孤儿 PTY 进程 |
+| **F6 推送 schema** | 无 UI，仅单测 | `MobilePushFramesTest` 4 项通过即达成本轮目标（端到端依赖官方部署方，不做） |
 
 ### 真机批次执行卡（2026-11-10 更新：本轮四项已走查三项）
 
