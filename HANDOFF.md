@@ -118,6 +118,7 @@ app-android/app/src/main/java/com/zcode/remote/
   与 `research/FRAME-CODEC.md`、`research/CONVERSATION-PROTOCOL.md`。
 
 ## 4. 最近一轮变更与交付成果
+- **2026-11-12 发布 v0.5.0-beta56**（versionCode 68）——对标官方 v3.17.2 收官版本。含协议对齐（旧 SID 自动接续 / 终态 SSOT）+ 三项能力（置顶 / 未读 / 连接分段进度）+ 六项扩展（查找 / 刷新 / 工作区 / 平板双栏 / 终端 / 推送 schema）；真机走查通过并修出 3 处只在真机可见的布局缺陷。门禁：单测 473、ktlint 0、detekt 0、lint 0 error。
 - **2026-11-12：对标后续 6 项功能全落地**（未发版）——会话内查找 / 下拉刷新 / 新建工作区 / 平板双栏 / 交互式终端 / 推送 schema 固化。工程门禁：JVM 单测 **473 全绿**、ktlint 0 违规、detekt 0 issue、lint **0 error**、assembleDebug 通过。**6 项均未真机走查**（USB 未连接），走查卡见 §5。
 - **2026-11-09/10：全面对标官方 zai-org/ZCode v3.17.2，落地 P0 协议对齐 + P1 三项能力**——旧 SID 自动接续（含 DEVICE_OFFLINE 15s 有界宽限）、task-pin 置顶、会话未读标记、连接过程 4 段进度、官方协议契约 diff 跟踪脚本；`build.sh` Gradle 版本探测修复。**2026-11-10 真机实测（Xiaomi 15 Pro / USB）通过置顶与未读，并修出两处缺陷**：V2 下未读改走 Controller updatedAt（V1 事件流路径在 V2 无帧）、设置页主按钮恒「断开」无法重连。
 - **2026-11-08：依赖升级阶段 1 落地**——按评估报告（docs 评审结论）执行最小风险批次：Gradle 8.13 / AGP 8.13.0 / compileSdk 36 / activity 1.13 / lifecycle 2.11 / uiautomator 2.4.1 / CI gradle-version 三处同步。阶段 2（Kotlin 2.1.x + BOM/OkHttp/CameraX）与阶段 3（等 detekt 2.0 stable）按报告排期。

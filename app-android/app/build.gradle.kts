@@ -117,8 +117,11 @@ android {
         //                           （发心跳但 30s 无 ack → 判连接失效并重连）
         // versionCode 67：beta55 —— T9 设置页「粘贴令牌」入口（绕过 App 内 WebView 登录
         //                           在 HyperOS + WebView 153 上点不动的问题）
-        versionCode = 67
-        versionName = "0.5.0-beta55"
+        // versionCode 68：beta56 —— 对标官方 v3.17.2 收官：旧 SID 自动接续 + task-pin 置顶 +
+        //                            未读蓝点 + 连接分段进度；再补六项能力（会话内查找 / 下拉刷新 /
+        //                            新建工作区 / 平板双栏 / 交互式终端 / 推送 schema 固化）
+        versionCode = 68
+        versionName = "0.5.0-beta56"
         // 仪器化渲染回归网（src/androidTest）用 androidx.test 默认 runner。
         // 只在模拟器/真机上跑；CI runner 无设备，故 ci.yml 不接（见 HANDOVER §6.1 回归网）。
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
