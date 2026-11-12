@@ -71,4 +71,10 @@ def main() -> int:
 
 
 if __name__ == "__main__":
+    # Windows 控制台默认 GBK，打印 ✓ 会 UnicodeEncodeError（2026-11-12 本机实证）；
+    # 一致性结论已算出，不该因这一行 print 让 CI/本地误判失败（与 check_test_count.py 同修）。
+    try:
+        sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+    except (AttributeError, ValueError):
+        pass
     sys.exit(main())

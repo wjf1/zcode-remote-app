@@ -1,12 +1,11 @@
 # 变更记录 / Changelog
 
-## [Unreleased]
+## v0.5.0-beta56（2026-11-12）· 对标官方 v3.17.2 收官——协议对齐、置顶/未读/连接进度与六项能力
 
-## [v0.5.0-beta56]
-
-> 2026-11-12 对标官方 `zai-org/ZCode` v3.17.2 收官：先落地协议对齐与三项能力（beta56 主体），
-> 再补六项能力（会话内查找 / 下拉刷新 / 新建工作区 / 平板双栏 / 交互式终端 / 推送 schema 固化）。
-> 六项功能经 Xiaomi 15 Pro 真机走查，走查中修出 3 处只在真机可见的布局缺陷。
+> 对标官方 `zai-org/ZCode` v3.17.2：先落地协议对齐与三项能力（旧 SID 自动接续 / task-pin 置顶 /
+> 未读蓝点 / 连接 4 段进度），再补六项扩展（会话内查找 / 下拉刷新 / 新建工作区 / 平板双栏 /
+> 交互式终端 / 推送 schema 固化）。六项功能经 Xiaomi 15 Pro 真机走查，走查中修出 3 处只在
+> 真机可见的布局缺陷。
 
 ### 新增
 
@@ -47,7 +46,6 @@
   **端到端不可行**：官方推送走「桌面上报 → 官方通知服务 → agent-im inner-send」，凭据与设备
   注册由官方部署方持有（`mobile_push.enabled` 默认关闭），第三方 App 无法自建。本类供未来官方
   开放通道时直接消费，以及解析系统通知点击落地的前置（4 项单测）。
-
 
 - **旧 SID 自动接续（对标官方 2026-10-27 行为）**：桌面端重启/重登会换新 `device_sid`（MID 不变，
   relay 服务端不做 old→new 映射），此前 App 只能「无限同 SID 重试」或「终态退回手动重扫码」。
@@ -112,7 +110,6 @@
   超出可用空间，软键盘弹出时输入框被推离可见区 → 降到 `0.62f` 并加 `imePadding()`。
   两个缺陷都只有真机可见（编译与单测均通过），修复后输出区/输入框/状态行完整显示。
 
-
 - **`DEVICE_OFFLINE` 无限同 SID 重试**：原实现无宽限上限（服务端一直回 DEVICE_OFFLINE 时永远
   重试、永不落到用户可见终态）。现按官方 15s 有界宽限收敛，超时进可接续终态；宽限起点不因
   重连归零（否则「退避重连→归零」使总窗口永不到期）。新增 `FailureReason.DESKTOP_DISCONNECTED`
@@ -132,8 +129,6 @@
   `DESKTOP_DISCONNECTED`。已移除该调用并补注释；另在 `enterOfflineGrace` 首行挡
   `terminalFailed/manuallyClosed`（防终态被回退覆盖），宽限 job 触发前先自摘引用（避免
   `fail()` 内 `cancelOfflineGrace()` 取消自身协程后留下已取消 job 引用）。
-
-## [v0.5.0-beta55]
 
 > 2026-11-01 T8 登录 WebView 宿主独立 Activity 化（未发版）：结构性修复 HyperOS + WebView 153
 > 「登录点不动」，真机验收待做。另含同日 Controller 通道 androidTest 覆盖补齐（纯加测试，闭环
@@ -614,7 +609,6 @@ App 需要同样的通道。
   `createComposeRule`，只在 CI 的 API 35 emulator 执行（API 37 真机受 Espresso 限制）。
 
 **至此 5.1 清单仅剩 #2 一项**（其余全部闭环）。
-
 
 ## v0.5.0-beta47（2026-10-16）· 国际化资源化 6 批完成 + 走查修复第二至第八批
 
@@ -2575,8 +2569,6 @@ P1-2 完成 —— 多会话并行看板 + 控制权切换提示**
 - 协议侧另定位到会话级 `pendingInteractionSummary{permissionCount, userInputCount}`（在
   conversation 的 `sessions-index/<workspaceId>` overlay 里），可作为后续更精准的服务端权威角标来源。
 
-
-
 #### 新增（P1-1 表单应答）
 - **PendingElicitation 模型**（Interactions.kt）：会话帧 `pendingInteractions` 里 kind=="userInput"
   条目与任务事件流 `elicitation_request` 双源解析（questions/plan/freeText/autoResolution）。
@@ -2633,7 +2625,6 @@ P1-2 完成 —— 多会话并行看板 + 控制权切换提示**
   静默退出（需 Intel/AMD），且 sdkmanager 大文件下载固定断连（33% 处）——系统镜像改由
   腾讯镜像 curl 断点续传获取。App UI 层模拟器验收待 Intel/AMD 机器或 P0-2 真机补验；
   协议层与 App 实现同参数同路径，已由探针实测闭环。
-
 
 ## v0.3.0-m3（2026-09-28）· 首个签名 Release
 
