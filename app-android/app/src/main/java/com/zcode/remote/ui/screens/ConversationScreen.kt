@@ -576,7 +576,15 @@ private fun SearchOverlay(
     onPrev: () -> Unit,
     onClose: () -> Unit,
 ) {
-    Column(modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp)) {
+    // imePadding：键盘弹出时整块上移，避免命中计数行被裁切（真机走查 2026-11-12：
+    // 平板双栏 + 软键盘下「输入关键词开始查找」被遮住下半部分，与终端面板同类问题）。
+    Column(
+        modifier =
+            Modifier
+                .fillMaxWidth()
+                .imePadding()
+                .padding(horizontal = 16.dp, vertical = 8.dp),
+    ) {
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             OutlinedTextField(
                 value = query,
