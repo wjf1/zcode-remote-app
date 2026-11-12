@@ -28,7 +28,7 @@ import java.util.concurrent.atomic.AtomicInteger
  *
  * §11.5.2（beta33）：请求 key 绑 `(桥代次, requestId)`、入站身份三元组校验、单/多分片统一
  * 校验（声明长度 + 整条消息 CRC32）、**完整解码成功后才 ack**、在途分片与队列有界、
- * 出站超限本地拒绝（物理分片待真实样本，见 ProtocolLimits / 任务书 §11.5.2）。
+ * 出站超限按官方等长切分算法物理分片发送（§11.5.2，2026-11-12 实现；切分算法经入站对拍 fixture 实证）。
  */
 class RpcChannel(
     private val relay: RelayClient,
@@ -448,8 +448,14 @@ class RpcChannel(
 
     /**
      * 组 rpc-frame 并发出。返回 false = **本地预算拒绝**（未发送）：
-     * ① 报文 > 16 MiB（官方 `messageTooLarge`）；② `data` 信封 > 1 MiB（官方 `envelopeTooLarge`，
-     * 官方发送端在此按 ≤1 MiB 物理分片；App 侧物理分片待真实样本，先显式拒绝而非发超限帧）。
+     * ① 报文 > 16 MiB（官方 `messageTooLarge`）。
+     *
+     * §11.5.2 出站物理分片（2026-11-12 实现，1.0 硬门收官）：
+     * 单帧信封 > 1 MiB（官方 `envelopeTooLarge`）时按官方等长切分算法拆为多个物理帧——
+     * 每片 ≤ [OUTBOUND_FRAGMENT_PAYLOAD_BYTES]、共用同一 `messageSeq` 与**整条消息**的
+     * CRC32/`messageBytes`、`fragmentIndex` 0..n-1、`fragmentCount` n；切分算法与官方
+     * 一致性由入站对拍 fixture（`tools/gen_rpc_frame_fixtures.py` "官方等长切分"）实证。
+     * 任一片发送失败即整条失败（对端 30s 组装超时丢弃不完整序列，语义与本地拒绝一致）。
      */
     private fun sendMessage(
         message: ByteArray,
@@ -460,14 +466,15 @@ class RpcChannel(
             ZLog.w(TAG, "outbound refused code=${ProtocolViolation.OUTBOUND_TOO_LARGE.code} bytes=${bytes.size}")
             return false
         }
-        val checksum =
-            buildJsonObject {
-                put("algorithm", "crc32")
-                put("value", crc32Hex(bytes))
-            }
-        val seq = nextPhysicalSeq++
+        val checksumValue = crc32Hex(bytes)
         val messageSeq = nextMessageSeq++
-        val frame =
+
+        fun frameOf(
+            payload: ByteArray,
+            seq: Int,
+            index: Int,
+            count: Int,
+        ): JsonObject =
             buildJsonObject {
                 put("zcode_type", "rpc-frame")
                 put("bridgeSessionId", bridgeSessionId)
@@ -475,28 +482,58 @@ class RpcChannel(
                 recoveryId?.let { put("recoveryId", it) }
                 put("seq", seq)
                 put("messageSeq", messageSeq)
-                put("fragmentIndex", 0)
-                put("fragmentCount", 1)
+                put("fragmentIndex", index)
+                put("fragmentCount", count)
                 put("messageBytes", bytes.size)
-                put("checksum", checksum)
-                put("dataBase64", Base64.encodeToString(bytes, Base64.NO_WRAP))
+                put(
+                    "checksum",
+                    buildJsonObject {
+                        put("algorithm", "crc32")
+                        put("value", checksumValue)
+                    },
+                )
+                put("dataBase64", Base64.encodeToString(payload, Base64.NO_WRAP))
             }
+
         // 快速路径：base64 膨胀 4/3 后仍远离 1 MiB 的报文无需序列化整帧做预算判定
         // （700_000 × 4/3 ≈ 933 KB + 信封余量 < 1 MiB，数学上必然合规）
         if (bytes.size <= ENVELOPE_SAFE_MESSAGE_BYTES) {
-            relay.sendPayload(frame)
+            val seq = nextPhysicalSeq++
+            relay.sendPayload(frameOf(bytes, seq, 0, 1))
             return true
         }
-        // 官方 envelopeTooLarge 的同一口径：data 信封（含 client_ts）UTF-8 字节 ≤ 1 MiB
-        val envelopeBytes = relay.envelopeBytes(frame)
-        if (envelopeBytes > ProtocolLimits.MAX_PHYSICAL_FRAME_BYTES) {
-            ZLog.w(
-                TAG,
-                "outbound refused code=${ProtocolViolation.OUTBOUND_TOO_LARGE.code} envelope=$envelopeBytes",
-            )
-            return false
+
+        // 单帧信封预算：超 1 MiB（官方 envelopeTooLarge 口径）→ 走物理分片
+        val singleSeq = nextPhysicalSeq
+        val envelopeBytes = relay.envelopeBytes(frameOf(bytes, singleSeq, 0, 1))
+        if (envelopeBytes <= ProtocolLimits.MAX_PHYSICAL_FRAME_BYTES) {
+            nextPhysicalSeq++
+            relay.sendPayload(frameOf(bytes, singleSeq, 0, 1))
+            return true
         }
-        relay.sendPayload(frame)
+
+        // —— 出站物理分片（等长切分，最后一片可能更短）——
+        val slices = outboundSlices(bytes, OUTBOUND_FRAGMENT_PAYLOAD_BYTES)
+        ZLog.i(
+            TAG,
+            "outbound fragmented bytes=${bytes.size} frames=${slices.size} per=$OUTBOUND_FRAGMENT_PAYLOAD_BYTES",
+        )
+        slices.forEachIndexed { index, slice ->
+            val seq = nextPhysicalSeq++
+            val frame = frameOf(slice, seq, index, slices.size)
+            // 每帧信封预算防御性校验（数学上 700 KB/片必然合规；超限即中止——不完整序列
+            // 由对端 30s 组装超时丢弃，与本地拒绝语义一致）
+            val frameEnvelope = relay.envelopeBytes(frame)
+            if (frameEnvelope > ProtocolLimits.MAX_PHYSICAL_FRAME_BYTES) {
+                ZLog.w(
+                    TAG,
+                    "outbound fragment refused code=${ProtocolViolation.OUTBOUND_TOO_LARGE.code} " +
+                        "index=$index envelope=$frameEnvelope",
+                )
+                return false
+            }
+            relay.sendPayload(frame)
+        }
         return true
     }
 
@@ -709,6 +746,34 @@ class RpcChannel(
          * 必然 < 1 MiB（[ProtocolLimits.MAX_PHYSICAL_FRAME_BYTES]），无需序列化整帧判定。
          */
         private const val ENVELOPE_SAFE_MESSAGE_BYTES = 700_000
+
+        /**
+         * 出站物理分片的每片 payload 上限（字节，§11.5.2，2026-11-12 实现）。
+         *
+         * 取值推导：base64 膨胀 4/3 后 933,334 字符 + 信封其余字段（约 400 B）≈ 934 KB，
+         * 距 1 MiB 物理帧上限留 115 KB 余量（`client_ts` / 身份三元组变化不致越界）。
+         * 16 MiB 单消息上限下最多 24 片，远小于 [ProtocolLimits.MAX_FRAGMENTS]（64）。
+         */
+        internal const val OUTBOUND_FRAGMENT_PAYLOAD_BYTES = 700_000
+
+        /**
+         * 出站等长切分（纯函数，JVM 单测覆盖；与入站对拍 fixture
+         * `tools/gen_rpc_frame_fixtures.py` 的 `slices()` 同一算法——官方等长切分，
+         * 每片 [per] 字节，最后一片可能更短）。
+         */
+        internal fun outboundSlices(
+            message: ByteArray,
+            per: Int,
+        ): List<ByteArray> {
+            require(per > 0) { "per 必须为正" }
+            if (message.isEmpty()) return listOf(message)
+            val count = (message.size + per - 1) / per
+            return List(count) { i ->
+                val from = i * per
+                val to = minOf(from + per, message.size)
+                message.copyOfRange(from, to)
+            }
+        }
 
         const val TYPE_PROMISE = 100
         const val TYPE_PROMISE_CANCEL = 101
