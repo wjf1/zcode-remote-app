@@ -198,6 +198,16 @@ class ControllerChannel(
         }
     }
 
+    /**
+     * 用户主动刷新（F2 下拉刷新）：对两个 topic 重订，让服务端重推全量快照。
+     * 与 [resyncControllerV4] 的区别：resync 走 ResyncThrottle 节流（面向失同步自愈），
+     * 本方法是显式用户动作，直接重订、不受节流约束。
+     */
+    fun refresh() {
+        resubscribe(ControllerReducer.TOPIC_TASKS)
+        resubscribe(ControllerReducer.TOPIC_WORKSPACES)
+    }
+
     /** 断开前退订（失败只记日志，不阻塞调用方）。 */
     fun unsubscribe() {
         for ((topic, sub) in subscriptionByTopic) {

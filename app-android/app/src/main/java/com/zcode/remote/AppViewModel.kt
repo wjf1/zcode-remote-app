@@ -30,6 +30,7 @@ import com.zcode.remote.relay.RpcChannel
 import com.zcode.remote.relay.SessionItem
 import com.zcode.remote.relay.SessionsIndexChannel
 import com.zcode.remote.relay.TaskEvent
+import com.zcode.remote.relay.TerminalChannel
 import com.zcode.remote.relay.UserFacingError
 import com.zcode.remote.relay.WorkspaceConfigChannel
 import com.zcode.remote.repo.ApprovalRepository
@@ -215,6 +216,50 @@ class AppViewModel(
     /** 未读标记（进程级 collector 调用；当前正订阅的会话跳过——用户正在看）。 */
     override fun hostMarkUnread(taskId: String) {
         markSessionUnread(taskId)
+    }
+
+    /** workspace-create 应答（F3）：成功提示 + 重发 bootstrap 刷新工作区；失败提示原因。 */
+    override fun hostOnWorkspaceCreateAck(
+        requestId: String,
+        ok: Boolean,
+        workspacePath: String?,
+        error: String?,
+    ) {
+        viewModelScope.launch {
+            if (ok) {
+                flash(res(R.string.flash_workspace_created, workspacePath ?: ""))
+                // 重发 bootstrap：让活动工作区/会话列表拿到新建工作区（官方同时会 force 推
+                // workspace-list-updated，但当前 App 未接该帧，bootstrap 是现成的刷新路径）
+                client?.sendPayload(BridgeFrames.bootstrapRequest("ws-created-${System.currentTimeMillis()}"))
+            } else {
+                flash(res(R.string.flash_workspace_failed, error ?: ""), FlashKind.Failure)
+            }
+        }
+    }
+
+    /**
+     * 新建工作区（F3）：名称经官方同规则校验后发 `workspace-create-request`。
+     * 校验失败本地直接提示，不发请求。
+     */
+    fun createWorkspace(name: String) {
+        val reason = BridgeFrames.WorkspaceNameValidator.validate(name)
+        if (reason != null) {
+            flash(
+                res(
+                    when (reason) {
+                        "required" -> R.string.ws_name_required
+                        else -> R.string.ws_name_separator
+                    },
+                ),
+                FlashKind.Failure,
+            )
+            return
+        }
+        val sent =
+            client?.sendPayload(
+                BridgeFrames.workspaceCreateRequest("ws-${System.currentTimeMillis()}", name.trim()),
+            ) ?: false
+        if (!sent) flash(res(R.string.flash_workspace_failed_no_conn), FlashKind.Failure)
     }
 
     /**
@@ -451,6 +496,97 @@ class AppViewModel(
 
     fun updateSessionQuery(q: String) {
         sessionQuery = q
+    }
+
+    /** 会话列表下拉刷新状态（F2）：refreshSessions() 置真，3s 超时兜底自动结束。 */
+    var sessionsRefreshing by mutableStateOf(false)
+        private set
+
+    /**
+     * 用户主动刷新（F2 下拉刷新）：V2 = Controller 双 topic 重订（服务端重推全量快照）+
+     * bootstrap 重发（顺带刷新工作区/活动工作区判定）+ 模型目录 resync；V1 = 仅 bootstrap。
+     * 结束信号不做快照级精确等待（那要给 host 再加接口），3s 超时兜底——官方快照通常 1-2s 内到，
+     * 动画上「刷新中」稍多挂零点几秒不违和。
+     */
+    fun refreshSessions() {
+        if (sessionsRefreshing) return
+        sessionsRefreshing = true
+        ZLog.i(TAG, "下拉刷新：重订阅会话列表")
+        if (device?.usesControllerChannel == true) controller?.refresh()
+        client
+            ?.sendPayload(
+                BridgeFrames.bootstrapRequest(
+                    "refresh-${System.currentTimeMillis()}",
+                    ConnectionScope.channel?.terminalClientSessionId,
+                ),
+            )
+        activeWorkspaceKey?.let { workspaceConfig?.resync(it) }
+        viewModelScope.launch {
+            kotlinx.coroutines.delay(3_000)
+            sessionsRefreshing = false
+        }
+    }
+
+    // ---- F5 交互式终端 ----
+    // 生命周期跟随会话页弹层：openTerminal 创建 + 订阅，closeTerminal dispose。
+    // 输出缓冲上限 ~80KB（超限裁头），ANSI 转义序列经 TerminalChannel.stripAnsi 过滤。
+    var terminalOpen by mutableStateOf(false)
+        private set
+    var terminalReady by mutableStateOf(false)
+        private set
+    var terminalOut by mutableStateOf("")
+        private set
+
+    private var terminalChannel: TerminalChannel? = null
+    private var terminalEventsJob: kotlinx.coroutines.Job? = null
+
+    fun openTerminal() {
+        val ch = ConnectionScope.channel
+        if (ch == null) {
+            flash(res(R.string.terminal_no_bridge), FlashKind.Failure)
+            return
+        }
+        if (terminalOpen) return
+        terminalOpen = true
+        terminalOut = ""
+        val t =
+            terminalChannel ?: TerminalChannel(ch).also { created ->
+                terminalChannel = created
+                created.onData = { out -> appendTerminal(out) }
+                terminalEventsJob?.cancel()
+                terminalEventsJob =
+                    viewModelScope.launch {
+                        ch.events.collect { ev -> created.onEvent(ev) }
+                    }
+            }
+        t.create(80, 24) { result ->
+            viewModelScope.launch {
+                terminalReady = result.isSuccess
+                if (result.isFailure) {
+                    appendTerminal("[创建失败: ${result.exceptionOrNull()?.message}]")
+                }
+            }
+        }
+    }
+
+    fun closeTerminal() {
+        terminalOpen = false
+        terminalReady = false
+        terminalChannel?.dispose()
+        terminalChannel = null
+        terminalEventsJob?.cancel()
+        terminalEventsJob = null
+    }
+
+    fun sendTerminalLine(line: String) {
+        terminalChannel?.write(line)
+    }
+
+    private fun appendTerminal(text: String) {
+        val filtered = TerminalChannel.stripAnsi(text)
+        if (filtered.isEmpty()) return
+        terminalOut =
+            if (terminalOut.length > 80_000) terminalOut.takeLast(60_000) + filtered else terminalOut + filtered
     }
 
     // ---- 连接栈（Sprint 1 / P0-A）：实际持有方是进程级 ConnectionScope（由前台服务
@@ -1015,6 +1151,14 @@ class AppViewModel(
         controller = null
         // A-2：连接没了，作废在途的握手自动重订与桥重开调度（含预算归零）
         connectionCoordinator.cancelResilienceJobs()
+        // F5：连接没了 = 桌面端 terminal owner 已被回收，本地终端实例与缓冲一并复位
+        terminalChannel?.dispose()
+        terminalChannel = null
+        terminalEventsJob?.cancel()
+        terminalEventsJob = null
+        terminalOpen = false
+        terminalReady = false
+        terminalOut = ""
         // 断开即清未读：重连后的事件是新一轮上下文，残留标记会误导「哪里有新内容」
         unreadBySession = emptyMap()
         convRepo.subscribedSession = null

@@ -201,6 +201,8 @@ dependencies {
     implementation(composeBom)
     implementation("androidx.compose.ui:ui")
     implementation("androidx.compose.material3:material3")
+    // F4 平板/横屏适配：窗口尺寸分级（版本由 compose-bom 管理，material3 1.3.0 内含）
+    implementation("androidx.compose.material3:material3-window-size-class")
     // C-3：Material 图标替换 emoji（Mic / AttachFile 等不在 icons-core 小图标集里）。
     // 包体影响：R8 只保留被引用的 ImageVector（每图标约 1KB 级），实测增量记入 CHANGELOG。
     implementation("androidx.compose.material:material-icons-extended")

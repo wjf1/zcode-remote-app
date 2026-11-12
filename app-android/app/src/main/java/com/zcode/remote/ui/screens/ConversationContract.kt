@@ -56,11 +56,17 @@ data class ConversationUiState(
     val snapshotAligned: ConversationChannel.SnapshotAligned? = null,
     /** B-3：附件上传成/败信号（tick 变化触发一次触觉）。 */
     val attachmentFeedback: AttachmentUploader.AttachmentFeedback? = null,
+    /** F5 终端：输出缓冲（ANSI 已过滤）与就绪标志。 */
+    val terminalOut: String = "",
+    val terminalReady: Boolean = false,
 )
 
 /** 会话页全部用户意图（原 21 个 callback + 返回导航）。 */
 data class ConversationAction(
     val onBack: () -> Unit,
+    /** F5 终端：发送一行 / 关闭面板。 */
+    val onTerminalSend: (String) -> Unit = {},
+    val onTerminalClose: () -> Unit = {},
     val onCancelUpload: () -> Unit = {},
     val onRetryUpload: () -> Unit = {},
     val onDismissUploadFailure: () -> Unit = {},

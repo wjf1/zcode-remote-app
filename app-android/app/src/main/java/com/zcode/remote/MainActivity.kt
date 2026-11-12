@@ -1,3 +1,7 @@
+// F4：WindowSizeClass API 是 experimental。注解放文件级而非 onCreate——detekt 基线
+// 把注解计入函数签名 ID，挂 onCreate 会让既有豁免失配（2026-11-11 实证）。
+@file:OptIn(androidx.compose.material3.windowsizeclass.ExperimentalMaterial3WindowSizeClassApi::class)
+
 package com.zcode.remote
 
 import android.content.Intent
@@ -9,9 +13,12 @@ import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.togetherWith
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.List
 import androidx.compose.material.icons.filled.Notifications
@@ -66,6 +73,13 @@ class MainActivity : ComponentActivity() {
         setContent {
             val vm: AppViewModel = viewModel()
             appVm = vm
+            // F4 平板/横屏适配：窗口宽度分级。Expanded（≥840dp，平板/横屏）
+            // 时会话页改为「列表 | 详情」双栏；其余保持现有全屏分支。
+            val windowSize =
+                androidx.compose.material3.windowsizeclass
+                    .calculateWindowSizeClass(activity = this)
+            val expandedWidth =
+                windowSize.widthSizeClass == androidx.compose.material3.windowsizeclass.WindowWidthSizeClass.Expanded
             // T3：会话列表是 StateFlow 不可变快照（后台 collector 写入），Compose 侧订阅
             // 才可能在后台线程更新时重组——直接读 vm.sessions 只在重组时取一次值。
             val sessions by vm.sessionsFlow.collectAsState()
@@ -125,7 +139,8 @@ class MainActivity : ComponentActivity() {
 
                     // 全局物理返回键拦截（防止直接退出应用）。pendingLogin 不再在内：登录
                     // WebView 已是独立 Activity（T8），返回键由它自行处理，pendingLogin 仅瞬时启动标记。
-                    BackHandler(enabled = openedTaskId != null || showGuide || scanning) {
+                    // F4：双栏模式下返回键不再关闭会话（列表常驻左侧，「返回」语义消失）。
+                    BackHandler(enabled = (openedTaskId != null && !expandedWidth) || showGuide || scanning) {
                         when {
                             openedTaskId != null -> closeSession()
                             showGuide -> showGuide = false
@@ -193,6 +208,138 @@ class MainActivity : ComponentActivity() {
                     val target =
                         openedItem
                             ?: openedTaskId?.let { id -> sessions.firstOrNull { it.taskId == id } }
+
+                    // F4：共用渲染体——手机全屏、Tab0、平板双栏三处渲染同一内容，参数只此一份
+                    // （防三份拷贝在后续迭代中漂移）。
+                    val homePane: @Composable () -> Unit = {
+                        HomeScreen(
+                            deviceName = vm.device?.deviceName ?: "",
+                            state = vm.relayState,
+                            sessions = sessions,
+                            sessionPending = vm.sessionPending,
+                            query = vm.sessionQuery,
+                            onQueryChange = { vm.updateSessionQuery(it) },
+                            subscribedSessionId = vm.subscribedSessionId,
+                            desktopActiveTaskId = vm.desktopActiveTaskId,
+                            onSessionClick = { s ->
+                                vm.openSession(s)
+                                openSession(s)
+                            },
+                            onNavigateToSettings = { selectedTab = 2 },
+                            protocolStack = vm.device?.protocolStack ?: com.zcode.remote.storage.ProtocolStack.V1,
+                            controllerSynced = vm.controllerSynced,
+                            modelState = vm.workspaceModelState,
+                            modelsLoading = vm.modelStateLoading,
+                            onLoadModels = { vm.loadWorkspaceModels() },
+                            currentModel = vm.conversationMeta.model,
+                            currentProvider = vm.conversationMeta.provider,
+                            availableModels = vm.allAvailableModels,
+                            modelReasoningLevels = vm.modelReasoningLevels,
+                            onSessionDelete = { vm.deleteSession(it) },
+                            onSessionTogglePin = { vm.pinSession(it, !it.pinned) },
+                            unreadBySession = vm.unreadBySession,
+                            refreshing = vm.sessionsRefreshing,
+                            onRefresh = { vm.refreshSessions() },
+                            onCreateWorkspace = { vm.createWorkspace(it) },
+                            onCreateSession = { prompt, modelOption, execMode ->
+                                vm.createNewSession(
+                                    firstPrompt = prompt,
+                                    attachments = emptyList(),
+                                    modelOption = modelOption,
+                                    execMode = execMode,
+                                    onSuccess = { item -> openSession(item) },
+                                    onError = { err ->
+                                        android.widget.Toast
+                                            .makeText(
+                                                this@MainActivity,
+                                                err.resolve(this@MainActivity),
+                                                android.widget.Toast.LENGTH_SHORT,
+                                            ).show()
+                                    },
+                                )
+                            },
+                        )
+                    }
+                    val convPane: @Composable () -> Unit = {
+                        androidx.compose.runtime.key(target?.taskId) {
+                            ConversationScreen(
+                                ui =
+                                    ConversationUiState(
+                                        title = vm.conversationMeta.title ?: (target?.title ?: ""),
+                                        status = vm.conversationStatus,
+                                        meta = vm.conversationMeta,
+                                        rows = vm.rowsSnapshot,
+                                        pendingUserMessages = vm.pendingUserMessages,
+                                        // 跨会话隔离（2026-10-09 真机反馈）：待处理项合并了
+                                        // 「任务事件流（全 workspace）」与「会话流（当前订阅）」两路，
+                                        // 会话页只能渲染属于本会话的卡，否则 B 会话会弹出 A 会话的审批。
+                                        approvals = approvalsForSession(vm.approvals, target?.taskId ?: ""),
+                                        elicitations = elicitationsForSession(vm.elicitations, target?.taskId ?: ""),
+                                        earlier = vm.earlier,
+                                        sessionState = vm.sessionState,
+                                        prompt = vm.promptDraft,
+                                        sending = vm.sending,
+                                        canStop = vm.conversationMeta.canStop == true,
+                                        stopState = vm.conversationMeta.stopState,
+                                        commandFeedback = vm.commandFeedback,
+                                        feedbackIsFailure = vm.feedbackIsFailure,
+                                        attachments = vm.attachments.toList(),
+                                        attachUploadName = vm.attachUpload?.name,
+                                        attachUploadPercent = vm.attachUpload?.percent ?: 0,
+                                        attachFailed = vm.attachFailed,
+                                        availableModels = vm.allAvailableModels,
+                                        modelReasoningLevels = vm.modelReasoningLevels,
+                                        currentSessionMode =
+                                            vm.sessionModeOverride
+                                                ?: vm.sessionModeFromWorkspace,
+                                        filePreview = vm.filePreview,
+                                        snapshotAligned = vm.snapshotAligned,
+                                        attachmentFeedback = vm.attachmentFeedback,
+                                        terminalOut = vm.terminalOut,
+                                        terminalReady = vm.terminalReady,
+                                    ),
+                                actions =
+                                    ConversationAction(
+                                        onBack = { closeSession() },
+                                        onTerminalSend = { vm.sendTerminalLine(it) },
+                                        onTerminalClose = { vm.closeTerminal() },
+                                        onCancelUpload = { vm.cancelAttachmentUpload() },
+                                        onRetryUpload = { vm.retryAttachmentUpload() },
+                                        onDismissUploadFailure = { vm.dismissAttachFailure() },
+                                        onResolve = { a: PendingApproval, opt: ApprovalOption -> vm.resolve(a, opt) },
+                                        onElicitationAccept = { el, answers -> vm.answerElicitation(el, answers) },
+                                        onElicitationDecline = { vm.declineElicitation(it) },
+                                        onElicitationFreeText = { el, text -> vm.answerElicitationFreeText(el, text) },
+                                        onLoadEarlier = { vm.loadEarlier() },
+                                        onPromptChange = { vm.updatePromptDraft(it) },
+                                        onSend = { vm.sendPrompt() },
+                                        onStop = { vm.stopSession() },
+                                        onAttachmentPicked = { uri, name, mime, size -> vm.addAttachment(uri, name, mime, size) },
+                                        onRemoveAttachment = { vm.removeAttachment(it) },
+                                        onSwitchModel = { m -> vm.switchCurrentSessionModel(m) },
+                                        onLoadModels = { vm.loadWorkspaceModels() },
+                                        // ⚠️ 执行模式勿取 ConversationChannel.Status.Live.mode——那是订阅模式
+                                        // （snapshot/live），与执行模式（plan/build/yolo）撞名（真机验收 2026-10-05 实证）
+                                        onSwitchMode = { m ->
+                                            vm.setSessionMode(m) { err ->
+                                                if (err != null) {
+                                                    // C-2：exec mode 切换失败同样经错误映射，不直出裸英文
+                                                    android.widget.Toast
+                                                        .makeText(
+                                                            this@MainActivity,
+                                                            "切换失败：${com.zcode.remote.relay.UserFacingError.map(err)}",
+                                                            android.widget.Toast.LENGTH_SHORT,
+                                                        ).show()
+                                                }
+                                            }
+                                        },
+                                        onPreviewFile = { vm.previewSessionFile(it) },
+                                        onDismissFilePreview = { vm.dismissFilePreview() },
+                                        onRetrySubscribe = { vm.retrySubscribe() },
+                                    ),
+                            )
+                        }
+                    }
                     when {
                         // 1. 保活指引全屏页
                         showGuide -> KeepAliveGuideScreen(onBack = { showGuide = false })
@@ -210,84 +357,16 @@ class MainActivity : ComponentActivity() {
                                 },
                             )
 
-                        // 3. 沉浸式会话详情页
+                        // 3. 会话详情：平板/横屏（Expanded）双栏 = 左列表 + 右详情；手机保持沉浸式全屏。
                         // B-1：用会话 id 作 key —— listState / 滚动锚点 / 贴底标记不跨会话复用，
                         // 否则「A 停在顶部 → 进 B」会沿用 A 的偏移量（进 B 不停在最新行）。
-                        target != null ->
-                            androidx.compose.runtime.key(target.taskId) {
-                                ConversationScreen(
-                                    ui =
-                                        ConversationUiState(
-                                            title = vm.conversationMeta.title ?: target.title,
-                                            status = vm.conversationStatus,
-                                            meta = vm.conversationMeta,
-                                            rows = vm.rowsSnapshot,
-                                            pendingUserMessages = vm.pendingUserMessages,
-                                            // 跨会话隔离（2026-10-09 真机反馈）：待处理项合并了
-                                            // 「任务事件流（全 workspace）」与「会话流（当前订阅）」两路，
-                                            // 会话页只能渲染属于本会话的卡，否则 B 会话会弹出 A 会话的审批。
-                                            approvals = approvalsForSession(vm.approvals, target.taskId),
-                                            elicitations = elicitationsForSession(vm.elicitations, target.taskId),
-                                            earlier = vm.earlier,
-                                            sessionState = vm.sessionState,
-                                            prompt = vm.promptDraft,
-                                            sending = vm.sending,
-                                            canStop = vm.conversationMeta.canStop == true,
-                                            stopState = vm.conversationMeta.stopState,
-                                            commandFeedback = vm.commandFeedback,
-                                            feedbackIsFailure = vm.feedbackIsFailure,
-                                            attachments = vm.attachments.toList(),
-                                            attachUploadName = vm.attachUpload?.name,
-                                            attachUploadPercent = vm.attachUpload?.percent ?: 0,
-                                            attachFailed = vm.attachFailed,
-                                            availableModels = vm.allAvailableModels,
-                                            modelReasoningLevels = vm.modelReasoningLevels,
-                                            currentSessionMode =
-                                                vm.sessionModeOverride
-                                                    ?: vm.sessionModeFromWorkspace,
-                                            filePreview = vm.filePreview,
-                                            snapshotAligned = vm.snapshotAligned,
-                                            attachmentFeedback = vm.attachmentFeedback,
-                                        ),
-                                    actions =
-                                        ConversationAction(
-                                            onBack = { closeSession() },
-                                            onCancelUpload = { vm.cancelAttachmentUpload() },
-                                            onRetryUpload = { vm.retryAttachmentUpload() },
-                                            onDismissUploadFailure = { vm.dismissAttachFailure() },
-                                            onResolve = { a: PendingApproval, opt: ApprovalOption -> vm.resolve(a, opt) },
-                                            onElicitationAccept = { el, answers -> vm.answerElicitation(el, answers) },
-                                            onElicitationDecline = { vm.declineElicitation(it) },
-                                            onElicitationFreeText = { el, text -> vm.answerElicitationFreeText(el, text) },
-                                            onLoadEarlier = { vm.loadEarlier() },
-                                            onPromptChange = { vm.updatePromptDraft(it) },
-                                            onSend = { vm.sendPrompt() },
-                                            onStop = { vm.stopSession() },
-                                            onAttachmentPicked = { uri, name, mime, size -> vm.addAttachment(uri, name, mime, size) },
-                                            onRemoveAttachment = { vm.removeAttachment(it) },
-                                            onSwitchModel = { m -> vm.switchCurrentSessionModel(m) },
-                                            onLoadModels = { vm.loadWorkspaceModels() },
-                                            // ⚠️ 执行模式勿取 ConversationChannel.Status.Live.mode——那是订阅模式
-                                            // （snapshot/live），与执行模式（plan/build/yolo）撞名（真机验收 2026-10-05 实证）
-                                            onSwitchMode = { m ->
-                                                vm.setSessionMode(m) { err ->
-                                                    if (err != null) {
-                                                        // C-2：exec mode 切换失败同样经错误映射，不直出裸英文
-                                                        android.widget.Toast
-                                                            .makeText(
-                                                                this@MainActivity,
-                                                                "切换失败：${com.zcode.remote.relay.UserFacingError.map(err)}",
-                                                                android.widget.Toast.LENGTH_SHORT,
-                                                            ).show()
-                                                    }
-                                                }
-                                            },
-                                            onPreviewFile = { vm.previewSessionFile(it) },
-                                            onDismissFilePreview = { vm.dismissFilePreview() },
-                                            onRetrySubscribe = { vm.retrySubscribe() },
-                                        ),
-                                )
+                        target != null && expandedWidth ->
+                            Row(Modifier.fillMaxSize()) {
+                                Box(Modifier.weight(0.38f).statusBarsPadding()) { homePane() }
+                                Box(Modifier.weight(0.62f)) { convPane() }
                             }
+
+                        target != null -> convPane()
 
                         // 4. 底部 3-Tab 主工作台框架
                         else -> {
@@ -365,51 +444,8 @@ class MainActivity : ComponentActivity() {
                                     modifier = Modifier.padding(innerPadding),
                                 ) { tab ->
                                     when (tab) {
-                                        0 ->
-                                            HomeScreen(
-                                                deviceName = vm.device?.deviceName ?: "",
-                                                state = vm.relayState,
-                                                sessions = sessions,
-                                                sessionPending = vm.sessionPending,
-                                                query = vm.sessionQuery,
-                                                onQueryChange = { vm.updateSessionQuery(it) },
-                                                subscribedSessionId = vm.subscribedSessionId,
-                                                desktopActiveTaskId = vm.desktopActiveTaskId,
-                                                onSessionClick = { s ->
-                                                    vm.openSession(s)
-                                                    openSession(s)
-                                                },
-                                                onNavigateToSettings = { selectedTab = 2 },
-                                                protocolStack = vm.device?.protocolStack ?: com.zcode.remote.storage.ProtocolStack.V1,
-                                                controllerSynced = vm.controllerSynced,
-                                                modelState = vm.workspaceModelState,
-                                                modelsLoading = vm.modelStateLoading,
-                                                onLoadModels = { vm.loadWorkspaceModels() },
-                                                currentModel = vm.conversationMeta.model,
-                                                currentProvider = vm.conversationMeta.provider,
-                                                availableModels = vm.allAvailableModels,
-                                                modelReasoningLevels = vm.modelReasoningLevels,
-                                                onSessionDelete = { vm.deleteSession(it) },
-                                                onSessionTogglePin = { vm.pinSession(it, !it.pinned) },
-                                                unreadBySession = vm.unreadBySession,
-                                                onCreateSession = { prompt, modelOption, execMode ->
-                                                    vm.createNewSession(
-                                                        firstPrompt = prompt,
-                                                        attachments = emptyList(),
-                                                        modelOption = modelOption,
-                                                        execMode = execMode,
-                                                        onSuccess = { item -> openSession(item) },
-                                                        onError = { err ->
-                                                            android.widget.Toast
-                                                                .makeText(
-                                                                    this@MainActivity,
-                                                                    err.resolve(this@MainActivity),
-                                                                    android.widget.Toast.LENGTH_SHORT,
-                                                                ).show()
-                                                        },
-                                                    )
-                                                },
-                                            )
+                                        // F4：渲染体抽成 homePane/convPane（手机全屏分支、Tab0 与平板双栏共用）
+                                        0 -> homePane()
 
                                         1 ->
                                             ApprovalsTab(

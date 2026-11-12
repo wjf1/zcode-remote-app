@@ -16,6 +16,7 @@ import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Build
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.CreateNewFolder
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.*
@@ -33,6 +34,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.zcode.remote.R
+import com.zcode.remote.relay.BridgeFrames
 import com.zcode.remote.relay.FailureReason
 import com.zcode.remote.relay.RelayState
 import com.zcode.remote.relay.SessionItem
@@ -48,6 +50,7 @@ import com.zcode.remote.util.asString
  * 现代高信息密度会话工作台 (Sessions Tab)
  * 对标官方 ZCode calm, dense, operational 规范，专注于工作区与会话列表管理。
  */
+@OptIn(androidx.compose.material3.ExperimentalMaterial3Api::class)
 @Composable
 fun HomeScreen(
     deviceName: String,
@@ -76,6 +79,11 @@ fun HomeScreen(
     onSessionTogglePin: (SessionItem) -> Unit = {},
     /** 会话未读标记（taskId → true）：任务事件流标记、进入会话清除，对标官方「未读蓝点」。 */
     unreadBySession: Map<String, Boolean> = emptyMap(),
+    /** F2 下拉刷新：刷新中标志与用户下拉回调（实现在 AppViewModel.refreshSessions）。 */
+    refreshing: Boolean = false,
+    onRefresh: () -> Unit = {},
+    /** F3 新建工作区（实现 AppViewModel.createWorkspace，含校验与请求发送）。 */
+    onCreateWorkspace: (String) -> Unit = {},
     /** 当前设备协议栈（T5：V2 的列表要等 Controller 首份快照，空窗期显示骨架而非「暂无会话」）。 */
     protocolStack: com.zcode.remote.storage.ProtocolStack = com.zcode.remote.storage.ProtocolStack.V1,
     /** 是否已收到过至少一份 Controller 快照（V2 有效；V1 恒 true）。 */
@@ -89,6 +97,8 @@ fun HomeScreen(
     var filterOnlyRunning by remember { mutableStateOf(false) }
     var filterOnlyPending by remember { mutableStateOf(false) }
     var showCreateDialog by remember { mutableStateOf(false) }
+    // F3 新建工作区弹层
+    var showCreateWorkspaceDialog by remember { mutableStateOf(false) }
 
     val filteredSessions =
         remember(sessions, query, filterOnlyRunning, filterOnlyPending, sessionPending) {
@@ -156,6 +166,15 @@ fun HomeScreen(
                 Icon(Icons.Default.Add, contentDescription = null, modifier = Modifier.size(16.dp))
                 Spacer(Modifier.width(4.dp))
                 Text(stringResource(R.string.home_new_session), style = MaterialTheme.typography.labelSmall)
+            }
+            // F3 新建工作区入口：次级图标按钮（新建文件夹），点击弹名称输入弹层
+            IconButton(onClick = { showCreateWorkspaceDialog = true }, modifier = Modifier.size(36.dp)) {
+                Icon(
+                    Icons.Default.CreateNewFolder,
+                    contentDescription = stringResource(R.string.ws_create_title),
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.size(20.dp),
+                )
             }
         }
 
@@ -258,33 +277,41 @@ fun HomeScreen(
                 onNavigateToSettings = onNavigateToSettings,
             )
         } else {
-            LazyColumn(
+            // F2 下拉刷新：PullToRefreshBox（material3 1.3.0）包住列表；刷新 = Controller
+            // 重订阅 + bootstrap 重发（实现见 AppViewModel.refreshSessions）。
+            androidx.compose.material3.pulltorefresh.PullToRefreshBox(
+                isRefreshing = refreshing,
+                onRefresh = onRefresh,
                 modifier = Modifier.fillMaxSize(),
-                verticalArrangement = Arrangement.spacedBy(8.dp),
-                contentPadding = PaddingValues(bottom = 80.dp),
             ) {
-                if (filteredSessions.isEmpty()) {
-                    item {
-                        Text(
-                            text = homeFilteredEmptyText(sessions.size).asString(),
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            modifier = Modifier.padding(vertical = 16.dp),
+                LazyColumn(
+                    modifier = Modifier.fillMaxSize(),
+                    verticalArrangement = Arrangement.spacedBy(8.dp),
+                    contentPadding = PaddingValues(bottom = 80.dp),
+                ) {
+                    if (filteredSessions.isEmpty()) {
+                        item {
+                            Text(
+                                text = homeFilteredEmptyText(sessions.size).asString(),
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                modifier = Modifier.padding(vertical = 16.dp),
+                            )
+                        }
+                    }
+
+                    items(filteredSessions, key = { it.taskId }) { s ->
+                        SessionItemCard(
+                            s = s,
+                            pending = sessionPending[s.taskId] ?: 0,
+                            isActive = s.taskId == subscribedSessionId,
+                            desktopActive = s.taskId == desktopActiveTaskId,
+                            onClick = { onSessionClick(s) },
+                            onDelete = { onSessionDelete(s) },
+                            onTogglePin = { onSessionTogglePin(s) },
+                            unread = unreadBySession[s.taskId] ?: false,
                         )
                     }
-                }
-
-                items(filteredSessions, key = { it.taskId }) { s ->
-                    SessionItemCard(
-                        s = s,
-                        pending = sessionPending[s.taskId] ?: 0,
-                        isActive = s.taskId == subscribedSessionId,
-                        desktopActive = s.taskId == desktopActiveTaskId,
-                        onClick = { onSessionClick(s) },
-                        onDelete = { onSessionDelete(s) },
-                        onTogglePin = { onSessionTogglePin(s) },
-                        unread = unreadBySession[s.taskId] ?: false,
-                    )
                 }
             }
         }
@@ -306,7 +333,73 @@ fun HomeScreen(
                 },
             )
         }
+
+        // F3 新建工作区弹层：名称输入（官方同规则校验）→ workspace-create-request
+        if (showCreateWorkspaceDialog) {
+            CreateWorkspaceDialog(
+                onDismiss = { showCreateWorkspaceDialog = false },
+                onConfirm = { name ->
+                    showCreateWorkspaceDialog = false
+                    onCreateWorkspace(name)
+                },
+            )
+        }
     }
+}
+
+/**
+ * 新建工作区弹层（F3）：名称输入 + 本地校验提示。
+ * 校验规则与官方一致（`WorkspaceNameValidator`）：非空、不含 `/` `\`、不等于 `.`/`..`；
+ * 桌面端固定在 `~/ZCodeProject/<name>` 创建，同名目录直接复用。
+ */
+@Composable
+private fun CreateWorkspaceDialog(
+    onDismiss: () -> Unit,
+    onConfirm: (String) -> Unit,
+) {
+    var name by remember { mutableStateOf("") }
+    val reason = BridgeFrames.WorkspaceNameValidator.validate(name)
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(stringResource(R.string.ws_create_title)) },
+        text = {
+            Column {
+                OutlinedTextField(
+                    value = name,
+                    onValueChange = { name = it },
+                    placeholder = { Text(stringResource(R.string.ws_name_placeholder), style = MaterialTheme.typography.bodySmall) },
+                    singleLine = true,
+                    isError = name.isNotEmpty() && reason != null,
+                    supportingText =
+                        if (name.isNotEmpty() && reason != null) {
+                            {
+                                Text(
+                                    stringResource(if (reason == "required") R.string.ws_name_required else R.string.ws_name_separator),
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = MaterialTheme.colorScheme.error,
+                                )
+                            }
+                        } else {
+                            null
+                        },
+                )
+                Text(
+                    text = stringResource(R.string.ws_create_hint),
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+        },
+        confirmButton = {
+            TextButton(
+                onClick = { onConfirm(name) },
+                enabled = reason == null && name.isNotEmpty(),
+            ) { Text(stringResource(R.string.ws_create_confirm)) }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) { Text(stringResource(R.string.common_cancel)) }
+        },
+    )
 }
 
 /**

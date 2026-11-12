@@ -5,6 +5,7 @@ import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonNull
 import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.booleanOrNull
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
@@ -17,10 +18,20 @@ import kotlinx.serialization.json.put
  * rpc-frame 内层 conversation frame 解码在 M1 联调后补全。
  */
 object BridgeFrames {
-    fun bootstrapRequest(requestId: String): JsonObject =
+    /**
+     * 会话桥初始化（F5 起可选携带 `terminalClientSessionId`）：
+     * 官方链路（webRemoteControlManager.ts:636/1130）——bootstrap 携带该 id 后 desktop 注册
+     * terminal owner；**后续 `workspace-bridge-open` 必须带同一 id**，否则桌面拒绝
+     * "Terminal page session has ended; bootstrap is required."。不携带 = 不认领终端（老行为）。
+     */
+    fun bootstrapRequest(
+        requestId: String,
+        terminalClientSessionId: String? = null,
+    ): JsonObject =
         buildJsonObject {
             put("zcode_type", "bootstrap-request")
             put("requestId", requestId)
+            terminalClientSessionId?.let { put("terminalClientSessionId", it) }
         }
 
     /**
@@ -68,6 +79,50 @@ object BridgeFrames {
             workspaceIdentity?.takeIf { it.isNotBlank() }?.let { put("workspaceIdentity", it) }
             put("pinned", pinned)
         }
+
+    /**
+     * 新建工作区（F3，官方 `workspace-create-request`，schema 核验自
+     * `webRemoteControlActions.ts` + `validation.ts:267-285`）：
+     * 请求 `{zcode_type, requestId, name}`；桌面固定在 `~/ZCodeProject/<name>` 建目录
+     * （同名目录直接复用不报错）。
+     * 应答成功 `{…, success:true, workspacePath, workspaceKey, projectId?, hostId?}` /
+     * 失败 `{requestId, success:false, error}`。
+     */
+    fun workspaceCreateRequest(
+        requestId: String,
+        name: String,
+    ): JsonObject =
+        buildJsonObject {
+            put("zcode_type", "workspace-create-request")
+            put("requestId", requestId)
+            put("name", name)
+        }
+
+    /** 取 workspace-create 应答里的成功字段（success/workspacePath/error）。 */
+    fun workspaceCreateResultOf(payload: JsonObject): WorkspaceCreateResult {
+        val success = payload["success"]?.let { runCatching { it.jsonPrimitive.booleanOrNull }.getOrNull() }
+        val path = payload["workspacePath"]?.let { runCatching { it.jsonPrimitive.content }.getOrNull() }
+        val err = payload["error"]?.let { runCatching { it.jsonPrimitive.content }.getOrNull() }
+        return WorkspaceCreateResult(success = success, workspacePath = path, error = err)
+    }
+
+    class WorkspaceCreateResult(
+        val success: Boolean?,
+        val workspacePath: String?,
+        val error: String?,
+    )
+
+    /** 工作区名称校验（官方 `normalizeWebRemoteControlWorkspaceName` 同规则，纯函数）。 */
+    object WorkspaceNameValidator {
+        /** 非空、不含路径分隔符、不等于 `.` / `..`。合法返回 null，非法返回原因键。 */
+        fun validate(name: String): String? =
+            when {
+                name.isBlank() -> "required"
+                name.contains('/') || name.contains('\\') -> "separator"
+                name == "." || name == ".." -> "separator"
+                else -> null
+            }
+    }
 
     fun zcodeTypeOf(payload: JsonObject): String? = payload["zcode_type"]?.let { runCatching { it.jsonPrimitive.content }.getOrNull() }
 

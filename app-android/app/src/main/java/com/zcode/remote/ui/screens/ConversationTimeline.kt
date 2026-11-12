@@ -838,6 +838,8 @@ internal fun ConversationTimelineArea(
     toggleExpanded: (String) -> Unit,
     isNearBottom: Boolean,
     onJumpToBottom: () -> Unit,
+    /** 会话内查找的当前命中行（非 null 时该行背景高亮，配合查找 overlay 的定位跳转）。 */
+    highlightRowId: Int? = null,
 ) {
     val haptic = LocalHapticFeedback.current
     Box(modifier = modifier.fillMaxWidth()) {
@@ -871,16 +873,29 @@ internal fun ConversationTimelineArea(
                     DateDividerRow(row.createdAt)
                 }
                 val expandKey = rowExpandKey(row)
-                RowItem(
-                    row = row,
-                    expanded = expandKey in expandedRows,
-                    onToggleExpand = { toggleExpanded(expandKey) },
-                )
-                turnSummaries[row.rowId]?.let { summary ->
-                    com.zcode.remote.ui.components.TurnChangesCard(
-                        summary = summary,
-                        modifier = Modifier.padding(vertical = 4.dp),
+                // 查找定位高亮（F1）：命中行包一层浅主色背景，随 highlightRowId 变化即时消失/出现
+                val highlighted = row.rowId == highlightRowId
+                val rowContent: @Composable () -> Unit = {
+                    RowItem(
+                        row = row,
+                        expanded = expandKey in expandedRows,
+                        onToggleExpand = { toggleExpanded(expandKey) },
                     )
+                    turnSummaries[row.rowId]?.let { summary ->
+                        com.zcode.remote.ui.components.TurnChangesCard(
+                            summary = summary,
+                            modifier = Modifier.padding(vertical = 4.dp),
+                        )
+                    }
+                }
+                if (highlighted) {
+                    Surface(
+                        color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.45f),
+                        shape = RoundedCornerShape(10.dp),
+                        modifier = Modifier.fillMaxWidth(),
+                    ) { rowContent() }
+                } else {
+                    rowContent()
                 }
             }
             // C-6：本地 pending 回显气泡（服务端 userInput 行到达后由 VM 移除）

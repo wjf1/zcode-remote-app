@@ -11,8 +11,12 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.Send
 import androidx.compose.material.icons.filled.*
@@ -30,6 +34,7 @@ import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import com.zcode.remote.R
 import com.zcode.remote.ui.components.QueuePendingStrip
 import com.zcode.remote.ui.components.SessionStatusPanel
@@ -77,6 +82,19 @@ fun ConversationScreen(
         var showFiles by remember { mutableStateOf(false) }
         // C3：会话状态面板弹层
         var showStatus by remember { mutableStateOf(false) }
+        // F1 会话内查找：overlay 开关 + query + 当前命中索引（-1 = 无命中）
+        var showTerminal by remember { mutableStateOf(false) }
+        var showSearch by remember { mutableStateOf(false) }
+        var searchQuery by remember { mutableStateOf("") }
+        var searchHitIndex by remember { mutableStateOf(-1) }
+        val searchHits =
+            remember(rows, searchQuery) {
+                if (ConversationSearchPolicy.isQueryValid(searchQuery)) {
+                    ConversationSearchPolicy.match(rows, searchQuery)
+                } else {
+                    emptyList()
+                }
+            }
 
         // 折叠态提升到屏幕层：LazyColumn 会回收滚出视野的行，行内 remember 随之销毁，
         // 表现为「滚上去再滚回来，刚展开的详情自己合上了」。键优先取 toolCallId（工具行唯一且跨重放稳定），
@@ -252,6 +270,8 @@ fun ConversationScreen(
                 onSwitchModel = onSwitchModel,
                 onOpenFiles = { showFiles = true },
                 onOpenStatus = { showStatus = true },
+                onOpenSearch = { showSearch = true },
+                onOpenTerminal = { showTerminal = true },
             )
 
             // 统一反馈横幅（C-11：审批反馈与操作反馈合并为单队列，配色按失败/提示语义区分，
@@ -392,6 +412,7 @@ fun ConversationScreen(
                     expandedRows = expandedRows,
                     toggleExpanded = toggleExpanded,
                     isNearBottom = isNearBottom,
+                    highlightRowId = searchHits.getOrNull(searchHitIndex),
                     onJumpToBottom = {
                         // B-1：显式回到最新 = 解除「已上翻」意图锁，此后增量持续跟随
                         userScrolledAway = false
@@ -491,6 +512,185 @@ fun ConversationScreen(
                     )
                 }
             }
+
+            // 8. 交互式终端（F5）：输出（Monospace，ANSI 已过滤）+ 单行输入
+            if (showTerminal) {
+                ModalBottomSheet(onDismissRequest = { actions.onTerminalClose() }) {
+                    TerminalPanel(
+                        out = ui.terminalOut,
+                        ready = ui.terminalReady,
+                        onSend = actions.onTerminalSend,
+                        onClose = actions.onTerminalClose,
+                    )
+                }
+            }
+
+            // 7. 会话内查找（F1）：输入 + 命中计数 + 上/下导航；跳转由跳到「当前命中行」实现
+            if (showSearch) {
+                ModalBottomSheet(onDismissRequest = { showSearch = false }) {
+                    SearchOverlay(
+                        query = searchQuery,
+                        onQueryChange = { q ->
+                            searchQuery = q
+                            searchHitIndex = -1 // query 变化后旧索引失效，等待下一次「下一个」重新进入
+                        },
+                        hitCount = searchHits.size,
+                        currentIndex = searchHitIndex,
+                        onNext = {
+                            if (searchHits.isNotEmpty()) {
+                                searchHitIndex = (searchHitIndex + 1).mod(searchHits.size)
+                                searchHits.getOrNull(searchHitIndex)?.let { rowId ->
+                                    val idx = rows.indexOfFirst { it.rowId == rowId }
+                                    if (idx >= 0) coroutineScope.launch { listState.scrollToItem(idx + headerCount) }
+                                }
+                            }
+                        },
+                        onPrev = {
+                            if (searchHits.isNotEmpty()) {
+                                searchHitIndex = (searchHitIndex - 1).mod(searchHits.size)
+                                searchHits.getOrNull(searchHitIndex)?.let { rowId ->
+                                    val idx = rows.indexOfFirst { it.rowId == rowId }
+                                    if (idx >= 0) coroutineScope.launch { listState.scrollToItem(idx + headerCount) }
+                                }
+                            }
+                        },
+                        onClose = { showSearch = false },
+                    )
+                }
+            }
         }
+    }
+}
+
+/**
+ * 会话内查找面板（F1）：输入行 + 命中计数 + 上/下导航。
+ * 命中行定位与背景高亮在 Route 层与 [ConversationTimelineArea] 完成（本组件只管输入与导航）。
+ */
+@Composable
+private fun SearchOverlay(
+    query: String,
+    onQueryChange: (String) -> Unit,
+    hitCount: Int,
+    currentIndex: Int,
+    onNext: () -> Unit,
+    onPrev: () -> Unit,
+    onClose: () -> Unit,
+) {
+    Column(modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp)) {
+        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            OutlinedTextField(
+                value = query,
+                onValueChange = onQueryChange,
+                placeholder = { Text(stringResource(R.string.search_hint), style = MaterialTheme.typography.bodySmall) },
+                singleLine = true,
+                textStyle = MaterialTheme.typography.bodyMedium,
+                modifier = Modifier.weight(1f),
+            )
+            TextButton(onClick = onPrev, enabled = hitCount > 0) {
+                Text(stringResource(R.string.search_prev), style = MaterialTheme.typography.labelMedium)
+            }
+            TextButton(onClick = onNext, enabled = hitCount > 0) {
+                Text(stringResource(R.string.search_next), style = MaterialTheme.typography.labelMedium)
+            }
+        }
+        Spacer(Modifier.height(6.dp))
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            modifier = Modifier.fillMaxWidth().padding(horizontal = 4.dp),
+        ) {
+            Text(
+                text =
+                    when {
+                        !ConversationSearchPolicy.isQueryValid(query) -> stringResource(R.string.search_input_hint)
+                        hitCount == 0 -> stringResource(R.string.search_no_match)
+                        currentIndex < 0 -> stringResource(R.string.search_count_only, hitCount)
+                        else -> stringResource(R.string.search_count_pos, currentIndex + 1, hitCount)
+                    },
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.weight(1f),
+            )
+            TextButton(onClick = onClose) { Text(stringResource(R.string.common_close)) }
+        }
+    }
+}
+
+/**
+ * 交互式终端面板（F5）：输出区（Monospace + 自动滚底）与单行输入。
+ * ANSI 已由 TerminalChannel.stripAnsi 过滤——丢配色、保正文（见该处注释）。
+ */
+@Composable
+private fun TerminalPanel(
+    out: String,
+    ready: Boolean,
+    onSend: (String) -> Unit,
+    onClose: () -> Unit,
+) {
+    var input by remember { mutableStateOf("") }
+    val scroll = rememberScrollState()
+    LaunchedEffect(out) { scroll.animateScrollTo(scroll.maxValue) }
+    Column(modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 8.dp)) {
+        Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
+            Text(
+                text = stringResource(if (ready) R.string.terminal_ready else R.string.terminal_starting),
+                style = MaterialTheme.typography.labelSmall,
+                color = if (ready) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.weight(1f),
+            )
+            TextButton(onClick = onClose) { Text(stringResource(R.string.common_close)) }
+        }
+        Spacer(Modifier.height(6.dp))
+        Box(
+            modifier =
+                Modifier
+                    .fillMaxWidth()
+                    .height(340.dp)
+                    .clip(RoundedCornerShape(8.dp))
+                    .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)),
+        ) {
+            Text(
+                text = out.ifEmpty { stringResource(R.string.terminal_empty) },
+                style =
+                    MaterialTheme.typography.bodySmall.copy(
+                        fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace,
+                        fontSize = 11.sp,
+                    ),
+                color = MaterialTheme.colorScheme.onSurface,
+                modifier = Modifier.fillMaxSize().verticalScroll(scroll).padding(8.dp),
+            )
+        }
+        Spacer(Modifier.height(8.dp))
+        OutlinedTextField(
+            value = input,
+            onValueChange = { input = it },
+            placeholder = { Text(stringResource(R.string.terminal_input_hint), style = MaterialTheme.typography.bodySmall) },
+            singleLine = true,
+            enabled = ready,
+            keyboardOptions =
+                androidx.compose.foundation.text.KeyboardOptions(
+                    imeAction = androidx.compose.ui.text.input.ImeAction.Send,
+                ),
+            keyboardActions =
+                androidx.compose.foundation.text.KeyboardActions(
+                    onSend = {
+                        if (input.isNotEmpty()) {
+                            onSend(input)
+                            input = ""
+                        }
+                    },
+                ),
+            trailingIcon = {
+                IconButton(
+                    onClick = {
+                        if (input.isNotEmpty()) {
+                            onSend(input)
+                            input = ""
+                        }
+                    },
+                    enabled = ready,
+                ) { Icon(Icons.Default.Send, contentDescription = stringResource(R.string.terminal_send)) }
+            },
+            modifier = Modifier.fillMaxWidth(),
+        )
     }
 }

@@ -66,6 +66,10 @@ internal fun ConversationTopBar(
     onSwitchModel: (WorkspaceConfigChannel.ModelOption) -> Unit,
     onOpenFiles: () -> Unit,
     onOpenStatus: () -> Unit,
+    /** 会话内查找（F1）：溢出菜单常驻项「查找」的回调。 */
+    onOpenSearch: () -> Unit,
+    /** 交互式终端（F5）：溢出菜单常驻项「终端」的回调。 */
+    onOpenTerminal: () -> Unit,
 ) {
     // 1. 顶栏：标准返回导航键 + 标题 + 紧凑元数据
     // C-14：testTag 供仪器化布局断言锁定顶栏高度（防「行高被内容换行撑爆」回归）。
@@ -137,37 +141,22 @@ internal fun ConversationTopBar(
             Spacer(Modifier.width(6.dp))
         }
 
-        // 顶栏右侧：溢出菜单（C-14 空间预算）——把「文件数」「状态」从顶栏直排收进
-        // 「⋮」二级菜单。二者作为定宽胶囊会把中部标题列挤到约 16px（标题/元数据不可见，
-        // 真机实测），故改为二级入口，把宽度让给标题。仅在确有条目时出现。
+        // 顶栏右侧：溢出菜单（C-14 空间预算）——「文件数」「状态」收进「⋮」二级菜单；
+        // F1 起查找为常驻项，故溢出按钮总是显示（原条件渲染只在有 files/status 时出现）。
         val overflowEntries =
             buildList {
+                add("search" to stringResource(R.string.topbar_search))
+                add("terminal" to stringResource(R.string.topbar_terminal))
                 if (sessionFileCount > 0) add("files" to stringResource(R.string.topbar_files, sessionFileCount))
                 statusEntryLabel?.let { add("status" to it.asString()) }
             }
-        if (overflowEntries.isNotEmpty()) {
-            Box {
-                var overflow by remember { mutableStateOf(false) }
-                IconButton(onClick = { overflow = true }, modifier = Modifier.size(32.dp)) {
-                    Icon(
-                        imageVector = Icons.Default.MoreVert,
-                        contentDescription = stringResource(R.string.topbar_more),
-                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                }
-                DropdownMenu(expanded = overflow, onDismissRequest = { overflow = false }) {
-                    overflowEntries.forEach { (kind, label) ->
-                        DropdownMenuItem(
-                            text = { Text(label, style = MaterialTheme.typography.bodySmall) },
-                            onClick = {
-                                overflow = false
-                                if (kind == "files") onOpenFiles() else onOpenStatus()
-                            },
-                        )
-                    }
-                }
-            }
-        }
+        TopBarOverflowMenu(
+            entries = overflowEntries,
+            onOpenSearch = onOpenSearch,
+            onOpenTerminal = onOpenTerminal,
+            onOpenFiles = onOpenFiles,
+            onOpenStatus = onOpenStatus,
+        )
 
         // 顶栏右侧：执行模式胶囊（P0-B）—— 当前模式常驻可见，yolo 红底警示；点击弹出切换菜单
         ModeChip(
@@ -435,3 +424,43 @@ internal fun phaseLabel(p: String): UiText =
         "error" -> res(R.string.phase_error)
         else -> UiText.Raw(p)
     }
+
+/**
+ * 顶栏溢出菜单（「⋮」二级入口：查找/终端/文件/状态），自 [ConversationTopBar] 抽出
+ * 以压 detekt 圈复杂度（C-14 顶栏宽度预算的承载者）。
+ */
+@Composable
+private fun TopBarOverflowMenu(
+    entries: List<Pair<String, String>>,
+    onOpenSearch: () -> Unit,
+    onOpenTerminal: () -> Unit,
+    onOpenFiles: () -> Unit,
+    onOpenStatus: () -> Unit,
+) {
+    Box {
+        var overflow by remember { mutableStateOf(false) }
+        IconButton(onClick = { overflow = true }, modifier = Modifier.size(32.dp)) {
+            Icon(
+                imageVector = Icons.Default.MoreVert,
+                contentDescription = stringResource(R.string.topbar_more),
+                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+        DropdownMenu(expanded = overflow, onDismissRequest = { overflow = false }) {
+            entries.forEach { (kind, label) ->
+                DropdownMenuItem(
+                    text = { Text(label, style = MaterialTheme.typography.bodySmall) },
+                    onClick = {
+                        overflow = false
+                        when (kind) {
+                            "search" -> onOpenSearch()
+                            "terminal" -> onOpenTerminal()
+                            "files" -> onOpenFiles()
+                            else -> onOpenStatus()
+                        }
+                    },
+                )
+            }
+        }
+    }
+}

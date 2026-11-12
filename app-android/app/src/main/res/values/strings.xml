@@ -220,6 +220,33 @@
     <string name="home_no_match">没有找到匹配的会话</string>
     <string name="home_syncing_sessions">已连接 PC，正在同步会话列表…</string>
     <string name="home_no_sessions">暂无会话，从 PC 端或点「新建」开始</string>
+    <!-- 会话内查找（F1） -->
+    <string name="topbar_search">查找</string>
+    <string name="search_hint">在会话中查找…</string>
+    <string name="search_prev">上一个</string>
+    <string name="search_next">下一个</string>
+    <string name="search_input_hint">输入关键词开始查找</string>
+    <string name="search_no_match">无匹配内容</string>
+    <string name="search_count_only">共 %1$d 处命中</string>
+    <string name="search_count_pos">第 %1$d / %2$d 处</string>
+    <!-- 交互式终端（F5） -->
+    <string name="topbar_terminal">终端</string>
+    <string name="terminal_ready">终端已就绪</string>
+    <string name="terminal_starting">正在创建终端…</string>
+    <string name="terminal_empty">（等待输出）</string>
+    <string name="terminal_input_hint">输入命令并回车</string>
+    <string name="terminal_send">发送</string>
+    <string name="terminal_no_bridge">会话桥未就绪，无法打开终端</string>
+    <!-- 新建工作区（F3，名称校验规则对齐官方 normalizeWebRemoteControlWorkspaceName） -->
+    <string name="ws_create_title">新建工作区</string>
+    <string name="ws_name_placeholder">工作区名称</string>
+    <string name="ws_name_required">名称不能为空</string>
+    <string name="ws_name_separator">名称不能包含 / 或 \\</string>
+    <string name="ws_create_hint">将在电脑端 ~/ZCodeProject 下创建（同名目录直接复用）</string>
+    <string name="ws_create_confirm">创建</string>
+    <string name="flash_workspace_created">工作区已创建：%1$s</string>
+    <string name="flash_workspace_failed">创建失败：%1$s</string>
+    <string name="flash_workspace_failed_no_conn">未连接，无法创建工作区</string>
     <!-- 连接过程分段进度（对标官方 webRemoteControlConnectingScreen 四段文案） -->
     <string name="home_phase_relay">连接中转服务</string>
     <string name="home_phase_auth">设备鉴权</string>

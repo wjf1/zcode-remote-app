@@ -130,6 +130,17 @@ class ConnectionCoordinator(
 
         /** 会话未读标记（任务事件流驱动；宿主自行跳过当前订阅会话）。 */
         fun hostMarkUnread(taskId: String)
+
+        /**
+         * workspace-create 应答（F3）：成功带新建工作区的 `workspacePath`；失败带 error 原文。
+         * 宿主实现负责提示与后续动作（如刷新列表）。
+         */
+        fun hostOnWorkspaceCreateAck(
+            requestId: String,
+            ok: Boolean,
+            workspacePath: String?,
+            error: String?,
+        )
     }
 
     /**
@@ -342,7 +353,14 @@ class ConnectionCoordinator(
                     // 接续预算复位（官方语义：配对成功后新一轮失败可再接续一次）
                     sidContinuationUsed = false
                     ch.reset()
-                    c.sendPayload(BridgeFrames.bootstrapRequest("boot-${System.currentTimeMillis()}"))
+                    // F5：bootstrap 认领终端 owner（与后续 workspace-bridge-open 同一 id，
+                    // 桌面端强校验一致；未开终端面板也认领——owner 是惰性 PTY 分配，无成本）
+                    c.sendPayload(
+                        BridgeFrames.bootstrapRequest(
+                            "boot-${System.currentTimeMillis()}",
+                            ch.terminalClientSessionId,
+                        ),
+                    )
                     // 接管后立即上报视图状态（P1-2）：PC 端知道手机在看哪个工作区/会话
                     notifyCoordinator.reportViewState()
                 }
@@ -382,6 +400,20 @@ class ConnectionCoordinator(
                     "rpc-frame-ack" -> Unit
 
                     "workspace-list-response", "workspace-list-updated" -> Unit
+                    // 新建工作区应答（F3）：官方在成功后还会 force 推 workspace-list-updated，
+                    // 这里只把结果交给宿主提示；列表刷新随 bootstrap/Controller 重订自然到达。
+                    "workspace-create-response" -> {
+                        val r = BridgeFrames.workspaceCreateResultOf(payload)
+                        val ok = r.success
+                        if (ok != null) {
+                            host.hostOnWorkspaceCreateAck(
+                                BridgeFrames.requestIdOf(payload) ?: "",
+                                ok,
+                                r.workspacePath,
+                                r.error,
+                            )
+                        }
+                    }
                     // 置顶应答（官方 schema：success=true 回显生效 pinned；false 带 error）。
                     // 收尾交宿主：失败回滚乐观更新；列表纠偏走既有 task.upserted 广播。
                     "task-pin-response" -> {

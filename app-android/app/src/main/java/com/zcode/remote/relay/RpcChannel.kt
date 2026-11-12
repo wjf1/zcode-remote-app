@@ -114,6 +114,13 @@ class RpcChannel(
     val v4ClientId: String = "android-" + java.util.UUID.randomUUID()
 
     /**
+     * F5 终端 owner 会话 id：bootstrap 与 workspace-bridge-open 必须携带同一值（官方校验，
+     * 见 BridgeFrames.bootstrapRequest 注释）。与 [v4ClientId] 同模式——RpcChannel 每连接
+     * 新建实例，桌面端重连后 owner 已被 3s 宽限回收，新连接用新 id 重新认领。
+     */
+    val terminalClientSessionId: String = "android-term-" + java.util.UUID.randomUUID()
+
+    /**
      * §11.5.2：协议违例回调（分片顺序/CRC/长度/超限/解码失败等固定错误码）。
      * 与 [onSequenceGap] 同一语义——上层须进入重同步（重订阅权威快照）；实现方自行节流。
      * 身份不匹配（旧桥迟到帧）**不**走此回调：那是丢弃即可的正常竞态，不构成失同步。
@@ -225,6 +232,8 @@ class RpcChannel(
                 put("bridgeGeneration", 1)
                 put("workspaceKey", workspaceKey)
                 taskId?.let { put("taskId", it) }
+                // F5：终端 owner 认领——官方要求与 bootstrap 的 terminalClientSessionId 一致
+                put("terminalClientSessionId", terminalClientSessionId)
             }
         ZLog.i(TAG, "bridge-open ws=$workspaceKey sid=$sid attempt=$attempt")
         relay.sendPayload(payload)
@@ -767,6 +776,9 @@ class RpcChannel(
         // 桌面端 host 把 createAttachmentService（含 controller 方法族）注册在 window-controller 通道
         // （官方 web 端注册表即 windowControllerTaskListRegistry）。
         const val CHANNEL_WINDOW_CONTROLLER = "window-controller"
+
+        /** F5 交互式终端（官方 2026-10-22 恢复手机端 allowlist，`ServiceChannels.Terminal`）。 */
+        const val CHANNEL_TERMINAL = "terminal"
         const val CHANNEL_WORKSPACE = "workspace"
         const val CHANNEL_MODEL_PROVIDER = "model-provider" // 模型供应商目录（getAllCached/getAll）
         const val CHANNEL_FILE = "file" // 文件系统服务（resolvePath/readTextFile）
