@@ -36,6 +36,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.zcode.remote.R
+import com.zcode.remote.relay.InputPredictionPolicy
 import com.zcode.remote.ui.components.QueuePendingStrip
 import com.zcode.remote.ui.components.SessionStatusPanel
 import com.zcode.remote.ui.components.StatusPanelLabels
@@ -85,6 +86,20 @@ fun ConversationScreen(
         // F1 会话内查找：overlay 开关 + query + 当前命中索引（-1 = 无命中）
         var showTerminal by remember { mutableStateOf(false) }
         var showSearch by remember { mutableStateOf(false) }
+        // G3 输入预测 ghost hint：防抖 700ms（官方建议 600–800ms），requestId 由本层生成供迟到丢弃
+        var predictionHint by remember { mutableStateOf<String?>(null) }
+        LaunchedEffect(prompt) {
+            if (prompt.isBlank()) {
+                predictionHint = null
+                return@LaunchedEffect
+            }
+            kotlinx.coroutines.delay(InputPredictionPolicy.DEBOUNCE_MS)
+            val reqId = "pred-" + android.os.SystemClock.elapsedRealtime()
+            onPredictInput(prompt, reqId) { result ->
+                if (InputPredictionPolicy.isStaleResponse(result, reqId)) return@onPredictInput
+                predictionHint = InputPredictionPolicy.displayCandidate(result)?.text
+            }
+        }
         var searchQuery by remember { mutableStateOf("") }
         var searchHitIndex by remember { mutableStateOf(-1) }
         val searchHits =
@@ -470,6 +485,16 @@ fun ConversationScreen(
                 itemCount = sessionState.queue?.itemCount ?: 0,
                 modifier = Modifier.padding(vertical = 2.dp),
             )
+
+            // G3 输入预测 ghost hint（官方 conversationInputPredictionV4；点击整行采用）
+            InputPredictionHint(hint = predictionHint, onAccept = {
+                val h = predictionHint
+                if (!h.isNullOrBlank()) {
+                    haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                    onPromptChange(prompt + h)
+                    predictionHint = null
+                }
+            })
 
             // 4. 底部现代化输入栏
             InputBar(

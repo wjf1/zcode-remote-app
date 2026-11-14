@@ -1,5 +1,70 @@
 # 变更记录 / Changelog
 
+## [Unreleased]
+
+### 新增
+
+- **G1 快照预算裁剪容忍**：解析快照行的 `bodyRefs` / `snapshotRefs`（官方 200KB 软预算裁剪
+  标记），被裁正文/工具记录行如实显示「已截断，完整正文请在电脑端查看」提示。补拉 RPC
+  `getTaskSnapshotBody` 不在 agent 通道方法面（官方桥接口确认），故本版只做识别与提示。
+  （`ConversationFrames.kt` / `ConversationTimeline.kt`）
+- **G3 输入预测（ghost hint）**：接入官方 `conversationInputPredictionV4`（agent 通道，只读
+  无状态）。请求带 `revision`（已应用快照版本）+ `requestId`（迟到响应丢弃），候选宽容校验
+  （≤3 个、单行、1..40 字符、非纯空白），续写防抖 700ms（官方建议 600–800ms），RPC 超时 25s。
+  UI 为输入栏上方 ghost 行，点击整行采用（候选文本接在草稿后）。桌面能力位
+  `hello.capabilities.inputPrediction` 未显式 `true` 时不发请求（老桌面缺字段 = 禁用）。
+  （`InputPredictionPolicy.kt` / `ConversationComposer.kt` / `ConversationScreen.kt`）
+- **G4 已提交命令对账**：`PendingCommandLedger`（24h TTL、幂等记录、≤64 最旧优先出批）记录
+  sendText 命令，ack 结算；订阅恢复后走官方 `queryConversationCommandsV4` 收尾——`unknown`
+  保留 pending 不做破坏性清理，`fault.command.inputDiscardedOnRestart`（CLI 重启丢弃）经
+  `CommandFailureException.uiText` 定向提示「桌面端刚重启，这条输入未被处理，请重新发送」。
+  绝不自动重放（官方同口径）。resolveInteraction（sensitive）不进账本。
+  （`PendingCommandLedger.kt` / `ConversationChannel.kt` / `AppViewModel.kt`）
+- **G5 能力协商严格化**：`BridgeCapabilities` 解析 hello / bridge-ready 的能力位，口径钉死
+  官方 `=== true`——显式 JSON 布尔 true 才算支持（kotlinx `booleanOrNull` 会把字符串
+  `"true"` 当 true，已显式排除 isString 以对齐 zod `z.boolean()`）。声明支持却缺服务必须
+  报错、禁止静默降级的义务由各消费点承担（G3 为首个消费者）。（`BridgeCapabilities.kt`）
+- **G6 未读 CAS + mobileTaskView 上报**：未读值升级为 unreadAt 时间戳，清除走
+  `UnreadStore.compareAndClear`（官方 `expectedUnreadAt` CAS 口径）；新增
+  `MobileTaskViewPublisher`（逐语义对齐官方 `webRemoteControlTaskView.ts`：epoch 由桌面
+  `mobile-task-view-request` 下发、seq 单调、send 失败保 dirty、新桥重置 view、迟到回调
+  matches 过滤），进入/离开会话页与 epoch 轮换时上报前台任务视图。
+  （`UnreadStore.kt` / `MobileTaskViewPublisher.kt` / `AppViewModel.kt` / `MainActivity.kt`）
+- **P2⑤ 终态失败「下一步」引导**：每个终态 `FailureReason` 配 2 条定制建议（对齐官方失败页
+  交互），HomeScreen 终态区渲染；非终态（NETWORK / DEVICE_OFFLINE）不渲染——自动重连进行中。
+  （`FailureGuidance.kt` / `HomeScreen.kt`）
+- **单测**：新增 `V2RetryPolicyTest` / `BridgeCapabilitiesTest` / `MobileTaskViewPublisherTest` /
+  `UnreadStoreTest` / `PendingCommandLedgerTest` / `InputPredictionPolicyTest` /
+  `FailureGuidanceTest` 7 个文件，全量 536 项 JVM 单测全绿。
+
+### 变更
+
+- **P2①② 重连口径对齐官方**（`relay/V2RetryPolicy.kt`，转译官方
+  `web-remote-relay/domain/retry.ts`）：连接建立后的首次重连在 0~1.5s 全窗打散（只一次，
+  防 relay 重启后 token 请求雷群）；退避 500ms×2ⁿ ±20% 双向抖动、10s 封顶（原 3s×2ⁿ max 48s）；
+  **KICKED 首次不再直接终态**——官方已知限制是 KICKED 无法区分「同角色替换」与「relay owner
+  丢失」，首次 2~5s 随机重连自愈，60s 内第二次 = 真互踢才进终态（原「KICKED 即终态」防
+  3s 级互踢死循环，官方 60s 窗口是同一目标的更精细解法）；auth_ack/matched 只清退避、
+  不清 KICKED 窗口。
+- **P2③ 心跳口径对齐官方**（`heartbeatTiming.ts` 源码实证）：间隔 5s±1s 每轮重抽（原 10s
+  固定），ACK watchdog 15s（原 30s——旧值与「官方 30s」注释均系 v3.11 时代 bundle 逆向误记）。
+- **P2④ suspended 期 raw 帧准入**：判定**不适用**——该机制针对浏览器 hidden/freeze 页面
+  生命周期；本 App 为原生前台服务常驻（FGS），后台 socket 不断流，无 suspended 断流场景。
+  依据随 HANDOFF §5 归档，不实现。
+- **G2 单 owner 流渲染过滤**：判定**暂缓**——官方 `single-owner-stream-rendering.md` 的
+  `ownerClientId` 仅存在于 CLI 内部 `task_stream_mirror_batch`（V4 会话 topic 帧无 owner
+  信号），且官方 UI 端消费实现未落地（web/ui/client 包零命中）；按「无真实帧样本不实现」
+  纪律降级，UI 文案「另一台设备正在发送消息…」已预留（strings.xml）。
+- **契约跟踪面补盲**：`tools/protocol_sync_check.py` WATCHED 清单 11→12，补入
+  `packages/shared/src/web-remote-control.ts`（TaskTarget / mobile-task-view / workspace 能力位 /
+  L2 动作信封 schema 所在——v3.18.1 核查发现该文件此前完全不在跟踪面，官方「虚拟项目重构」删
+  TaskTarget 字段就发生在这里）；基线已刷新并复核（该文件 v3.17.2→v3.18.1 diff 为空）。
+- 协议同步基线刷新至官方 v3.18.1（`research/protocol-sync/snapshot.json`，HEAD `c5904686ea83`）：
+  `tools/protocol_sync_check.py` 全量 diff 显示 11 个契约文件中仅 3 个变化（2 篇稳定性文档 +
+  Web 端 admission 会话竞态修复），wire 契约与 `zcode_type` 消息集合零漂移。专项核验确认
+  官方 bootstrap wire 早已不发 `displayStatus`（App 侧有任务事件+phase 运行时推导兜底）、
+  pinned 走 V2 Controller 通道不受影响。（2026-11-14）
+
 ## v0.5.0-beta56（2026-11-12）· 对标官方 v3.17.2 收官——协议对齐、置顶/未读/连接进度与六项能力
 
 > 对标官方 `zai-org/ZCode` v3.17.2：先落地协议对齐与三项能力（旧 SID 自动接续 / task-pin 置顶 /

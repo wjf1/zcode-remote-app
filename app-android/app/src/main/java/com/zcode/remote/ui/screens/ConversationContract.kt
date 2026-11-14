@@ -5,6 +5,7 @@ import com.zcode.remote.AppViewModel
 import com.zcode.remote.relay.ApprovalOption
 import com.zcode.remote.relay.ConversationChannel
 import com.zcode.remote.relay.ConversationRow
+import com.zcode.remote.relay.InputPredictionPolicy
 import com.zcode.remote.relay.PendingApproval
 import com.zcode.remote.relay.PendingElicitation
 import com.zcode.remote.relay.WorkspaceConfigChannel
@@ -85,6 +86,8 @@ data class ConversationAction(
     val onLoadModels: () -> Unit = {},
     /** 切换执行模式（协议语义：仅对下一轮 agent turn 生效）。 */
     val onSwitchMode: (String) -> Unit = {},
+    /** G3 输入预测查询（防抖/requestId 由 UI 层控制；桌面能力位关闭或失败时回调 null）。 */
+    val onPredictInput: (draft: String, requestId: String, onResult: (InputPredictionPolicy.Result?) -> Unit) -> Unit = { _, _, _ -> },
     val onPreviewFile: (String) -> Unit = {},
     val onDismissFilePreview: () -> Unit = {},
     /** A-2：握手失败后用户手动重试订阅。 */

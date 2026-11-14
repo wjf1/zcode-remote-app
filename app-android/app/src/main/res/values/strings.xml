@@ -526,6 +526,35 @@
     <string name="voice_stop">停止语音输入</string>
     <string name="voice_input">语音输入</string>
     <string name="voice_no_match">未识别到语音</string>
+
+    <!-- 终态失败「下一步」引导（P2⑤：每 reason 2 条，对齐官方失败页交互） -->
+    <string name="failure_next_kicked_1">确认另一台设备或浏览器标签页是否正在使用同一会话</string>
+    <string name="failure_next_kicked_2">确认后回到首页点「连接」重新连接（60 秒内只会被踢一次）</string>
+    <string name="failure_next_auth_1">前往「设置 → ZCode 账号」重新登录</string>
+    <string name="failure_next_auth_2">登录成功后回到首页点「连接」即可恢复</string>
+    <string name="failure_next_protocol_1">官方协议已升级：检查应用更新并安装新版本</string>
+    <string name="failure_next_protocol_2">更新后重新扫码配对一次以刷新协议线路</string>
+    <string name="failure_next_endpoint_1">配对链接包含不安全的非 wss 地址，已被安全策略拒绝</string>
+    <string name="failure_next_endpoint_2">删除该设备并重新扫码配对</string>
+    <string name="failure_next_desktop_offline_1">确认电脑端 ZCode 是否正在运行、是否已休眠</string>
+    <string name="failure_next_desktop_offline_2">电脑端恢复后 App 将按设备自动接续，无需手动操作</string>
+    <string name="failure_next_internal_1">中继服务异常，通常稍后自愈</string>
+    <string name="failure_next_internal_2">长时间未恢复请检查官方服务状态后重试</string>
+
+    <!-- 输入预测 ghost hint（G3） -->
+    <string name="input_prediction_accept">采用建议：%1$s</string>
+
+    <!-- 快照预算裁剪提示（G1：bodyRefs 解析后的如实提示；补拉方法不在桥上，桌面端查看完整正文） -->
+    <string name="snapshot_body_truncated">内容过长已截断（%1$s），完整正文请在电脑端查看</string>
+    <string name="snapshot_tool_truncated">工具记录过长已截断，完整输入输出请在电脑端查看</string>
+
+    <!-- 单 owner 流渲染（G2 预留 UI 文案，schema 演进后启用） -->
+    <string name="owner_stream_hint">另一台设备正在发送消息…</string>
+
+    <!-- 命令对账（G4） -->
+    <string name="command_discarded_on_restart">桌面端刚重启，这条输入未被处理，请重新发送</string>
+    <string name="command_query_unavailable">无法确认该命令是否执行（桌面端未给出裁决）</string>
+
     <string name="voice_no_permission">缺少麦克风权限</string>
     <string name="voice_network_error">识别服务网络错误</string>
     <string name="voice_busy">识别服务忙，稍后再试</string>

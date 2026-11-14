@@ -89,7 +89,7 @@ python tools/probe.py sub <会话ID前缀> [帧落盘路径]   # + 完整会话�
 
 | code | 客户端行为 |
 |---|---|
-| `KICKED` | 终态：会话冲突（同 sid 重复连接被踢）→ 提示"已在别处打开"（官方 `session-conflict`，不参与自动接续） |
+| `KICKED` | **2026-11-14 口径更新（官方 `retry.ts` `kickedDelay` 实证）**：首次 = 可能是 relay owner 丢失的误报（官方已知限制：KICKED 无法区分「同角色替换」与「owner 丢失」），2~5s 随机重连自愈；**60s 内第二次 = 真互踢** → 终态 `session-conflict`（提示"已在别处打开"，不参与自动接续）。`auth_ack`/`matched` 只清退避、**不清 KICKED 窗口**（官方 retry.ts 注释原文） |
 | `DEVICE_OFFLINE` | 有界宽限 15s（官方 2026-10-27 `recoverConnection(15_000)` 口径）：窗口内保持退避重试；超时升级为「桌面端离线」可接续终态（见 §11.8） |
 | `AUTH_FAILED` / `WRONG_PARAM` | 终态：`invalid-mobile-connection`（二维码失效/错误）；V2 设备视为官方 `device-not-owned`，可参与 SID 自动接续（§11.8） |
 | `INTERNAL` | 已配对过则回到 waiting 等设备回来，否则重连 |
@@ -116,11 +116,15 @@ python tools/probe.py sub <会话ID前缀> [帧落盘路径]   # + 完整会话�
 
 - **PC 端 auth_init meta（已定位）**：`{platform: process.platform, version: <appVersion>, name: <deviceName>}`
   （`yp` 构造，`role:"device"`）。
-- **心跳间隔（两侧一致）**：`heartbeatIntervalMs ?? 10_000`（默认 10s，带抖动 `heartbeatJitterMs`）；
-  `heartbeatAckTimeoutMs ?? 30_000`（30s 未收到 ack → 判定链路失活并重连）；
-  reconnect 抖动 `≤ min(interval, 2000)ms`。**PC 端**用 `pair_status_query`；**移动端**同帧同间隔。
-- **App 现状**：`RelayClient` 心跳为固定 30s（`Thread.sleep(30_000)`）——间隔长于官方 10s，
-  仍在 30s ack 超时窗口内可用；若要贴近官方行为可将间隔调至 10s（非阻塞项）。
+- **心跳间隔（2026-11-14 官方源码勘误）**：官方 `heartbeatTiming.ts` 实证 `HEARTBEAT_INTERVAL_MS = 5_000`、
+  `HEARTBEAT_JITTER_MS = 1_000`（`[base-jitter, base+jitter]` 均匀抽样、**每轮重抽**；jitter 必须小于
+  基准间隔）、`HEARTBEAT_ACK_TIMEOUT_MS = 15_000`（watchdog）。**勘误**：旧记「10s / 30s」系 v3.11 时代
+  bundle 逆向误记（`heartbeatIntervalMs ?? 10_000` 是**桌面端可配置参数的默认值**，手机 Web 端共享实现
+  取 5s 口径）。重连退避（官方手机端口径）：**连接建立后首次重连在 0~1.5s 全窗打散**（只一次，防
+  relay 重启后 token 请求雷群；窗口必须 < 桌面 3s 手机断连宽限），之后 500ms×2ⁿ ±20% 双向抖动、10s 封顶。
+- **App 现状（2026-11-14 对齐后）**：`relay/V2RetryPolicy.kt` 逐语义转译官方
+  `WebRemoteControlV2RetryPolicy`；`RelayClient` 心跳 5s±1s 每轮重抽、watchdog 15s、KICKED 自愈路径
+  （见 §4 表）、退避/打散官方口径。
 
 
 ## 5. 内层负载（`data.payload`，`zcode_type` 路由，两侧一致）
@@ -682,3 +686,68 @@ PC 端必须已打开「移动端远程控制」面板（否则 `pair_status=wai
 | `AppViewModel` | `hostAdoptContinuationDevice()`：`upsertActive` 覆盖新 SID 并刷新 `device`/`devices`（不自行 connect） |
 
 **边界**：V1 设备（`passHash` 非空）无 JWT，不参与接续，行为与改动前一致；无 JWT / 无 MID 时同样跳过。
+
+## 13. v3.18.1 新协议面与能力协商（2026-11-14 对标落地，schema 源为官方源码）
+
+> 本节随 Gap 全量落地新增；App 侧实现均经官方源码 schema 核验，单测钉住口径（536 项 JVM 单测）。
+
+### 13.1 能力协商（「能力协商而非版本分支」铁律）
+
+- **口径**：能力位必须**显式 JSON 布尔 `true`** 才算支持（官方 `hello.capabilities.inputPrediction === true`）。
+  缺字段 / 非布尔 / 字符串 `"true"` 一律 false（老桌面缺字段 = 禁用）。
+  ⚠️ kotlinx 的 `JsonPrimitive.booleanOrNull` 对字符串 `"true"` 也会返回 true（`content.toBooleanStrictOrNull()`），
+  与 zod `z.boolean()` 口径不一致——App 的 `BridgeCapabilities.boolTrue` 显式排除 `isString` 原语。
+- **来源**：hello 应答的 `capabilities.inputPrediction`（bridge-ready 的
+  `capabilities?: { windowProjectDirectory?: true }` 同口径解析）。
+- **消费义务**：声明支持却缺服务必须报错、禁止静默降级（`wide-screen-task-list.md` MRO02）。
+- App 落点：`relay/BridgeCapabilities.kt`（`fromHello` / `fromBridgeReady`；`RpcChannel.capabilities`）。
+
+### 13.2 输入预测（`conversationInputPredictionV4`，v3.18.1 默认开启）
+
+- 只读无状态 RPC（agent 通道）；Host 开关关闭 / 无运行时 / 失败一律回空结果、不抛错。
+- 请求：`{sessionId, revision, draft?, requestId?}`——`revision` 为手机当前已应用快照版本（缓存键
+  之一，迟到响应按它丢弃）；`draft` ≤4000 字符（超出由手机截断再发），缺席/纯空白 = 预测下一条
+  完整输入；`requestId` 原样回显供手机丢弃过期响应。
+- 应答：`{decision, candidates[≤3], topConfidence, requestId?}`——decision ∈
+  `show / suppress_below_threshold / suppress_no_context / unavailable / cancelled`，仅 `show`
+  可展示；候选 text 1..40 UTF-16 单行不 trim（是「接在草稿后面的文本」）；topConfidence 门槛
+  0.8 由服务端应用。
+- 手机侧参数：防抖 600–800ms（App 取 700ms）、RPC 超时 25s（> CLI 20s 模型超时）。
+- App 落点：`relay/InputPredictionPolicy.kt` + UI ghost hint（点击整行采用）。
+
+### 13.3 命令对账（`queryConversationCommandsV4`，官方 commands/query）
+
+- 参数：`{commands: [{sessionId: string|null, commandId}] ≤64}`；应答：`{results: [{key, result,
+  turn?}]}`——`result` 为 CommandAck 对象或字面量 `"unknown"`。
+- 语义：`"unknown"` = 无法确认是否执行（**不等于执行失败**），保留 pending；`fault.command.
+  queryUnavailable` 同义，调用方不得据此做破坏性清理；`fault.command.inputDiscardedOnRestart`
+  = CLI 重启后未入 transcript 被明确丢弃（**绝不自动重放**，由用户决定是否重发）。
+- App 落点：`relay/PendingCommandLedger.kt`（24h TTL、幂等记录、最旧优先出批 ≤64；sensitive
+  命令不进账本）+ 订阅恢复自动收账 + `CommandFailureException.uiText` 定向文案。
+
+### 13.4 mobile-task-view 上报（`mobile-task-view-update` / `mobile-task-view-request`）
+
+- `mobileTaskView` 表示**前台实际查看地址**（与恢复用的 `mobileViewState` 是两个不同帧）；Main
+  只保存瞬时事实、不写任务未读。
+- update 帧：`{zcode_type, epoch, seq, bridgeSessionId, bridgeGeneration?, view: {workspacePath,
+  workspaceIdentity?, taskId} | null}`——epoch 由桌面 `mobile-task-view-request {epoch}` 下发，
+  epoch 变化 seq 归零；seq 单调递增；send 失败保 dirty 重发；断连清 epoch 保 dirty（恢复后重新
+  声明）；新 bridge（sessionId/generation 任一变化）重置 view；迟到回调按桥身份 matches 过滤。
+- App 落点：`relay/MobileTaskViewPublisher.kt`（逐语义转译官方 `webRemoteControlTaskView.ts`），
+  进入/离开会话页 + epoch 轮换时上报。
+
+### 13.5 快照字节预算与裁剪标记（官方 `snapshot-byte-budget.md`）
+
+- 仅 Web 远控启用：首屏 `messageLimit=10` + `byteBudget=200KB`（软预算）；字段级裁剪——assistant
+  `content/thought` 预览 `min(32KB, max(2KB, budget/3))`；tool `input>1KB→256B`、`output>4KB→512B`、
+  `raw>2KB→256B`；fileChanges `before/afterContent>8KB→4KB`（保留结构元数据）。
+- 被裁字段的原始下标处挂 `bodyRefs`（content/thought）/ `snapshotRefs`（input/output/raw）/
+  `contentRefs`（before/afterContent）：`{field, refId, hash, fullBytes, previewBytes}`；补拉走
+  `getTaskSnapshotBody({taskId, workspacePath, refId})`（hash 校验通过替换预览）。
+- **App 现状**：`getTaskSnapshotBody` 不在 agent 通道方法面（桥上不可达），只解析标记并如实提示
+  「已截断，完整正文请在电脑端查看」；补拉能力待官方桥方法面开放。
+
+### 13.6 L2 动作超时（`domain/webRemoteControlActions.ts`）
+
+- `task-pin` / `task-archive` / `workspace-create` 统一 30s 超时；本地项目根固定 `~/ZCodeProject`。
+- App 已实现 task-pin（beta54）与 workspace-create（beta56 F3），本节补记官方常量出处。

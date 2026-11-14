@@ -118,6 +118,7 @@ class MainActivity : ComponentActivity() {
                     fun closeSession() {
                         openedItem = null
                         openedTaskId = null
+                        vm.publishTaskView(null) // G6b：离开会话页 → 前台任务视图清空
                     }
 
                     // 配对后主动申请一次通知权限（Android 13+ 运行时权限，默认拒绝）。
@@ -317,6 +318,7 @@ class MainActivity : ComponentActivity() {
                                         onAttachmentPicked = { uri, name, mime, size -> vm.addAttachment(uri, name, mime, size) },
                                         onRemoveAttachment = { vm.removeAttachment(it) },
                                         onSwitchModel = { m -> vm.switchCurrentSessionModel(m) },
+                                        onPredictInput = { draft, reqId, cb -> vm.predictInput(draft, reqId, cb) },
                                         onLoadModels = { vm.loadWorkspaceModels() },
                                         // ⚠️ 执行模式勿取 ConversationChannel.Status.Live.mode——那是订阅模式
                                         // （snapshot/live），与执行模式（plan/build/yolo）撞名（真机验收 2026-10-05 实证）

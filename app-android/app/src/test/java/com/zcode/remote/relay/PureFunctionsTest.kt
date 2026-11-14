@@ -507,39 +507,50 @@ class PureFunctionsTest {
         assertFalse(ConversationChannel.isTransientHandshakeError("subscribe ack 缺少 subscriptionId"))
     }
 
-    // ---------- 重连退避（网络恢复须能重置，见 NetworkGate / RelayClient.onNetworkAvailable）----------
+    // ---------- 重连/心跳口径（P2①②③，2026-11-14 对齐官方 retry.ts / heartbeatTiming.ts）----------
 
     @Test
-    fun reconnectBackoffIsExponentialAndCapped() {
-        assertEquals(3_000L, reconnectBackoffMs(0))
-        assertEquals(6_000L, reconnectBackoffMs(1))
-        assertEquals(12_000L, reconnectBackoffMs(2))
-        assertEquals(24_000L, reconnectBackoffMs(3))
-        assertEquals(48_000L, reconnectBackoffMs(4))
-        // 封顶：更大的 attempt 不再增长（真机实测旧实现会烧到 48s 后白等一整轮）
-        assertEquals(48_000L, reconnectBackoffMs(5))
-        assertEquals(48_000L, reconnectBackoffMs(50))
+    fun heartbeatIntervalIs5sPlusMinus1s() {
+        // random=0 → 下限 4s；random=0.999999 → 上限 6s；每轮重抽（官方 getWebRemoteControlHeartbeatDelayMs）
+        assertEquals(4_000L, heartbeatIntervalMs(random = 0.0))
+        assertEquals(6_000L, heartbeatIntervalMs(random = 0.999999))
+        for (i in 0..100) {
+            val ms = heartbeatIntervalMs(random = i / 100.0)
+            assertTrue("i=$i ms=$ms", ms in 4_000L..6_000L)
+        }
+        // 护栏：jitter ≥ base 时被夹到 base-1（官方注释：jitter 必须小于基准，避免 0ms 风暴）
+        assertEquals(1L, heartbeatIntervalMs(random = 0.0, baseMs = 1_000L, jitterMs = 2_000L))
     }
 
     @Test
-    fun jitteredBackoffStaysWithinHalfToFull() {
-        // factor=0 → 下限（基准的一半）；factor=1 → 上限（等于基准，不破坏封顶承诺）
-        assertEquals(1_500L, jitteredBackoffMs(0, 0.0))
-        assertEquals(3_000L, jitteredBackoffMs(0, 1.0))
-        // attempt=3 → 基准 24s；attempt=4 → 基准 48s（封顶）
-        assertEquals(24_000L, jitteredBackoffMs(3, 1.0))
-        assertEquals(48_000L, jitteredBackoffMs(4, 1.0))
-        // 越界 factor 被夹取：抖动只缩短不延长
-        assertEquals(3_000L, jitteredBackoffMs(0, 99.0))
-        assertEquals(1_500L, jitteredBackoffMs(0, -5.0))
-        // 抖动结果始终落在 [base/2, base]
-        for (attempt in 0..5) {
-            val base = reconnectBackoffMs(attempt)
-            for (i in 0..20) {
-                val ms = jitteredBackoffMs(attempt, i / 20.0)
-                assertTrue("attempt=$attempt i=$i ms=$ms", ms in (base / 2)..base)
-            }
+    fun retryPolicySpreadAndBackoff_areOfficialCurve() {
+        val p = V2RetryPolicy(random = { 0.5 })
+        p.acknowledged()
+        // 打散：0~1500 全窗随机一次（0.5 → 750）
+        assertEquals(750L, p.nextDelay())
+        // 之后 500ms×2ⁿ ±20%（random=0.5 → jitter 系数恰为 1.0），10s 封顶
+        assertEquals(500L, p.nextDelay())
+        assertEquals(1_000L, p.nextDelay())
+        assertEquals(2_000L, p.nextDelay())
+        assertEquals(4_000L, p.nextDelay())
+        assertEquals(8_000L, p.nextDelay())
+        assertEquals(10_000L, p.nextDelay())
+        assertEquals(10_000L, p.nextDelay())
+    }
+
+    @Test
+    fun retryPolicyBackoff_staysWithinOfficialJitterBounds() {
+        // ±20% 双向抖动：base*0.8 ~ base*1.2（官方 `base * (1 - jitter + random * jitter * 2)`）；
+        // 新实例 failures=0 → base=500ms
+        for (i in 0..20) {
+            val ms = V2RetryPolicy(random = { i / 20.0 }).nextDelay()
+            val base = V2RetryPolicy.INITIAL_MS
+            assertTrue("i=$i ms=$ms", ms in (base * 0.8).toLong()..(base * 1.2).toLong())
         }
+        // 连续失败 3 次后 base=4s（500→1k→2k→4k），jitter 系数 1.0（random=0.5）→ 原值
+        val p = V2RetryPolicy(random = { 0.5 })
+        repeat(3) { p.nextDelay() }
+        assertEquals(4_000L, p.nextDelay())
     }
 
     @Test

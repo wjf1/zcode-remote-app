@@ -103,6 +103,14 @@ class RpcChannel(
     var onSequenceGap: (() -> Unit)? = null
 
     /**
+     * G5 能力协商：当前桥的声明能力位（bridge-ready `capabilities` 严格解析）。
+     * 官方铁律：能力协商而非版本分支——缺字段 = 不支持；消费方「声明了就必须用，
+     * 缺服务报错而非静默降级」（G3 输入预测等按 `inputPrediction` 消费）。
+     */
+    private val _capabilities = MutableStateFlow(BridgeCapabilities())
+    val capabilities: StateFlow<BridgeCapabilities> = _capabilities
+
+    /**
      * V4 连接级握手（helloConversationV4 → initializeConversationV4）的**每连接共享 clientId**。
      *
      * V2 host（≥3.16）对每个桥连接只绑定一个 client 身份：先到的 initialize 赢，
@@ -130,6 +138,18 @@ class RpcChannel(
 
     private val _bridge = MutableStateFlow<BridgeState>(BridgeState.Closed)
     val bridge: StateFlow<BridgeState> = _bridge
+
+    /**
+     * G6b：当前桥身份（`Ready` 时非空；generation 为 bridge-ready 帧下发的值）。
+     * 供 mobile-task-view 上报绑定 bridge identity（官方 schema：
+     * `mobile-task-view-update {epoch, seq, bridgeSessionId, bridgeGeneration?, view}`）。
+     */
+    val currentBridgeIdentity: Pair<String, Int?>?
+        get() =
+            when (val b = _bridge.value) {
+                is BridgeState.Ready -> b.bridgeSessionId to bridgeGeneration
+                else -> null
+            }
 
     /** 最近一次 ready 回包（含 bridge.* 身份与 host 能力）。 */
     var readyPayload: JsonObject? = null
@@ -303,6 +323,10 @@ class RpcChannel(
             return
         }
         readyPayload = payload
+        // G5 能力协商：bridge-ready 显式声明的能力位（官方 `capabilities?: { windowProjectDirectory?: true }`），
+        // 严格解析（缺字段 = 不支持）；消费方义务「声明了就必须用，缺服务报错而非静默降级」
+        val caps = BridgeCapabilities.fromBridgeReady(payload)
+        _capabilities.value = caps
         // 身份三元组以此为准（PC 端 enforces 全等匹配）
         bridgeGeneration =
             payload["bridgeGeneration"]?.let {

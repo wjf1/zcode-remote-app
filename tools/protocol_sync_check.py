@@ -49,6 +49,10 @@ WATCHED: list[str] = [
     "packages/shared/src/web-remote-relay/domain/webRemoteControlActions.ts",
     "packages/shared/src/web-remote-relay/mobileLog.ts",
     "packages/shared/src/web-remote-control-rpc-transport.ts",
+    # app payload 全集（2026-11-14 增补）：TaskTarget / mobile-task-view / workspace 能力位 /
+    # task-pin-archive / workspace-create 等信封 schema 所在——本轮对 v3.18.1 核查发现它不在
+    # 跟踪面（官方「虚拟项目重构」删 TaskTarget 字段就发生在该文件，此前完全盲区），补入。
+    "packages/shared/src/web-remote-control.ts",
     "packages/client/src/webRemoteControlAcknowledgedRelayProtocolTypes.ts",
     "packages/client/src/webRemoteControlAcknowledgedRelayProtocol.ts",
     "docs/web-remote-control/relay-v2-pairing.md",

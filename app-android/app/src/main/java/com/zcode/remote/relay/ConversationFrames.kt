@@ -666,6 +666,15 @@ data class ConversationRow(
     /** 该行携带的附件（userInput 行回显）。默认空 = 无附件。 */
     val attachments: List<RowAttachment> = emptyList(),
     /**
+     * G1 快照预算裁剪标记（2026-11-14 对齐官方 `snapshot-byte-budget.md`）：
+     * 官方 Web 远控快照按 200KB 软预算做字段级裁剪，被裁字段的原始下标处挂
+     * `bodyRefs`（assistant 的 content/thought）与 `snapshotRefs`（tool 的 input/output/raw）。
+     * App 桥上没有 `getTaskSnapshotBody` 补拉方法（不在 agent 通道方法面），故此处只
+     * **识别并如实标记**，UI 显示「已截断，完整正文请在电脑端查看」提示。
+     */
+    val bodyTruncated: Boolean = false,
+    val toolTruncated: Boolean = false,
+    /**
      * 原始行对象。审批等结构化字段（选项数组、requestId 等）形态尚未穷举，
      * 这里保留整包避免二次改数据类——取值见 [com.zcode.remote.relay.PendingApproval]。
      */
@@ -698,6 +707,8 @@ data class ConversationRow(
                 activeMs = o.rowLong("activeMs"),
                 durationMs = o.rowLong("durationMs"),
                 errorText = output?.rowStr("error") ?: o.rowStr("error"),
+                bodyTruncated = o["bodyRefs"]?.let { runCatching { it.jsonArray.isNotEmpty() }.getOrDefault(false) } == true,
+                toolTruncated = o["snapshotRefs"]?.let { runCatching { it.jsonArray.isNotEmpty() }.getOrDefault(false) } == true,
                 attachments = parseAttachments(o),
                 raw = o,
             )

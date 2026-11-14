@@ -132,6 +132,13 @@ class ConnectionCoordinator(
         fun hostMarkUnread(taskId: String)
 
         /**
+         * G6b：桌面下发 `mobile-task-view-request {epoch}`（epoch 轮换）——宿主据此重置
+         * mobile-task-view 发布器并重声明前台任务（官方 `webRemoteControlTaskView.ts`
+         * 的 request 语义；epoch 变化时 seq 归零）。默认空实现便于测试替身。
+         */
+        fun hostOnTaskViewEpoch(epoch: String) {}
+
+        /**
          * workspace-create 应答（F3）：成功带新建工作区的 `workspacePath`；失败带 error 原文。
          * 宿主实现负责提示与后续动作（如刷新列表）。
          */
@@ -395,6 +402,13 @@ class ConnectionCoordinator(
                     "workspace-bridge-error",
                     "bridge-degraded",
                     -> ch.onBridgeFrame(payload)
+
+                    // G6b：桌面 epoch 轮换请求 → 宿主重声明前台任务视图（官方 mobile-task-view-request）
+                    "mobile-task-view-request" -> {
+                        val epoch =
+                            payload["epoch"]?.let { runCatching { it.jsonPrimitive.content }.getOrNull() }
+                        if (!epoch.isNullOrBlank()) host.hostOnTaskViewEpoch(epoch)
+                    }
 
                     "rpc-frame" -> ch.onRpcFrame(payload)
                     "rpc-frame-ack" -> Unit

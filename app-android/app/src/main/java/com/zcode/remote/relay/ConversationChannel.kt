@@ -128,6 +128,12 @@ class ConversationChannel(
      */
     var onDesync: ((reason: String) -> Unit)? = null
 
+    /**
+     * G4：对账发现「桌面 CLI 重启丢弃的输入」时回调条数（UI 提示用户重发）。
+     * 由订阅恢复（[flushPendingCommands]）触发；app 端绝不自动重放（官方同口径）。
+     */
+    var onCommandDiscarded: ((count: Int) -> Unit)? = null
+
     data class ConversationMeta(
         val title: String? = null,
         val phase: String? = null,
@@ -154,6 +160,24 @@ class ConversationChannel(
     // clientId 必须与连接绑定的一致（V2 host 单 client 身份，见 RpcChannel.v4ClientId）
     private val clientId: String get() = rpc.v4ClientId
     private var listenId: Int? = null
+
+    /**
+     * G4 已提交命令账本（语义见 [PendingCommandLedger]）：sendText 记录、ack 结算，
+     * 订阅恢复后 [flushPendingCommands] 走 `queryConversationCommandsV4` 收尾。
+     * resolveInteraction（sensitive）不进账本——官方同口径，ack 判据由 [PendingRequests] 承接。
+     */
+    internal val ledger = PendingCommandLedger()
+
+    /**
+     * G5：hello 应答声明的能力位（官方 `=== true` 严格口径解析，见 [BridgeCapabilities]）。
+     * G3 输入预测按 `inputPrediction` 位消费——桌面老版本缺字段 = 禁用，绝不把「缺」当「有」。
+     */
+    private val _helloCapabilities = MutableStateFlow(BridgeCapabilities())
+    val helloCapabilities: StateFlow<BridgeCapabilities> = _helloCapabilities
+
+    /** G3 在途预测请求号（迟到响应按 requestId 丢弃；null = 无在途请求）。 */
+    @Volatile
+    private var predictionRequestId: String? = null
 
     /** A-5：conversation 逻辑分帧重组器（官方 wire-reassembly.ts 逐规则转译）。 */
     private val reassembler = WireReassembler()
@@ -255,6 +279,8 @@ class ConversationChannel(
                                     runCatching { it.jsonPrimitive.content }.getOrNull()
                                 },
                         )
+                    // G5：hello 能力位严格解析（官方 `=== true` 口径；老桌面缺字段 = 全 false）
+                    if (o != null) _helloCapabilities.value = BridgeCapabilities.fromHello(o)
                     _status.value = Status.Hello
                     handshake(gen, pv, target, session)
                 }
@@ -344,6 +370,9 @@ class ConversationChannel(
                             _meta.value = _meta.value.copy(logEpoch = epoch)
                             _status.value = Status.Live(subId, mode, epoch)
                             ZLog.i(TAG, "subscribed sub=$subId mode=$mode logEpoch=$epoch")
+                            // G4：订阅恢复 = 重连/重订完成——对账本中未结算命令做一次收尾
+                            // （官方 commands/query；discarded 命令经 onCommandDiscarded 上抛提示）
+                            flushPendingCommands { discarded -> onCommandDiscarded?.invoke(discarded) }
                         }
                     }
                 }
@@ -876,10 +905,13 @@ class ConversationChannel(
         val payload = LinkedHashMap<String, Any>()
         payload["text"] = content
         if (attachments.isNotEmpty()) payload["attachments"] = attachments.map { it.toWire() }
+        // G4：commandId 提出变量——记录进账本，ack/对账后结算（CLI restart 后未入 transcript
+        // 的命令由 queryConversationCommandsV4 给出 discarded 裁决，见 [flushPendingCommands]）
+        val commandId = "cmd-${UUID.randomUUID()}"
         val args = HashMap<String, Any>(target)
         args["envelope"] =
             mapOf(
-                "commandId" to "cmd-${UUID.randomUUID()}",
+                "commandId" to commandId,
                 "clientId" to clientId,
                 "sessionId" to session,
                 "type" to "sendText",
@@ -887,6 +919,7 @@ class ConversationChannel(
                 "issuedAt" to System.currentTimeMillis(),
             )
         ZLog.i(TAG, "sendText session=$session chars=${content.length} attachments=${attachments.size}")
+        ledger.record(commandId, session, digest = "text:${content.length}c/att:${attachments.size}")
         rpc.call(
             RpcChannel.CHANNEL_AGENT,
             "sendConversationCommandV4",
@@ -895,14 +928,179 @@ class ConversationChannel(
         ) { reply ->
             onResult(
                 when (reply) {
-                    is RpcChannel.RpcReply.Err -> Result.failure(IllegalStateException(reply.message))
+                    is RpcChannel.RpcReply.Err -> {
+                        // G4：ack 到达即结算（失败也是裁决——除「CLI 重启丢弃」外不再保留）
+                        ledger.settle(commandId)
+                        Result.failure(illegalStateFromErr(reply))
+                    }
                     is RpcChannel.RpcReply.Ok ->
                         when (val ack = parseCommandAck(reply.data)) {
-                            is ResolveResult.Accepted -> Result.success(Unit)
-                            is ResolveResult.Failed -> Result.failure(IllegalStateException(ack.message))
+                            is ResolveResult.Accepted -> {
+                                ledger.settle(commandId)
+                                Result.success(Unit)
+                            }
+                            is ResolveResult.Failed -> {
+                                ledger.settle(commandId)
+                                Result.failure(commandFailure(ack))
+                            }
                         }
                 },
             )
+        }
+    }
+
+    /**
+     * G4：把命令失败映射为面向用户的异常（`UserFacingError` 体系之外的特殊码在此定性）：
+     * `fault.command.inputDiscardedOnRestart` = 桌面 CLI 刚重启、该输入未入 transcript 被明确
+     * 丢弃（官方语义：绝不自动重放，由用户决定是否重发）；`fault.command.queryUnavailable` =
+     * 无法确认是否执行。ack 形态与 RPC Err 形态共用同一映射（fault code 双来源）。
+     */
+    private fun commandFailure(ack: ResolveResult.Failed): IllegalStateException = illegalStateFromCode(ack.code) { ack.message }
+
+    /** RPC Err 形态的同类映射（从 `raw` 提取 fault code；[UserFacingError] 的取码口径）。 */
+    private fun illegalStateFromErr(reply: RpcChannel.RpcReply.Err): IllegalStateException {
+        val root = reply.raw as? JsonObject
+        val code =
+            root?.let { obj ->
+                listOf("code", "reasonCode", "errorCode", "reason")
+                    .firstNotNullOfOrNull { k ->
+                        obj[k]
+                            ?.let { runCatching { it.jsonPrimitive.content }.getOrNull() }
+                            ?.takeIf { it.isNotBlank() }
+                    }
+            }
+                ?: root?.get("fault")?.asObj()?.let { fault ->
+                    listOf("code", "reasonCode")
+                        .firstNotNullOfOrNull { k ->
+                            fault[k]
+                                ?.let { runCatching { it.jsonPrimitive.content }.getOrNull() }
+                                ?.takeIf { it.isNotBlank() }
+                        }
+                }
+        return illegalStateFromCode(code) { reply.message }
+    }
+
+    /** G4：命令失败的定向文案异常（[uiText] 资源串供 UI 直接展示；[faultCode] 为英文诊断码）。 */
+    class CommandFailureException(
+        val uiText: UiText,
+        val faultCode: String,
+    ) : IllegalStateException(faultCode)
+
+    private fun illegalStateFromCode(
+        code: String?,
+        fallback: () -> String,
+    ): IllegalStateException =
+        when (code) {
+            "fault.command.inputDiscardedOnRestart" ->
+                CommandFailureException(res(R.string.command_discarded_on_restart), code!!)
+            "fault.command.queryUnavailable" ->
+                CommandFailureException(res(R.string.command_query_unavailable), code!!)
+            else -> IllegalStateException(fallback())
+        }
+
+    /**
+     * G4：订阅恢复后的命令对账收尾（官方 commands/query：每批 ≤64、`result` 为
+     * `CommandAck | "unknown"`）。`unknown` = 无法确认是否执行 → 保留 pending 下次再查
+     * （官方明确：不据此做破坏性清理）；`failed + inputDiscardedOnRestart` 经
+     * [onCommandDiscarded] 上抛计数由 UI 提示。由上层在 Paired + Live 后触发一次。
+     */
+    fun flushPendingCommands(onCommandDiscarded: (Int) -> Unit = {}) {
+        val batch = ledger.unsettledBatch()
+        if (batch.isEmpty()) return
+        val commands =
+            batch.map { e ->
+                mapOf("sessionId" to e.sessionId, "commandId" to e.commandId)
+            }
+        rpc.call(
+            RpcChannel.CHANNEL_AGENT,
+            "queryConversationCommandsV4",
+            listOf(mapOf("commands" to commands)),
+            timeoutMs = SEND_ACK_TIMEOUT_MS,
+        ) { reply ->
+            when (reply) {
+                is RpcChannel.RpcReply.Err -> {
+                    // 查询失败不结算：保留 pending，下次订阅恢复后再试
+                    ZLog.w(TAG, "commands/query 失败（pending 保留 ${ledger.size()}）: ${reply.message}")
+                }
+                is RpcChannel.RpcReply.Ok -> {
+                    val results =
+                        reply.data
+                            .asObj()
+                            ?.get("results")
+                            ?.asArray()
+                            .orEmpty()
+                    val discarded = settleQueryResults(results)
+                    if (discarded > 0) onCommandDiscarded(discarded)
+                }
+            }
+        }
+    }
+
+    /**
+     * G4：对账结果回收（detekt 拆出）：逐条结算已裁决命令、统计 `inputDiscardedOnRestart`
+     * 条数。`result: "unknown"` = 无法确认是否执行 → 保留 pending（官方明确不据此做
+     * 破坏性清理）；形态不认识的条目跳过（宽容解析）。
+     */
+    private fun settleQueryResults(results: List<JsonElement>): Int {
+        var discarded = 0
+        results
+            .asSequence()
+            .mapNotNull { it.asObj() }
+            .forEach { ro ->
+                val cmdId = ro["key"]?.asObj()?.get("commandId")?.asStr() ?: return@forEach
+                val result = ro["result"]
+                if (result?.asStr() == "unknown") return@forEach
+                ledger.settle(cmdId)
+                val ackObj = result?.asObj()
+                if (
+                    ackObj != null &&
+                    ackObj["status"].asStr() == "failed" &&
+                    ackObj["reasonCode"].asStr() == "fault.command.inputDiscardedOnRestart"
+                ) {
+                    discarded++
+                }
+            }
+        return discarded
+    }
+
+    /**
+     * G3 输入预测查询（`conversationInputPredictionV4`，官方：只读无状态、失败一律空结果
+     * 不抛错）。能力门禁：`hello.capabilities.inputPrediction` 必须显式 `true`（G5 严格口径）
+     * ——桌面老版本该 RPC 可能不存在，缺位时直接回调 null，不发请求。
+     * revision 取当前已应用快照 revision（官方缓存键的一部分）；requestId 供迟到响应丢弃
+     * （调用方拿到结果后用 [InputPredictionPolicy.isStaleResponse] 复核）。
+     */
+    fun predictInput(
+        draft: String?,
+        requestId: String,
+        onResult: (InputPredictionPolicy.Result?) -> Unit,
+    ) {
+        val session = sessionId
+        val target = subTarget
+        if (session == null || target == null) {
+            onResult(null)
+            return
+        }
+        if (!_helloCapabilities.value.inputPrediction) {
+            onResult(null)
+            return
+        }
+        predictionRequestId = requestId
+        val params = InputPredictionPolicy.buildParams(session, _meta.value.revision, draft, requestId)
+        val args = HashMap<String, Any>(target)
+        args["params"] = params
+        rpc.call(
+            RpcChannel.CHANNEL_AGENT,
+            "conversationInputPredictionV4",
+            listOf(params),
+            timeoutMs = InputPredictionPolicy.RPC_TIMEOUT_MS,
+        ) { reply ->
+            val result =
+                when (reply) {
+                    is RpcChannel.RpcReply.Err -> null // 官方失败即空结果；静默无 hint
+                    is RpcChannel.RpcReply.Ok -> InputPredictionPolicy.parse(reply.data.asObj())
+                }
+            onResult(result)
         }
     }
 

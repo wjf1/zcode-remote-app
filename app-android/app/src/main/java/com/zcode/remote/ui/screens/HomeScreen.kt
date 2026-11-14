@@ -35,6 +35,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.zcode.remote.R
 import com.zcode.remote.relay.BridgeFrames
+import com.zcode.remote.relay.FailureGuidance
 import com.zcode.remote.relay.FailureReason
 import com.zcode.remote.relay.RelayState
 import com.zcode.remote.relay.SessionItem
@@ -77,8 +78,8 @@ fun HomeScreen(
     onSessionDelete: (SessionItem) -> Unit = {},
     /** 置顶/取消置顶（task-pin 动作位；V2 Controller 通道提供 pinned 字段，V1 无置顶语义）。 */
     onSessionTogglePin: (SessionItem) -> Unit = {},
-    /** 会话未读标记（taskId → true）：任务事件流标记、进入会话清除，对标官方「未读蓝点」。 */
-    unreadBySession: Map<String, Boolean> = emptyMap(),
+    /** 会话未读标记（taskId → unreadAt 时间戳；G6a 对齐官方 unreadAt/CAS 口径）。 */
+    unreadBySession: Map<String, Long> = emptyMap(),
     /** F2 下拉刷新：刷新中标志与用户下拉回调（实现在 AppViewModel.refreshSessions）。 */
     refreshing: Boolean = false,
     onRefresh: () -> Unit = {},
@@ -309,7 +310,7 @@ fun HomeScreen(
                             onClick = { onSessionClick(s) },
                             onDelete = { onSessionDelete(s) },
                             onTogglePin = { onSessionTogglePin(s) },
-                            unread = unreadBySession[s.taskId] ?: false,
+                            unread = unreadBySession[s.taskId] != null,
                         )
                     }
                 }
@@ -1219,6 +1220,25 @@ private fun HomeEmptyContent(
                     },
                 textAlign = androidx.compose.ui.text.style.TextAlign.Center,
             )
+            // P2⑤：终态失败的结构化「下一步」引导（对齐官方失败页交互——每 reason 2 条定制建议）
+            if (state is RelayState.Failed) {
+                val steps = FailureGuidance.steps(state.reason)
+                if (steps.isNotEmpty()) {
+                    Column(
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        verticalArrangement = Arrangement.spacedBy(2.dp),
+                    ) {
+                        steps.forEachIndexed { i, step ->
+                            Text(
+                                text = "${i + 1}. ${step.asString()}",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+                            )
+                        }
+                    }
+                }
+            }
             // 终态失败（KICKED/AUTH_FAILED/PROTOCOL_MISMATCH/INVALID_ENDPOINT）不会自动重连，
             // 给出「前往设置」引导，避免用户对着永不成功的「正在连接」干等。
             if (isTerminalFailure(state)) {

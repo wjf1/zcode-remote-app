@@ -52,28 +52,26 @@ sealed interface RelayState {
 enum class FailureReason { KICKED, AUTH_FAILED, DEVICE_OFFLINE, NETWORK, INTERNAL, PROTOCOL_MISMATCH, INVALID_ENDPOINT, DESKTOP_DISCONNECTED }
 
 /**
- * 重连退避（纯函数，便于 JVM 单测）：3s 起指数翻倍，48s 封顶。
- *
- * ⚠️ 退避**只应在「网络可用但对端拒绝/超时」时累积**。网络整体不可用时应由
- * [NetworkGate] 挂起等待（不烧退避）、恢复后由 [RelayClient.onNetworkAvailable] 重置归零
- * ——否则断网期会把退避烧到 48s 封顶，恢复后还要白等一轮（2026-10-07 真机实测 ~47s）。
+ * 心跳间隔（纯函数，JVM 单测直驱；官方 `heartbeatTiming.ts` `getWebRemoteControlHeartbeatDelayMs`
+ * 等价实现）：基准 5s、jitter 1s，在 `[base-jitter, base+jitter]` 均匀抽样、**每轮重抽**
+ * （官方注释：jitter 必须小于基准间隔，避免把合法心跳变成 0ms 风暴）。
  */
-internal fun reconnectBackoffMs(attempt: Int): Long = 3000L * (1L shl minOf(attempt, 4))
-
-/**
- * 退避加抖动（纯函数）：把基准值按 [factor] 缩放到 [0.5, 1.0] 区间。
- *
- * 动机：多台设备/多个实例在同一次断网后按**同一个确定值**重连（3s/6s/…/48s），
- * 会形成同时到点的「重连雷群」压垮中继。抖动只缩短不延长（上限仍是 [reconnectBackoffMs]），
- * 因此不违反「封顶 48s」的既有承诺，仅把同时到点摊开。
- */
-internal fun jitteredBackoffMs(
-    attempt: Int,
-    factor: Double,
+internal fun heartbeatIntervalMs(
+    random: Double = Math.random(),
+    baseMs: Long = RelayClient.HEARTBEAT_INTERVAL_MS,
+    jitterMs: Long = RelayClient.HEARTBEAT_JITTER_MS,
 ): Long {
-    val base = reconnectBackoffMs(attempt)
-    val clamped = factor.coerceIn(0.0, 1.0)
-    return (base * (0.5 + 0.5 * clamped)).toLong()
+    val base = if (baseMs > 0) baseMs else RelayClient.HEARTBEAT_INTERVAL_MS
+    val jitter =
+        when {
+            jitterMs <= 0 -> 0L
+            jitterMs >= base -> (base - 1).coerceAtLeast(0L)
+            else -> jitterMs
+        }
+    val lo = maxOf(1L, base - jitter)
+    val hi = base + jitter
+    val r = if (random.isFinite()) random.coerceIn(0.0, 0.999999) else 0.0
+    return lo + (r * (hi - lo + 1)).toLong()
 }
 
 class RelayClient(
@@ -101,6 +99,12 @@ class RelayClient(
     private var reconnectJob: Job? = null
     private var pumpJob: Job? = null
 
+    /**
+     * 重连/退避/KICKED 策略（P2①②，2026-11-14 对齐官方 `WebRemoteControlV2RetryPolicy`，
+     * 语义详见 [V2RetryPolicy]）。
+     */
+    private val retryPolicy = V2RetryPolicy()
+
     /** T11 心跳单向失活：首次「发出但尚未被 ack 覆盖」的心跳时刻；0 = 无待确认心跳。 */
     @Volatile
     private var heartbeatSentAtMs: Long = 0L
@@ -124,7 +128,8 @@ class RelayClient(
         stopHeartbeat()
         runCatching { socket?.close(1000, "net-lost") }
         socket = null
-        reconnectAttempt = 0
+        // 网络丢失不是对端拒绝：清退避（恢复后尽快重连），重连调度走 nextDelay（首次打散语义保留）
+        retryPolicy.reset()
         scheduleReconnect()
     }
 
@@ -146,12 +151,12 @@ class RelayClient(
             else -> Unit
         }
         ZLog.i(TAG, "net-watch: 网络恢复，重置退避并立即重连")
-        reconnectAttempt = 0
-        // 掐断可能正在 sleep 的退避等待（最多 48s）：否则要白等到退避到期才重连。
+        retryPolicy.reset()
+        // 掐断可能正在 sleep 的退避等待（最多 10s）：否则要白等到退避到期才重连。
         // 被取消的调度由 scheduleReconnect 内的 `if (!isActive) return@launch` 保证不再 connect。
         reconnectJob?.cancel()
         reconnectJob = null
-        connect()
+        connect(resetRetryPolicy = false)
     }
 
     private val _state = MutableStateFlow<RelayState>(RelayState.Idle)
@@ -216,10 +221,8 @@ class RelayClient(
 
     @Volatile private var manuallyClosed = false
 
-    /** 终态失败（互踢/配对失效/协议不匹配）：不参与自动重连，等用户手动恢复。 */
+    /** 终态失败（配对失效/协议不匹配/端点不安全/桌面端离线/60s 内二次互踢）：不参与自动重连，等用户手动恢复。 */
     @Volatile private var terminalFailed = false
-
-    @Volatile private var reconnectAttempt = 0
 
     /**
      * 连接代次（2026-10-05 竞态修复）：旧 socket 的 onFailure/onClosed 可能迟到到新连接
@@ -228,9 +231,15 @@ class RelayClient(
      */
     @Volatile private var generation = 0
 
-    fun connect() {
+    /**
+     * 显式连接入口。用户动作（扫码/手动重连/设置页）与自动恢复（网络恢复/重连调度）共用；
+     * [resetRetryPolicy] 仅用户/网络恢复路径为 true（清退避、不打散），重连调度内部路径
+     * 必须传 false——否则会把「连接建立后的首次打散」标志清掉，打散永不生效。
+     */
+    fun connect(resetRetryPolicy: Boolean = true) {
         manuallyClosed = false
         terminalFailed = false
+        if (resetRetryPolicy) retryPolicy.reset()
         _state.value = RelayState.Connecting
         startPump()
         // 显式 connect 即作废一切挂起的重连调度与旧 socket（其迟到回调由代次守卫拦截）
@@ -465,7 +474,9 @@ class RelayClient(
                                 startHeartbeat()
                             }
                             "matched" -> {
-                                reconnectAttempt = 0
+                                // 官方语义（retry.ts.acknowledged）：连接建立清退避 + 标记下一次
+                                // 重连打散；**不动 KICKED 窗口**（lastKickAtMs 只在 kickedDelay 推进）
+                                retryPolicy.acknowledged()
                                 cancelOfflineGrace()
                                 _state.value = RelayState.Paired
                                 startHeartbeat()
@@ -504,8 +515,7 @@ class RelayClient(
                     "error" -> {
                         val err = RelayProtocol.RelayError.from(RelayProtocol.errorCodeOf(frame))
                         when (err) {
-                            RelayProtocol.RelayError.KICKED ->
-                                fail(FailureReason.KICKED, "会话已在别处打开（与官方 Web 版互踢）")
+                            RelayProtocol.RelayError.KICKED -> handleKicked()
                             RelayProtocol.RelayError.AUTH_FAILED,
                             RelayProtocol.RelayError.WRONG_PARAM,
                             ->
@@ -546,14 +556,20 @@ class RelayClient(
     companion object {
         private const val TAG = "RelayClient"
 
+        /** 心跳基准间隔 5s（官方 `WEB_REMOTE_CONTROL_V2_HEARTBEAT_INTERVAL_MS`，2026-11-14 源码实证）。 */
+        internal const val HEARTBEAT_INTERVAL_MS: Long = 5_000L
+
+        /** 心跳 jitter 1s（官方 `WEB_REMOTE_CONTROL_V2_HEARTBEAT_JITTER_MS`；实际抖动按 [heartbeatIntervalMs] 每轮重抽）。 */
+        internal const val HEARTBEAT_JITTER_MS: Long = 1_000L
+
         /**
-         * T11 心跳单向失活阈值：30s。
-         *
-         * 取 30s 而非 10s（一个心跳周期）：官方 ack 超时口径即为 30s（PROTOCOL.md §4.1），
-         * 与之一致的目的是**不抢在服务端判定之前误判**——偶发一次丢包不该立刻断连。
-         * 30s = 3 个心跳周期未回，属确定性失活。
+         * T11 心跳单向失活 / ACK watchdog 阈值：**15s**（官方
+         * `WEB_REMOTE_CONTROL_V2_HEARTBEAT_ACK_TIMEOUT_MS = 15_000`，`heartbeatTiming.ts`
+         * 源码实证）。勘误：旧值 30s 与「官方 ack 超时 30s」的旧注释均系 v3.11 时代 bundle
+         * 逆向误记——官方源码明确为 15s（3 个心跳周期无任何 ack，属确定性失活）。
+         * V1 链路官方已删、无独立现值，与 V2 同口径（同一中继、行为一致性优先）。
          */
-        internal const val HEARTBEAT_STALE_MS: Long = 30_000L
+        internal const val HEARTBEAT_STALE_MS: Long = 15_000L
 
         /**
          * DEVICE_OFFLINE 宽限窗口：15s，对齐官方 `desktopOfflineGraceMs ?? 15_000`
@@ -588,7 +604,7 @@ class RelayClient(
         // 不列入会穿透终态、形成 15s 周期的「超时→重连→再超时」循环；自动恢复交上层按 MID 接续。
         if (reason in TERMINAL_FAILURES) {
             terminalFailed = true
-            reconnectAttempt = 0
+            retryPolicy.reset()
         }
         _state.value = RelayState.Failed(reason, message)
     }
@@ -653,9 +669,10 @@ class RelayClient(
                         fail(FailureReason.NETWORK, "连接已失去响应，正在重连…")
                         return@launch
                     }
-                    // 官方两侧一致为 10s（PROTOCOL.md §4.1）；ack 超时 30s 由服务端判定，
-                    // 旧实现固定 30s 虽在窗口内可用，但会拉长失活检测，对齐官方取值
-                    delay(10_000)
+                    // P2③ 心跳口径对齐官方 heartbeatTiming.ts：基准 5s、jitter 1s、每轮重抽
+                    // （官方手机 Web 端同款；V1 链路官方已删，统一采用 V2 口径）。旧值 10s 固定
+                    // 间隔 + 30s 失活系 v3.11 时代 bundle 逆向结论，以官方源码为准（15s watchdog）。
+                    delay(heartbeatIntervalMs())
                 }
             }
     }
@@ -701,23 +718,52 @@ class RelayClient(
         heartbeatJob = null
     }
 
-    private fun scheduleReconnect() {
+    /**
+     * KICKED 处理（P2②，对齐官方 `V2RetryPolicy.kickedDelay`）：**首次 KICKED 不再直接终态**
+     * ——官方已知限制：KICKED 无法区分「同角色替换」与「relay owner 丢失」，后者可自愈
+     * （2~5s 随机重连一次）。60s 内第二次 = 真互踢（另一 terminal 确实在用），才进
+     * [FailureReason.KICKED] 终态（原「KICKED 即终态」防的是 3s 级互踢死循环，官方 60s
+     * 窗口是同一目标的更精细解法：自愈机会 + 死循环护栏并存）。
+     */
+    private fun handleKicked() {
+        val delayMs = retryPolicy.kickedDelay()
+        if (delayMs == null) {
+            fail(
+                FailureReason.KICKED,
+                "60 秒内两次被接管：会话确实已在别处打开（与官方 Web 版互踢），请稍后重新连接",
+            )
+            return
+        }
+        ZLog.w(TAG, "kicked: 首次接管（可能为 relay 状态误报），${delayMs}ms 后重连自愈；60s 内再次接管才判终态")
+        stopHeartbeat()
+        cancelOfflineGrace()
+        // 作废既有重连调度与 socket：KICKED 的 2~5s 自愈延迟优先于任何普通退避
+        // （迟到 onClosed 的 scheduleReconnect 由「已有调度」守卫挡住）
+        reconnectJob?.cancel()
+        reconnectJob = null
+        runCatching { socket?.close(1000, "kicked") }
+        socket = null
+        _state.value = RelayState.Connecting
+        scheduleReconnect(delayMs)
+    }
+
+    private fun scheduleReconnect(fixedDelayMs: Long? = null) {
         stopHeartbeat()
         if (manuallyClosed || terminalFailed) return
         // onClosed/onFailure 可能双触发：已有一个重连调度在等网络时不再叠加
         // （否则第二次 cancel 掉第一次的挂起点，造成竞态）
         if (reconnectJob?.isActive == true) {
-            ZLog.i(TAG, "reconnect: 已有调度在等待（attempt=$reconnectAttempt），跳过重复调度")
+            ZLog.i(TAG, "reconnect: 已有调度在等待，跳过重复调度")
             return
         }
-        // 3s,6s,12s,24s,48s 封顶 + 抖动（只缩短不延长）：避免多端同时到点的重连雷群
-        val delayMs = jitteredBackoffMs(reconnectAttempt, Math.random())
-        reconnectAttempt++
+        // P2①② 打散/退避口径对齐官方（V2RetryPolicy）：连接建立后的首次重连打散 0~1.5s，
+        // 之后 500ms×2ⁿ ±20% 封顶 10s；KICKED 自愈路径传固定 2~5s
+        val delayMs = fixedDelayMs ?: retryPolicy.nextDelay()
         reconnectJob =
             io.launch {
                 val myGen = generation
                 // 挂起点：注入 NetworkGate 后，无网时等网络恢复即刻重连，而非空转到下一轮退避
-                ZLog.i(TAG, "reconnect: 调度 attempt=$reconnectAttempt 退避 ${delayMs}ms")
+                ZLog.i(TAG, "reconnect: 调度退避 ${delayMs}ms")
                 runCatching { networkWait(delayMs) }
                     .onFailure { ZLog.w(TAG, "reconnect: networkWait 异常", it) }
                 // ⚠️ 必须显式判 isActive：上面的 runCatching 会把取消异常一并吞掉，此后协程虽已取消
@@ -733,7 +779,8 @@ class RelayClient(
                 }
                 if (!manuallyClosed && !terminalFailed) {
                     ZLog.i(TAG, "reconnect: 放行，执行 connect()")
-                    connect()
+                    // 重连调度内部路径：不 reset 策略（否则清掉「首次打散」标志，打散永不生效）
+                    connect(resetRetryPolicy = false)
                 } else {
                     ZLog.i(TAG, "reconnect: 跳过重连（manuallyClosed=$manuallyClosed terminalFailed=$terminalFailed）")
                 }

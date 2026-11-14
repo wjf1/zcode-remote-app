@@ -21,6 +21,8 @@ import com.zcode.remote.relay.ConversationChannel
 import com.zcode.remote.relay.ConversationFrames
 import com.zcode.remote.relay.ConversationRow
 import com.zcode.remote.relay.FailureReason
+import com.zcode.remote.relay.InputPredictionPolicy
+import com.zcode.remote.relay.MobileTaskViewPublisher
 import com.zcode.remote.relay.PendingApproval
 import com.zcode.remote.relay.PendingElicitation
 import com.zcode.remote.relay.RelayClient
@@ -31,6 +33,7 @@ import com.zcode.remote.relay.SessionItem
 import com.zcode.remote.relay.SessionsIndexChannel
 import com.zcode.remote.relay.TaskEvent
 import com.zcode.remote.relay.TerminalChannel
+import com.zcode.remote.relay.UnreadStore
 import com.zcode.remote.relay.UserFacingError
 import com.zcode.remote.relay.WorkspaceConfigChannel
 import com.zcode.remote.repo.ApprovalRepository
@@ -486,6 +489,20 @@ class AppViewModel(
 
     private fun syncWidget(pendingTotal: Int = notifyCoordinator.sessionPending.values.sum()) = notifyCoordinator.syncWidget(pendingTotal)
 
+    /** G3 输入预测查询（桌面能力位关闭/未订阅时回调 null；requestId 由 UI 层生成传回）。 */
+    fun predictInput(
+        draft: String,
+        requestId: String,
+        onResult: (InputPredictionPolicy.Result?) -> Unit,
+    ) {
+        val conv =
+            conversation ?: run {
+                onResult(null)
+                return
+            }
+        conv.predictInput(draft, requestId, onResult)
+    }
+
     private fun reportViewState() = notifyCoordinator.reportViewState()
 
     private fun terminalTitle(reason: FailureReason): UiText = NotificationCoordinator.terminalTitle(reason)
@@ -854,7 +871,11 @@ class AppViewModel(
                     onFailure = {
                         // 撤回本地气泡：错误横幅已说明原因，不留下只在手机上存在的「幽灵消息」
                         convRepo.removePendingMessage(pending.id)
-                        flash(res(R.string.flash_send_failed, UserFacingError.map(it.message)), FlashKind.Failure)
+                        // G4：CLI 重启丢弃的输入走定向文案（CommandFailureException.uiText），其余走 UserFacingError
+                        val detail =
+                            (it as? ConversationChannel.CommandFailureException)?.uiText
+                                ?: UserFacingError.map(it.message)
+                        flash(res(R.string.flash_send_failed, detail), FlashKind.Failure)
                     },
                 )
             }
@@ -917,24 +938,67 @@ class AppViewModel(
 
     // ---- 表单交互应答（P1-1，构造规则见 PROTOCOL.md §6.5）----
 
-    /** 会话未读标记（对标官方「未读蓝点」）：任务事件流标记，进入会话即清除。 */
-    var unreadBySession by mutableStateOf<Map<String, Boolean>>(emptyMap())
+    /**
+     * G6b mobile-task-view 发布器（官方语义见 [MobileTaskViewPublisher]）：
+     * send 经连接栈（断连/缓冲满返回 false 保 dirty 重发）；桥身份动态取自
+     * [RpcChannel.currentBridgeIdentity]（桥换代即重置 view，等下次可见事实重声明）。
+     */
+    private val taskViewPublisher =
+        MobileTaskViewPublisher { payload -> ConnectionScope.client?.sendPayload(payload) == true }
+
+    /**
+     * 会话未读标记（对标官方「未读蓝点」）：任务事件流标记，进入会话即清除。
+     * G6a：值升级为 unreadAt 时间戳（官方快照 unreadAt 语义），清除走
+     * [UnreadStore.compareAndClear]（官方 expectedUnreadAt CAS 口径）。
+     */
+    var unreadBySession by mutableStateOf<Map<String, Long>>(emptyMap())
         private set
 
     /** 标记未读（进程级 collector 调用；当前正订阅的会话不标——用户正在看）。 */
     fun markSessionUnread(taskId: String) {
         if (taskId.isBlank() || taskId == convRepo.subscribedSessionId) return
-        if (unreadBySession[taskId] != true) unreadBySession = unreadBySession + (taskId to true)
+        unreadBySession = UnreadStore.mark(unreadBySession, taskId, System.currentTimeMillis())
     }
 
     private fun clearSessionUnread(taskId: String) {
-        if (unreadBySession.containsKey(taskId)) unreadBySession = unreadBySession - taskId
+        val expected = unreadBySession[taskId] ?: return
+        unreadBySession = UnreadStore.compareAndClear(unreadBySession, taskId, expected)
+    }
+
+    /** G6b：进入/离开会话页时重声明前台任务视图（null = 不在前台看任何任务）。 */
+    fun publishTaskView(taskId: String?) {
+        val ident =
+            ConnectionScope.channel?.currentBridgeIdentity?.let {
+                MobileTaskViewPublisher.BridgeIdentity(it.first, it.second)
+            }
+        if (ident == null) {
+            // 桥不在 Ready（断连/换代中）：官方 disconnected 语义——清 epoch 保 dirty，
+            // 恢复后由 epoch 下发重新声明
+            taskViewPublisher.disconnected()
+            return
+        }
+        if (!taskViewPublisher.matches(ident)) taskViewPublisher.setBridge(ident)
+        val ws = activeWorkspaceKey
+        taskViewPublisher.update(
+            ident,
+            if (taskId != null && !ws.isNullOrBlank()) {
+                MobileTaskViewPublisher.TaskView(ws, null, taskId)
+            } else {
+                null
+            },
+        )
+    }
+
+    /** G6b：桌面 epoch 轮换请求（ConnectionHost 回调）——seq 归零重声明。 */
+    override fun hostOnTaskViewEpoch(epoch: String) {
+        taskViewPublisher.request(epoch)
     }
 
     /** 手动订阅指定会话（UI 点击会话卡片时调用）。 */
     fun openSession(s: SessionItem) {
         clearSessionUnread(s.taskId)
         convRepo.subscribeConversation(s)
+        publishTaskView(s.taskId) // G6b：前台任务视图重声明（官方 mobileTaskView）
         reportViewState() // P1-2：切换会话即上报，PC 端可提示"手机正在看这个会话"
     }
 

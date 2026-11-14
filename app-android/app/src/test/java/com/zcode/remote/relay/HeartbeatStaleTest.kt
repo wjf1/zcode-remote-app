@@ -71,8 +71,9 @@ class HeartbeatStaleTest {
     }
 
     @Test
-    fun defaultThresholdIsThirtySeconds() {
-        // 与 PROTOCOL.md §4.1 的服务端 ack 超时口径一致：不抢在服务端判定之前误判
-        org.junit.Assert.assertEquals(30_000L, RelayClient.HEARTBEAT_STALE_MS)
+    fun defaultThresholdIsFifteenSeconds() {
+        // P2③：对齐官方 heartbeatTiming.ts ACK_TIMEOUT_MS=15s（2026-11-14 源码实证；
+        // 旧值 30s 系 v3.11 时代 bundle 逆向误记）
+        org.junit.Assert.assertEquals(15_000L, RelayClient.HEARTBEAT_STALE_MS)
     }
 }

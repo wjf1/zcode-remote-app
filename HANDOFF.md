@@ -118,6 +118,8 @@ app-android/app/src/main/java/com/zcode/remote/
   与 `research/FRAME-CODEC.md`、`research/CONVERSATION-PROTOCOL.md`。
 
 ## 4. 最近一轮变更与交付成果
+- **2026-11-14：对标 v3.18.1 Gap 全量落地（G1-G6 + P2，除真机验证外执行完毕）**——① 新增 7 个 relay 层纯逻辑模块：`V2RetryPolicy`（打散 1.5s / 退避 500ms×2ⁿ max 10s ±20% / KICKED 2~5s 自愈 + 60s 二连终态 / auth_ack 不清 KICKED 窗口）、`BridgeCapabilities`（`=== true` 严格口径，显式排除字符串 "true"——kotlinx `booleanOrNull` 语义与 zod 的差异已修）、`PendingCommandLedger`（24h TTL + ≤64 批 + 绝不自动重放）、`MobileTaskViewPublisher`（epoch/seq 单调 + send 失败保 dirty + 新桥重置 + matches 过滤迟到回调）、`UnreadStore`（unreadAt 时间戳 + expectedUnreadAt CAS）、`InputPredictionPolicy`（枚举校验 + 候选过滤后取前 3 + 防抖 700ms）、`FailureGuidance`（每终态 2 条「下一步」）；② 连接线：RelayClient 全面对齐官方重连/心跳口径（心跳 5s±1s 每轮重抽、watchdog 30s→15s——旧「官方 30s」系 v3.11 bundle 逆向误记已勘误）、KICKED 从直接终态改为官方自愈路径、ConversationChannel 接入 hello 能力位 / `queryConversationCommandsV4`（订阅恢复自动收账）/ `conversationInputPredictionV4`、RPC 暴露 `currentBridgeIdentity`、coordinator 分发 `mobile-task-view-request`、AppViewModel 接 publisher（进/离会话页 + epoch 轮换）；③ UI：HomeScreen 终态引导行、会话页正文/工具截断提示（G1 补拉方法不在桥上，如实标注）、ghost hint 行（点击整行采用）、CLI 重启丢弃输入的定向文案（`CommandFailureException.uiText`）；④ **两项纪律性降级（有据）**：P2④ suspended raw 帧准入不适用（原生 FGS 无浏览器 hidden/freeze 断流）、G2 单 owner 过滤暂缓（官方 V4 会话帧无 owner 信号、官方 UI 消费端零命中），文案已预留；⑤ 门禁：**536 项单测全绿 + ktlint 0 违规 + detekt 0 违规**（lint 后台跑）。真机验证（ghost hint 端到端 / 对账收尾 / epoch 轮换）待 USB，走查点见 §5。
+- **2026-11-14：全面对标官方 v3.18.1（协议核查轮，无代码变更）**——三方材料对标（线上 `/remote/v4` 构建逆向 + 官方源码 v3.18.1 浅克隆 `_tmp/zcode-upstream`（含 `docs/web-remote-control/` 17 篇设计文档，后已 `fetch --unshallow` 补全历史）+ 本 App beta56），产出全面对标报告与 Gap 清单 G1-G6（落卡见 §5）。`tools/protocol_sync_check.py` 对 v3.18.1 全量 diff：11 契约文件仅 3 变化（`relay-v2-pairing.md` / `web-remote-control-architecture.md` 稳定性细化文档 + `webRemoteControlEntry.ts` 会话竞态修复——JWT+session revision 双重匹配防账号切换后旧响应污染新会话，App 侧 single-flight+401 终态已覆盖同类面，列为参考项），**wire 契约与 `zcode_type` 消息集合零漂移**。专项核验：`packages/shared/src/web-remote-control.ts`（不在 WATCHED）v3.17.2→v3.18.1 diff 为空，官方 bootstrap wire 早已不发 `displayStatus`（App 有任务事件+phase 运行时推导兜底，`BridgeFrames.kt:225/244`），pinned 走 V2 Controller `membership.pinned`（`BridgeFrames.kt:174` 设计已回避）。基线 `research/protocol-sync/snapshot.json` 已刷至 v3.18.1（HEAD `c5904686ea83`），人工复核通过。
 - **2026-11-13：1.0 发布硬门①②双双收官**——① 出站大 RPC 物理分片（RpcChannel，官方等长切分算法经入站对拍 fixture 实证，outboundSlices 纯函数 7 项单测）；② **A-5 逻辑分帧重组**（WireReassembler，**从官方镜像 wire-reassembly.ts 逐规则转译**——推翻「需等真实样本」的旧判断，官方发送端已开源可直接核对；15 项单测逐规则覆盖，错误码 proto.frameAssembly* 全对齐）。ConversationChannel 的 fragment 分支从「显式失同步死循环」改为正常重组，**根治大会话同步不上问题**。真机走查出站分片待 USB（传 >1MiB 附件）。门禁：单测 495 全绿。
 - **2026-11-12 发布 v0.5.0-beta56**（versionCode 68）——对标官方 v3.17.2 收官版本。含协议对齐（旧 SID 自动接续 / 终态 SSOT）+ 三项能力（置顶 / 未读 / 连接分段进度）+ 六项扩展（查找 / 刷新 / 工作区 / 平板双栏 / 终端 / 推送 schema）；真机走查通过并修出 3 处只在真机可见的布局缺陷。门禁：单测 473、ktlint 0、detekt 0、lint 0 error。
 - **2026-11-12：对标后续 6 项功能全落地**（未发版）——会话内查找 / 下拉刷新 / 新建工作区 / 平板双栏 / 交互式终端 / 推送 schema 固化。工程门禁：JVM 单测 **473 全绿**、ktlint 0 违规、detekt 0 issue、lint **0 error**、assembleDebug 通过。**6 项均未真机走查**（USB 未连接），走查卡见 §5。
@@ -538,6 +540,28 @@ lint 双变体 0 error、detekt、ktlint 0 违规、assembleDebug/Release 通过
   故真机侧改用不依赖 Espresso 注入的仪器化测试（如 `ConversationDraftInstrumentedTest`）取证。
 
 ## 5. 接力开发指引与待办（Next Steps / Backlog）
+
+### 对标官方 v3.18.1 的 Gap 待办卡（2026-11-14 全面核查产出，全部经 App 源码 grep 验证 0 命中）
+
+> **落地状态（2026-11-14 更新，当日全部执行完毕、除真机验证）**：
+> G1 ✅ 裁剪容忍+提示（补拉方法不在桥上，如实标注）｜G2 ⏸ 暂缓（官方 V4 帧无 owner 信号、官方消费端未落地，文案预留）｜
+> G3 ✅ 策略层+RPC+ghost hint（能力位门禁）｜G4 ✅ 账本+对账收尾+定向文案｜G5 ✅ BridgeCapabilities 严格口径｜
+> G6 ✅ CAS + 发布器接线｜P2①②③ ✅ 重连/心跳/含 KICKED 语义全对齐｜P2④ ⏸ 不适用（原生 FGS 无浏览器冻结，依据归档）｜
+> P2⑤ ✅ 每 reason 2 条引导。真机待验：ghost hint 端到端（需桌面 v3.18.1 且输入预测开启）、对账收尾（重启 CLI 后重连）、
+> epoch 轮换、KICKED 自愈路径、新退避曲线观感。门禁：536 单测全绿 / ktlint 0 / detekt 0。
+
+| # | 项 | 建议档期 | 要点与依据 |
+|---|---|---|---|
+| **G1** | 快照 200KB 预算 + bodyRefs 按需补拉 | 下个迭代（首项） | 官方 `docs/web-remote-control/snapshot-byte-budget.md` 即实现规格书：`messageLimit=10` + `byteBudget=200KB`，字段级裁剪（assistant content/thought 预览 `min(32KB, max(2KB, budget/3))`；tool input>1KB→256B、output>4KB→512B、raw>2KB→256B；fileChanges>8KB→4KB），`bodyRefs` 携带字段名+完整正文 hash+持久化原始下标，`getTaskSnapshotBody({refId})` hash 校验通过后替换预览。不做预算，大回复直接撞 1MiB 物理帧墙；做了可把本地「最近 200 行缓存」升级为「预览+点按补全」 |
+| **G2** | 单 owner 流渲染过滤 | 下个迭代（次项） | 官方 `single-owner-stream-rendering.md`：prompt 发送端带 `clientId`，`task_stream_mirror_batch` 携带 `ownerClientId`，非 owner 端过滤正文/thought/tool chunk（UI 显示「另一台设备正在发送消息…」）；**白名单永不过滤**：permission_request / elicitation_request / 对应 response / task_complete / task_error / snapshot invalidation。场景：桌面与 App 同时看同一会话时的交错尾块 |
+| **G3** | 输入预测（ghost hint） | 体验档 | 官方 v3.18.1 默认开启；协议 `packages/shared/src/zcode-protocol-v4/input-prediction/contract.ts` + `docs/web-remote-control/mobile-input-prediction.md`：`conversationInputPredictionV4`，候选 ≤3 按 confidence 降序、门槛 0.8、text ≤40 UTF-16 单行、draft ≤4000、请求带 revision+requestId 回包不匹配即丢弃；模型 20s / 手机建议 25s 超时、续写防抖 600-800ms；能力位 `hello.capabilities.inputPrediction === true` 严格判断（老桌面缺字段=禁用） |
+| **G4** | 任务实时同步对账 | 下个迭代 | 官方 `task-realtime-sync.md`：UI 保留 24h pending-command 记录（敏感 interaction 只存 digest）+ `commands/query` 每批 ≤64、settled LRU 512/session、single-flight；CLI restart 后未入 transcript 的 admitted input 明确返回 `fault.command.inputDiscardedOnRestart`。对接 App 的发送 pending 气泡与 `UserFacingError` 体系 |
+| **G5** | 能力协商严格化 | 下个 beta | bridge-ready 显式声明 `capabilities.windowProjectDirectory` 等能力位；**声明支持却缺服务必须报错，禁止静默降级**；`hello.capabilities.* === true` 严格判断。接入点：`RpcChannel` 握手与 `ProtocolLimits.kt` 同级 SSOT |
+| **G6** | 未读清除 CAS + mobileTaskView 上报 | 下个 beta | 官方未读清除为原子 compare-and-clear（快照 `unreadAt` 必须携带 `expectedUnreadAt`，迟到旧点击不得覆盖新未读，落点参考 `webRemoteControlTaskRead.ts`）；`mobileTaskView` epoch/seq 单调发布者、传输恢复后重申（`webRemoteControlTaskView.ts`）。App 多入口（通知/列表/详情）并发清未读时防误清 |
+| P2 | 稳定性参数对齐 | 随任一 beta | ① 重连打散窗口：首连 0~1.5s 随机（两端共用，防同时醒来打爆中继，`packages/shared/src/web-remote-relay/domain/retry.ts`）；② KICKED 首次 2~5s 随机重连、60s 内第二次→终态 `session-conflict`；③ 心跳口径：官方 5s±1s + ACK watchdog 15s（App 现为 30s 单向失活）；④ suspended 期 raw 帧准入（hidden 后同 socket rpc-frame 只交当前 bridge adapter，出站只放行 ACK，防回前台序号断档重建桥）；⑤ 失败页 11 种 reason 各配 2 条「下一步」引导（官方 `webRemoteControlFailureScreen.tsx` tone 分级）可升级 App 终态通知为结构化卡片 |
+| 参考 | 官方会话竞态修复 | 无需跟进 | `webRemoteControlEntry.ts` v3.18.1 新增 `getSessionRevision()`+`subscribeSessionChange()`（JWT+revision 双匹配）；App 侧 single-flight 令牌（按 `baseUrl\|role\|jwt` 键控）+ 401→AUTH_FAILED 终态已覆盖同类竞态面，V2 登录宿主为原生 WebView 与 Web 页面生命周期不同 |
+
+**素材索引**：官方源码完整克隆在 `F:\AI\Zcode\_tmp\zcode-upstream`（main @ v3.18.1，已 unshallow，可作长期 diff 基线）；本轮对标报告（逐维度表格 + 官方设计哲学 8 条）见 2026-11-14 会话记录；官方三篇精读要点（snapshot-byte-budget / task-realtime-sync / mobile-stability-analysis）已提炼进上表对应行。
 
 ### 六项新功能真机走查结果（2026-11-12，Xiaomi 15 Pro / USB）
 

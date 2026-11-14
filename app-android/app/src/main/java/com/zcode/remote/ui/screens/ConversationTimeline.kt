@@ -291,6 +291,16 @@ private fun AssistantText(row: ConversationRow) {
             modifier = Modifier.fillMaxWidth(),
             textColor = MaterialTheme.colorScheme.onSurface,
         )
+        // G1 快照预算裁剪提示（bodyRefs 在场 = 正文/思考被 200KB 预算裁剪；补拉方法不在桥上，
+        // 如实提示完整正文在电脑端查看）
+        if (row.bodyTruncated) {
+            Spacer(Modifier.height(4.dp))
+            Text(
+                text = stringResource(R.string.snapshot_body_truncated, row.text?.length?.toString() ?: "0"),
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
         if (row.isStreaming) {
             Spacer(Modifier.height(ZCodeDimens.GapInline))
             Row(verticalAlignment = Alignment.CenterVertically) {
@@ -517,6 +527,14 @@ private fun ToolCallRow(
         chevronColor = tone,
     ) {
         ToolBody {
+            // G1 快照预算裁剪提示（snapshotRefs 在场 = 工具 input/output/raw 被裁剪）
+            if (row.toolTruncated) {
+                Text(
+                    text = stringResource(R.string.snapshot_tool_truncated),
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
             toolDiff?.let {
                 com.zcode.remote.ui.components
                     .DiffBlock(it)
