@@ -2,6 +2,13 @@
 
 ## [Unreleased]
 
+### 新增
+
+- **fastlane/metadata 商店元数据基础结构**：`fastlane/metadata/android/` 新增 en-US / zh-CN 双
+  locale 的 title、short/full description 与 versionCode 65–69（beta53–beta57）逐版 changelog，
+  内容取自 CHANGELOG 各版要点——F-Droid / 商店提交的前置结构就绪，README Releases 段同步说明。
+  （`fastlane/`、`README.md`）
+
 ## v0.5.0-beta57（2026-11-15）· 对标官方 v3.18.1——六项协议面能力与稳定性口径全对齐
 
 > 全面对标官方 `zai-org/ZCode` v3.18.1（`docs/web-remote-control/` 17 篇设计文档逐篇精读 + 源码
