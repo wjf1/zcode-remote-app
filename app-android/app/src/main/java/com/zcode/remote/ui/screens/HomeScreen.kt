@@ -157,6 +157,34 @@ fun HomeScreen(
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                 }
+                // P2⑦（2026-11-15 实测发现）：终态「下一步」引导必须随状态条可见——
+                // 空态版引导在「有缓存列表」场景永远不出现（离线秒开让列表非空）。
+                // 紧凑单行省略，点击整条跳设置页。
+                if (state is RelayState.Failed) {
+                    val steps = FailureGuidance.steps(state.reason)
+                    if (steps.isNotEmpty()) {
+                        // joinToString 非 inline，lambda 内不能调 @Composable 的 asString——
+                        // 用 inline 的 forEach 逐条 Text
+                        Column(
+                            modifier =
+                                Modifier
+                                    .fillMaxWidth()
+                                    .clip(RoundedCornerShape(8.dp))
+                                    .clickable { onNavigateToSettings() }
+                                    .padding(horizontal = 2.dp, vertical = 1.dp),
+                        ) {
+                            steps.forEach { step ->
+                                Text(
+                                    text = step.asString(),
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis,
+                                )
+                            }
+                        }
+                    }
+                }
             }
             Button(
                 onClick = { showCreateDialog = true },

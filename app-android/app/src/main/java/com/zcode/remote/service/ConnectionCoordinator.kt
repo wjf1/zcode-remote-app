@@ -714,7 +714,19 @@ class ConnectionCoordinator(
     private fun scheduleHandshakeRetry() {
         val s = convRepo.subscribedSession ?: return
         if (handshakeRetryCount >= MAX_HANDSHAKE_RETRIES) {
-            ZLog.w(TAG, "握手自动重订已用尽（$handshakeRetryCount 次），停在失败态等用户重试")
+            // P2⑥（2026-11-15 双终端实测）：重试用尽 = 桥大概率已被夺/失效——表面 Ready
+            // 但桥内 RPC（hello）无应答（socket 活、桥层死），既有触发点只认
+            // BridgeState.Failed，这种「假 Ready」永远不重开 → 卡死靠进程重启。
+            // 改为：复用既有 scheduleBridgeReopen（1s/2s/4s 上限 3 次有界），并把重订
+            // 预算重置后延迟重订一次，形成「重开桥 → 重订」的有界自愈循环。
+            ZLog.w(TAG, "握手自动重订已用尽（$handshakeRetryCount 次）——主动重开工作区桥（P2⑥）")
+            Diagnostics.record(DiagEventCode.CONV_HANDSHAKE_RETRY, "exhausted -> bridge reopen")
+            handshakeRetryCount = 0
+            scheduleBridgeReopen()
+            RemoteConnectionManager.scope.launch {
+                kotlinx.coroutines.delay(2_500L)
+                if (convRepo.subscribedSession != null) scheduleHandshakeRetry()
+            }
             return
         }
         handshakeRetryCount += 1

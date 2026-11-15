@@ -605,6 +605,12 @@ class RelayClient(
         if (reason in TERMINAL_FAILURES) {
             terminalFailed = true
             retryPolicy.reset()
+            // P2⑦（2026-11-15 实测发现）：终态即关 socket——存活 WS 会收到后续
+            // `pair_status matched` 静默绕过终态（实测：桌面重开远控后后台 App 零操作
+            // 复活 Paired；AUTH_FAILED/KICKED 60s 窗口场景尤其危险）。「重开远控零操作
+            // 恢复」的用户价值改由下次冷启动/手动连接走完整握手重验证来保留。
+            runCatching { socket?.close(1000, "terminal-failed") }
+            socket = null
         }
         _state.value = RelayState.Failed(reason, message)
     }
@@ -737,14 +743,17 @@ class RelayClient(
         ZLog.w(TAG, "kicked: 首次接管（可能为 relay 状态误报），${delayMs}ms 后重连自愈；60s 内再次接管才判终态")
         stopHeartbeat()
         cancelOfflineGrace()
-        // 作废既有重连调度与 socket：KICKED 的 2~5s 自愈延迟优先于任何普通退避
-        // （迟到 onClosed 的 scheduleReconnect 由「已有调度」守卫挡住）
+        // 作废既有重连调度：KICKED 的 2~5s 自愈延迟优先于任何普通退避。
+        // P2⑥ 竞态修复（2026-11-15 实测）：close() 触发的 onFailure/onClosed 会异步抢在
+        // 本函数 scheduleReconnect 之前建一条普通退避调度（480ms 与 4719ms 双调度并存，
+        // 靠 onNetworkAvailable 抢跑掩盖）——改为**先建 KICKED 调度再关 socket**，
+        // 迟到的 onClosed/onFailure 被「已有调度」守卫正确挡住。
         reconnectJob?.cancel()
         reconnectJob = null
-        runCatching { socket?.close(1000, "kicked") }
-        socket = null
         _state.value = RelayState.Connecting
         scheduleReconnect(delayMs)
+        runCatching { socket?.close(1000, "kicked") }
+        socket = null
     }
 
     private fun scheduleReconnect(fixedDelayMs: Long? = null) {
