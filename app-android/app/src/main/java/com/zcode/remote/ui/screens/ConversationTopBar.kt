@@ -98,7 +98,10 @@ internal fun ConversationTopBar(
             Text(
                 text =
                     listOfNotNull(
-                        statusLabel(status),
+                        // 2026-11-15 真机走查修复：statusLabel 返回 UiText，四段中唯独这里
+                        // 漏了 asString()，joinToString 会把 data class 的 toString()
+                        // 直出成「Res(id=2131492988, args=[])」显示在副标题首位。
+                        statusLabel(status).asString(),
                         meta.phase?.let { phaseLabel(it).asString() },
                         meta.totalCount?.let { stringResource(R.string.topbar_row_count, it) },
                         approvalsCount.takeIf { it > 0 }?.let { stringResource(R.string.topbar_approvals_count, it) },
