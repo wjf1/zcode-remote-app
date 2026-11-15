@@ -2,6 +2,15 @@
 
 ## [Unreleased]
 
+### 变更
+
+- **Markdown 渲染美感对齐官方（用户真机反馈驱动）**：① **碎行根治**——paragraph 改用库的
+  `buildMarkdownAnnotatedString` 把 inline 子树（text/strong/em/code/换行）合并为单个
+  AnnotatedString 自然流式换行（官方 Streamdown 即文本流语义；原实现逐 text 节点独立 Text，
+  源内换行被切碎）；② **无序列表悬挂圆点**——自定义 marker（7dp 圆点、onSurfaceVariant 45%
+  透明，对齐官方 subtlest disc + 左缩进）；③ **行高 1.75**（原 22/14≈1.57）；④ **标题阶梯对齐**：
+  h1 18/h2 16/h3·h4 14（原整体偏大两档）；⑤ **链接去下划线**；⑥ **inline code 字号 12sp**。
+  数值出处：官方 `message.tsx` / `markdown-list.tsx` / `styles.css`。
 ### 新增
 
 - **fastlane/metadata 商店元数据基础结构**：`fastlane/metadata/android/` 新增 en-US / zh-CN 双
