@@ -16,7 +16,9 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -40,22 +42,21 @@ import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 import com.mikepenz.markdown.compose.components.MarkdownComponentModel
 import com.mikepenz.markdown.compose.components.markdownComponents
 import com.mikepenz.markdown.compose.elements.MarkdownBlockQuote
 import com.mikepenz.markdown.compose.elements.MarkdownCodeBlock
 import com.mikepenz.markdown.compose.elements.MarkdownCodeFence
-import com.mikepenz.markdown.compose.elements.MarkdownParagraph
+import com.mikepenz.markdown.compose.elements.MarkdownListItems
 import com.mikepenz.markdown.m3.Markdown
 import com.mikepenz.markdown.m3.markdownColor
 import com.mikepenz.markdown.m3.markdownTypography
 import com.mikepenz.markdown.model.ImageData
 import com.mikepenz.markdown.model.ImageTransformer
 import com.mikepenz.markdown.model.PlaceholderConfig
+import com.mikepenz.markdown.utils.buildMarkdownAnnotatedString
 import com.zcode.remote.R
 import com.zcode.remote.ui.theme.LocalZCodeDark
 import com.zcode.remote.ui.theme.ZCodeDimens
@@ -114,22 +115,28 @@ fun MarkdownView(
             dividerColor = borderColor,
         )
 
-    val body = TextStyle(fontSize = ZCodeType.Base, lineHeight = ZCodeType.BodyLineHeight)
+    // 2026-11-15 美感对齐官方 Streamdown（数值取官方 message.tsx / styles.css 实测）：
+    // 正文行高 1.75、标题阶梯 h1 18/h2 16/h3·h4 14、链接无下划线、inline code 12sp。
+    val body =
+        TextStyle(
+            fontSize = ZCodeType.Base,
+            lineHeight = ZCodeType.Base * 1.75f,
+        )
     val typography =
         markdownTypography(
-            h1 = TextStyle(fontSize = 22.sp, lineHeight = 30.sp, fontWeight = ZCodeType.SemiBold),
-            h2 = TextStyle(fontSize = ZCodeType.Xl, lineHeight = 26.sp, fontWeight = ZCodeType.SemiBold),
-            h3 = TextStyle(fontSize = ZCodeType.Lg, lineHeight = 24.sp, fontWeight = ZCodeType.SemiBold),
-            h4 = TextStyle(fontSize = ZCodeType.Base, lineHeight = 22.sp, fontWeight = ZCodeType.SemiBold),
-            h5 = TextStyle(fontSize = ZCodeType.Caption, lineHeight = 20.sp, fontWeight = ZCodeType.SemiBold),
-            h6 = TextStyle(fontSize = ZCodeType.Sm, lineHeight = 18.sp, fontWeight = ZCodeType.SemiBold),
+            h1 = TextStyle(fontSize = ZCodeType.Xl, lineHeight = ZCodeType.Xl * 1.75f, fontWeight = ZCodeType.SemiBold),
+            h2 = TextStyle(fontSize = ZCodeType.Lg, lineHeight = ZCodeType.Lg * 1.75f, fontWeight = ZCodeType.SemiBold),
+            h3 = TextStyle(fontSize = ZCodeType.Base, lineHeight = ZCodeType.Base * 1.75f, fontWeight = ZCodeType.SemiBold),
+            h4 = TextStyle(fontSize = ZCodeType.Base, lineHeight = ZCodeType.Base * 1.75f, fontWeight = ZCodeType.SemiBold),
+            h5 = TextStyle(fontSize = ZCodeType.Base, lineHeight = ZCodeType.Base * 1.75f, fontWeight = ZCodeType.Medium),
+            h6 = TextStyle(fontSize = ZCodeType.Base, lineHeight = ZCodeType.Base * 1.75f),
             text = body,
             paragraph = body,
             ordered = body,
             bullet = body,
             list = body,
             quote = body,
-            link = body.copy(textDecoration = TextDecoration.Underline),
+            link = body.copy(textDecoration = null),
             code =
                 TextStyle(
                     fontFamily = FontFamily.Monospace,
@@ -139,8 +146,8 @@ fun MarkdownView(
             inlineCode =
                 TextStyle(
                     fontFamily = FontFamily.Monospace,
-                    fontSize = ZCodeType.Caption,
-                    lineHeight = 20.sp,
+                    fontSize = ZCodeType.Sm,
+                    lineHeight = ZCodeType.Base * 1.75f,
                 ),
         )
 
@@ -153,9 +160,33 @@ fun MarkdownView(
             // `MARKDOWN_FILE > PARAGRAPH > IMAGE`（`PARAGRAPH` 被 `components.paragraph`
             // 消费后不再下钻）——故 `components.image` 在真实文档里**永不触发**。
             // 段落（含列表项内的段落）与引用块才是图片真正落点。
+            // 2026-11-15 美感对齐官方（G 美感）：官方 Streamdown 是 React 文本流——inline
+            // 子树（text/strong/em/code/换行）自然合并；而库默认把每个 text 节点渲染成
+            // 独立 Text，源内换行被切成碎行。改用官方推荐的 buildMarkdownAnnotatedString
+            // 合并为单个 AnnotatedString（inline code/链接 SpanStyle 由 annotatorSettings
+            // 注入，链接可点性与 SafeUriHandler 白名单保持）。
             paragraph = { model ->
-                MarkdownParagraph(model.content, model.node, style = model.typography.paragraph)
+                val styled =
+                    buildAnnotatedString {
+                        // 0.27 为两参扩展函数（inline 样式取自 LocalMarkdownTypography）
+                        buildMarkdownAnnotatedString(model.content, model.node)
+                    }
+                androidx.compose.material3.Text(styled)
                 imageUrlsIn(model.node, model.content).forEach { MarkdownImageNotice(it) }
+            },
+            // 无序列表悬挂缩进：官方 ul 为 disc 圆点（subtlest 色）+ 内容左缩进 20px；
+            // 库默认 bullet 文本与内容分离无对齐。用自定义 marker（6dp 圆点）替代符号文本。
+            unorderedList = { model ->
+                MarkdownListItems(model.content, model.node) { _, _ ->
+                    androidx.compose.foundation.layout.Box(
+                        modifier =
+                            androidx.compose.ui.Modifier
+                                .padding(top = 12.dp)
+                                .size(7.dp)
+                                .clip(CircleShape)
+                                .background(MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.45f)),
+                    )
+                }
             },
             blockQuote = { model ->
                 MarkdownBlockQuote(model.content, model.node, style = model.typography.quote)
