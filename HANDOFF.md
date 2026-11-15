@@ -17,10 +17,13 @@
   （Kotlin + Jetpack Compose）。逆向复用官方中继与配对协议，提供更强的通知、锁屏审批、
   流式会话与移动端操控体验。
 - **仓库**：<https://github.com/wjf1/zcode-remote-app>（owner：wjf1）
-- **当前版本**：`0.5.0-beta55`（versionCode 67，T9 设置页「粘贴令牌」入口，单测声明 383 / 执行 421）。
-- **上一发布版**：`0.5.0-beta54`（versionCode 66，T10 令牌失败分层 + T11 心跳单向失活）。
-- **更早发布版**：`0.5.0-beta53`（versionCode 65，commit `7ec3e6c`，tag `v0.5.0-beta53`，
-  Release 含签名 APK/SHA256SUMS/证书指纹/SBOM，prerelease；CI/CodeQL/Release 三工作流该提交全绿）。
+- **当前版本**：`0.5.0-beta57`（versionCode 69，tag `v0.5.0-beta57`，对标官方 v3.18.1——六项协议面
+  能力与稳定性口径全对齐；单测 536 全绿，Release 含签名 APK/SHA256SUMS/证书指纹/SBOM）。
+- **上一发布版**：`0.5.0-beta56`（versionCode 68，对标官方 v3.17.2 收官——协议对齐 + 置顶/未读/
+  连接分段进度 + 六项能力，真机走查通过）。
+- **更早发布版**：`0.5.0-beta55`（versionCode 67，T9 设置页「粘贴令牌」入口）/ `0.5.0-beta54`
+  （versionCode 66，T10 令牌失败分层 + T11 心跳单向失活）/ `0.5.0-beta53`（versionCode 65，V2
+  Controller 通道适配，真机验收通过）。
 - **✅ 推送已恢复（2026-10-25）**：GitHub 代理 7900 恢复监听，`v0.5.0-beta49/50/52/53` 各 tag
   与 master 已全部推送；Release 由 CI 发布链自动产出并经人工核验（标题与 tag subject 一致、
   正文与 CHANGELOG 对齐、prerelease、四资产齐全）。
