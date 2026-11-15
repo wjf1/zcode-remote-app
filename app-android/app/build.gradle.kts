@@ -120,8 +120,12 @@ android {
         // versionCode 68：beta56 —— 对标官方 v3.17.2 收官：旧 SID 自动接续 + task-pin 置顶 +
         //                            未读蓝点 + 连接分段进度；再补六项能力（会话内查找 / 下拉刷新 /
         //                            新建工作区 / 平板双栏 / 交互式终端 / 推送 schema 固化）
-        versionCode = 68
-        versionName = "0.5.0-beta56"
+        // versionCode 69：beta57 —— 全面对标官方 v3.18.1：输入预测 ghost hint + 已提交命令
+        //                            对账（queryConversationCommandsV4）+ 能力协商严格化 +
+        //                            未读 CAS + mobileTaskView 上报 + 快照预算裁剪容忍 +
+        //                            终态「下一步」引导 + 重连/心跳/KICKED 口径全对齐（P2①②③⑥⑦）
+        versionCode = 69
+        versionName = "0.5.0-beta57"
         // 仪器化渲染回归网（src/androidTest）用 androidx.test 默认 runner。
         // 只在模拟器/真机上跑；CI runner 无设备，故 ci.yml 不接（见 HANDOVER §6.1 回归网）。
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
