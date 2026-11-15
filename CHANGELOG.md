@@ -72,6 +72,13 @@
   8.13，8.7 会在 analyze 阶段 `Failed to apply plugin` 必败，CodeQL 连续三轮失败且
   SARIF 上传失败。（`.github/workflows/codeql.yml`）
 
+### 修复
+
+- **会话页顶栏副标题 UiText 直出缺陷（2026-11-15 真机走查修复）**：副标题四段拼接中
+  `statusLabel(status)` 是唯一漏 `.asString()` 的一段，`joinToString` 直出 data class 的
+  `toString()`——副标题首位显示「Res(id=2131492988, args=[])」而非「已连接」。
+  修复后真机确认显示「已连接 · 已完成 · 共 48 行」。（`ConversationTopBar.kt`）
+
 ## v0.5.0-beta56（2026-11-12）· 对标官方 v3.17.2 收官——协议对齐、置顶/未读/连接进度与六项能力
 
 > 对标官方 `zai-org/ZCode` v3.17.2：先落地协议对齐与三项能力（旧 SID 自动接续 / task-pin 置顶 /
