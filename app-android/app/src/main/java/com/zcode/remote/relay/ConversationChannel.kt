@@ -929,8 +929,12 @@ class ConversationChannel(
             onResult(
                 when (reply) {
                     is RpcChannel.RpcReply.Err -> {
-                        // G4：ack 到达即结算（失败也是裁决——除「CLI 重启丢弃」外不再保留）
-                        ledger.settle(commandId)
+                        // G4（2026-11-15 修正）：只有「确定性裁决」才结算。连接类失败
+                        // （rpc 超时 / channel reset / bridge 重建）= 结果未知——官方语义
+                        // 「无法确认是否执行 ≠ 执行失败」，保留 pending 给订阅恢复后的
+                        // commands/query 对账；否则 failPending/rpc 超时会清掉账本，
+                        // flush 永远空转，CLI 重启丢弃场景也漏提示。
+                        if (!isUnknownOutcome(reply)) ledger.settle(commandId)
                         Result.failure(illegalStateFromErr(reply))
                     }
                     is RpcChannel.RpcReply.Ok ->
@@ -957,28 +961,36 @@ class ConversationChannel(
      */
     private fun commandFailure(ack: ResolveResult.Failed): IllegalStateException = illegalStateFromCode(ack.code) { ack.message }
 
-    /** RPC Err 形态的同类映射（从 `raw` 提取 fault code；[UserFacingError] 的取码口径）。 */
-    private fun illegalStateFromErr(reply: RpcChannel.RpcReply.Err): IllegalStateException {
-        val root = reply.raw as? JsonObject
-        val code =
-            root?.let { obj ->
-                listOf("code", "reasonCode", "errorCode", "reason")
-                    .firstNotNullOfOrNull { k ->
-                        obj[k]
-                            ?.let { runCatching { it.jsonPrimitive.content }.getOrNull() }
-                            ?.takeIf { it.isNotBlank() }
-                    }
+    /**
+     * G4：RPC Err 是否为「结果未知」类（官方 commands/query 的 unknown 同义）：rpc 超时 /
+     * channel reset / bridge 重建 / 桥未就绪——这些情况下命令可能已被 CLI 接受，保留
+     * pending 对账；其余（服务端明确拒绝）为确定性裁决，结算。
+     */
+    private fun isUnknownOutcome(reply: RpcChannel.RpcReply.Err): Boolean =
+        listOf("timeout after", "channel reset", "bridge re-established", "bridge not ready")
+            .any { reply.message.contains(it, ignoreCase = true) } ||
+            faultCodeOf(reply.raw) == "fault.command.queryUnavailable"
+
+    /** 从 RPC Err 原始 JSON 提取 fault code（直挂与包在 `fault` 里两种形态；可空）。 */
+    private fun faultCodeOf(raw: JsonElement?): String? {
+        val root = raw as? JsonObject ?: return null
+        val direct =
+            listOf("code", "reasonCode", "errorCode", "reason").firstNotNullOfOrNull { k ->
+                root[k]
+                    ?.let { runCatching { it.jsonPrimitive.content }.getOrNull() }
+                    ?.takeIf { it.isNotBlank() }
             }
-                ?: root?.get("fault")?.asObj()?.let { fault ->
-                    listOf("code", "reasonCode")
-                        .firstNotNullOfOrNull { k ->
-                            fault[k]
-                                ?.let { runCatching { it.jsonPrimitive.content }.getOrNull() }
-                                ?.takeIf { it.isNotBlank() }
-                        }
-                }
-        return illegalStateFromCode(code) { reply.message }
+        if (direct != null) return direct
+        val fault = root["fault"] as? JsonObject ?: return null
+        return listOf("code", "reasonCode").firstNotNullOfOrNull { k ->
+            fault[k]
+                ?.let { runCatching { it.jsonPrimitive.content }.getOrNull() }
+                ?.takeIf { it.isNotBlank() }
+        }
     }
+
+    /** RPC Err 形态的同类映射（从 `raw` 提取 fault code；[UserFacingError] 的取码口径）。 */
+    private fun illegalStateFromErr(reply: RpcChannel.RpcReply.Err): IllegalStateException = illegalStateFromCode(faultCodeOf(reply.raw)) { reply.message }
 
     /** G4：命令失败的定向文案异常（[uiText] 资源串供 UI 直接展示；[faultCode] 为英文诊断码）。 */
     class CommandFailureException(
