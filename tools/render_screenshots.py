@@ -441,6 +441,99 @@ LOCK_TOP = (9, 10, 15)
 LOCK_BOTTOM = (24, 24, 34)
 OUT_DIR = "F:/AI/Zcode/zcode-remote-app/docs/screenshots"
 
+
+
+def render_input_prediction():
+    """beta57：输入预测 ghost hint（G3）——会话页输入栏上方的候选续写行。"""
+    im = Image.new("RGBA", (W, H), BG_COLOR)
+    draw = ImageDraw.Draw(im)
+    draw_status_bar(draw)
+
+    draw.text((48, 126), "←", fill=TEXT_WHITE, font=font_headline)
+    draw.text((116, 116), "PPT 插件选型与集成", fill=TEXT_WHITE, font=font_title)
+    draw.text((116, 172), "已连接 · 已完成 · 共 48 行", fill=STATUS_ONLINE, font=font_caption)
+
+    cy = 230
+    user_bubble = [W - 720, cy, W - 48, cy + 130]
+    draw.rounded_rectangle(user_bubble, radius=24, fill=PRIMARY)
+    draw.text((W - 680, cy + 34), "帮我评估一下主流 PPT 插件的优劣", fill=ON_PRIMARY, font=font_body_bold)
+    cy += 164
+
+    asst_box = [48, cy, W - 48, cy + 700]
+    draw_card(draw, asst_box, fill=SURFACE_COLOR, outline=BORDER_COLOR)
+    ay = cy + 36
+    draw.rounded_rectangle([80, ay, W - 80, ay + 80], radius=14, fill=(42, 38, 56))
+    draw.ellipse([110, ay + 32, 126, ay + 48], fill=TRAJECTORY_PURPLE)
+    draw.text((144, ay + 24), "思考过程 (214 字符) · 耗时 1.8s", fill=TRAJECTORY_PURPLE, font=font_body_bold)
+    ay += 112
+    draw.text((80, ay), "评估完成。综合功能覆盖、生态与价格，", fill=TEXT_WHITE, font=font_body)
+    ay += 52
+    draw.text((80, ay), "推荐优先集成两个候选插件，理由如下……", fill=TEXT_WHITE, font=font_body)
+
+    # G3 ghost hint 行：输入栏上方，候选「接在草稿后面的文本」
+    hint_y = 2130
+    draw.rounded_rectangle([48, hint_y, W - 48, hint_y + 64], radius=12, fill=(30, 34, 48))
+    draw.ellipse([76, hint_y + 22, 96, hint_y + 42], fill=PRIMARY)  # ✦ 缺字，改矢量圆点
+    draw.text((116, hint_y + 14), "并输出对比表格", fill=(148, 163, 184), font=font_body)
+    draw.text((W - 220, hint_y + 14), "点击采用", fill=PRIMARY, font=font_caption_bold)
+
+    # 输入栏：药丸框 + 草稿「帮我评估一下主流 PPT 插件的优劣」
+    bar_y = 2200
+    draw.rounded_rectangle([48, bar_y, W - 48, bar_y + 130], radius=64, fill=SURFACE_COLOR, outline=BORDER_COLOR)
+    draw.text((110, bar_y + 46), "帮我评估一下主流 PPT 插件的优劣", fill=TEXT_WHITE, font=font_body)
+    draw_send(draw, W - 140, bar_y + 65, PRIMARY, 15)
+
+    draw_nav_bar(draw, active_tab=0)
+    im.convert("RGB").save("docs/screenshots/app-input-prediction.png", optimize=True)
+    print("app-input-prediction.png generated")
+
+
+def render_terminal_guidance():
+    """beta57：终态失败「下一步」引导（P2⑦b）——顶部状态条下方的两条建议 + 离线缓存列表照常。"""
+    im = Image.new("RGBA", (W, H), BG_COLOR)
+    draw = ImageDraw.Draw(im)
+    draw_status_bar(draw)
+
+    draw.text((48, 126), "ZCode 会话", fill=TEXT_WHITE, font=font_headline)
+    # 顶部状态条：红点 + 「设备名 · 异常」
+    dot_y = 236
+    draw.ellipse([48, dot_y, 72, dot_y + 24], fill=STATUS_ERROR)
+    draw.text((88, dot_y - 8), "DESKTOP-DVFFB09 · 异常", fill=TEXT_MUTED, font=font_body)
+
+    # P2⑦b 引导两行（状态条正下方）
+    gy = 286
+    draw.text((48, gy), "确认电脑端 ZCode 是否正在运行、是否已休眠", fill=TEXT_MUTED, font=font_caption)
+    draw.text((48, gy + 44), "电脑端恢复后 App 将按设备自动接续，无需手动操作", fill=TEXT_MUTED, font=font_caption)
+
+    # 过滤 chip 行
+    chip_y = 380
+    draw_chip(draw, [48, chip_y, 300, chip_y + 84], TEXT_MUTED, "全部 (149)")
+    draw_chip(draw, [330, chip_y, 570, chip_y + 84], PRIMARY, "运行中 (2)")
+
+    # 离线缓存列表照常显示（离线秒开）——两张卡示意
+    cards = [
+        ("检索主流PPT插件工具", "F:\AI\Zcode · glm · 已完成", "📌 置顶"),
+        ("全面对标zcode 仓库远程前端设计", "F:\AI\Zcode · glm · 运行中", "正在查看"),
+    ]
+    cy = 500
+    for title, meta, badge in cards:
+        box = [48, cy, W - 48, cy + 190]
+        draw_card(draw, box, fill=CARD_BG, outline=BORDER_COLOR)
+        draw.text((135, cy + 40), title, fill=TEXT_WHITE, font=font_body_bold)
+        tw = draw.textlength(title, font=font_body_bold)
+        if badge.startswith("📌"):
+            draw.rounded_rectangle([135 + tw + 24, cy + 48, 135 + tw + 32, cy + 76], radius=3, fill=TRAJECTORY_AMBER)
+            draw.text((135 + tw + 42, cy + 44), "置顶", fill=TEXT_MUTED, font=font_caption)
+        else:
+            draw.text((135 + tw + 24, cy + 44), badge, fill=TEXT_MUTED, font=font_caption)
+        draw.text((135, cy + 108), meta, fill=TEXT_MUTED, font=font_caption)
+        cy += 220
+
+    draw_nav_bar(draw, active_tab=0)
+    im.convert("RGB").save("docs/screenshots/app-terminal-guidance.png", optimize=True)
+    print("app-terminal-guidance.png generated")
+
+
 def draw_lock_wallpaper(draw, top=LOCK_TOP, bottom=LOCK_BOTTOM):
     for y in range(H):
         t = y / (H - 1)
@@ -573,4 +666,6 @@ if __name__ == "__main__":
     render_conversation()
     render_settings()
     render_lockscreen_approval()
+    render_input_prediction()
+    render_terminal_guidance()
     print("ALL SCREENSHOTS GENERATED SUCCESSFULLY!")

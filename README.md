@@ -122,6 +122,8 @@ ZCode 官方远程控制（`zcode.z.ai/remote`）的**原生安卓增强客户�
 | 会话工作台 | 待办与审批看板 | 沉浸式对话控制台 | 独立系统设置 |
 |:---:|:---:|:---:|:---:|
 | ![会话列表](docs/screenshots/app-sessions.png) | ![待办看板](docs/screenshots/app-approval-notification.png) | ![会话流](docs/screenshots/app-conversation.png) | ![运行中](docs/screenshots/app-working.png) |
+| ![输入预测 ghost hint](docs/screenshots/app-input-prediction.png) | ![终态失败「下一步」引导](docs/screenshots/app-terminal-guidance.png) |
+| **输入预测 ghost hint**（候选续写，点击采用） | **终态失败「下一步」引导**（离线缓存列表照常可用） |
 
 ### 里程碑状态
 
@@ -334,6 +336,8 @@ A **native Android client** for the official ZCode Remote Control relay (`zcode.
 | Sessions Workbench | Approvals Inbox | Conversation Console | Settings |
 |:---:|:---:|:---:|:---:|
 | ![Sessions](docs/screenshots/app-sessions.png) | ![Approvals](docs/screenshots/app-approval-notification.png) | ![Conversation](docs/screenshots/app-conversation.png) | ![Working](docs/screenshots/app-working.png) |
+| ![Input-prediction ghost hint](docs/screenshots/app-input-prediction.png) | ![Terminal-failure next-step guidance](docs/screenshots/app-terminal-guidance.png) |
+| **Input-prediction ghost hint** (candidate continuation, tap to accept) | **Terminal-failure next-step guidance** (offline-cached list stays usable) |
 
 ### Milestones
 
