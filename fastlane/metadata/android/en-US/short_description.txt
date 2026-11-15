@@ -1,0 +1,1 @@
+Unofficial native client for ZCode Remote: lock-screen approvals, auto-reconnect, instant offline open

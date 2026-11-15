@@ -1,0 +1,23 @@
+**Keep an eye on your Agent without your PC.**
+
+An **unofficial native Android client** for ZCode Remote Control (zcode.z.ai/remote) — Kotlin + Jetpack Compose, reusing the official relay and pairing protocol, with a stronger mobile experience than the official web version.
+
+**Key differences from the official web version:**
+
+- **Lock-screen approvals**: approve ("once" / "always" / "deny") tool-call permissions right from the notification shade, with inline replies without unlocking — the web version requires unlock + browser + navigation
+- **Auto-reconnect**: network hiccups heal automatically in under 9 seconds after recovery (official retry semantics)
+- **Instant offline open**: the last 200 lines of each conversation are cached locally — first frame at 0 ms, no waiting for the server
+- **Foreground service**: long tasks keep running while backgrounded, even on lock screen or after swiping away
+
+**More:** pinned conversations & unread badges, input-prediction ghost hints, concurrent streaming for multiple sessions, command ledger reconciliation (inputs discarded by a desktop restart are surfaced clearly instead of silently dropped), dark mode.
+
+**Privacy & data:**
+
+- The client **uploads nothing to any server**: no telemetry, no analytics, no accounts, no ads
+- Pairing credentials stay on device: AES-256-GCM + Android Keystore; logs are sanitized, conversation bodies never touch disk
+- Diagnostics are exported manually only — there is no automatic upload channel in the app
+- Honest boundary: traffic still goes through the official relay (same path as the official web version)
+
+**Permissions:** notifications (lock-screen approvals), foreground service (keep-alive), network access. This app is a client for your own ZCode account — all actions happen inside your own account.
+
+⚠️ **Disclaimer**: unofficial third-party client, not affiliated with or endorsed by ZCode; reuses official protocols via reverse engineering, which may break on protocol changes. Evaluate risks yourself. Open source under the MIT license — source code and protocol docs on GitHub.

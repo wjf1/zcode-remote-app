@@ -1,0 +1,1 @@
+Aligned with official v3.17.2: protocol parity, pinned conversations, unread badges, connection progress and six capabilities. Reconnect semantics match the official client (KICKED first-strike self-healing, 10 s backoff cap); heartbeat interval and ACK watchdog switched to officially verified values; protocol-sync baseline refreshed to v3.18.1 with zero wire drift.

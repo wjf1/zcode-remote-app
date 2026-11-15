@@ -1,0 +1,1 @@
+Connection-layer resilience: tiered token-failure handling (transient blips vs real expiry) and one-way heartbeat liveness detection — faster disconnect awareness, steadier recovery, fewer spurious reconnects.

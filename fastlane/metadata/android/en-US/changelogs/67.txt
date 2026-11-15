@@ -1,0 +1,1 @@
+Settings gains a "paste token" entry to work around the in-app WebView login failure: generate a pairing token on desktop and paste it to finish pairing, no embedded browser needed.

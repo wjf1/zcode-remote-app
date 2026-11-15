@@ -1,0 +1,1 @@
+V2 Controller channel adaptation: the conversation list now follows the authoritative source (official V2 channel), with hardened list concurrency safety. Verified on-device.
