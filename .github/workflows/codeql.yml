@@ -51,7 +51,9 @@ jobs:
 
       - uses: gradle/actions/setup-gradle@748248ddd2a24f49513d8f472f81c3a07d4d50e1 # v4.4.4
         with:
-          gradle-version: "8.7"
+          # 与 ci.yml 对齐：项目 wrapper/AGP 要求 Gradle 8.13，8.7 会触发
+          # "Failed to apply plugin 'com.android.internal.version-check'" 导致 analyze 必败
+          gradle-version: "8.13"
 
       - name: 编译（CodeQL 依赖构建提取 Kotlin/Java AST）
         run: gradle assembleDebug --console=plain

@@ -65,6 +65,13 @@
   官方 bootstrap wire 早已不发 `displayStatus`（App 侧有任务事件+phase 运行时推导兜底）、
   pinned 走 V2 Controller 通道不受影响。（2026-11-14）
 
+### 修复
+
+- **CodeQL 工作流红改绿**：`codeql.yml` 的 `setup-gradle` 从 Gradle 8.7 对齐到 8.13
+  （与 `ci.yml` 一致）——AGP 的 `com.android.internal.version-check` 插件要求 Gradle
+  8.13，8.7 会在 analyze 阶段 `Failed to apply plugin` 必败，CodeQL 连续三轮失败且
+  SARIF 上传失败。（`.github/workflows/codeql.yml`）
+
 ## v0.5.0-beta56（2026-11-12）· 对标官方 v3.17.2 收官——协议对齐、置顶/未读/连接进度与六项能力
 
 > 对标官方 `zai-org/ZCode` v3.17.2：先落地协议对齐与三项能力（旧 SID 自动接续 / task-pin 置顶 /
