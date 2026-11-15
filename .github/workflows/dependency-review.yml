@@ -34,7 +34,7 @@ jobs:
       # 把审查结论评论到 PR（无该权限时 action 会跳过评论但仍会执行门禁）
       pull-requests: write
     steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: actions/checkout@f548e57e544e1ff5a4c46bf1e1b8685f8e4a348a # v7.0.1
         with:
           persist-credentials: false
 
