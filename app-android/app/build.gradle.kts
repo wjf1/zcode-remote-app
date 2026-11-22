@@ -242,7 +242,7 @@ dependencies {
     // CameraX 1.4.x 起原生库按 16 KB 页对齐编译（Android 15 兼容性要求）
     implementation("androidx.camera:camera-camera2:1.4.2")
     implementation("androidx.camera:camera-lifecycle:1.4.2")
-    implementation("androidx.camera:camera-view:1.4.2")
+    implementation("androidx.camera:camera-view:1.7.0")
     implementation("com.google.zxing:core:3.5.4")
 
     // 显式钉住 16 KB 对齐修复版，覆盖 compose BOM 传递的旧版 graphics-path
