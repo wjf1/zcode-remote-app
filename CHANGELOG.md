@@ -2,6 +2,18 @@
 
 ## [Unreleased]
 
+### 修复
+
+- **无序列表与任务列表内容整体丢失（2026-11-23，仪器化测试抓出）**：下条「无序列表悬挂圆点」
+  把 `unorderedList` 换成 `MarkdownListItems(...) { Box(圆点) }` 自定义 marker——但
+  `multiplatform-markdown-renderer 0.27.0` 的列表项**内容**是由内部默认 bullet 实现里的
+  `MarkdownKt.handleElement` 渲染的（`MarkdownListKt$MarkdownBulletList$1` 字节码实证），
+  替换 bullet lambda 等于连内容渲染一起换掉：所有 `- 项目` 与 `- [x] 任务` 渲染为空白，
+  表格/段落/有序列表不受影响。`MarkdownRenderTest.gfmTableAndInlineMarkupRender` 自 2026-11-22
+  起稳定红（本地与 CI 均可复现），逐场景 dump 语义树定位为「无序列表整块空白、有序列表正常」。
+  改回库默认 `MarkdownBulletList`（内容优先，圆点退回库默认符号文本）后 4/4 用例通过。
+  （`MarkdownView.kt`）
+
 ### 变更
 
 - **Markdown 渲染美感对齐官方（用户真机反馈驱动）**：① **碎行根治**——paragraph 改用库的

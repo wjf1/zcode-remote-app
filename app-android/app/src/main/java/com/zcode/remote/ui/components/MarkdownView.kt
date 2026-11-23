@@ -16,9 +16,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -49,7 +47,7 @@ import com.mikepenz.markdown.compose.components.markdownComponents
 import com.mikepenz.markdown.compose.elements.MarkdownBlockQuote
 import com.mikepenz.markdown.compose.elements.MarkdownCodeBlock
 import com.mikepenz.markdown.compose.elements.MarkdownCodeFence
-import com.mikepenz.markdown.compose.elements.MarkdownListItems
+import com.mikepenz.markdown.compose.elements.MarkdownBulletList
 import com.mikepenz.markdown.m3.Markdown
 import com.mikepenz.markdown.m3.markdownColor
 import com.mikepenz.markdown.m3.markdownTypography
@@ -174,19 +172,16 @@ fun MarkdownView(
                 androidx.compose.material3.Text(styled)
                 imageUrlsIn(model.node, model.content).forEach { MarkdownImageNotice(it) }
             },
-            // 无序列表悬挂缩进：官方 ul 为 disc 圆点（subtlest 色）+ 内容左缩进 20px；
-            // 库默认 bullet 文本与内容分离无对齐。用自定义 marker（6dp 圆点）替代符号文本。
+            // 无序列表：**必须走库的 MarkdownBulletList**。
+            // 2026-11-23 教训：此前这里用 `MarkdownListItems(...) { _, _ -> Box(圆点) }` 只自定义了
+            // marker，但 0.27.0 的 MarkdownListItems 内容是**由内部默认 bullet 实现里的
+            // MarkdownKt.handleElement 渲染**的（见 MarkdownListKt$MarkdownBulletList$1 字节码）。
+            // 替换 bullet lambda 等于连内容渲染一起换掉——列表项文本全部丢失（表格/段落正常的
+            // 陷阱：MarkdownRenderTest 只在任务列表两行上失败，直到逐场景 dump 语义树才暴露
+            // 「无序列表整块空白、有序列表正常」）。改回库默认实现，内容是第一位；
+            // 圆点样式差异（默认符号文本 vs 自绘圆点）属于视觉微调，不值得再用丢内容的写法换。
             unorderedList = { model ->
-                MarkdownListItems(model.content, model.node) { _, _ ->
-                    androidx.compose.foundation.layout.Box(
-                        modifier =
-                            androidx.compose.ui.Modifier
-                                .padding(top = 12.dp)
-                                .size(7.dp)
-                                .clip(CircleShape)
-                                .background(MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.45f)),
-                    )
-                }
+                MarkdownBulletList(model.content, model.node, style = model.typography.bullet)
             },
             blockQuote = { model ->
                 MarkdownBlockQuote(model.content, model.node, style = model.typography.quote)

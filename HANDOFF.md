@@ -121,6 +121,19 @@ app-android/app/src/main/java/com/zcode/remote/
   与 `research/FRAME-CODEC.md`、`research/CONVERSATION-PROTOCOL.md`。
 
 ## 4. 最近一轮变更与交付成果
+- **2026-11-23：修复「无序列表 / 任务列表内容整体丢失」（master CI 稳定红的根因）**——症状：
+  `MarkdownRenderTest.gfmTableAndInlineMarkupRender` 自 2026-11-22 起本地与 CI 3/3 稳定红，
+  失败片段恒为 `- [x] 已完成项` 找不到语义节点。排查链：① 先写 JVM 解析测试证明 **AST 完整**
+  （`UNORDERED_LIST/LIST_ITEM/CHECK_BOX=2/TEXT=18` 齐全，解析层无责）；② 再写四场景仪器化
+  dump 用例（纯段落/无序列表/任务列表/任务+有序），把语义树塞进断言消息落 XML——**无序列表
+  整块空白、有序列表正常、段落正常**；③ 反编译 0.27.0 android AAR 的 `MarkdownListKt`，发现
+  `MarkdownListKt$MarkdownBulletList$1` 内部才调用 `MarkdownKt.handleElement` 渲染列表项内容，
+  而项目 2026-11-15「美感对齐」把 `unorderedList` 换成 `MarkdownListItems(...) { Box(圆点) }`
+  自定义 marker——**替换 bullet lambda 等于连内容渲染一起换掉**。修复：改回库默认
+  `MarkdownBulletList`（圆点退回库默认符号文本，内容优先），`MarkdownRenderTest` 4/4 绿。
+  顺带排除：okhttp 4.12.1（lysine-dev fork）与本次回归无关（revert 后本地仍红）。
+  全量 37 个仪器化用例中仅 `ConversationTopBarLayoutTest` 因 `No compose hierarchies found`
+  （ActivityScenario 启动竞态）偶发失败，与本次改动无关。门禁：`MarkdownRenderTest` 4/4 绿。
 - **2026-11-15：v3.18.1 对标特性真机走查（Xiaomi 15 Pro / USB）**——① **P2① 打散窗口实证**：飞行式断网 5s 恢复，日志实测「调度退避 953ms」（0~1500ms 随机抽样）→ **1.9s 全链路恢复**（ws open 101 → auth → 重订阅）；② **G3 ghost hint 协议链路端到端**：桌面日志实证 `conversationInputPredictionV4 OK (1.4ms)`——能力门禁放行、RPC 达桌面处理成功；hint 未显示系桌面 decision 非 show（草稿无语义上下文，合理降级）；③ **真机修出 1 个缺陷**：会话页顶栏副标题 `statusLabel` 漏 `.asString()`，joinToString 直出「Res(id=2131492988, args=[])」，已修并复验（显示「已连接 · 已完成 · 共 48 行」）；④ 设备限制：adb `input text`/keyevent 对 Compose 输入框注入失效（与 F1/F3/F5 走查同款机型限制），ghost hint「显示」态与中文草稿场景留待用户手动输入验证。桌面端 v3.18.2（≥3.18.1，输入预测默认开启）。**未验**：KICKED 自愈（触发未遂，见下）、G4 对账收尾（需重启桌面 CLI）、P2⑤ 终态引导（需真实终态）。门禁：536 单测全绿。
 - **2026-11-15：Markdown 渲染美感对齐官方（用户真机反馈「美感差官方很多」驱动）**——官方源码
   取数（Explore 子代理精读 `message.tsx`/`markdown-list.tsx`/`styles.css`）得 6 项差距（碎行/列表无
